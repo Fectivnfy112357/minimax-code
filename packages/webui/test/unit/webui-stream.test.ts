@@ -247,6 +247,63 @@ describe("WebUI mixed stream reducer", () => {
     expect(state.messages[1]?.answer).toBe("second answer");
   });
 
+  it("records the cursor only after the frame's data change is applied", () => {
+    // Cursor discipline, ordering edition: the cursor rides on the last
+    // mapped frame of a source-frame group, and a resume must land only
+    // after the group's state change has been applied. The reducer must
+    // therefore commit the cursor LAST, after `dataJson` and
+    // `messageActionDeltas`. A buggy implementation that records the
+    // cursor before the data is applied would advance `state.cursor`
+    // while the messages list still holds the previous group's value,
+    // and a probe-based test catches that. A final-state-only assertion
+    // would not: `reduceWebuiStreamFrame`'s return value has both
+    // messages and cursor set, regardless of order.
+    const probes: {
+      checkpoint: string;
+      cursor?: string;
+      messages: number;
+      actionDeltas: number;
+    }[] = [];
+    reduceWebuiStreamFrame(
+      initialWebuiStreamState,
+      {
+        dataJson:
+          '{"type":2,"agent_message":{"msg_id":"m1","msg_content":"hello","thinking_content":"thought"}}',
+        cursor: "c1",
+        messageActionDeltas: [{ action: "fork" }],
+      },
+      {
+        probe: (snapshot, checkpoint) =>
+          probes.push({
+            checkpoint,
+            cursor: snapshot.cursor,
+            messages: snapshot.messages.length,
+            actionDeltas: snapshot.actionDeltas.length,
+          }),
+      },
+    );
+    // Find the first checkpoint at which the cursor reaches `c1`.
+    const cursorFirstSeen = probes.find((probe) => probe.cursor === "c1");
+    expect(cursorFirstSeen).toBeDefined();
+    // By the time the cursor is committed, the rest of the frame must
+    // already be in state. Recording the cursor before the data change
+    // would produce a probe entry where `cursor === "c1"` but
+    // `messages === 0` and `actionDeltas === 0`, and the assertions
+    // below would fail.
+    expect(cursorFirstSeen?.messages).toBe(1);
+    expect(cursorFirstSeen?.actionDeltas).toBe(1);
+    // The previous checkpoint (whatever sits right before the cursor
+    // commit) must not yet have the cursor — proves the cursor is
+    // applied *between* checkpoints, not before.
+    const cursorProbeIndex = probes.findIndex(
+      (probe) => probe.cursor === "c1",
+    );
+    const previous = probes[cursorProbeIndex - 1];
+    expect(previous?.cursor).toBeUndefined();
+    expect(previous?.messages).toBe(1);
+    expect(previous?.actionDeltas).toBe(1);
+  });
+
   it("flips to reconnecting and sets resumeRequired when the server emits resume_overflow", () => {
     // The harness maps a `resync-required` source frame to
     // `{type:"resume_overflow"}` on the way out (see

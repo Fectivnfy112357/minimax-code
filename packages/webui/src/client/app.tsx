@@ -48,9 +48,9 @@ import {
 import {
   initialWebuiStreamState,
   reduceWebuiStreamFrame,
-  type WebuiStreamMessage,
   type WebuiStreamState,
 } from "./stream.js";
+import { runWebuiStreamLoop } from "./stream-loop.js";
 import type { WebuiStreamFrame } from "../server/port.js";
 
 export interface WebuiClientMessage {
@@ -626,124 +626,31 @@ function WebuiComposer({
     }
     setSending(true);
     onDraftChange("");
-    // The reducer tracks the latest cursor the server confirmed, and a
-    // boolean the shell observes to reload + restart the subscription
-    // after a `resume_overflow`. The loop below owns those locally so it
-    // can decide whether the next call is a `sendMessage` (fresh prompt)
-    // or a `resumeSession` (re-subscribing after the socket dropped or
-    // after the server asked for a resync).
-    let cursor: string | undefined;
-    let needsHistoryReload = false;
+    // The send/resume loop lives in `stream-loop.ts`; this handler only
+    // owns the React state and routes the loop's sink callbacks into
+    // `setStream`. Both failure signals — a WebSocket drop and a
+    // `resume_overflow` frame — are unified in the loop and observable
+    // through the `phase` field on the state we render below.
     setStream({ ...initialWebuiStreamState, phase: "streaming" });
     try {
-      let sent = false;
-      while (true) {
-        // The reducer's `resumeRequired` flips when a frame carries
-        // `{type:"resume_overflow"}`; the helper below mirrors that
-        // signal into the loop's local state.
-        const captureFrame =
-          (onFrame: (frame: WebuiStreamFrame) => void) =>
-          (frame: WebuiStreamFrame): void => {
-            onFrame(frame);
-            if (frame.cursor !== undefined) cursor = frame.cursor;
-            const parsed = (() => {
-              try {
-                return JSON.parse(String(frame.dataJson ?? ""));
-              } catch {
-                return undefined;
-              }
-            })();
-            if (
-              parsed &&
-              typeof parsed === "object" &&
-              (parsed as { type?: unknown }).type === "resume_overflow"
-            ) {
-              needsHistoryReload = true;
-            }
-          };
-        if (needsHistoryReload) {
-          // The server told us our view has fallen too far behind. Reset
-          // the reducer to a clean state, reload authoritative history,
-          // and establish a fresh subscription with no cursor so the
-          // server replays from the latest persisted point.
-          needsHistoryReload = false;
-          cursor = undefined;
-          setStream({
-            ...initialWebuiStreamState,
-            phase: "reconnecting",
-          });
-          if (loadMessages) {
-            const page = await loadMessages({ id: sessionId });
-            setStream((current) => ({
-              ...current,
-              phase: "reconnecting",
-              messages: (page.messages ?? []).flatMap(projectWebuiMessage).map(
-                (item): WebuiStreamMessage => ({
-                  id: item.messageId,
-                  answer: "text" in item ? item.text : "",
-                  thinking: item.kind === "thinking" ? item.text : "",
-                }),
-              ),
-            }));
-          }
-          if (!resumeSession) {
+      await runWebuiStreamLoop(
+        { sendMessage, resumeSession, loadMessages },
+        { sessionId, message },
+        {
+          applyFrame: (frame) =>
+            setStream((current) => reduceWebuiStreamFrame(current, frame)),
+          setPhase: (phase) =>
+            setStream((current) => ({ ...current, phase })),
+          setMessages: (messages) =>
+            setStream((current) => ({ ...current, messages })),
+          refuse: (reason) =>
             setStream((current) => ({
               ...current,
               phase: "refused",
-              refusal: "resumeSession transport is unavailable",
-            }));
-            return;
-          }
-          await resumeSession(
-            { id: sessionId },
-            captureFrame((frame) =>
-              setStream((current) => reduceWebuiStreamFrame(current, frame)),
-            ),
-          );
-          // A fresh subscription has been established; we are no longer
-          // reconnecting. Resume the steady-state phase.
-          break;
-        }
-        if (!sent) {
-          sent = true;
-          await sendMessage(
-            { id: sessionId, content: message },
-            captureFrame((frame) =>
-              setStream((current) => reduceWebuiStreamFrame(current, frame)),
-            ),
-          );
-          // `sendMessage` resolves only on `[DONE]`, so the loop exits
-          // once the server signals the end of the stream.
-          break;
-        }
-        // The WebSocket dropped mid-stream and the reducer kept a cursor
-        // from before the drop. Reconnect from the cursor the loop has
-        // been tracking; this is the reconnection path the brief calls
-        // out, kept deliberately small: no retry policy, no exponential
-        // backoff — a single resume attempt from the last good cursor.
-        if (!resumeSession) {
-          setStream((current) => ({
-            ...current,
-            phase: "refused",
-            refusal: "resumeSession transport is unavailable",
-          }));
-          return;
-        }
-        setStream((current) => ({ ...current, phase: "reconnecting" }));
-        await resumeSession(
-          cursor ? { id: sessionId, afterCursor: cursor } : { id: sessionId },
-          captureFrame((frame) =>
-            setStream((current) => reduceWebuiStreamFrame(current, frame)),
-          ),
-        );
-        break;
-      }
-    } catch (error) {
-      setStream((current) => ({
-        ...current,
-        phase: "refused",
-        refusal: error instanceof Error ? error.message : String(error),
-      }));
+              refusal: reason,
+            })),
+        },
+      );
     } finally {
       setSending(false);
     }

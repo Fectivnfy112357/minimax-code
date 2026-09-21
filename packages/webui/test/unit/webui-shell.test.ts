@@ -17,7 +17,7 @@
 // webui-design-tokens.test.ts against the stylesheet `pnpm build:webui` produces,
 // which is also where the desktop's mono stack for `code`/`pre` is checked.
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
@@ -32,6 +32,13 @@ import {
   sessionHash,
   subscribeToSessionHash,
 } from "../../src/client/app.js";
+import { runWebuiStreamLoop } from "../../src/client/stream-loop.js";
+import type {
+  WebuiClientMessageLoader,
+  WebuiClientMessageSender,
+  WebuiClientSessionResumer,
+} from "../../src/client/app.js";
+import type { WebuiStreamFrame } from "../../src/server/port.js";
 
 function renderShell(label = "webui-foundation"): string {
   return renderToStaticMarkup(
@@ -405,5 +412,147 @@ describe("WebUI shell — theme switching", () => {
     expect(lightMatch, ".light must rebind --bg_default_primary").not.toBeNull();
     expect(darkMatch, ".dark must rebind --bg_default_primary").not.toBeNull();
     expect(lightMatch![1].trim()).not.toBe(darkMatch![1].trim());
+  });
+});
+
+// Behaviour-level coverage of the composer's send/resume loop. The test
+// drives the same `runWebuiStreamLoop` the composer in `app.tsx` calls
+// from its submit handler, with a WebSocket double (the mocked
+// `sendMessage` / `resumeSession` close over the `onFrame` callback the
+// transport would otherwise hand to a real socket). The assertions
+// observe the loop's outcome through the sink callbacks, which is the
+// same observable the React shell binds to `setStream`. No DOM is
+// rendered; the review noted the absence of a DOM environment and
+// ruled out adding one. What this gives us is effect-based evidence
+// that the reconnect branch is reachable and that the composer calls
+// `resumeSession` with the cursor it observed before the drop.
+describe("WebUI composer send/resume loop", () => {
+  it("calls resumeSession with the cursor it observed before a mid-stream socket drop", async () => {
+    // Scenario: the user's prompt starts a stream; the server emits a
+    // cursor-bearing frame; then the WebSocket closes before [DONE].
+    // The brief's F1 says the loop must call `resumeSession` with
+    // `afterCursor: <that cursor>` and surface the `reconnecting`
+    // phase the shell renders. The previous implementation had the
+    // reconnect branch after the `await sendMessage` line, so a
+    // rejection landed in the catch and went straight to `refused`;
+    // this test asserts the *recovered* sequence.
+    const observedPhases: string[] = [];
+    const resumeCalls: { afterCursor?: string }[] = [];
+    const applied: WebuiStreamFrame[] = [];
+
+    const sendMessage: WebuiClientMessageSender = vi.fn(
+      async (_req, onFrame) => {
+        // Open the stream; emit a chunk that carries the cursor the
+        // upstream group would carry. Then reject to simulate the WS
+        // closing before `[DONE]`.
+        onFrame({
+          dataJson: '{"type":6,"agent_message_chunk":{"msg_id":"m1","msg_content":"partial"}}',
+          cursor: "c1",
+        });
+        throw new Error("WebUI connection closed before [DONE]");
+      },
+    );
+    const resumeSession: WebuiClientSessionResumer = vi.fn(
+      async (req, onFrame) => {
+        resumeCalls.push({ afterCursor: req.afterCursor });
+        // The fresh subscription ends with `[DONE]` — same wire shape
+        // as a successful send. The loop's only job here is to route
+        // the frames through `applyFrame` and resolve.
+        onFrame({ dataJson: '{"type":10}' });
+        onFrame({ dataJson: "[DONE]" });
+      },
+    );
+
+    const outcome = await runWebuiStreamLoop(
+      { sendMessage, resumeSession },
+      { sessionId: "session-1", message: "hello" },
+      {
+        applyFrame: (frame) => applied.push(frame),
+        setPhase: (phase) => observedPhases.push(phase),
+        setMessages: () => undefined,
+        refuse: () => undefined,
+      },
+    );
+
+    // The loop's phase trace must contain `reconnecting` — the same
+    // phase the shell turns into the `Reconnecting…` row. The previous
+    // implementation never reached this phase because the rejection
+    // went straight to `refused`.
+    expect(observedPhases).toContain("reconnecting");
+    expect(observedPhases).not.toContain("refused");
+    // The cursor captured before the drop is forwarded to
+    // `resumeSession` as `afterCursor`. That is the exact contract the
+    // brief's resume criterion relies on.
+    expect(resumeCalls).toEqual([{ afterCursor: "c1" }]);
+    // The capture pipeline saw both the chunk from the original stream
+    // and the frames from the resumed stream. The chunk is what gave
+    // the loop its cursor.
+    expect(applied.some((f) => f.cursor === "c1")).toBe(true);
+    // The outcome records the same observations for an external
+    // harness; sanity-check the cursors and resume list shape.
+    expect(outcome.cursorsSeen).toContain("c1");
+    expect(outcome.resumeCalls).toEqual([
+      { afterCursor: "c1", hadCursor: true },
+    ]);
+    expect(outcome.phases.at(-1)).toBe("done");
+  });
+
+  it("reloads history and resubscribes with no cursor after a resume_overflow frame", async () => {
+    // Scenario: a stream emits a `resume_overflow` event mid-flight
+    // before `[DONE]`. The brief's F2 says the loop must reload
+    // authoritative history through `getMessages` and establish a
+    // fresh `resumeSession` subscription with no cursor. The previous
+    // implementation read the `needsHistoryReload` flag at the top of
+    // the loop, but the `await sendMessage` line broke out of the loop
+    // before the next iteration could observe it.
+    const observedPhases: string[] = [];
+    const resumeCalls: { afterCursor?: string }[] = [];
+    let loadMessagesCalls = 0;
+
+    const sendMessage: WebuiClientMessageSender = vi.fn(
+      async (_req, onFrame) => {
+        onFrame({
+          dataJson:
+            '{"type":2,"agent_message":{"msg_id":"m1","msg_content":"stale answer"}}',
+          cursor: "c-stale",
+        });
+        onFrame({ dataJson: '{"type":"resume_overflow"}' });
+        onFrame({ dataJson: "[DONE]" });
+      },
+    );
+    const resumeSession: WebuiClientSessionResumer = vi.fn(
+      async (req, onFrame) => {
+        resumeCalls.push({ afterCursor: req.afterCursor });
+        onFrame({ dataJson: "[DONE]" });
+      },
+    );
+    const loadMessages: WebuiClientMessageLoader = vi.fn(async () => {
+      loadMessagesCalls += 1;
+      return { messages: [], hasMore: false };
+    });
+
+    const outcome = await runWebuiStreamLoop(
+      { sendMessage, resumeSession, loadMessages },
+      { sessionId: "session-1", message: "hello" },
+      {
+        applyFrame: () => undefined,
+        setPhase: (phase) => observedPhases.push(phase),
+        setMessages: () => undefined,
+        refuse: () => undefined,
+      },
+    );
+
+    // `loadMessages` ran exactly once, the way the brief intends.
+    expect(loadMessagesCalls).toBe(1);
+    // `resumeSession` was called once, with no `afterCursor`, because
+    // the reload already established the fresh subscription point.
+    expect(resumeCalls).toEqual([{ afterCursor: undefined }]);
+    // The loop moved through `reconnecting` and never went to
+    // `refused`. The phase sequence must contain `reconnecting` so the
+    // shell renders its `Reconnecting…` indicator.
+    expect(observedPhases).toContain("reconnecting");
+    expect(observedPhases).not.toContain("refused");
+    expect(outcome.resumeCalls).toEqual([{ hadCursor: false }]);
+    expect(outcome.phases.at(-1)).toBe("done");
   });
 });
