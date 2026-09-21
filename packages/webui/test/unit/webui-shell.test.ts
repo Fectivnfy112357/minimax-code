@@ -46,6 +46,7 @@ import {
 import type {
   WebuiClientMessageLoader,
   WebuiClientMessageSender,
+  WebuiClientMessageEnqueuer,
   WebuiClientSessionResumer,
 } from "../../src/client/app.js";
 import type { WebuiStreamFrame } from "../../src/server/port.js";
@@ -70,34 +71,72 @@ describe("WebUI shell", () => {
     expect(createdSessionId({ sessionId: "  c  " })).toBe("c");
     expect(createdSessionId({ session: { sessionId: "  d  " } })).toBe("d");
     expect(createdSessionId({})).toBeUndefined();
-    expect(createdSessionId({ agentName: "x" } as Parameters<typeof createdSessionId>[0])).toBeUndefined();
+    expect(
+      createdSessionId({ agentName: "x" } as Parameters<
+        typeof createdSessionId
+      >[0]),
+    ).toBeUndefined();
   });
 
   it("round-trips the selected session through the URL hash", () => {
-    expect(sessionHash("session with spaces")).toBe("#session=session+with+spaces");
-    expect(readSessionIdFromHash("#session=session+with+spaces")).toBe("session with spaces");
-    const html = renderToStaticMarkup(createElement(WebuiSessionList, {
-      page: { sessions: [{ sessionId: "session-1", agentName: "agent", createdAt: 1, updatedAt: 2 }], hasMore: false },
-      loading: false,
-    }));
+    expect(sessionHash("session with spaces")).toBe(
+      "#session=session+with+spaces",
+    );
+    expect(readSessionIdFromHash("#session=session+with+spaces")).toBe(
+      "session with spaces",
+    );
+    const html = renderToStaticMarkup(
+      createElement(WebuiSessionList, {
+        page: {
+          sessions: [
+            {
+              sessionId: "session-1",
+              agentName: "agent",
+              createdAt: 1,
+              updatedAt: 2,
+            },
+          ],
+          hasMore: false,
+        },
+        loading: false,
+      }),
+    );
     expect(html).toContain('href="#session=session-1"');
   });
 
   it("projects every persisted message facet independently", () => {
-    expect(projectWebuiMessage({ msgId: "thinking", thinkingContent: "Reasoning" })).toEqual([
-      { kind: "thinking", text: "Reasoning", messageId: "thinking" },
-    ]);
-    expect(projectWebuiMessage({ msgId: "tools", toolCalls: [{ name: "read" }] })[0].kind).toBe("tool");
-    expect(projectWebuiMessage({ msgId: "both", thinkingContent: "Think", toolCalls: [{ name: "read" }], msgContent: "Answer" }).map((item) => item.kind)).toEqual(["thinking", "tool", "assistant"]);
-    expect(projectWebuiMessage({ msgId: "answer", role: "user", msgContent: "Question" })[0].kind).toBe("user");
+    expect(
+      projectWebuiMessage({ msgId: "thinking", thinkingContent: "Reasoning" }),
+    ).toEqual([{ kind: "thinking", text: "Reasoning", messageId: "thinking" }]);
+    expect(
+      projectWebuiMessage({ msgId: "tools", toolCalls: [{ name: "read" }] })[0]
+        .kind,
+    ).toBe("tool");
+    expect(
+      projectWebuiMessage({
+        msgId: "both",
+        thinkingContent: "Think",
+        toolCalls: [{ name: "read" }],
+        msgContent: "Answer",
+      }).map((item) => item.kind),
+    ).toEqual(["thinking", "tool", "assistant"]);
+    expect(
+      projectWebuiMessage({
+        msgId: "answer",
+        role: "user",
+        msgContent: "Question",
+      })[0].kind,
+    ).toBe("user");
     expect(projectWebuiMessage({ msgId: "empty" })).toEqual([]);
   });
 
   it("renders an empty transcript without treating it as an error", () => {
-    const html = renderToStaticMarkup(createElement(WebuiSessionTranscript, {
-      sessionId: "empty-session",
-      loadMessages: async () => ({ messages: [], hasMore: false }),
-    }));
+    const html = renderToStaticMarkup(
+      createElement(WebuiSessionTranscript, {
+        sessionId: "empty-session",
+        loadMessages: async () => ({ messages: [], hasMore: false }),
+      }),
+    );
     expect(html).toContain('data-webui-transcript="empty-session"');
   });
 
@@ -106,7 +145,11 @@ describe("WebUI shell", () => {
     // thinking and the tool steps, then the answer. Both belong to the same
     // message and must stay together; a user turn is its own block.
     const groups = groupWebuiTranscriptItems([
-      ...projectWebuiMessage({ msgId: "turn-1", role: "user", msgContent: "Question" }),
+      ...projectWebuiMessage({
+        msgId: "turn-1",
+        role: "user",
+        msgContent: "Question",
+      }),
       ...projectWebuiMessage({
         msgId: "turn-2",
         thinkingContent: "Reasoning",
@@ -129,10 +172,12 @@ describe("WebUI shell", () => {
   });
 
   it("keeps the conversation's reading column and message chrome in the markup", () => {
-    const html = renderToStaticMarkup(createElement(WebuiSessionTranscript, {
-      sessionId: "reading-column",
-      loadMessages: async () => ({ messages: [], hasMore: false }),
-    }));
+    const html = renderToStaticMarkup(
+      createElement(WebuiSessionTranscript, {
+        sessionId: "reading-column",
+        loadMessages: async () => ({ messages: [], hasMore: false }),
+      }),
+    );
     // The reading column and the message list region survive regardless of
     // whether any message loaded.
     expect(html).toContain('data-webui-message-list="true"');
@@ -143,15 +188,28 @@ describe("WebUI shell", () => {
       createElement(WebuiSessionList, {
         page: {
           sessions: [
-            { sessionId: "older-id", agentName: "older-agent", createdAt: 1000, updatedAt: 2000 },
-            { sessionId: "newer-id", agentName: "newer-agent", title: "Named session", createdAt: 3000, updatedAt: 4000 },
+            {
+              sessionId: "older-id",
+              agentName: "older-agent",
+              createdAt: 1000,
+              updatedAt: 2000,
+            },
+            {
+              sessionId: "newer-id",
+              agentName: "newer-agent",
+              title: "Named session",
+              createdAt: 3000,
+              updatedAt: 4000,
+            },
           ],
           hasMore: false,
         },
         loading: false,
       }),
     );
-    expect(html.indexOf("Named session")).toBeLessThan(html.indexOf("older-agent"));
+    expect(html.indexOf("Named session")).toBeLessThan(
+      html.indexOf("older-agent"),
+    );
     expect(html).toContain("older-agent");
     expect(html).toContain(new Date(2000).toLocaleString());
     expect(html).toContain('data-webui-session-list="true"');
@@ -167,7 +225,9 @@ describe("WebUI shell", () => {
     Object.defineProperty(globalThis, "window", {
       configurable: true,
       value: {
-        get location() { return { hash }; },
+        get location() {
+          return { hash };
+        },
         addEventListener(type: string, listener: (event: Event) => void) {
           if (type === "hashchange") listeners.add(listener);
         },
@@ -178,22 +238,40 @@ describe("WebUI shell", () => {
     });
     try {
       let selected = readSessionIdFromHash(hash);
-      const unsubscribe = subscribeToSessionHash((id) => { selected = id; });
+      const unsubscribe = subscribeToSessionHash((id) => {
+        selected = id;
+      });
       hash = "#session=second";
       for (const listener of listeners) listener(new Event("hashchange"));
       expect(selected).toBe("second");
       unsubscribe();
       expect(listeners).toHaveLength(0);
     } finally {
-      Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow });
+      Object.defineProperty(globalThis, "window", {
+        configurable: true,
+        value: originalWindow,
+      });
     }
   });
 
   it("shows the bound working directory without offering a directory edit control", () => {
-    const html = renderToStaticMarkup(createElement(WebuiSessionList, {
-      page: { sessions: [{ sessionId: "session-1", agentName: "agent", createdAt: 1, updatedAt: 2, workspaceDir: "/tmp/project" }], hasMore: false },
-      loading: false,
-    }));
+    const html = renderToStaticMarkup(
+      createElement(WebuiSessionList, {
+        page: {
+          sessions: [
+            {
+              sessionId: "session-1",
+              agentName: "agent",
+              createdAt: 1,
+              updatedAt: 2,
+              workspaceDir: "/tmp/project",
+            },
+          ],
+          hasMore: false,
+        },
+        loading: false,
+      }),
+    );
     expect(html).toContain("/tmp/project");
     expect(html).not.toMatch(/edit.*directory|change.*directory/iu);
   });
@@ -261,10 +339,9 @@ describe("WebUI shell — desktop anatomy", () => {
     for (const label of INERT_NAV_LABELS) {
       const at = html.indexOf(`data-webui-nav-item="${label}"`);
       expect(at, `nav row ${label} missing`).toBeGreaterThan(-1);
-      expect(
-        html.slice(at, at + 500),
-        `nav row ${label} is not inert`,
-      ).toMatch(/disabled/u);
+      expect(html.slice(at, at + 500), `nav row ${label} is not inert`).toMatch(
+        /disabled/u,
+      );
     }
 
     // The current destination carries the state hook, so the selected row has
@@ -316,7 +393,8 @@ describe("WebUI shell — desktop anatomy", () => {
     let match: RegExpExecArray | null;
     while ((match = re.exec(html)) !== null) {
       const tag = match[0];
-      if (/^<button\b/u.test(tag) || /role="button"/u.test(tag)) controlTags.push(tag);
+      if (/^<button\b/u.test(tag) || /role="button"/u.test(tag))
+        controlTags.push(tag);
     }
     const operable = controlTags.filter(
       (tag) =>
@@ -350,7 +428,10 @@ describe("WebUI shell — desktop anatomy", () => {
 
     // The send action stays unavailable until there is something to send.
     const sendAt = html.indexOf("webui-send-button");
-    const send = html.slice(html.lastIndexOf("<button", sendAt), html.indexOf(">", sendAt) + 1);
+    const send = html.slice(
+      html.lastIndexOf("<button", sendAt),
+      html.indexOf(">", sendAt) + 1,
+    );
     expect(send).toMatch(/(?:^|\s)disabled(?:=|\s|>)/u);
   });
 
@@ -421,9 +502,16 @@ describe("WebUI shell — theme switching", () => {
       new URL("../../src/client/styles/tokens.css", import.meta.url),
       "utf8",
     );
-    const lightMatch = tokens.match(/\.light\s*\{([^}]*--bg_default_primary[^;]*);/u);
-    const darkMatch = tokens.match(/\.dark\s*\{([^}]*--bg_default_primary[^;]*);/u);
-    expect(lightMatch, ".light must rebind --bg_default_primary").not.toBeNull();
+    const lightMatch = tokens.match(
+      /\.light\s*\{([^}]*--bg_default_primary[^;]*);/u,
+    );
+    const darkMatch = tokens.match(
+      /\.dark\s*\{([^}]*--bg_default_primary[^;]*);/u,
+    );
+    expect(
+      lightMatch,
+      ".light must rebind --bg_default_primary",
+    ).not.toBeNull();
     expect(darkMatch, ".dark must rebind --bg_default_primary").not.toBeNull();
     expect(lightMatch![1].trim()).not.toBe(darkMatch![1].trim());
   });
@@ -460,7 +548,8 @@ describe("WebUI composer send/resume loop", () => {
         // upstream group would carry. Then reject to simulate the WS
         // closing before `[DONE]`.
         onFrame({
-          dataJson: '{"type":6,"agent_message_chunk":{"msg_id":"m1","msg_content":"partial"}}',
+          dataJson:
+            '{"type":6,"agent_message_chunk":{"msg_id":"m1","msg_content":"partial"}}',
           cursor: "c1",
         });
         throw new Error("WebUI connection closed before [DONE]");
@@ -620,9 +709,7 @@ describe("WebUI composer sink binding", () => {
   //  - `refuse` writes `phase: "refused"` and `refusal` — confusing
   //    either field fails the corresponding assertion.
   type Reducer = (current: WebuiStreamState) => WebuiStreamState;
-  const recordingReducer = (
-    log: Reducer[],
-  ): ((update: Reducer) => void) => {
+  const recordingReducer = (log: Reducer[]): ((update: Reducer) => void) => {
     return (update) => {
       log.push(update);
     };
@@ -891,6 +978,39 @@ describe("WebUI composer app-to-helper seam", () => {
     expect(final.messages.map((m) => m.id)).toEqual(["m1"]);
     expect(final.phase).toBe("done");
   });
+
+  it("queues a second composer submission while the current turn is running", async () => {
+    const { setStream, getState } = makeRecording();
+    const enqueueMessage: WebuiClientMessageEnqueuer = vi.fn(async () => ({
+      itemId: "queue-1",
+      status: "queued",
+      position: 1,
+    }));
+    const onDraftChange = vi.fn();
+    const onQueued = vi.fn();
+    await submitWebuiComposerTurn(
+      {
+        sessionId: "s",
+        draft: "second turn",
+        sending: true,
+        deps: {},
+        enqueueMessage,
+      },
+      buildWebuiComposerHandlers({
+        setStream,
+        setSending: () => undefined,
+        onDraftChange,
+        onQueued,
+      }),
+    );
+    expect(enqueueMessage).toHaveBeenCalledWith({
+      id: "s",
+      content: "second turn",
+    });
+    expect(onDraftChange).toHaveBeenCalledWith("");
+    expect(onQueued).toHaveBeenCalledOnce();
+    expect(getState().phase).toBe("idle");
+  });
 });
 
 // R12 — sink failure must change the outcome. The previous commit
@@ -942,8 +1062,7 @@ describe("WebUI composer sink-failure semantics", () => {
     expect(events).not.toContain("phase:done");
     expect(
       events.some(
-        (event) =>
-          event.startsWith("refuse:") && event.includes("applyFrame"),
+        (event) => event.startsWith("refuse:") && event.includes("applyFrame"),
       ),
     ).toBe(true);
   });
@@ -1216,8 +1335,7 @@ describe("WebUI composer transcriptIncomplete", () => {
         if (applyCount >= 3) throw new Error("third applyFrame blew up");
         setStream((current) => reduceWebuiStreamFrame(current, frame));
       },
-      setPhase: (phase) =>
-        setStream((current) => ({ ...current, phase })),
+      setPhase: (phase) => setStream((current) => ({ ...current, phase })),
       setMessages: (messages) =>
         setStream((current) => ({ ...current, messages })),
       refuse: (reason, options) =>
@@ -1278,8 +1396,7 @@ describe("WebUI composer transcriptIncomplete", () => {
         applyCount += 1;
         throw new Error("applyFrame blew up before any frame");
       },
-      setPhase: (phase) =>
-        setStream((current) => ({ ...current, phase })),
+      setPhase: (phase) => setStream((current) => ({ ...current, phase })),
       setMessages: (messages) =>
         setStream((current) => ({ ...current, messages })),
       refuse: (reason, options) =>

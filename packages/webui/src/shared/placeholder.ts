@@ -1,9 +1,9 @@
 // Shared type surface between the WebUI server and client.
 //
-// Ticket 01 ships no behaviour, only a typed module both sides can reach.
-// The actual protocol shapes live in `@mavis/protocol/local`; re-exporting
-// them here would pull client code into the server bundle, so this module
-// starts empty and grows with the wire envelope in later tickets.
+// This small shared module keeps the server/client build entries independent.
+// The runtime-facing protocol projection lives in the server port instead of
+// re-exporting `@mavis/protocol/local`, which would pull the process-local
+// contract into the browser bundle.
 
 export type WebuiFoundationVersion = "0.1.0";
 

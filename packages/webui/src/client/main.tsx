@@ -1,7 +1,5 @@
 import { createRoot, type Root } from "react-dom/client";
-import {
-  WebuiClientFoundationApp,
-} from "./app.js";
+import { WebuiClientFoundationApp } from "./app.js";
 import { createWebuiTransport } from "./transport.js";
 
 declare const document: {
@@ -30,6 +28,7 @@ root.render(
     loadMessages={transport.loadMessages}
     createSession={transport.createSession}
     sendMessage={transport.sendMessage}
+    enqueueMessage={transport.enqueueMessage}
     resumeSession={transport.resumeSession}
     watchEvents={transport.watchEvents}
     listPendingPermissions={transport.listPendingPermissions}

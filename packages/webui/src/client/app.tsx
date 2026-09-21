@@ -45,10 +45,7 @@ import {
   WebuiIconSidebarToggle,
   WebuiIconSites,
 } from "./icons.js";
-import {
-  initialWebuiStreamState,
-  type WebuiStreamState,
-} from "./stream.js";
+import { initialWebuiStreamState, type WebuiStreamState } from "./stream.js";
 import {
   buildWebuiStreamLoopSink,
   runWebuiStreamLoop,
@@ -61,6 +58,8 @@ import type {
   WebuiQuestionnaireAnswer,
   WebuiQuestionnaireRequest,
   WebuiQueueItem,
+  WebuiEnqueueMessageRequest,
+  WebuiEnqueueMessageResult,
   WebuiModelEntry,
   WebuiRuntimeEvent,
   WebuiStreamFrame,
@@ -123,6 +122,10 @@ export type WebuiClientMessageSender = (
   request: { readonly id: string; readonly content: string },
   onFrame: (frame: WebuiStreamFrame) => void,
 ) => Promise<void>;
+
+export type WebuiClientMessageEnqueuer = (
+  request: WebuiEnqueueMessageRequest,
+) => Promise<WebuiEnqueueMessageResult>;
 
 export type WebuiClientSessionResumer = (
   request: {
@@ -198,6 +201,7 @@ export interface WebuiClientFoundationAppProps {
   readonly locationHash?: string;
   readonly createSession?: WebuiClientSessionCreator;
   readonly sendMessage?: WebuiClientMessageSender;
+  readonly enqueueMessage?: WebuiClientMessageEnqueuer;
   readonly resumeSession?: WebuiClientSessionResumer;
   readonly watchEvents?: WebuiClientEventWatcher;
   readonly listPendingPermissions?: () => Promise<{
@@ -225,9 +229,7 @@ export interface WebuiClientFoundationAppProps {
   readonly abortSession?: (request: {
     readonly id: string;
   }) => Promise<{ readonly success?: boolean }>;
-  readonly listQueueMessages?: (request: {
-    readonly id: string;
-  }) => Promise<{
+  readonly listQueueMessages?: (request: { readonly id: string }) => Promise<{
     readonly items?: readonly WebuiQueueItem[];
     readonly paused?: boolean;
     readonly pendingCount?: number;
@@ -619,9 +621,7 @@ export function WebuiSessionTranscript({
             (item) => item.kind === "thinking" || item.kind === "tool",
           );
           const answers = group.items.filter(
-            (
-              item,
-            ): item is Extract<WebuiTranscriptItem, { text: string }> =>
+            (item): item is Extract<WebuiTranscriptItem, { text: string }> =>
               item.kind === "assistant",
           );
           return (
@@ -742,6 +742,7 @@ export interface WebuiComposerSubmitArgs {
   readonly draft: string;
   readonly sending: boolean;
   readonly deps: WebuiStreamLoopDeps;
+  readonly enqueueMessage?: WebuiClientMessageEnqueuer;
 }
 
 export interface WebuiComposerSubmitHandlers {
@@ -751,6 +752,7 @@ export interface WebuiComposerSubmitHandlers {
   readonly setSending: (sending: boolean) => void;
   readonly onDraftChange: (next: string) => void;
   readonly onNeedsSession?: (draft: string) => void;
+  readonly onQueued?: () => void;
 }
 
 /**
@@ -778,12 +780,14 @@ export function buildWebuiComposerHandlers(args: {
   readonly setSending: WebuiComposerSubmitHandlers["setSending"];
   readonly onDraftChange: WebuiComposerSubmitHandlers["onDraftChange"];
   readonly onNeedsSession?: WebuiComposerSubmitHandlers["onNeedsSession"];
+  readonly onQueued?: WebuiComposerSubmitHandlers["onQueued"];
 }): WebuiComposerSubmitHandlers {
   return {
     setStream: args.setStream,
     setSending: args.setSending,
     onDraftChange: args.onDraftChange,
     onNeedsSession: args.onNeedsSession,
+    onQueued: args.onQueued,
   };
 }
 
@@ -792,11 +796,26 @@ export async function submitWebuiComposerTurn(
   handlers: WebuiComposerSubmitHandlers,
 ): Promise<void> {
   const message = args.draft.trim();
-  if (!message || args.sending || !args.deps.sendMessage) return;
+  if (!message || (!args.deps.sendMessage && !args.enqueueMessage)) return;
   if (!args.sessionId) {
     handlers.onNeedsSession?.(args.draft);
     return;
   }
+  if (args.sending) {
+    if (!args.enqueueMessage) return;
+    try {
+      await args.enqueueMessage({ id: args.sessionId, content: message });
+      handlers.onDraftChange("");
+      handlers.onQueued?.();
+    } catch (error) {
+      handlers.setStream((current) => ({
+        ...current,
+        refusal: error instanceof Error ? error.message : String(error),
+      }));
+    }
+    return;
+  }
+  if (!args.deps.sendMessage) return;
   handlers.setSending(true);
   handlers.onDraftChange("");
   // Initialise the reducer state via the live `setStream`. The
@@ -862,7 +881,8 @@ function questionnaireFromEvent(
   event: WebuiRuntimeEvent,
 ): WebuiQuestionnaireRequest | undefined {
   const value = event.payload.request;
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return undefined;
   const request = value as Partial<WebuiQuestionnaireRequest>;
   if (
     typeof request.id !== "string" ||
@@ -913,14 +933,19 @@ function WebuiInteractionPanel({
   readonly onDismiss: (request: WebuiQuestionnaireRequest) => Promise<void>;
   readonly interactionError?: string;
 }): ReactElement {
-  const [selections, setSelections] = useState<Readonly<Record<string, readonly string[]>>>({});
+  const [selections, setSelections] = useState<
+    Readonly<Record<string, readonly string[]>>
+  >({});
   const [submitting, setSubmitting] = useState(false);
   useEffect(() => setSelections({}), [questionnaire?.id]);
   const visiblePermissions = permissions.filter(
     (permission) => permission.sessionId === sessionId,
   );
   return (
-    <div className="mt-3 flex w-full flex-col gap-3" data-webui-interactions={sessionId}>
+    <div
+      className="mt-3 flex w-full flex-col gap-3"
+      data-webui-interactions={sessionId}
+    >
       {visiblePermissions.map((permission) => (
         <article
           key={permission.requestId}
@@ -994,7 +1019,10 @@ function WebuiInteractionPanel({
                 {(step.options ?? []).map((option) => {
                   const checked = selected.includes(option.id);
                   return (
-                    <label key={option.id} className="flex items-start gap-2 text-size_14">
+                    <label
+                      key={option.id}
+                      className="flex items-start gap-2 text-size_14"
+                    >
                       <input
                         type={multiple ? "checkbox" : "radio"}
                         name={`${questionnaire.id}-${step.id}`}
@@ -1048,7 +1076,9 @@ function WebuiInteractionPanel({
               disabled={submitting}
               onClick={() => {
                 setSubmitting(true);
-                void onDismiss(questionnaire).finally(() => setSubmitting(false));
+                void onDismiss(questionnaire).finally(() =>
+                  setSubmitting(false),
+                );
               }}
             >
               Dismiss
@@ -1087,10 +1117,12 @@ function WebuiComposer({
   draft,
   onDraftChange,
   onNeedsSession,
+  enqueueMessage,
 }: {
   readonly sessionId?: string;
   readonly agentName: string;
   readonly sendMessage?: WebuiClientMessageSender;
+  readonly enqueueMessage?: WebuiClientMessageEnqueuer;
   readonly resumeSession?: WebuiClientSessionResumer;
   readonly loadMessages?: WebuiClientMessageLoader;
   readonly watchEvents?: WebuiClientEventWatcher;
@@ -1117,8 +1149,11 @@ function WebuiComposer({
     setSending,
   } = useSessionRuntimeState(sessionId);
   const { stream, sending } = runtimeState;
-  const [permissions, setPermissions] = useState<readonly WebuiPendingPermission[]>([]);
-  const [questionnaire, setQuestionnaire] = useState<WebuiQuestionnaireRequest>();
+  const [permissions, setPermissions] = useState<
+    readonly WebuiPendingPermission[]
+  >([]);
+  const [questionnaire, setQuestionnaire] =
+    useState<WebuiQuestionnaireRequest>();
   const [interactionError, setInteractionError] = useState<string>();
   const [queueItems, setQueueItems] = useState<readonly WebuiQueueItem[]>([]);
   const [queuePaused, setQueuePaused] = useState(false);
@@ -1152,7 +1187,9 @@ function WebuiComposer({
     };
     void refreshPending().catch((error: unknown) => {
       if (!cancelled)
-        setInteractionError(error instanceof Error ? error.message : String(error));
+        setInteractionError(
+          error instanceof Error ? error.message : String(error),
+        );
     });
     const unsubscribe = watchEvents?.(
       (event) => {
@@ -1199,7 +1236,9 @@ function WebuiComposer({
           const requestId = event.payload.requestId;
           if (typeof requestId === "string")
             setPermissions((current) =>
-              current.filter((permission) => permission.requestId !== requestId),
+              current.filter(
+                (permission) => permission.requestId !== requestId,
+              ),
             );
           setStream((current) => ({ ...current, phase: "streaming" }));
           return;
@@ -1255,7 +1294,9 @@ function WebuiComposer({
     };
     void refreshInspection().catch((error: unknown) => {
       if (!cancelled)
-        setInteractionError(error instanceof Error ? error.message : String(error));
+        setInteractionError(
+          error instanceof Error ? error.message : String(error),
+        );
     });
     const timer = setInterval(() => {
       void refreshInspection().catch(() => undefined);
@@ -1278,13 +1319,16 @@ function WebuiComposer({
         requestId: permission.requestId,
         reply: decision,
       });
-      if (result.success !== true) throw new Error("The permission request was no longer pending");
+      if (result.success !== true)
+        throw new Error("The permission request was no longer pending");
       setPermissions((current) =>
         current.filter((item) => item.requestId !== permission.requestId),
       );
       setStream((current) => ({ ...current, phase: "streaming" }));
     } catch (error) {
-      setInteractionError(error instanceof Error ? error.message : String(error));
+      setInteractionError(
+        error instanceof Error ? error.message : String(error),
+      );
     }
   };
 
@@ -1301,11 +1345,14 @@ function WebuiComposer({
         schemaVersion: request.schemaVersion,
         answers,
       });
-      if (result.ok !== true) throw new Error("The questionnaire was not accepted");
+      if (result.ok !== true)
+        throw new Error("The questionnaire was not accepted");
       setQuestionnaire(undefined);
       setStream((current) => ({ ...current, phase: "streaming" }));
     } catch (error) {
-      setInteractionError(error instanceof Error ? error.message : String(error));
+      setInteractionError(
+        error instanceof Error ? error.message : String(error),
+      );
     }
   };
 
@@ -1317,11 +1364,14 @@ function WebuiComposer({
         name: request.requester?.agentName ?? agentName,
         requestId: request.id,
       });
-      if (result.ok !== true) throw new Error("The questionnaire could not be dismissed");
+      if (result.ok !== true)
+        throw new Error("The questionnaire could not be dismissed");
       setQuestionnaire(undefined);
       setStream((current) => ({ ...current, phase: "streaming" }));
     } catch (error) {
-      setInteractionError(error instanceof Error ? error.message : String(error));
+      setInteractionError(
+        error instanceof Error ? error.message : String(error),
+      );
     }
   };
 
@@ -1330,11 +1380,18 @@ function WebuiComposer({
     setInteractionError(undefined);
     try {
       const result = await abortSession({ id: sessionId });
-      if (result.success === false) throw new Error("The running turn could not be stopped");
+      if (result.success === false)
+        throw new Error("The running turn could not be stopped");
       setSending(false);
-      setStream((current) => ({ ...current, phase: "done", status: "aborted" }));
+      setStream((current) => ({
+        ...current,
+        phase: "done",
+        status: "aborted",
+      }));
     } catch (error) {
-      setInteractionError(error instanceof Error ? error.message : String(error));
+      setInteractionError(
+        error instanceof Error ? error.message : String(error),
+      );
     }
   };
 
@@ -1343,9 +1400,13 @@ function WebuiComposer({
     setInteractionError(undefined);
     try {
       await deleteQueueItem({ id: sessionId, itemId: item.itemId });
-      setQueueItems((current) => current.filter((candidate) => candidate.itemId !== item.itemId));
+      setQueueItems((current) =>
+        current.filter((candidate) => candidate.itemId !== item.itemId),
+      );
     } catch (error) {
-      setInteractionError(error instanceof Error ? error.message : String(error));
+      setInteractionError(
+        error instanceof Error ? error.message : String(error),
+      );
     }
   };
 
@@ -1365,17 +1426,22 @@ function WebuiComposer({
         ...(model.variant ? { variant: model.variant } : {}),
         sessionId,
       });
-      if (result.success === false) throw new Error("The model could not be selected");
+      if (result.success === false)
+        throw new Error("The model could not be selected");
       const refreshed = await listModels?.({ sessionId });
       if (refreshed) setModels(refreshed);
     } catch (error) {
-      setInteractionError(error instanceof Error ? error.message : String(error));
+      setInteractionError(
+        error instanceof Error ? error.message : String(error),
+      );
     }
   };
 
   const selectedModel = models.find((model) => model.selected);
   const summary =
-    usage?.summary && typeof usage.summary === "object" && !Array.isArray(usage.summary)
+    usage?.summary &&
+    typeof usage.summary === "object" &&
+    !Array.isArray(usage.summary)
       ? (usage.summary as Record<string, unknown>)
       : undefined;
   const credentialMessage =
@@ -1388,7 +1454,8 @@ function WebuiComposer({
   // Only the send path does, and it asks for the one missing thing instead of
   // leaving the field disabled with no explanation.
   const canCompose = Boolean(sendMessage);
-  const sendable = canCompose && Boolean(draft.trim()) && !sending;
+  const canQueue = Boolean(enqueueMessage && sessionId);
+  const sendable = (canCompose || canQueue) && Boolean(draft.trim());
   // The submit handler is a single call into
   // `submitWebuiComposerTurn` with the assembled handler bundle. The
   // assembly itself is `buildWebuiComposerHandlers` — a named unit
@@ -1403,6 +1470,19 @@ function WebuiComposer({
     setSending,
     onDraftChange,
     onNeedsSession,
+    onQueued: () => {
+      if (!sessionId || !listQueueMessages) return;
+      void listQueueMessages({ id: sessionId })
+        .then((queue) => {
+          setQueueItems(queue.items ?? []);
+          setQueuePaused(queue.paused === true);
+        })
+        .catch((error: unknown) => {
+          setInteractionError(
+            error instanceof Error ? error.message : String(error),
+          );
+        });
+    },
   });
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1412,6 +1492,7 @@ function WebuiComposer({
         draft,
         sending,
         deps: { sendMessage, resumeSession, loadMessages },
+        enqueueMessage,
       },
       handlers,
     );
@@ -1438,7 +1519,10 @@ function WebuiComposer({
           Waiting for your answer…
         </p>
       ) : null}
-      {sessionId && (sending || stream.phase === "streaming" || stream.phase === "waiting") ? (
+      {sessionId &&
+      (sending ||
+        stream.phase === "streaming" ||
+        stream.phase === "waiting") ? (
         <div className="mt-2 flex items-center gap-2">
           <button
             type="button"
@@ -1449,17 +1533,28 @@ function WebuiComposer({
             Stop turn
           </button>
           {queuePaused ? (
-            <span role="status" className="text-text_default_secondary text-size_12">
+            <span
+              role="status"
+              className="text-text_default_secondary text-size_12"
+            >
               Queue paused
             </span>
           ) : null}
         </div>
       ) : null}
       {queueItems.length > 0 ? (
-        <section className="mt-3 flex w-full flex-col gap-2" data-webui-queue="true">
-          <strong className="text-size_14">Waiting messages ({queueItems.length})</strong>
+        <section
+          className="mt-3 flex w-full flex-col gap-2"
+          data-webui-queue="true"
+        >
+          <strong className="text-size_14">
+            Waiting messages ({queueItems.length})
+          </strong>
           {queueItems.map((item) => (
-            <article key={item.itemId} className="webui-card flex items-center gap-2 p-spacing_12">
+            <article
+              key={item.itemId}
+              className="webui-card flex items-center gap-2 p-spacing_12"
+            >
               <span className="min-w-0 flex-1 truncate text-size_14">
                 {item.content || item.itemId}
               </span>
@@ -1514,8 +1609,8 @@ function WebuiComposer({
           data-webui-transcript-incomplete="true"
           className="text-text_default_secondary text-size_14 leading-line_height_20"
         >
-          The displayed transcript may be incomplete; the last update
-          failed before all frames could be applied.
+          The displayed transcript may be incomplete; the last update failed
+          before all frames could be applied.
         </p>
       ) : null}
 
@@ -1533,7 +1628,7 @@ function WebuiComposer({
                   rows={2}
                   value={draft}
                   onChange={(event) => onDraftChange(event.target.value)}
-                  disabled={!canCompose || sending}
+                  disabled={!canCompose && !canQueue}
                   placeholder="输入消息…（输入 / 唤起命令）"
                   className="webui-textarea webui-composer-input text-text_default_primary"
                   data-webui-composer-input="true"
@@ -1561,20 +1656,33 @@ function WebuiComposer({
                   >
                     <span className="sr-only">Model</span>
                     <select
-                      value={selectedModel ? `${selectedModel.providerId}/${selectedModel.modelId}` : ""}
-                      onChange={(event) => void handleSelectModel(event.target.value)}
-                      disabled={!sessionId || models.length === 0 || !selectModel}
+                      value={
+                        selectedModel
+                          ? `${selectedModel.providerId}/${selectedModel.modelId}`
+                          : ""
+                      }
+                      onChange={(event) =>
+                        void handleSelectModel(event.target.value)
+                      }
+                      disabled={
+                        !sessionId || models.length === 0 || !selectModel
+                      }
                       aria-label="Model"
                     >
-                      <option value="">{selectedModel?.displayName ?? "选择模型"}</option>
-                      {models.filter((model) => model.enabled !== false).map((model) => (
-                        <option
-                          key={`${model.providerId}/${model.modelId}/${model.variant ?? ""}`}
-                          value={`${model.providerId}/${model.modelId}`}
-                        >
-                          {model.displayName ?? `${model.providerId}/${model.modelId}`}
-                        </option>
-                      ))}
+                      <option value="">
+                        {selectedModel?.displayName ?? "选择模型"}
+                      </option>
+                      {models
+                        .filter((model) => model.enabled !== false)
+                        .map((model) => (
+                          <option
+                            key={`${model.providerId}/${model.modelId}/${model.variant ?? ""}`}
+                            value={`${model.providerId}/${model.modelId}`}
+                          >
+                            {model.displayName ??
+                              `${model.providerId}/${model.modelId}`}
+                          </option>
+                        ))}
                     </select>
                     <WebuiIconChevronDown className="flex-shrink-0 text-icon_default_tertiary" />
                   </label>
@@ -1630,7 +1738,9 @@ function WebuiComposer({
             className="mt-2 text-text_default_secondary text-size_12"
             data-webui-session-usage="true"
           >
-            Usage: {String(summary.totalTokens ?? summary.total_tokens ?? "unknown")} tokens
+            Usage:{" "}
+            {String(summary.totalTokens ?? summary.total_tokens ?? "unknown")}{" "}
+            tokens
           </p>
         ) : null}
         {credentialMessage ? (
@@ -1698,6 +1808,7 @@ export function WebuiClientFoundationApp({
   loadMessages,
   createSession,
   sendMessage,
+  enqueueMessage,
   resumeSession,
   watchEvents,
   listPendingPermissions,
@@ -1752,7 +1863,9 @@ export function WebuiClientFoundationApp({
         // Without this the rail renders "No sessions yet." for a list that never
         // loaded, which reads as "you have no sessions" rather than as a failure.
         if (!cancelled)
-          setPageError(reason instanceof Error ? reason.message : String(reason));
+          setPageError(
+            reason instanceof Error ? reason.message : String(reason),
+          );
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -1898,7 +2011,10 @@ export function WebuiClientFoundationApp({
                       <div className="h-px w-full bg-border_light" />
                     </div>
                     <div className="inline-flex">
-                      <div className="webui-segmented" data-webui-segmented-static="true">
+                      <div
+                        className="webui-segmented"
+                        data-webui-segmented-static="true"
+                      >
                         <span
                           aria-current="true"
                           className="webui-segmented-item bg-bg_default_primary"
@@ -2011,6 +2127,7 @@ export function WebuiClientFoundationApp({
                     sessionId={selectedSessionId}
                     agentName={selectedAgentName}
                     sendMessage={sendMessage}
+                    enqueueMessage={enqueueMessage}
                     resumeSession={resumeSession}
                     loadMessages={loadMessages}
                     watchEvents={watchEvents}

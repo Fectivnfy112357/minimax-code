@@ -21,6 +21,8 @@ import type {
   WebuiCreateSessionResult,
   WebuiVersionInfo,
   WebuiSendMessageRequest,
+  WebuiEnqueueMessageRequest,
+  WebuiEnqueueMessageResult,
   WebuiSendMessageResult,
   WebuiResumeSessionRequest,
   WebuiStreamResult,
@@ -57,11 +59,15 @@ export interface WebuiRuntimeHostHandle {
     ): Promise<import("./port.js").WebuiMessagesResult>;
     sendMessage(
       request: WebuiSendMessageRequest,
-      context?: Record<string, never>,
+      context?: { readonly signal?: AbortSignal },
     ): Promise<WebuiSendMessageResult>;
+    enqueueMessage(
+      request: WebuiEnqueueMessageRequest,
+      context?: { readonly signal?: AbortSignal },
+    ): Promise<WebuiEnqueueMessageResult>;
     resumeSession(
       request: WebuiResumeSessionRequest,
-      context?: Record<string, never>,
+      context?: { readonly signal?: AbortSignal },
     ): Promise<WebuiStreamResult>;
     watchEvents(signal?: AbortSignal): AsyncIterable<WebuiRuntimeEvent>;
     listPendingPermissions(): Promise<{
@@ -86,7 +92,9 @@ export interface WebuiRuntimeHostHandle {
       readonly name: string;
       readonly requestId: string;
     }): Promise<WebuiInteractionReplyResult>;
-    abortSession(request: { readonly id: string }): Promise<{ readonly success?: boolean }>;
+    abortSession(request: {
+      readonly id: string;
+    }): Promise<{ readonly success?: boolean }>;
     listQueueMessages(request: { readonly id: string }): Promise<{
       readonly items?: readonly WebuiQueueItem[];
       readonly paused?: boolean;
@@ -96,15 +104,21 @@ export interface WebuiRuntimeHostHandle {
       readonly id: string;
       readonly itemId: string;
     }): Promise<{ readonly item?: WebuiQueueItem }>;
-    listModels(request?: { readonly sessionId?: string }): Promise<readonly WebuiModelEntry[]>;
+    listModels(request?: {
+      readonly sessionId?: string;
+    }): Promise<readonly WebuiModelEntry[]>;
     selectModel(request: {
       readonly providerId: string;
       readonly modelId: string;
       readonly variant?: string;
       readonly sessionId?: string;
     }): Promise<{ readonly success?: boolean }>;
-    getSessionUsage(request: { readonly id: string }): Promise<Record<string, unknown>>;
-    getAccountStatus(request?: { readonly sessionId?: string }): Promise<Record<string, unknown>>;
+    getSessionUsage(request: {
+      readonly id: string;
+    }): Promise<Record<string, unknown>>;
+    getAccountStatus(request?: {
+      readonly sessionId?: string;
+    }): Promise<Record<string, unknown>>;
   };
 }
 
@@ -146,15 +160,20 @@ export function createHarnessPortFromHost(
         throw new Error("runtime host does not expose the CLI service");
       return host.cliService.getMessages(request, {});
     },
-    async sendMessage(request) {
+    async sendMessage(request, signal) {
       if (!host.cliService)
         throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.sendMessage(request, {});
+      return host.cliService.sendMessage(request, signal ? { signal } : {});
     },
-    async resumeSession(request) {
+    async enqueueMessage(request) {
       if (!host.cliService)
         throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.resumeSession(request, {});
+      return host.cliService.enqueueMessage(request, {});
+    },
+    async resumeSession(request, signal) {
+      if (!host.cliService)
+        throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.resumeSession(request, signal ? { signal } : {});
     },
     watchEvents(signal) {
       if (!host.cliService)

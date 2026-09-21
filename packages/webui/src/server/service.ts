@@ -51,7 +51,12 @@ function readEnvFlag(name: string): boolean {
   const raw = process.env[name];
   if (!raw) return false;
   const trimmed = raw.trim().toLowerCase();
-  return trimmed === "1" || trimmed === "true" || trimmed === "yes" || trimmed === "on";
+  return (
+    trimmed === "1" ||
+    trimmed === "true" ||
+    trimmed === "yes" ||
+    trimmed === "on"
+  );
 }
 
 export interface WebuiServiceOptions {
@@ -151,15 +156,18 @@ export class WebuiService {
       createSession: (request) => this.port.createSession(request),
       getSession: (request) => this.port.getSession(request),
       getMessages: (request) => this.port.getMessages(request),
-      sendMessage: (request) => this.port.sendMessage(request),
-      resumeSession: (request) => this.port.resumeSession(request),
+      sendMessage: (request, signal) => this.port.sendMessage(request, signal),
+      enqueueMessage: (request) => this.port.enqueueMessage(request),
+      resumeSession: (request, signal) =>
+        this.port.resumeSession(request, signal),
       watchEvents: (signal) => this.port.watchEvents(signal),
       listPendingPermissions: () => this.port.listPendingPermissions(),
       getPendingQuestionnaire: (request) =>
         this.port.getPendingQuestionnaire(request),
       replyPermission: (request) => this.port.replyPermission(request),
       replyQuestionnaire: (request) => this.port.replyQuestionnaire(request),
-      dismissQuestionnaire: (request) => this.port.dismissQuestionnaire(request),
+      dismissQuestionnaire: (request) =>
+        this.port.dismissQuestionnaire(request),
       abortSession: (request) => this.port.abortSession(request),
       listQueueMessages: (request) => this.port.listQueueMessages(request),
       deleteQueueItem: (request) => this.port.deleteQueueItem(request),
@@ -507,8 +515,22 @@ export class WebuiService {
           );
           return;
         }
-        for await (const frame of result.stream.source)
-          sendFrame(ws, eventFrame(parsed.requestId, frame));
+        const iterator = toAsyncIterator(
+          result.stream.source as AsyncIterable<unknown> | Iterable<unknown>,
+        );
+        const signal = this.connectionSignals.get(ws)?.signal;
+        const close = () => void iterator.return?.();
+        signal?.addEventListener("abort", close, { once: true });
+        try {
+          while (!signal?.aborted) {
+            const next = await iterator.next();
+            if (next.done || signal?.aborted) break;
+            sendFrame(ws, eventFrame(parsed.requestId, next.value));
+          }
+        } finally {
+          signal?.removeEventListener("abort", close);
+          await iterator.return?.();
+        }
         return;
       }
       sendFrame(ws, responseFrame(parsed.requestId, result.body));
@@ -520,6 +542,18 @@ export class WebuiService {
       );
     }
   }
+}
+
+function toAsyncIterator<T>(
+  source: AsyncIterable<T> | Iterable<T>,
+): AsyncIterator<T> {
+  if (Symbol.asyncIterator in source) return source[Symbol.asyncIterator]();
+  const iterator = source[Symbol.iterator]();
+  return {
+    next: () => Promise.resolve(iterator.next()),
+    return: (value?: unknown) =>
+      Promise.resolve(iterator.return?.(value) ?? { done: true, value }),
+  };
 }
 
 function sendFrame(

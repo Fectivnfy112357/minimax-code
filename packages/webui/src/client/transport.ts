@@ -14,6 +14,8 @@ import type {
   WebuiQuestionnaireAnswer,
   WebuiQuestionnaireRequest,
   WebuiQueueItem,
+  WebuiEnqueueMessageRequest,
+  WebuiEnqueueMessageResult,
   WebuiModelEntry,
   WebuiRuntimeEvent,
   WebuiStreamFrame,
@@ -62,6 +64,9 @@ export function createWebuiTransport({
     request: WebuiClientCreateSessionRequest,
   ) => Promise<WebuiClientCreateSessionResult>;
   sendMessage: WebuiClientMessageSender;
+  enqueueMessage: (
+    request: WebuiEnqueueMessageRequest,
+  ) => Promise<WebuiEnqueueMessageResult>;
   resumeSession: WebuiClientSessionResumer;
   watchEvents: WebuiClientEventWatcher;
   listPendingPermissions: () => Promise<{
@@ -86,7 +91,9 @@ export function createWebuiTransport({
     readonly name: string;
     readonly requestId: string;
   }) => Promise<WebuiInteractionReplyResult>;
-  abortSession: (request: { readonly id: string }) => Promise<{ readonly success?: boolean }>;
+  abortSession: (request: {
+    readonly id: string;
+  }) => Promise<{ readonly success?: boolean }>;
   listQueueMessages: (request: { readonly id: string }) => Promise<{
     readonly items?: readonly WebuiQueueItem[];
     readonly paused?: boolean;
@@ -96,15 +103,21 @@ export function createWebuiTransport({
     readonly id: string;
     readonly itemId: string;
   }) => Promise<{ readonly item?: WebuiQueueItem }>;
-  listModels: (request?: { readonly sessionId?: string }) => Promise<readonly WebuiModelEntry[]>;
+  listModels: (request?: {
+    readonly sessionId?: string;
+  }) => Promise<readonly WebuiModelEntry[]>;
   selectModel: (request: {
     readonly providerId: string;
     readonly modelId: string;
     readonly variant?: string;
     readonly sessionId?: string;
   }) => Promise<{ readonly success?: boolean }>;
-  getSessionUsage: (request: { readonly id: string }) => Promise<Record<string, unknown>>;
-  getAccountStatus: (request?: { readonly sessionId?: string }) => Promise<Record<string, unknown>>;
+  getSessionUsage: (request: {
+    readonly id: string;
+  }) => Promise<Record<string, unknown>>;
+  getAccountStatus: (request?: {
+    readonly sessionId?: string;
+  }) => Promise<Record<string, unknown>>;
 } {
   const websocketUrl = () =>
     `${baseWebsocketUrl.replace(/\/$/u, "")}/?token=${encodeURIComponent(token)}`;
@@ -285,17 +298,14 @@ export function createWebuiTransport({
       }),
     createSession: (body) => request("createSession", body),
     sendMessage: (body, onFrame) => stream("sendMessage", body, onFrame),
-    resumeSession: (body, onFrame) =>
-      stream("resumeSession", body, onFrame),
+    enqueueMessage: (body) => request("enqueueMessage", body),
+    resumeSession: (body, onFrame) => stream("resumeSession", body, onFrame),
     watchEvents,
-    listPendingPermissions: () =>
-      request("listPendingPermissions", {}),
-    getPendingQuestionnaire: (body) =>
-      request("getPendingQuestionnaire", body),
+    listPendingPermissions: () => request("listPendingPermissions", {}),
+    getPendingQuestionnaire: (body) => request("getPendingQuestionnaire", body),
     replyPermission: (body) => request("replyPermission", body),
     replyQuestionnaire: (body) => request("replyQuestionnaire", body),
-    dismissQuestionnaire: (body) =>
-      request("dismissQuestionnaire", body),
+    dismissQuestionnaire: (body) => request("dismissQuestionnaire", body),
     abortSession: (body) => request("abortSession", body),
     listQueueMessages: (body) => request("listQueueMessages", body),
     deleteQueueItem: (body) => request("deleteQueueItem", body),

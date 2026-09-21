@@ -54,6 +54,16 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
     source: [{ dataJson: '{"type":10}' }, { dataJson: "[DONE]" }],
   };
   public lastResumeRequest: WebuiResumeSessionRequest | undefined;
+  public lastEnqueueRequest: Record<string, unknown> | undefined;
+  public abortCalls = 0;
+  public sendObserved: Promise<void>;
+  private resolveSendObserved!: () => void;
+
+  constructor() {
+    this.sendObserved = new Promise<void>((resolve) => {
+      this.resolveSendObserved = resolve;
+    });
+  }
 
   recordLog(version: string) {
     this.versionInfo = {
@@ -87,7 +97,13 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
   async sendMessage(
     _request: WebuiSendMessageRequest,
   ): Promise<WebuiSendMessageResult> {
+    this.resolveSendObserved();
     return this.sendResult;
+  }
+
+  async enqueueMessage(request: Record<string, unknown>) {
+    this.lastEnqueueRequest = request;
+    return { itemId: "queued-fixture", status: "queued", position: 1 };
   }
 
   async resumeSession(
@@ -138,6 +154,7 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
   }
 
   async abortSession() {
+    this.abortCalls += 1;
     return { success: true };
   }
 
@@ -171,7 +188,10 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
 }
 
 class ClosingSocket {
-  private readonly listeners = new Map<string, Array<(event: unknown) => void>>();
+  private readonly listeners = new Map<
+    string,
+    Array<(event: unknown) => void>
+  >();
   private closed = false;
 
   constructor(_url: string) {
@@ -447,6 +467,65 @@ describe("WebUI service", () => {
     ws.close();
   });
 
+  it("enqueues a message through the same authenticated operation surface", async () => {
+    const { url } = await bootService();
+    const { ws, upgrade } = openClient(url);
+    await upgrade;
+    const response = await requestOnce(ws, {
+      protocolVersion: WEBUI_PROTOCOL_VERSION,
+      kind: "request",
+      requestId: "req-enqueue",
+      operation: "enqueueMessage",
+      body: { id: "session-1", content: "wait behind the active turn" },
+    });
+    expect(response).toMatchObject({
+      kind: "response",
+      requestId: "req-enqueue",
+      body: { itemId: "queued-fixture", status: "queued", position: 1 },
+    });
+    expect(port.lastEnqueueRequest).toEqual({
+      id: "session-1",
+      content: "wait behind the active turn",
+    });
+    ws.close();
+  });
+
+  it("returns a running stream iterator when its WebSocket connection closes", async () => {
+    let returned = false;
+    const pendingIterator: AsyncIterator<{ readonly dataJson?: string }> = {
+      next: () =>
+        new Promise<IteratorResult<{ readonly dataJson?: string }>>(
+          () => undefined,
+        ),
+      return: async () => {
+        returned = true;
+        return { done: true, value: undefined };
+      },
+    };
+    port.sendResult = {
+      ok: true,
+      source: { [Symbol.asyncIterator]: () => pendingIterator },
+    };
+    const { url } = await bootService();
+    const { ws, upgrade, closed } = openClient(url);
+    await upgrade;
+    ws.send(
+      JSON.stringify({
+        protocolVersion: WEBUI_PROTOCOL_VERSION,
+        kind: "request",
+        requestId: "req-cancel-stream",
+        operation: "sendMessage",
+        body: { id: "session-1", content: "long running" },
+      }),
+    );
+    await port.sendObserved;
+    ws.close();
+    await closed;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(returned).toBe(true);
+    expect(port.abortCalls).toBe(0);
+  });
+
   it("drives the fresh-page list, selection, history and send sequence over one credential", async () => {
     port.listSessions = async () => ({
       sessions: [
@@ -554,7 +633,9 @@ describe("WebUI service", () => {
   });
 
   it("executes the shipped client transport against the real service", async () => {
-    const workspaceDir = await mkdtemp(path.join(os.tmpdir(), "webui-transport-"));
+    const workspaceDir = await mkdtemp(
+      path.join(os.tmpdir(), "webui-transport-"),
+    );
     port.listSessions = async () => ({
       sessions: [
         {
@@ -581,7 +662,10 @@ describe("WebUI service", () => {
       ok: true,
       source: [
         { dataJson: '{"type":10}' },
-        { dataJson: '{"type":6,"agent_message_chunk":{"msg_id":"reply","msg_content":"hello"}}' },
+        {
+          dataJson:
+            '{"type":6,"agent_message_chunk":{"msg_id":"reply","msg_content":"hello"}}',
+        },
         { dataJson: "[DONE]" },
       ],
     };
@@ -611,7 +695,11 @@ describe("WebUI service", () => {
         { id: selectedId!, content: "hello" },
         (frame) => frames.push(frame.dataJson ?? ""),
       );
-      expect(frames).toEqual(['{"type":10}', '{"type":6,"agent_message_chunk":{"msg_id":"reply","msg_content":"hello"}}', "[DONE]"]);
+      expect(frames).toEqual([
+        '{"type":10}',
+        '{"type":6,"agent_message_chunk":{"msg_id":"reply","msg_content":"hello"}}',
+        "[DONE]",
+      ]);
     } finally {
       await rm(workspaceDir, { recursive: true, force: true });
     }
@@ -627,7 +715,10 @@ describe("WebUI service", () => {
       "WebUI connection closed before the response",
     );
     await expect(
-      transport.sendMessage({ id: "session", content: "hello" }, () => undefined),
+      transport.sendMessage(
+        { id: "session", content: "hello" },
+        () => undefined,
+      ),
     ).rejects.toThrow("WebUI connection closed before [DONE]");
   });
 
@@ -705,9 +796,7 @@ describe("WebUI service", () => {
     );
     await completed;
     expect(frames).toHaveLength(3);
-    expect(
-      (frames[1] as { body: { cursor: string } }).body.cursor,
-    ).toBe("c2");
+    expect((frames[1] as { body: { cursor: string } }).body.cursor).toBe("c2");
     // The body the service forwarded to the port is the body the client
     // sent — including `afterCursor`. The harness is what eventually
     // honours it; the service does not rewrite or strip it.
@@ -828,10 +917,7 @@ describe("WebUI service", () => {
       path.join(fixtureDir, "index.html"),
       "<!doctype html><html><head></head><body data-fixture='true'></body></html>",
     );
-    await writeFile(
-      path.join(fixtureDir, "client.js"),
-      "// client-fixture",
-    );
+    await writeFile(path.join(fixtureDir, "client.js"), "// client-fixture");
     await writeFile(
       path.join(fixtureDir, "styles.css"),
       "/* styles-fixture */",
@@ -1270,7 +1356,10 @@ describe("WebUI service", () => {
     const event = new Promise<Record<string, unknown>>((resolve, reject) => {
       const onMessage = (raw: RawData) => {
         try {
-          const frame = JSON.parse(raw.toString("utf8")) as Record<string, unknown>;
+          const frame = JSON.parse(raw.toString("utf8")) as Record<
+            string,
+            unknown
+          >;
           if (frame.kind === "event") {
             ws.off("error", onError);
             resolve(frame);
@@ -1315,6 +1404,7 @@ describe("WebUI operation allowlist", () => {
       const registry = createOperationRegistry(port);
       expect(registry.has("version")).toBe(true);
       expect(registry.has("sendMessage")).toBe(true);
+      expect(registry.has("enqueueMessage")).toBe(true);
       expect(registry.has("getSession")).toBe(true);
       expect(registry.has("getMessages")).toBe(true);
       // resumeSession sits next to sendMessage in the allowlist because it
@@ -1401,7 +1491,9 @@ describe("WebUI runtime host assembly", () => {
     // credential sitting in the data directory.
     const { createWebuiRuntimeHost } =
       await import("../../src/server/index.js");
-    const dataDir = await mkdtemp(path.join(os.tmpdir(), "webui-assembly-auth-"));
+    const dataDir = await mkdtemp(
+      path.join(os.tmpdir(), "webui-assembly-auth-"),
+    );
     const scopeDirectory = path.join(dataDir, "cli-auth", "prod", "cn");
     let lastOptions: Record<string, unknown> | undefined;
     try {
@@ -1431,11 +1523,9 @@ describe("WebUI runtime host assembly", () => {
       await assembled.harnessPort.close();
 
       const getter = lastOptions?.authContextGetter as
-        | (() => { accessToken?: string } | undefined)
-        | undefined;
+        (() => { accessToken?: string } | undefined) | undefined;
       const invalidator = lastOptions?.authContextInvalidator as
-        | ((rejectedAccessToken?: string) => void)
-        | undefined;
+        ((rejectedAccessToken?: string) => void) | undefined;
       expect(typeof getter).toBe("function");
       expect(typeof invalidator).toBe("function");
       expect(getter?.()?.accessToken).toBe("assembled-token");
@@ -1471,6 +1561,7 @@ describe("WebUI runtime host assembly", () => {
       expect(capabilities.questionnaireReply).toBe(true);
       expect(capabilities.permissionPrompt).toBe(true);
       expect(capabilities.elicitation).toBe(true);
+      expect(lastOptions?.enableLiveMcp).toBe(true);
     } finally {
       await rm(dataDir, { recursive: true, force: true });
     }
@@ -1580,9 +1671,11 @@ describe("WebUI runtime host assembly", () => {
           };
         },
       });
-      const config = (forwarded?.configGetter as () => {
-        beta?: Record<string, unknown>;
-      })();
+      const config = (
+        forwarded?.configGetter as () => {
+          beta?: Record<string, unknown>;
+        }
+      )();
       expect(config.beta?.mcodeTools).toBe(true);
       expect(config.beta?.browserUseTooling).toBe(true);
       expect(forwarded?.browserAdapter).toBe(browserAdapter);
@@ -1699,6 +1792,9 @@ describe("WebUI shutdown order (criterion 7)", () => {
       async getMessages() {
         return { messages: [], hasMore: false };
       },
+      async enqueueMessage() {
+        return { itemId: "shutdown-queued", status: "queued", position: 1 };
+      },
       async close() {
         // The service awaits wsServer.close() and httpServer.close()
         // before calling port.close(), so by the time we land here the
@@ -1778,6 +1874,13 @@ describe("WebUI shutdown order (criterion 7)", () => {
       },
       async getMessages() {
         return { messages: [], hasMore: false };
+      },
+      async enqueueMessage() {
+        return {
+          itemId: "shutdown-gate-queued",
+          status: "queued",
+          position: 1,
+        };
       },
       async close() {
         await closeGate;

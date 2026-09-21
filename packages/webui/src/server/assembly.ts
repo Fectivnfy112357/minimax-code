@@ -19,9 +19,7 @@
 // factory; tests inject a stub that records the options and reports
 // the policy's observable effect without driving the host.
 
-import {
-  getDefaultLocalRuntimeConfig,
-} from "@mavis/local-runtime-v2";
+import { getDefaultLocalRuntimeConfig } from "@mavis/local-runtime-v2";
 import type { CreateLocalRuntimeHostOptions } from "@mavis/local-runtime-v2/process-local";
 
 import {
@@ -68,20 +66,28 @@ export interface WebuiAssembledHost {
     ): Promise<import("./port.js").WebuiMessagesResult>;
     sendMessage(
       request: import("./port.js").WebuiSendMessageRequest,
-      context?: Record<string, never>,
+      context?: { readonly signal?: AbortSignal },
     ): Promise<import("./port.js").WebuiSendMessageResult>;
+    enqueueMessage(
+      request: import("./port.js").WebuiEnqueueMessageRequest,
+      context?: { readonly signal?: AbortSignal },
+    ): Promise<import("./port.js").WebuiEnqueueMessageResult>;
     resumeSession(
       request: import("./port.js").WebuiResumeSessionRequest,
-      context?: Record<string, never>,
+      context?: { readonly signal?: AbortSignal },
     ): Promise<import("./port.js").WebuiStreamResult>;
-    watchEvents(signal?: AbortSignal): AsyncIterable<import("./port.js").WebuiRuntimeEvent>;
+    watchEvents(
+      signal?: AbortSignal,
+    ): AsyncIterable<import("./port.js").WebuiRuntimeEvent>;
     listPendingPermissions(): Promise<{
       readonly requests: readonly import("./port.js").WebuiPendingPermission[];
     }>;
     getPendingQuestionnaire(request: {
       readonly name: string;
       readonly sessionId: string;
-    }): Promise<{ readonly request?: import("./port.js").WebuiQuestionnaireRequest }>;
+    }): Promise<{
+      readonly request?: import("./port.js").WebuiQuestionnaireRequest;
+    }>;
     replyPermission(request: {
       readonly name: string;
       readonly requestId: string;
@@ -97,7 +103,9 @@ export interface WebuiAssembledHost {
       readonly name: string;
       readonly requestId: string;
     }): Promise<import("./port.js").WebuiInteractionReplyResult>;
-    abortSession(request: { readonly id: string }): Promise<{ readonly success?: boolean }>;
+    abortSession(request: {
+      readonly id: string;
+    }): Promise<{ readonly success?: boolean }>;
     listQueueMessages(request: { readonly id: string }): Promise<{
       readonly items?: readonly import("./port.js").WebuiQueueItem[];
       readonly paused?: boolean;
@@ -107,15 +115,21 @@ export interface WebuiAssembledHost {
       readonly id: string;
       readonly itemId: string;
     }): Promise<{ readonly item?: import("./port.js").WebuiQueueItem }>;
-    listModels(request?: { readonly sessionId?: string }): Promise<readonly import("./port.js").WebuiModelEntry[]>;
+    listModels(request?: {
+      readonly sessionId?: string;
+    }): Promise<readonly import("./port.js").WebuiModelEntry[]>;
     selectModel(request: {
       readonly providerId: string;
       readonly modelId: string;
       readonly variant?: string;
       readonly sessionId?: string;
     }): Promise<{ readonly success?: boolean }>;
-    getSessionUsage(request: { readonly id: string }): Promise<Record<string, unknown>>;
-    getAccountStatus(request?: { readonly sessionId?: string }): Promise<Record<string, unknown>>;
+    getSessionUsage(request: {
+      readonly id: string;
+    }): Promise<Record<string, unknown>>;
+    getAccountStatus(request?: {
+      readonly sessionId?: string;
+    }): Promise<Record<string, unknown>>;
   };
 }
 
@@ -163,6 +177,7 @@ export interface WebuiForwardedRuntimeHostOptions {
     readonly permissionPrompt: true;
     readonly elicitation: true;
   };
+  readonly enableLiveMcp: true;
   readonly configGetter: () => ReturnType<typeof getDefaultLocalRuntimeConfig>;
   /**
    * Assembly step 3 of `docs/webui-v1-scope.md`. Managed MiniMax login sends no
@@ -261,10 +276,7 @@ export async function createWebuiRuntimeHost(
     requested: requestedMcodeTools,
     dataDir: options.dataDir,
     buildEnv: (scope?.buildEnv ?? process.env.MAVIS_BUILD_ENV ?? "dev") as
-      | "dev"
-      | "test"
-      | "staging"
-      | "prod",
+      "dev" | "test" | "staging" | "prod",
     region: (scope?.region ?? process.env.MAVIS_REGION ?? "en") as "cn" | "en",
     session: createWebuiAuthLeaseSession(
       authContext.getter,
@@ -292,6 +304,7 @@ export async function createWebuiRuntimeHost(
       permissionPrompt: true,
       elicitation: true,
     },
+    enableLiveMcp: true,
     configGetter: () => ({
       ...baseConfig,
       beta: {

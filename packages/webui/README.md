@@ -1,9 +1,9 @@
 # @mavis/webui
 
-Browser client for the harness layer. This package is the foundation slice
-described in [GitHub issue #2](https://github.com/Fectivnfy112357/minimax-code/issues/2);
-later tickets add server transport, the WebSocket envelope, React UI and the
-end-to-end loopback setup.
+Browser client and loopback service for the process-local harness layer. The
+package owns the authenticated WebSocket envelope, session/stream transport,
+interaction replies, queue admission, model and usage inspection, and the
+React client shell described by the WebUI v1 scope.
 
 ## Boundaries
 
@@ -14,8 +14,14 @@ end-to-end loopback setup.
   and is checked by `scripts/check-webui-boundary.mjs`.
 - The terminal renderer (`packages/tui/src/tui/`) must not appear in the
   WebUI build graph.
+- The server adapter forwards the WebSocket connection signal to runtime
+  stream delivery. Closing a browser connection releases that stream iterator
+  without calling the explicit session-abort operation.
+- A composer submission made during an active turn uses `enqueueMessage`; the
+  queue list is refreshed and only an unstarted (`queued`) item is removable.
 
 ## Scripts
 
 - `pnpm --filter @mavis/webui typecheck:server`
 - `pnpm --filter @mavis/webui typecheck:client`
+- `pnpm --filter @mavis/webui test`

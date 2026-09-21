@@ -6,9 +6,9 @@
 // control, transport, envelope and shutdown story can be exercised without
 // owning a real database (ADR 0006).
 //
-// The ticket only needs `version()`: assembly steps 5 (tool capabilities)
-// and 10 (send/stream) belong to later tickets, so the surface stays
-// minimal and never pretends to be the full application facade.
+// Keep this projection deliberately owned by WebUI: the browser needs a
+// stable wire shape, while the runtime keeps its richer process-local
+// contracts private to the harness adapter.
 
 export interface WebuiVersionInfo {
   readonly version: string;
@@ -116,6 +116,20 @@ export interface WebuiSendMessageRequest {
   readonly clientIntent?: string;
 }
 
+export interface WebuiEnqueueMessageRequest {
+  readonly id: string;
+  readonly content: string;
+  readonly model?: Record<string, unknown>;
+  readonly clientRequestId?: string;
+  readonly clientIntent?: string;
+}
+
+export interface WebuiEnqueueMessageResult {
+  readonly itemId?: string;
+  readonly status?: string;
+  readonly position?: number;
+}
+
 /**
  * Wire shape for `resumeSession` on the WebUI envelope. The harness
  * `ResumeSessionInput` is what the runtime layer ultimately consumes; this
@@ -207,12 +221,17 @@ export interface WebuiRuntimeEvent {
 export type WebuiWatchEventsResult =
   | {
       readonly ok: true;
-      readonly source: AsyncIterable<WebuiRuntimeEvent> | Iterable<WebuiRuntimeEvent>;
+      readonly source:
+        AsyncIterable<WebuiRuntimeEvent> | Iterable<WebuiRuntimeEvent>;
     }
   | {
       readonly ok: false;
       readonly status: number;
-      readonly body: { readonly key?: string; readonly message: string; readonly detail?: string };
+      readonly body: {
+        readonly key?: string;
+        readonly message: string;
+        readonly detail?: string;
+      };
     };
 
 export interface WebuiStreamFrame {
@@ -233,8 +252,7 @@ export type WebuiStreamResult =
   | {
       readonly ok: true;
       readonly source:
-        | AsyncIterable<WebuiStreamFrame>
-        | Iterable<WebuiStreamFrame>;
+        AsyncIterable<WebuiStreamFrame> | Iterable<WebuiStreamFrame>;
     }
   | {
       readonly ok: false;
@@ -297,7 +315,11 @@ export interface WebuiHarnessPort {
   getMessages(request: WebuiMessagesRequest): Promise<WebuiMessagesResult>;
   sendMessage(
     request: WebuiSendMessageRequest,
+    signal?: AbortSignal,
   ): Promise<WebuiSendMessageResult>;
+  enqueueMessage(
+    request: WebuiEnqueueMessageRequest,
+  ): Promise<WebuiEnqueueMessageResult>;
   /**
    * Resume a session stream from a cursor the client previously advanced
    * past. Returns the same iterable source as `sendMessage` — the harness
@@ -306,6 +328,7 @@ export interface WebuiHarnessPort {
    */
   resumeSession(
     request: WebuiResumeSessionRequest,
+    signal?: AbortSignal,
   ): Promise<WebuiStreamResult>;
   watchEvents(signal?: AbortSignal): AsyncIterable<WebuiRuntimeEvent>;
   listPendingPermissions(): Promise<{
@@ -330,7 +353,9 @@ export interface WebuiHarnessPort {
     readonly name: string;
     readonly requestId: string;
   }): Promise<WebuiInteractionReplyResult>;
-  abortSession(request: { readonly id: string }): Promise<{ readonly success?: boolean }>;
+  abortSession(request: {
+    readonly id: string;
+  }): Promise<{ readonly success?: boolean }>;
   listQueueMessages(request: { readonly id: string }): Promise<{
     readonly items?: readonly WebuiQueueItem[];
     readonly paused?: boolean;
@@ -340,15 +365,21 @@ export interface WebuiHarnessPort {
     readonly id: string;
     readonly itemId: string;
   }): Promise<{ readonly item?: WebuiQueueItem }>;
-  listModels(request?: { readonly sessionId?: string }): Promise<readonly WebuiModelEntry[]>;
+  listModels(request?: {
+    readonly sessionId?: string;
+  }): Promise<readonly WebuiModelEntry[]>;
   selectModel(request: {
     readonly providerId: string;
     readonly modelId: string;
     readonly variant?: string;
     readonly sessionId?: string;
   }): Promise<{ readonly success?: boolean }>;
-  getSessionUsage(request: { readonly id: string }): Promise<Record<string, unknown>>;
-  getAccountStatus(request?: { readonly sessionId?: string }): Promise<Record<string, unknown>>;
+  getSessionUsage(request: {
+    readonly id: string;
+  }): Promise<Record<string, unknown>>;
+  getAccountStatus(request?: {
+    readonly sessionId?: string;
+  }): Promise<Record<string, unknown>>;
   /**
    * Release anything the port owns. The service calls this after closing
    * every transport-side resource so the harness can tear itself down in
