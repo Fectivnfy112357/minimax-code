@@ -4,6 +4,7 @@ export interface WebuiStreamMessage {
   readonly id: string;
   readonly answer: string;
   readonly thinking: string;
+  readonly toolCalls?: readonly Record<string, unknown>[];
 }
 
 export interface WebuiStreamState {
@@ -73,6 +74,13 @@ function messageId(value: Record<string, unknown>): string {
   return text(value, ["msg_id", "msgId", "id"]);
 }
 
+function toolCalls(value: Record<string, unknown>): readonly Record<string, unknown>[] | undefined {
+  const raw = value.tool_calls ?? value.toolCalls;
+  if (!Array.isArray(raw)) return undefined;
+  const calls = raw.filter(record);
+  return calls.length > 0 ? calls : undefined;
+}
+
 function upsertMessage(
   messages: readonly WebuiStreamMessage[],
   value: Record<string, unknown>,
@@ -85,10 +93,21 @@ function upsertMessage(
     "thinkingContent",
     "thinking",
   ]);
+  const calls = toolCalls(value);
   const index = messages.findIndex((message) => message.id === id);
-  if (index < 0) return [...messages, { id, answer, thinking }];
+  if (index < 0)
+    return [
+      ...messages,
+      {
+        id,
+        answer,
+        thinking,
+        ...(calls ? { toolCalls: calls } : {}),
+      },
+    ];
   if (
     !chunk &&
+    !calls &&
     messages[index]!.answer === answer &&
     messages[index]!.thinking === thinking
   )
@@ -102,6 +121,9 @@ function upsertMessage(
     thinking: chunk
       ? messages[index]!.thinking + thinking
       : thinking || messages[index]!.thinking,
+    ...(calls || messages[index]!.toolCalls
+      ? { toolCalls: calls ?? messages[index]!.toolCalls }
+      : {}),
   };
   return next;
 }

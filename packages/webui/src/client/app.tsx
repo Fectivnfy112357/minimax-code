@@ -203,6 +203,46 @@ export function projectWebuiMessage(
   return items;
 }
 
+function toolCallResultText(tool: Record<string, unknown>): string | undefined {
+  const value =
+    tool.tool_call_result_data ??
+    tool.toolCallResultData ??
+    tool.result ??
+    tool.output ??
+    tool.error;
+  if (typeof value === "string" && value.trim()) return value;
+  if (!value || typeof value !== "object") return undefined;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return undefined;
+  }
+}
+
+function WebuiToolResults({
+  tools,
+}: {
+  readonly tools: readonly Record<string, unknown>[];
+}): ReactElement | null {
+  const results = tools
+    .map(toolCallResultText)
+    .filter((result): result is string => result !== undefined);
+  if (results.length === 0) return null;
+  return (
+    <div className="mt-1 flex flex-col gap-1">
+      {results.map((result, index) => (
+        <pre
+          key={`tool-result-${index}`}
+          className="overflow-x-auto whitespace-pre-wrap text-size_12"
+          data-webui-tool-result="true"
+        >
+          {result}
+        </pre>
+      ))}
+    </div>
+  );
+}
+
 export interface WebuiClientFoundationAppProps {
   readonly label: string;
   readonly sessionPage?: WebuiClientSessionPage;
@@ -660,7 +700,10 @@ export function WebuiSessionTranscript({
                             className="text-text_default_secondary text-size_14 leading-line_height_20"
                           >
                             {item.kind === "tool" ? (
-                              `Tool activity (${item.tools.length})`
+                              <>
+                                {`Tool activity (${item.tools.length})`}
+                                <WebuiToolResults tools={item.tools} />
+                              </>
                             ) : (
                               <div className="webui-markdown-thinking">
                                 <WebuiMarkdown source={item.text} />
@@ -920,6 +963,33 @@ function optionIdsForStep(
   return selections[stepId] ?? [];
 }
 
+/**
+ * Convert the interaction panel's controlled fields into the harness answer
+ * shape. Keeping this projection outside the JSX makes the important
+ * `allowOther` path effect-testable without pretending a server-side render
+ * exercised browser input events.
+ */
+export function buildWebuiQuestionnaireAnswers(
+  request: WebuiQuestionnaireRequest,
+  selections: Readonly<Record<string, readonly string[]>>,
+  otherSelections: Readonly<Record<string, boolean>>,
+  otherTexts: Readonly<Record<string, string>>,
+): readonly WebuiQuestionnaireAnswer[] {
+  return request.steps.map((step) => {
+    const selectedOther = otherSelections[step.id] === true;
+    return {
+      stepId: step.id,
+      selectedOptionIds: optionIdsForStep(selections, step.id),
+      ...(selectedOther
+        ? {
+            selectedOther: true,
+            otherText: otherTexts[step.id] ?? "",
+          }
+        : {}),
+    };
+  });
+}
+
 function WebuiInteractionPanel({
   sessionId,
   permissions,
@@ -946,8 +1016,18 @@ function WebuiInteractionPanel({
   const [selections, setSelections] = useState<
     Readonly<Record<string, readonly string[]>>
   >({});
+  const [otherSelections, setOtherSelections] = useState<
+    Readonly<Record<string, boolean>>
+  >({});
+  const [otherTexts, setOtherTexts] = useState<Readonly<Record<string, string>>>(
+    {},
+  );
   const [submitting, setSubmitting] = useState(false);
-  useEffect(() => setSelections({}), [questionnaire?.id]);
+  useEffect(() => {
+    setSelections({});
+    setOtherSelections({});
+    setOtherTexts({});
+  }, [questionnaire?.id]);
   const visiblePermissions = permissions.filter(
     (permission) => permission.sessionId === sessionId,
   );
@@ -1013,6 +1093,7 @@ function WebuiInteractionPanel({
           </div>
           {questionnaire.steps.map((step) => {
             const selected = optionIdsForStep(selections, step.id);
+            const selectedOther = otherSelections[step.id] === true;
             const multiple =
               step.selectionMode === 1 ||
               (step.selectionMode as unknown) === "multiple";
@@ -1038,14 +1119,21 @@ function WebuiInteractionPanel({
                         name={`${questionnaire.id}-${step.id}`}
                         checked={checked}
                         onChange={() =>
-                          setSelections((current) => ({
-                            ...current,
-                            [step.id]: multiple
-                              ? checked
-                                ? selected.filter((id) => id !== option.id)
-                                : [...selected, option.id]
-                              : [option.id],
-                          }))
+                          {
+                            setSelections((current) => ({
+                              ...current,
+                              [step.id]: multiple
+                                ? checked
+                                  ? selected.filter((id) => id !== option.id)
+                                  : [...selected, option.id]
+                                : [option.id],
+                            }));
+                            if (!multiple)
+                              setOtherSelections((current) => ({
+                                ...current,
+                                [step.id]: false,
+                              }));
+                          }
                         }
                       />
                       <span>
@@ -1059,6 +1147,49 @@ function WebuiInteractionPanel({
                     </label>
                   );
                 })}
+                {step.allowOther ? (
+                  <label
+                    className="flex items-start gap-2 text-size_14"
+                    data-webui-questionnaire-other={step.id}
+                  >
+                    <input
+                      type={multiple ? "checkbox" : "radio"}
+                      name={`${questionnaire.id}-${step.id}`}
+                      checked={selectedOther}
+                      onChange={() => {
+                        const next = !selectedOther;
+                        setOtherSelections((current) => ({
+                          ...current,
+                          [step.id]: next,
+                        }));
+                        if (next && !multiple)
+                          setSelections((current) => ({
+                            ...current,
+                            [step.id]: [],
+                          }));
+                      }}
+                    />
+                    <span className="flex min-w-0 flex-1 flex-col gap-1">
+                      <span>Other</span>
+                      {selectedOther ? (
+                        <input
+                          type="text"
+                          value={otherTexts[step.id] ?? ""}
+                          placeholder={step.otherPlaceholder || undefined}
+                          aria-label={`${step.question} other answer`}
+                          required={step.required}
+                          onChange={(event) =>
+                            setOtherTexts((current) => ({
+                              ...current,
+                              [step.id]: event.target.value,
+                            }))
+                          }
+                          className="webui-input"
+                        />
+                      ) : null}
+                    </span>
+                  </label>
+                ) : null}
               </fieldset>
             );
           })}
@@ -1066,15 +1197,25 @@ function WebuiInteractionPanel({
             <button
               type="button"
               className="webui-button-primary text-size_14"
-              disabled={submitting}
+              disabled={
+                submitting ||
+                questionnaire.steps.some((step) => {
+                  if (!step.required) return false;
+                  if (otherSelections[step.id] === true)
+                    return !(otherTexts[step.id] ?? "").trim();
+                  return optionIdsForStep(selections, step.id).length === 0;
+                })
+              }
               onClick={() => {
                 setSubmitting(true);
                 void onQuestionnaire(
                   questionnaire,
-                  questionnaire.steps.map((step) => ({
-                    stepId: step.id,
-                    selectedOptionIds: optionIdsForStep(selections, step.id),
-                  })),
+                  buildWebuiQuestionnaireAnswers(
+                    questionnaire,
+                    selections,
+                    otherSelections,
+                    otherTexts,
+                  ),
                 ).finally(() => setSubmitting(false));
               }}
             >
@@ -1599,6 +1740,12 @@ function WebuiComposer({
             <details open>
               <summary>Thinking</summary>
               <WebuiMarkdown source={message.thinking} />
+            </details>
+          ) : null}
+          {message.toolCalls?.length ? (
+            <details open>
+              <summary>Tool activity ({message.toolCalls.length})</summary>
+              <WebuiToolResults tools={message.toolCalls} />
             </details>
           ) : null}
           {message.answer ? <WebuiMarkdown source={message.answer} /> : null}

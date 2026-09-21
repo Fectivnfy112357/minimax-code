@@ -57,6 +57,56 @@ describe("WebUI mixed stream reducer", () => {
     expect(state.phase).toBe("done");
   });
 
+  it("keeps committed tool calls and their results in the live transcript", () => {
+    let state = reduceWebuiStreamFrame(
+      initialWebuiStreamState,
+      frame(
+        JSON.stringify({
+          type: 2,
+          agent_message: {
+            msg_id: "browser-turn",
+            msg_content: "The browser task is",
+          },
+        }),
+      ),
+    );
+    state = reduceWebuiStreamFrame(
+      state,
+      frame(
+        JSON.stringify({
+          type: 2,
+          agent_message: {
+            msg_id: "browser-turn",
+            msg_content: "The browser task is",
+            tool_calls: [
+              {
+                tool_name: "browser_inspect",
+                tool_call_id: "call-1",
+                tool_call_status: 2,
+                tool_call_result_data: "browser result",
+              },
+            ],
+          },
+        }),
+      ),
+    );
+    expect(state.messages).toEqual([
+      {
+        id: "browser-turn",
+        answer: "The browser task is",
+        thinking: "",
+        toolCalls: [
+          {
+            tool_name: "browser_inspect",
+            tool_call_id: "call-1",
+            tool_call_status: 2,
+            tool_call_result_data: "browser result",
+          },
+        ],
+      },
+    ]);
+  });
+
   it("updates a chunk's message by identity rather than by position", () => {
     let state = reduceWebuiStreamFrame(
       initialWebuiStreamState,

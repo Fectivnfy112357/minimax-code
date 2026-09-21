@@ -55,6 +55,9 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
   };
   public lastResumeRequest: WebuiResumeSessionRequest | undefined;
   public lastEnqueueRequest: Record<string, unknown> | undefined;
+  public lastPermissionReply: Record<string, unknown> | undefined;
+  public lastQuestionnaireReply: Record<string, unknown> | undefined;
+  public lastQuestionnaireDismissal: Record<string, unknown> | undefined;
   public abortCalls = 0;
   public sendObserved: Promise<void>;
   private resolveSendObserved!: () => void;
@@ -137,19 +140,22 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
     return {};
   }
 
-  async replyPermission(_request: {
+  async replyPermission(request: {
     readonly name: string;
     readonly requestId: string;
     readonly reply: WebuiPermissionDecision;
   }) {
+    this.lastPermissionReply = request;
     return { success: true };
   }
 
-  async replyQuestionnaire() {
+  async replyQuestionnaire(request: Record<string, unknown>) {
+    this.lastQuestionnaireReply = request;
     return { ok: true };
   }
 
-  async dismissQuestionnaire() {
+  async dismissQuestionnaire(request: Record<string, unknown>) {
+    this.lastQuestionnaireDismissal = request;
     return { ok: true };
   }
 
@@ -1386,6 +1392,74 @@ describe("WebUI service", () => {
     const frame = await event;
     expect(frame.requestId).toBe("watch-events");
     expect(frame.body).toMatchObject({ type: "session.start", source: "test" });
+    ws.close();
+  });
+
+  it("routes permission and questionnaire answers to the running harness turn", async () => {
+    const { url } = await bootService();
+    const { ws, upgrade } = openClient(url);
+    await upgrade;
+
+    await requestOnce(ws, {
+      protocolVersion: WEBUI_PROTOCOL_VERSION,
+      kind: "request",
+      requestId: "reply-permission",
+      operation: "replyPermission",
+      body: {
+        name: "main",
+        requestId: "permission-1",
+        reply: "allowOnce",
+      },
+    });
+    await requestOnce(ws, {
+      protocolVersion: WEBUI_PROTOCOL_VERSION,
+      kind: "request",
+      requestId: "reply-questionnaire",
+      operation: "replyQuestionnaire",
+      body: {
+        name: "main",
+        requestId: "questionnaire-1",
+        schemaVersion: 1,
+        answers: [
+          {
+            stepId: "purpose",
+            selectedOptionIds: [],
+            selectedOther: true,
+            otherText: "Keep the current behavior",
+          },
+        ],
+      },
+    });
+    await requestOnce(ws, {
+      protocolVersion: WEBUI_PROTOCOL_VERSION,
+      kind: "request",
+      requestId: "dismiss-questionnaire",
+      operation: "dismissQuestionnaire",
+      body: { name: "main", requestId: "questionnaire-1" },
+    });
+
+    expect(port.lastPermissionReply).toEqual({
+      name: "main",
+      requestId: "permission-1",
+      reply: "allowOnce",
+    });
+    expect(port.lastQuestionnaireReply).toEqual({
+      name: "main",
+      requestId: "questionnaire-1",
+      schemaVersion: 1,
+      answers: [
+        {
+          stepId: "purpose",
+          selectedOptionIds: [],
+          selectedOther: true,
+          otherText: "Keep the current behavior",
+        },
+      ],
+    });
+    expect(port.lastQuestionnaireDismissal).toEqual({
+      name: "main",
+      requestId: "questionnaire-1",
+    });
     ws.close();
   });
 

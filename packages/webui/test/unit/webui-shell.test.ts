@@ -25,6 +25,7 @@ import {
   WebuiClientFoundationApp,
   WebuiSessionList,
   WebuiSessionTranscript,
+  buildWebuiQuestionnaireAnswers,
   buildWebuiComposerHandlers,
   createdSessionId,
   groupWebuiTranscriptItems,
@@ -75,6 +76,44 @@ describe("WebUI shell", () => {
     const deep = { ...fast, variant: "deep" };
     expect(webuiModelOptionValue(fast)).not.toBe(webuiModelOptionValue(deep));
     expect(webuiModelOptionValue(fast)).toBe("provider/model/fast");
+  });
+
+  it("preserves a questionnaire's Other answer for the running turn", () => {
+    const request = {
+      schemaVersion: 1,
+      id: "questionnaire-1",
+      presentation: {
+        replaceComposer: false,
+        showProgress: true,
+        allowBackNavigation: false,
+      },
+      steps: [
+        {
+          id: "purpose",
+          question: "What should happen?",
+          selectionMode: 0,
+          allowOther: true,
+          otherPlaceholder: "Describe it",
+          required: true,
+          options: [{ id: "ship", label: "Ship it" }],
+        },
+      ],
+    } as const;
+    expect(
+      buildWebuiQuestionnaireAnswers(
+        request,
+        { purpose: [] },
+        { purpose: true },
+        { purpose: "Keep the current behavior" },
+      ),
+    ).toEqual([
+      {
+        stepId: "purpose",
+        selectedOptionIds: [],
+        selectedOther: true,
+        otherText: "Keep the current behavior",
+      },
+    ]);
   });
 
   it("reads a created session id from either supported response shape", () => {
