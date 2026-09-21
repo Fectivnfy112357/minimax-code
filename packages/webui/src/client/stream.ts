@@ -93,131 +93,173 @@ function upsertMessage(
 }
 
 /**
- * Snapshot of a state transition the reducer applies. `applyFrameData`
- * uses these as fence posts so a test can observe the cursor only ever
- * advancing after `data-applied`.
+ * Recognised wire-frame payload kinds. The two consumers — the reducer
+ * (state machine) and the loop's `captureFrame` (failure-signal
+ * detection) — used to parse the same payload twice. Centralising the
+ * recognition here lets both sides agree on what a `{type:…}` body
+ * means without parsing the JSON twice, and keeps future envelope
+ * additions in one place.
  */
-export type ReduceCheckpoint =
-  | "enter"
-  | "after-action-deltas"
-  | "after-data"
-  | "after-cursor";
+export type WebuiStreamPayloadKind =
+  | "empty"
+  | "done"
+  | "resume_overflow"
+  | "heartbeat"
+  | "agent_message"
+  | "agent_message_chunk"
+  | "session_status"
+  | "generic_event";
 
-export interface ReduceOptions {
-  /**
-   * Optional probe that receives every committed snapshot at each
-   * checkpoint. Production callers leave this unset (the reducer stays a
-   * pure synchronous function); the cursor-ordering test opts in to
-   * confirm the cursor advances only after the frame's data change has
-   * landed. The probe is read-only — it must not mutate the snapshot.
-   */
-  readonly probe?: (snapshot: WebuiStreamState, checkpoint: ReduceCheckpoint) => void;
+export interface WebuiStreamPayloadRecognised {
+  readonly kind: WebuiStreamPayloadKind;
+  readonly event?: Record<string, unknown>;
 }
 
-/** Pure reduction of the mixed session stream. Unknown or malformed payloads are ignored safely. */
-export function reduceWebuiStreamFrame(
+const NO_PAYLOAD: WebuiStreamPayloadRecognised = { kind: "empty" };
+
+/**
+ * Recognise a frame's `dataJson` body. Returns the empty-payload kind
+ * for whitespace or missing bodies, the done kind for `[DONE]`, the
+ * overflow kind for `{type:"resume_overflow"}`, and an event record
+ * otherwise (the reducer already had exhaustive branches; this function
+ * only surfaces what the reducer and the loop need to share — the
+ * overflow kind is the only one the loop branches on, everything else
+ * falls through to the reducer).
+ */
+export function recogniseWebuiStreamPayload(
+  dataJson: string | undefined,
+): WebuiStreamPayloadRecognised {
+  const payload = dataJson?.trim();
+  if (!payload) return NO_PAYLOAD;
+  if (payload === "[DONE]") return { kind: "done" };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payload);
+  } catch {
+    return { kind: "generic_event" };
+  }
+  const event = record(parsed);
+  if (!event) return { kind: "generic_event" };
+  if (event.type === "resume_overflow") return { kind: "resume_overflow" };
+  return { kind: "generic_event", event };
+}
+
+/**
+ * Apply every non-cursor effect from a single frame. The cursor rides on
+ * the LAST mapped frame of a source-frame group, so this function must
+ * run BEFORE any cursor application — see `applyFrameCursor` below and
+ * the test in `webui-stream.test-instrumentation.test.ts` (test-only).
+ */
+export function applyFrameData(
   state: WebuiStreamState,
   frame: WebuiStreamFrame,
-  options?: ReduceOptions,
 ): WebuiStreamState {
-  options?.probe?.(state, "enter");
-
-  // Step 1 — apply every non-cursor effect from this frame. The cursor
-  // rides on the LAST mapped frame of a source-frame group, so recording
-  // it here would land a resume mid-group. We defer cursor application
-  // until after the data change for the same frame is committed, so the
-  // cursor only advances after the group's state change is fully
-  // applied.
   let next: WebuiStreamState = state;
   if (frame.messageActionDeltas)
     next = {
       ...next,
       actionDeltas: [...next.actionDeltas, ...frame.messageActionDeltas],
     };
-  options?.probe?.(next, "after-action-deltas");
-
-  const payload = frame.dataJson?.trim();
-  if (!payload) {
-    options?.probe?.(next, "after-data");
-  } else if (payload === "[DONE]") {
-    next = { ...next, phase: "done" };
-    options?.probe?.(next, "after-data");
-  } else {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(payload);
-    } catch {
-      options?.probe?.(next, "after-data");
-      parsed = undefined;
-    }
-    const event = record(parsed);
-    if (event) {
-      const type = event.type;
-      if (type === "resume_overflow") {
-        // The harness signals that this client has fallen too far behind
-        // the server's authoritative history. The shell observes
-        // `resumeRequired` and re-establishes a fresh subscription after
-        // `getMessages`.
-        next = { ...next, phase: "reconnecting", resumeRequired: true };
-      } else if (type === 10 || type === "heartbeat") {
-        next = { ...next, phase: "streaming" };
-      } else if (type === 2 || type === "agent_message") {
-        const message =
-          record(event.agent_message) ?? record(event.agentMessage);
-        if (message) {
-          const messages = Array.isArray(message.messages)
-            ? message.messages.reduce(
-                (all, item) =>
-                  record(item)
-                    ? upsertMessage(all, record(item)!, false)
-                    : all,
-                next.messages,
-              )
-            : upsertMessage(next.messages, message, false);
-          next = { ...next, phase: "streaming", messages };
-        }
-      } else if (type === 6 || type === "agent_message_chunk") {
-        const message =
-          record(event.agent_message_chunk) ?? record(event.agentMessageChunk);
-        if (message) {
-          next = {
-            ...next,
-            phase: "streaming",
-            messages: upsertMessage(next.messages, message, true),
-          };
-        }
-      } else if (type === "session_status" || type === 3 || type === 4) {
-        const status = record(event.session_status);
-        next = {
+  const recognised = recogniseWebuiStreamPayload(frame.dataJson);
+  if (recognised.kind === "empty") return next;
+  if (recognised.kind === "done") return { ...next, phase: "done" };
+  if (recognised.kind === "resume_overflow") {
+    // The harness signals that this client has fallen too far behind
+    // the server's authoritative history. The shell observes
+    // `resumeRequired` and re-establishes a fresh subscription after
+    // `getMessages`.
+    return { ...next, phase: "reconnecting", resumeRequired: true };
+  }
+  // `generic_event` — same exhaustive dispatch the reducer had. The
+  // reducer and the loop used to parse this payload twice; this is the
+  // single parse site. If the payload did not parse (or did not parse
+  // to an object) `recognised.event` is undefined and we leave the
+  // state unchanged, mirroring the previous guard against bad bodies.
+  const event = recognised.event;
+  if (!event) return next;
+  const type = event.type;
+  if (type === 10 || type === "heartbeat") {
+    return { ...next, phase: "streaming" };
+  }
+  if (type === 2 || type === "agent_message") {
+    const message = record(event.agent_message) ?? record(event.agentMessage);
+    if (!message) return next;
+    const messages = Array.isArray(message.messages)
+      ? message.messages.reduce(
+          (all, item) =>
+            record(item) ? upsertMessage(all, record(item)!, false) : all,
+          next.messages,
+        )
+      : upsertMessage(next.messages, message, false);
+    return { ...next, phase: "streaming", messages };
+  }
+  if (type === 6 || type === "agent_message_chunk") {
+    const message =
+      record(event.agent_message_chunk) ?? record(event.agentMessageChunk);
+    return message
+      ? {
           ...next,
           phase: "streaming",
-          status: text(status ?? event, ["type", "status"]) || undefined,
-        };
-      } else if (
-        type === "runtime-event" ||
-        type === "action-required" ||
-        typeof type === "string"
-      ) {
-        next = {
-          ...next,
-          phase: "streaming",
-          runtimeEvents: [...next.runtimeEvents, event],
-        };
-      }
-    }
-    options?.probe?.(next, "after-data");
+          messages: upsertMessage(next.messages, message, true),
+        }
+      : next;
   }
-
-  // Step 2 — record the cursor. It is applied LAST so the cursor only
-  // ever advances after the frame's data change has been applied to
-  // state. The previous behaviour recorded the cursor at the top of the
-  // function, which meant a per-frame snapshot could observe the cursor
-  // advancing before the rest of the group's state was applied — a
-  // final-state assertion would still pass, but a frame-by-frame
-  // observation would catch the bug.
-  if (frame.cursor !== undefined && frame.cursor !== next.cursor) {
-    next = { ...next, cursor: frame.cursor };
+  if (type === "session_status" || type === 3 || type === 4) {
+    const status = record(event.session_status);
+    return {
+      ...next,
+      phase: "streaming",
+      status: text(status ?? event, ["type", "status"]) || undefined,
+    };
   }
-  options?.probe?.(next, "after-cursor");
+  if (
+    type === "runtime-event" ||
+    type === "action-required" ||
+    typeof type === "string"
+  )
+    return {
+      ...next,
+      phase: "streaming",
+      runtimeEvents: [...next.runtimeEvents, event],
+    };
   return next;
+}
+
+/**
+ * Record the cursor on a state snapshot. The reducer applies this LAST,
+ * after `applyFrameData`, so the cursor only ever advances after the
+ * frame's data change has been applied. The previous behaviour
+ * committed the cursor at the top of the reducer and left a window
+ * where the cursor advanced without its corresponding state change.
+ */
+export function applyFrameCursor(
+  state: WebuiStreamState,
+  frame: WebuiStreamFrame,
+): WebuiStreamState {
+  if (frame.cursor === undefined || frame.cursor === state.cursor) return state;
+  return { ...state, cursor: frame.cursor };
+}
+
+/**
+ * Pure reduction of the mixed session stream. Unknown or malformed
+ * payloads are ignored safely.
+ *
+ * The third argument is typed against `ReduceOptions` from
+ * `stream-instrumentation.ts`. Production callers MUST NOT supply it;
+ * the type lives in a test-only module on purpose so that any caller
+ * who wants to set a probe must reach into the test surface to do so.
+ * The probe fires once after the data step and once after the cursor
+ * step; the cursor-ordering test asserts that the post-data snapshot
+ * has not yet advanced the cursor.
+ */
+export function reduceWebuiStreamFrame(
+  state: WebuiStreamState,
+  frame: WebuiStreamFrame,
+  options?: import("./stream-instrumentation.js").ReduceOptions,
+): WebuiStreamState {
+  const next = applyFrameData(state, frame);
+  options?.probe?.(next, "after-data");
+  const withCursor = applyFrameCursor(next, frame);
+  options?.probe?.(withCursor, "after-cursor");
+  return withCursor;
 }

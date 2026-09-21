@@ -47,10 +47,12 @@ import {
 } from "./icons.js";
 import {
   initialWebuiStreamState,
-  reduceWebuiStreamFrame,
   type WebuiStreamState,
 } from "./stream.js";
-import { runWebuiStreamLoop } from "./stream-loop.js";
+import {
+  buildWebuiStreamLoopSink,
+  runWebuiStreamLoop,
+} from "./stream-loop.js";
 import type { WebuiStreamFrame } from "../server/port.js";
 
 export interface WebuiClientMessage {
@@ -633,23 +635,14 @@ function WebuiComposer({
     // through the `phase` field on the state we render below.
     setStream({ ...initialWebuiStreamState, phase: "streaming" });
     try {
+      // The sink-binding helper is exported from stream-loop.ts so the
+      // shell test can drive the same wiring the React component uses.
+      // Calling it from the production handler makes the binding
+      // source-controlled rather than hand-written.
       await runWebuiStreamLoop(
         { sendMessage, resumeSession, loadMessages },
         { sessionId, message },
-        {
-          applyFrame: (frame) =>
-            setStream((current) => reduceWebuiStreamFrame(current, frame)),
-          setPhase: (phase) =>
-            setStream((current) => ({ ...current, phase })),
-          setMessages: (messages) =>
-            setStream((current) => ({ ...current, messages })),
-          refuse: (reason) =>
-            setStream((current) => ({
-              ...current,
-              phase: "refused",
-              refusal: reason,
-            })),
-        },
+        buildWebuiStreamLoopSink(setStream),
       );
     } finally {
       setSending(false);

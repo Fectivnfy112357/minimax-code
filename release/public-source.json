@@ -3299,6 +3299,7 @@
     "packages/webui/src/client/index.html",
     "packages/webui/src/client/main.tsx",
     "packages/webui/src/client/markdown.tsx",
+    "packages/webui/src/client/stream-instrumentation.ts",
     "packages/webui/src/client/stream-loop.ts",
     "packages/webui/src/client/stream.ts",
     "packages/webui/src/client/styles/index.css",

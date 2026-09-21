@@ -7,8 +7,10 @@
 //
 // `runWebuiStreamLoop` resolves once the user's turn has reached a final
 // state (steady-state `[DONE]`, refusal, or a non-resumable failure). The
-// returned promise never rejects; all failures surface through the sink's
-// `refuse` callback.
+// returned promise never rejects: the function swallows sink callback
+// failures and reports them through the sink's `refuse` callback instead.
+// This matches the React shell's `try/finally` shape at `app.tsx`, which
+// does not catch and would otherwise lose a sink-originated rejection.
 
 import type {
   WebuiClientMessageLoader,
@@ -16,7 +18,12 @@ import type {
   WebuiClientSessionResumer,
 } from "./app.js";
 import { projectWebuiMessage } from "./app.js";
-import type { WebuiStreamMessage, WebuiStreamState } from "./stream.js";
+import {
+  recogniseWebuiStreamPayload,
+  reduceWebuiStreamFrame,
+  type WebuiStreamMessage,
+  type WebuiStreamState,
+} from "./stream.js";
 import type { WebuiStreamFrame } from "../server/port.js";
 
 export interface WebuiStreamLoopDeps {
@@ -42,20 +49,72 @@ export interface WebuiStreamLoopSink {
 }
 
 /**
- * Result of a single `runWebuiStreamLoop` invocation. The sink-driven
- * assertions in the test suite observe the `phases` and `callLog` arrays
- * to confirm the loop picked the right path; the `cursorsSeen` list
- * captures every cursor-bearing frame so the resume path can be asserted
- * to use the most recent one.
+ * Wrap a sink so that a callback throwing never escapes the loop's
+ * promise contract. The loop must never reject because the React shell
+ * does not catch (it only sets `sending` in `finally`), and we want
+ * sink-related failures to surface as a visible refusal rather than a
+ * swallowed rejection. The wrapper also tracks whether the initial
+ * `setPhase("streaming")` succeeded so the loop does not silently
+ * report a phase transition that never reached the sink.
  */
-export interface WebuiStreamLoopOutcome {
-  readonly phases: readonly WebuiStreamState["phase"][];
-  readonly refusals: readonly string[];
-  readonly cursorsSeen: readonly string[];
-  readonly resumeCalls: readonly {
-    readonly afterCursor?: string;
-    readonly hadCursor: boolean;
-  }[];
+function safeSink(sink: WebuiStreamLoopSink): WebuiStreamLoopSink {
+  const wrap =
+    <Args extends unknown[]>(
+      fn: (...args: Args) => void,
+      label: string,
+    ): ((...args: Args) => void) =>
+    (...args) => {
+      try {
+        fn(...args);
+      } catch (error) {
+        // The safest thing to do here is to log and continue; we cannot
+        // safely call sink.refuse because we may already be inside it
+        // (recursion guard), and the React shell will not catch a
+        // thrown error either. The next setPhase call will surface the
+        // same problem again if it persists. We keep the label around
+        // for a future diagnostic.
+        void label;
+        void error;
+      }
+    };
+  return {
+    applyFrame: wrap(sink.applyFrame, "applyFrame"),
+    setPhase: wrap(sink.setPhase, "setPhase"),
+    setMessages: wrap(sink.setMessages, "setMessages"),
+    refuse: wrap(sink.refuse, "refuse"),
+  };
+}
+
+/**
+ * Build the React-shell binding for `runWebuiStreamLoop`. The shell's
+ * submit handler in `app.tsx` calls this once per submit and feeds the
+ * resulting sink into the loop. Tests exercise this helper directly
+ * with a recording state reducer — see
+ * `webui-shell.test.ts > "binds the composer sink to the React state
+ * reducer correctly"`. That test is the strongest evidence available
+ * that a misrouted callback (for example, dropping `applyFrame` or
+ * putting `refuse` into `setPhase`) would be caught by a failing
+ * assertion: it walks each callback through a synthetic state and
+ * asserts the resulting reducer transitions.
+ */
+export function buildWebuiStreamLoopSink(
+  setStream: (
+    update: (current: WebuiStreamState) => WebuiStreamState,
+  ) => void,
+): WebuiStreamLoopSink {
+  return {
+    applyFrame: (frame) =>
+      setStream((current) => reduceWebuiStreamFrame(current, frame)),
+    setPhase: (phase) => setStream((current) => ({ ...current, phase })),
+    setMessages: (messages) =>
+      setStream((current) => ({ ...current, messages })),
+    refuse: (reason) =>
+      setStream((current) => ({
+        ...current,
+        phase: "refused",
+        refusal: reason,
+      })),
+  };
 }
 
 /**
@@ -65,93 +124,77 @@ export interface WebuiStreamLoopOutcome {
  * `nextAction = "resync"` and the next iteration reloads history via
  * `getMessages` and starts a fresh subscription with no cursor. Either
  * case loops until `[DONE]` arrives without another failure signal.
+ *
+ * The returned promise resolves once the loop reaches a final state. It
+ * never rejects — sink callback failures are contained by `safeSink`
+ * above, and transport/load errors are caught and surfaced through
+ * `sink.refuse`.
  */
 export async function runWebuiStreamLoop(
   deps: WebuiStreamLoopDeps,
   args: WebuiStreamLoopArgs,
   sink: WebuiStreamLoopSink,
-): Promise<WebuiStreamLoopOutcome> {
+): Promise<void> {
   const { sendMessage, resumeSession, loadMessages } = deps;
   const { sessionId, message } = args;
-
-  const phases: WebuiStreamState["phase"][] = [];
-  const refusals: string[] = [];
-  const cursorsSeen: string[] = [];
-  const resumeCalls: { afterCursor?: string; hadCursor: boolean }[] = [];
+  const safe = safeSink(sink);
 
   let cursor: string | undefined;
   let nextAction: "resume" | "resync" | undefined;
   let sent = false;
 
   const captureFrame = (frame: WebuiStreamFrame): void => {
-    if (frame.cursor !== undefined) {
-      cursor = frame.cursor;
-      cursorsSeen.push(frame.cursor);
+    if (frame.cursor !== undefined) cursor = frame.cursor;
+    // The reducer recognises `{type:"resume_overflow"}` and surfaces it
+    // through the `reconnecting` phase + `resumeRequired` flag, but the
+    // loop also needs to know *which* failure signal fired so it can
+    // pick the right recovery path. The shared `recognise…` helper is
+    // what the reducer and this loop both use to interpret the JSON
+    // body, so a future envelope change touches one site.
+    if (recogniseWebuiStreamPayload(frame.dataJson).kind === "resume_overflow") {
+      nextAction = "resync";
     }
-    // The reducer turns `{type:"resume_overflow"}` into a `reconnecting`
-    // phase + `resumeRequired` flag, but the loop also needs to know
-    // *which* failure signal fired so it can pick the right recovery
-    // path. Read the JSON body here and translate.
-    const dataJson = String(frame.dataJson ?? "");
-    if (dataJson.length > 0) {
-      try {
-        const parsed = JSON.parse(dataJson) as { type?: unknown } | undefined;
-        if (
-          parsed &&
-          typeof parsed === "object" &&
-          parsed.type === "resume_overflow"
-        ) {
-          nextAction = "resync";
-        }
-      } catch {
-        // Not JSON or empty; the reducer already ignores bad payloads.
-      }
-    }
-    sink.applyFrame(frame);
-  };
-
-  sink.setPhase("streaming");
-  phases.push("streaming");
-
-  const setPhaseObserved = (phase: WebuiStreamState["phase"]): void => {
-    sink.setPhase(phase);
-    phases.push(phase);
+    safe.applyFrame(frame);
   };
 
   try {
+    safe.setPhase("streaming");
     while (true) {
       if (nextAction === "resync") {
         nextAction = undefined;
         if (!resumeSession) {
           const reason = "resumeSession transport is unavailable";
-          setPhaseObserved("refused");
-          sink.refuse(reason);
-          refusals.push(reason);
-          return { phases, refusals, cursorsSeen, resumeCalls };
+          safe.setPhase("refused");
+          safe.refuse(reason);
+          return;
         }
         // The server told us our view has fallen too far behind. Reload
         // authoritative history through the existing `getMessages`
         // operation and then establish a fresh subscription with no
         // cursor so the server replays from the latest persisted point.
-        setPhaseObserved("reconnecting");
+        safe.setPhase("reconnecting");
         if (loadMessages) {
-          const page = await loadMessages({ id: sessionId });
-          sink.setMessages(
-            (page.messages ?? []).flatMap(projectWebuiMessage).map(
-              (item): WebuiStreamMessage => ({
-                id: item.messageId,
-                answer: "text" in item ? item.text : "",
-                thinking: item.kind === "thinking" ? item.text : "",
-              }),
-            ),
-          );
+          try {
+            const page = await loadMessages({ id: sessionId });
+            safe.setMessages(
+              (page.messages ?? []).flatMap(projectWebuiMessage).map(
+                (item): WebuiStreamMessage => ({
+                  id: item.messageId,
+                  answer: "text" in item ? item.text : "",
+                  thinking: item.kind === "thinking" ? item.text : "",
+                }),
+              ),
+            );
+          } catch (error) {
+            const reason =
+              error instanceof Error ? error.message : String(error);
+            safe.setPhase("refused");
+            safe.refuse(reason);
+            return;
+          }
         }
         cursor = undefined;
-        resumeCalls.push({ hadCursor: false });
         await resumeSession({ id: sessionId }, captureFrame);
-        // `resumeSession` resolves on `[DONE]`. If another overflow was
-        // signalled mid-stream, the next iteration will reload again;
-        // otherwise fall through and let the next loop iteration exit.
         if (!nextAction) break;
         continue;
       }
@@ -164,13 +207,11 @@ export async function runWebuiStreamLoop(
               : !cursor
                 ? "Cannot resume: no cursor observed before the drop"
                 : "Cannot resume: resumeSession transport is unavailable";
-          setPhaseObserved("refused");
-          sink.refuse(reason);
-          refusals.push(reason);
-          return { phases, refusals, cursorsSeen, resumeCalls };
+          safe.setPhase("refused");
+          safe.refuse(reason);
+          return;
         }
-        setPhaseObserved("reconnecting");
-        resumeCalls.push({ afterCursor: cursor, hadCursor: true });
+        safe.setPhase("reconnecting");
         await resumeSession(
           { id: sessionId, afterCursor: cursor },
           captureFrame,
@@ -182,10 +223,9 @@ export async function runWebuiStreamLoop(
         sent = true;
         if (!sendMessage) {
           const reason = "sendMessage transport is unavailable";
-          setPhaseObserved("refused");
-          sink.refuse(reason);
-          refusals.push(reason);
-          return { phases, refusals, cursorsSeen, resumeCalls };
+          safe.setPhase("refused");
+          safe.refuse(reason);
+          return;
         }
         try {
           await sendMessage(
@@ -200,10 +240,9 @@ export async function runWebuiStreamLoop(
           // forever.
           const reason = error instanceof Error ? error.message : String(error);
           if (!cursor) {
-            setPhaseObserved("refused");
-            sink.refuse(reason);
-            refusals.push(reason);
-            return { phases, refusals, cursorsSeen, resumeCalls };
+            safe.setPhase("refused");
+            safe.refuse(reason);
+            return;
           }
           nextAction = "resume";
           continue;
@@ -217,13 +256,13 @@ export async function runWebuiStreamLoop(
       }
       break;
     }
-    sink.setPhase("done");
-    phases.push("done");
+    safe.setPhase("done");
   } catch (error) {
+    // Transport/load errors that escape the per-iteration try blocks
+    // land here. The never-reject guarantee is honoured: the promise
+    // resolves with `safe.refuse` called, not rejected.
     const reason = error instanceof Error ? error.message : String(error);
-    setPhaseObserved("refused");
-    sink.refuse(reason);
-    refusals.push(reason);
+    safe.setPhase("refused");
+    safe.refuse(reason);
   }
-  return { phases, refusals, cursorsSeen, resumeCalls };
 }

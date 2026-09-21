@@ -32,13 +32,20 @@ import {
   sessionHash,
   subscribeToSessionHash,
 } from "../../src/client/app.js";
-import { runWebuiStreamLoop } from "../../src/client/stream-loop.js";
+import {
+  buildWebuiStreamLoopSink,
+  runWebuiStreamLoop,
+} from "../../src/client/stream-loop.js";
 import type {
   WebuiClientMessageLoader,
   WebuiClientMessageSender,
   WebuiClientSessionResumer,
 } from "../../src/client/app.js";
 import type { WebuiStreamFrame } from "../../src/server/port.js";
+import {
+  initialWebuiStreamState,
+  type WebuiStreamState,
+} from "../../src/client/stream.js";
 
 function renderShell(label = "webui-foundation"): string {
   return renderToStaticMarkup(
@@ -463,7 +470,7 @@ describe("WebUI composer send/resume loop", () => {
       },
     );
 
-    const outcome = await runWebuiStreamLoop(
+    await runWebuiStreamLoop(
       { sendMessage, resumeSession },
       { sessionId: "session-1", message: "hello" },
       {
@@ -488,13 +495,9 @@ describe("WebUI composer send/resume loop", () => {
     // and the frames from the resumed stream. The chunk is what gave
     // the loop its cursor.
     expect(applied.some((f) => f.cursor === "c1")).toBe(true);
-    // The outcome records the same observations for an external
-    // harness; sanity-check the cursors and resume list shape.
-    expect(outcome.cursorsSeen).toContain("c1");
-    expect(outcome.resumeCalls).toEqual([
-      { afterCursor: "c1", hadCursor: true },
-    ]);
-    expect(outcome.phases.at(-1)).toBe("done");
+    // The phase sequence ends in `done` — the resumed stream resolved
+    // its `[DONE]` and the loop fell through to the final commit.
+    expect(observedPhases.at(-1)).toBe("done");
   });
 
   it("reloads history and resubscribes with no cursor after a resume_overflow frame", async () => {
@@ -531,7 +534,7 @@ describe("WebUI composer send/resume loop", () => {
       return { messages: [], hasMore: false };
     });
 
-    const outcome = await runWebuiStreamLoop(
+    await runWebuiStreamLoop(
       { sendMessage, resumeSession, loadMessages },
       { sessionId: "session-1", message: "hello" },
       {
@@ -552,7 +555,243 @@ describe("WebUI composer send/resume loop", () => {
     // shell renders its `Reconnecting…` indicator.
     expect(observedPhases).toContain("reconnecting");
     expect(observedPhases).not.toContain("refused");
-    expect(outcome.resumeCalls).toEqual([{ hadCursor: false }]);
-    expect(outcome.phases.at(-1)).toBe("done");
+    expect(observedPhases.at(-1)).toBe("done");
+  });
+
+  it("contains sink callback failures — the loop never rejects even if the sink throws", async () => {
+    // Brief R8 said the documented "never rejects" guarantee was false
+    // when a sink callback throws. The fix wraps every sink callback
+    // in a try/catch; the outer loop must resolve regardless. The
+    // transport mocks here all resolve cleanly so the only failures
+    // come from the sink itself; we then assert the loop resolved.
+    const sendMessage: WebuiClientMessageSender = vi.fn(
+      async (_req, onFrame) => {
+        onFrame({ dataJson: '{"type":10}' });
+        onFrame({ dataJson: "[DONE]" });
+      },
+    );
+    const throwingSink = {
+      applyFrame: () => {
+        throw new Error("applyFrame blew up");
+      },
+      setPhase: () => {
+        throw new Error("setPhase blew up");
+      },
+      setMessages: () => {
+        throw new Error("setMessages blew up");
+      },
+      refuse: () => {
+        throw new Error("refuse blew up");
+      },
+    };
+    await expect(
+      runWebuiStreamLoop(
+        { sendMessage },
+        { sessionId: "session-1", message: "hello" },
+        throwingSink,
+      ),
+    ).resolves.toBeUndefined();
+  });
+});
+
+describe("WebUI composer sink binding", () => {
+  // Brief R7: the previous shell tests called `runWebuiStreamLoop`
+  // directly with their own sinks, so a misrouted or dropped callback
+  // in the production binding (the inline object literal the composer
+  // in `app.tsx` constructed) would not fail a test. The fix extracts
+  // the binding into `buildWebuiStreamLoopSink`, which the production
+  // shell now uses. This describe block exercises that helper with a
+  // recording state reducer so that:
+  //  - `applyFrame` routed to `setStream(reduce(current, frame))` —
+  //    dropping this binding leaves the reducer out of the loop and
+  //    fails the `applyFrame` assertion;
+  //  - `setPhase` updates `state.phase` only — confusing it with
+  //    `refuse` would write `phase: "refused"` instead of the
+  //    intended value;
+  //  - `setMessages` replaces `state.messages` without touching phase
+  //    — confusing it with `setPhase` would drop the messages;
+  //  - `refuse` writes `phase: "refused"` and `refusal` — confusing
+  //    either field fails the corresponding assertion.
+  type Reducer = (current: WebuiStreamState) => WebuiStreamState;
+  const recordingReducer = (
+    log: Reducer[],
+  ): ((update: Reducer) => void) => {
+    return (update) => {
+      log.push(update);
+    };
+  };
+
+  it("binds the composer sink to the React state reducer correctly", () => {
+    const log: Reducer[] = [];
+    const setStream = recordingReducer(log);
+    const sink = buildWebuiStreamLoopSink(setStream);
+
+    // `applyFrame` must reduce the current state with the frame.
+    sink.applyFrame({
+      dataJson:
+        '{"type":2,"agent_message":{"msg_id":"m1","msg_content":"hello","thinking_content":"thought"}}',
+    });
+    expect(log).toHaveLength(1);
+    const applyResult = log[0]!(initialWebuiStreamState);
+    expect(applyResult.messages[0]).toEqual({
+      id: "m1",
+      answer: "hello",
+      thinking: "thought",
+    });
+    expect(applyResult.phase).toBe("streaming");
+    log.length = 0;
+
+    // `setPhase` must update phase without touching the rest.
+    sink.setPhase("reconnecting");
+    expect(log).toHaveLength(1);
+    const phaseResult = log[0]!({
+      ...initialWebuiStreamState,
+      messages: applyResult.messages,
+    });
+    expect(phaseResult.phase).toBe("reconnecting");
+    expect(phaseResult.messages).toEqual(applyResult.messages);
+    log.length = 0;
+
+    // `setMessages` must replace messages without touching phase.
+    sink.setMessages([{ id: "loaded", answer: "from server", thinking: "" }]);
+    expect(log).toHaveLength(1);
+    const messagesResult = log[0]!({
+      ...initialWebuiStreamState,
+      phase: "streaming",
+    });
+    expect(messagesResult.messages).toEqual([
+      { id: "loaded", answer: "from server", thinking: "" },
+    ]);
+    expect(messagesResult.phase).toBe("streaming");
+    log.length = 0;
+
+    // `refuse` must write phase: "refused" AND the refusal string —
+    // the test asserts both fields so a binding that forgot to set
+    // `phase` (or to write the refusal string) fails one of them.
+    sink.refuse("connection closed");
+    expect(log).toHaveLength(1);
+    const refuseResult = log[0]!({
+      ...initialWebuiStreamState,
+      phase: "streaming",
+    });
+    expect(refuseResult.phase).toBe("refused");
+    expect(refuseResult.refusal).toBe("connection closed");
+  });
+
+  it("drives the actual loop with the production sink binding", async () => {
+    // End-to-end evidence: a single submit run, with the production
+    // binding helper, drives the same React state a real composer
+    // would. We then assert the final state matches what the brief
+    // expects for each of the three reachable outcomes (resumed,
+    // refused, resynced). A misbinding inside the helper would fail
+    // one of these assertions.
+    const buildState = () => {
+      const log: Reducer[] = [];
+      let state = initialWebuiStreamState;
+      const setStream = (update: Reducer): void => {
+        log.push(update);
+        state = update(state);
+      };
+      return { setStream, getState: () => state, log };
+    };
+
+    // Outcome 1 — resumed after a mid-stream drop.
+    {
+      const { setStream, getState } = buildState();
+      const sink = buildWebuiStreamLoopSink(setStream);
+      const sendMessage: WebuiClientMessageSender = vi.fn(
+        async (_req, onFrame) => {
+          onFrame({
+            dataJson:
+              '{"type":6,"agent_message_chunk":{"msg_id":"m1","msg_content":"partial"}}',
+            cursor: "c1",
+          });
+          throw new Error("WS dropped");
+        },
+      );
+      const resumeSession: WebuiClientSessionResumer = vi.fn(
+        async (_req, onFrame) => {
+          onFrame({ dataJson: "[DONE]" });
+        },
+      );
+      await runWebuiStreamLoop(
+        { sendMessage, resumeSession },
+        { sessionId: "s", message: "hi" },
+        sink,
+      );
+      const final = getState();
+      expect(final.phase).toBe("done");
+      expect(final.messages[0]?.id).toBe("m1");
+      // The cursor captured before the drop is preserved in state —
+      // it's the only stable resumption point the loop has, so it
+      // must not be wiped just because the resumed stream did not
+      // emit a fresh cursor on `[DONE]`.
+      expect(final.cursor).toBe("c1");
+    }
+
+    // Outcome 2 — refused without a cursor (no resume possible).
+    {
+      const { setStream, getState } = buildState();
+      const sink = buildWebuiStreamLoopSink(setStream);
+      const sendMessage: WebuiClientMessageSender = vi.fn(
+        async (_req, _onFrame) => {
+          throw new Error("WS dropped before any frame");
+        },
+      );
+      await runWebuiStreamLoop(
+        { sendMessage, resumeSession: undefined },
+        { sessionId: "s", message: "hi" },
+        sink,
+      );
+      const final = getState();
+      expect(final.phase).toBe("refused");
+      expect(final.refusal).toBe("WS dropped before any frame");
+    }
+
+    // Outcome 3 — resynced after a resume_overflow mid-flight.
+    {
+      const { setStream, getState } = buildState();
+      const sink = buildWebuiStreamLoopSink(setStream);
+      const sendMessage: WebuiClientMessageSender = vi.fn(
+        async (_req, onFrame) => {
+          onFrame({
+            dataJson:
+              '{"type":2,"agent_message":{"msg_id":"m1","msg_content":"stale"}}',
+            cursor: "c-stale",
+          });
+          onFrame({ dataJson: '{"type":"resume_overflow"}' });
+          onFrame({ dataJson: "[DONE]" });
+        },
+      );
+      const resumeSession: WebuiClientSessionResumer = vi.fn(
+        async (req, onFrame) => {
+          // The fresh subscription starts with no cursor.
+          expect(req.afterCursor).toBeUndefined();
+          onFrame({ dataJson: "[DONE]" });
+        },
+      );
+      const loadMessages: WebuiClientMessageLoader = vi.fn(async () => ({
+        messages: [],
+        hasMore: false,
+      }));
+      await runWebuiStreamLoop(
+        { sendMessage, resumeSession, loadMessages },
+        { sessionId: "s", message: "hi" },
+        sink,
+      );
+      const final = getState();
+      // Phase flipped to `reconnecting` mid-run, then back through
+      // `done` after the resumed stream emitted `[DONE]`. The reload
+      // replaced the transcript with the server's authoritative
+      // history (empty in this fixture); the stale `m1` from the
+      // first subscription is no longer in state. The reducer does
+      // not clear `resumeRequired` on `[DONE]` — it is a sticky flag
+      // that the shell uses to decide whether to reload again — so the
+      // value stays `true` until the next `resume_overflow`-bearing
+      // subscription resolves it.
+      expect(final.phase).toBe("done");
+      expect(final.messages).toEqual([]);
+      expect(final.resumeRequired).toBe(true);
+    }
   });
 });

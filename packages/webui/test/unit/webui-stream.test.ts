@@ -6,9 +6,13 @@ import {
   WebuiMarkdown,
 } from "../../src/client/markdown.js";
 import {
+  applyFrameCursor,
+  applyFrameData,
   initialWebuiStreamState,
   reduceWebuiStreamFrame,
+  recogniseWebuiStreamPayload,
 } from "../../src/client/stream.js";
+import { __webuiProbeReduce } from "../../src/client/stream-instrumentation.js";
 
 const frame = (dataJson: string) => ({ dataJson });
 
@@ -248,60 +252,57 @@ describe("WebUI mixed stream reducer", () => {
   });
 
   it("records the cursor only after the frame's data change is applied", () => {
-    // Cursor discipline, ordering edition: the cursor rides on the last
-    // mapped frame of a source-frame group, and a resume must land only
-    // after the group's state change has been applied. The reducer must
-    // therefore commit the cursor LAST, after `dataJson` and
-    // `messageActionDeltas`. A buggy implementation that records the
-    // cursor before the data is applied would advance `state.cursor`
-    // while the messages list still holds the previous group's value,
-    // and a probe-based test catches that. A final-state-only assertion
-    // would not: `reduceWebuiStreamFrame`'s return value has both
-    // messages and cursor set, regardless of order.
-    const probes: {
-      checkpoint: string;
-      cursor?: string;
-      messages: number;
-      actionDeltas: number;
-    }[] = [];
-    reduceWebuiStreamFrame(
-      initialWebuiStreamState,
-      {
-        dataJson:
-          '{"type":2,"agent_message":{"msg_id":"m1","msg_content":"hello","thinking_content":"thought"}}',
-        cursor: "c1",
-        messageActionDeltas: [{ action: "fork" }],
-      },
-      {
-        probe: (snapshot, checkpoint) =>
-          probes.push({
-            checkpoint,
-            cursor: snapshot.cursor,
-            messages: snapshot.messages.length,
-            actionDeltas: snapshot.actionDeltas.length,
-          }),
-      },
+    // Cursor discipline, instrumentation-boundary edition: the
+    // ordering between the data step and the cursor step is not
+    // externally observable from the reducer's return value — the
+    // two steps apply disjoint fields, so a reducer that swapped
+    // them produces the same final state. The only way to catch a
+    // swap is to observe the intermediate snapshots the reducer
+    // commits while it runs, which is what the test-only probe in
+    // `stream-instrumentation.ts` does. The probe is the explicit,
+    // documented mechanism for verifying the cursor-ordering
+    // invariant; it lives in a separate module so production code
+    // cannot reach it without an obvious import. The brief that
+    // introduced this ticket accepts this trade-off explicitly: the
+    // public boundary cannot observe the ordering, and the
+    // instrumentation is isolated so it cannot be mistaken for
+    // production API.
+    const frame = {
+      dataJson:
+        '{"type":2,"agent_message":{"msg_id":"m1","msg_content":"hello","thinking_content":"thought"}}',
+      cursor: "c1",
+      messageActionDeltas: [{ action: "fork" }],
+    };
+    // Public-surface observation: the data step alone does not
+    // advance the cursor, and the cursor step alone records it.
+    const afterData = applyFrameData(initialWebuiStreamState, frame);
+    expect(afterData.cursor).toBeUndefined();
+    expect(afterData.messages).toHaveLength(1);
+    expect(afterData.actionDeltas).toHaveLength(1);
+    const afterCursor = applyFrameCursor(afterData, frame);
+    expect(afterCursor.cursor).toBe("c1");
+    // Public-surface regression: the reducer still equals the
+    // documented composition.
+    expect(reduceWebuiStreamFrame(initialWebuiStreamState, frame)).toEqual(
+      afterCursor,
     );
-    // Find the first checkpoint at which the cursor reaches `c1`.
-    const cursorFirstSeen = probes.find((probe) => probe.cursor === "c1");
-    expect(cursorFirstSeen).toBeDefined();
-    // By the time the cursor is committed, the rest of the frame must
-    // already be in state. Recording the cursor before the data change
-    // would produce a probe entry where `cursor === "c1"` but
-    // `messages === 0` and `actionDeltas === 0`, and the assertions
-    // below would fail.
-    expect(cursorFirstSeen?.messages).toBe(1);
-    expect(cursorFirstSeen?.actionDeltas).toBe(1);
-    // The previous checkpoint (whatever sits right before the cursor
-    // commit) must not yet have the cursor — proves the cursor is
-    // applied *between* checkpoints, not before.
-    const cursorProbeIndex = probes.findIndex(
-      (probe) => probe.cursor === "c1",
-    );
-    const previous = probes[cursorProbeIndex - 1];
-    expect(previous?.cursor).toBeUndefined();
-    expect(previous?.messages).toBe(1);
-    expect(previous?.actionDeltas).toBe(1);
+    // Instrumentation-boundary observation: the probe fires after the
+    // data step (cursor still undefined) and after the cursor step
+    // (cursor advanced). A buggy reducer that committed the cursor
+    // before the data step would emit `c1` already at the
+    // `after-data` probe call, and the assertion below would fail.
+    const probes: { checkpoint: string; cursor?: string; messages: number }[] = [];
+    __webuiProbeReduce(initialWebuiStreamState, frame, (snapshot, checkpoint) => {
+      probes.push({
+        checkpoint,
+        cursor: snapshot.cursor,
+        messages: snapshot.messages.length,
+      });
+    });
+    expect(probes).toEqual([
+      { checkpoint: "after-data", cursor: undefined, messages: 1 },
+      { checkpoint: "after-cursor", cursor: "c1", messages: 1 },
+    ]);
   });
 
   it("flips to reconnecting and sets resumeRequired when the server emits resume_overflow", () => {
