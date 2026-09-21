@@ -157,9 +157,6 @@
   .webui-segmented-item[aria-current="true"] {
     color: var(--text_default_primary);
   }
-  .webui-segmented-item[aria-disabled="true"] {
-    cursor: default;
-  }
 
   /* ---------------------------------------------------------------- composer */
 

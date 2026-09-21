@@ -243,6 +243,37 @@ describe("WebUI shell — desktop anatomy", () => {
     expect(html).toMatch(/rounded-\[10px\]/u);
   });
 
+  it("never leaves a control operable but unbound", () => {
+    // The failure this guards: a control that renders enabled, shows a pointer
+    // cursor and a hover fill, and has nothing behind it. A screen full of those
+    // reads as broken — and it is not caught by any styling assertion, because the
+    // markup and the stylesheet are both exactly what was asked for.
+    //
+    // Everything the WebUI has no feature for is `disabled` or `aria-disabled`, so
+    // the only operable control left in the home shell is the one real action.
+    const html = renderShell();
+    const controlTags: string[] = [];
+    const re = /<(button|div|a|input|textarea|select)\b[^>]*>/gu;
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(html)) !== null) {
+      const tag = match[0];
+      if (/^<button\b/u.test(tag) || /role="button"/u.test(tag)) controlTags.push(tag);
+    }
+    const operable = controlTags.filter(
+      (tag) =>
+        !/(?:^|\s)disabled(?:=|\s|>)/u.test(tag) &&
+        !/aria-disabled="true"/u.test(tag),
+    );
+    expect(operable).toHaveLength(1);
+    // The row hook sits on the row element, not on the control inside it, so
+    // attribute the operable control to the nearest preceding row.
+    const at = html.indexOf(operable[0]);
+    const owner = [
+      ...html.slice(0, at).matchAll(/data-webui-nav-item="([^"]*)"/gu),
+    ].pop();
+    expect(owner?.[1]).toBe("新建任务");
+  });
+
   it("puts the hero, the composer and the chips on the home surface", () => {
     const html = renderShell();
 

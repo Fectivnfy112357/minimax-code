@@ -773,16 +773,22 @@ export function WebuiClientFoundationApp({
                     <button
                       type="button"
                       data-webui-sidebar-toggle="true"
-                      aria-label="Toggle navigation"
-                      className="flex size-8 items-center justify-center rounded-[8px] text-text_default_tertiary transition-colors hover:bg-bg_interaction_tertiary_hover hover:text-text_default_secondary"
+                      data-webui-placeholder-chrome="sidebar-toggle"
+                      aria-disabled="true"
+                      aria-label="切换导航栏"
+                      tabIndex={-1}
+                      className="flex size-8 cursor-default items-center justify-center rounded-[8px] text-text_default_tertiary"
                     >
                       <WebuiIconSidebarToggle />
                     </button>
                     <div
                       role="button"
-                      tabIndex={0}
                       data-webui-search="true"
-                      className="flex size-[30px] select-none items-center justify-center rounded-lg text-text_default_tertiary transition-colors hover:bg-bg_interaction_tertiary_hover hover:text-text_default_secondary"
+                      data-webui-placeholder-chrome="search"
+                      aria-disabled="true"
+                      aria-label="搜索"
+                      tabIndex={-1}
+                      className="flex size-[30px] cursor-default select-none items-center justify-center rounded-lg text-text_default_tertiary"
                     >
                       <WebuiIconSearch />
                     </div>
@@ -823,7 +829,7 @@ export function WebuiClientFoundationApp({
                       <div className="h-px w-full bg-border_light" />
                     </div>
                     <div className="inline-flex">
-                      <div className="webui-segmented" role="group">
+                      <div className="webui-segmented" data-webui-segmented-static="true">
                         <span
                           aria-current="true"
                           className="webui-segmented-item bg-bg_default_primary"
@@ -831,9 +837,7 @@ export function WebuiClientFoundationApp({
                         >
                           本地
                         </span>
-                        <span aria-disabled="true" className="webui-segmented-item">
-                          云端
-                        </span>
+                        <span className="webui-segmented-item">云端</span>
                       </div>
                     </div>
                   </div>
