@@ -31,6 +31,7 @@ export {
   createOperationRegistry,
   registerOperation,
   versionOperation,
+  listSessionsOperation,
   type WebuiOperation,
   type WebuiOperationHandler,
   type WebuiOperationRegistryEntry,
@@ -55,7 +56,13 @@ export {
   type WebuiEnvelopeKind,
   type WebuiErrorCodeValue,
 } from "./envelope.js";
-export type { WebuiHarnessPort, WebuiVersionInfo } from "./port.js";
+export type {
+  WebuiHarnessPort,
+  WebuiVersionInfo,
+  WebuiSessionListRequest,
+  WebuiSessionListItem,
+  WebuiSessionPage,
+} from "./port.js";
 export {
   createHarnessPortFromHost,
   type WebuiRuntimeHostHandle,

@@ -13,12 +13,23 @@
 // directly.
 
 import { WEBUI_PROTOCOL_VERSION } from "./envelope.js";
-import type { WebuiHarnessPort, WebuiVersionInfo } from "./port.js";
+import type {
+  WebuiHarnessPort,
+  WebuiSessionListRequest,
+  WebuiSessionPage,
+  WebuiVersionInfo,
+} from "./port.js";
 
 export interface WebuiRuntimeHostHandle {
   readonly apiHost: { close(): Promise<void> };
   readonly appVersion?: string;
   readonly dataDir?: string;
+  readonly cliService?: {
+    listSessions(
+      request: WebuiSessionListRequest,
+      context?: Record<string, never>,
+    ): Promise<WebuiSessionPage>;
+  };
 }
 
 /**
@@ -38,6 +49,11 @@ export function createHarnessPortFromHost(
   return {
     version() {
       return version;
+    },
+    async listSessions(request) {
+      if (!host.cliService)
+        throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.listSessions(request, {});
     },
     async close() {
       if (closed) return;

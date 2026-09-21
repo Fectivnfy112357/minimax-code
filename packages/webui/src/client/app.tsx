@@ -9,15 +9,108 @@
 // lines up with the desktop application even when the harness is not
 // running.
 
-import type { ReactElement } from "react";
+import { useEffect, useMemo, useState, type ReactElement } from "react";
+
+export interface WebuiClientSession {
+  readonly sessionId: string;
+  readonly agentName: string;
+  readonly title?: string;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+}
+
+export interface WebuiClientSessionPage {
+  readonly sessions: readonly WebuiClientSession[];
+  readonly hasMore: boolean;
+  readonly nextCursor?: string;
+}
+
+export type WebuiClientSessionLoader = (cursor?: string) => Promise<WebuiClientSessionPage>;
 
 export interface WebuiClientFoundationAppProps {
   readonly label: string;
+  readonly sessionPage?: WebuiClientSessionPage;
+  readonly loadSessions?: WebuiClientSessionLoader;
+}
+
+function sessionLabel(session: WebuiClientSession): string {
+  return session.title?.trim() || session.agentName || session.sessionId;
+}
+
+function sessionTime(timestamp: number): string {
+  return new Date(timestamp).toLocaleString();
+}
+
+export function WebuiSessionList({
+  page,
+  loading,
+  onLoadMore,
+}: {
+  readonly page: WebuiClientSessionPage;
+  readonly loading: boolean;
+  readonly onLoadMore?: () => void;
+}): ReactElement {
+  const sessions = useMemo(
+    () => [...page.sessions].sort((left, right) => right.updatedAt - left.updatedAt),
+    [page.sessions],
+  );
+  return (
+    <section aria-label="Sessions" className="flex flex-col gap-spacing_8">
+      <h2 className="text-text_default_primary text-size_16 leading-line_height_22 font-weight_medium">Sessions</h2>
+      {sessions.length === 0 ? (
+        <p className="text-text_default_secondary text-size_14 leading-line_height_20">No sessions yet.</p>
+      ) : (
+        <ul className="flex flex-col gap-spacing_4" data-webui-session-list="true">
+          {sessions.map((session) => (
+            <li key={session.sessionId} className="rounded-radius_8 bg-bg_grouped_secondary p-spacing_8">
+              <div className="text-text_default_primary text-size_14 leading-line_height_20">{sessionLabel(session)}</div>
+              <time
+                className="text-text_default_secondary text-size_12 leading-line_height_16"
+                dateTime={new Date(session.updatedAt).toISOString()}
+              >
+                {sessionTime(session.updatedAt)}
+              </time>
+            </li>
+          ))}
+        </ul>
+      )}
+      {page.hasMore && onLoadMore ? (
+        <button type="button" onClick={onLoadMore} disabled={loading}>
+          {loading ? "Loading…" : "Load more"}
+        </button>
+      ) : null}
+    </section>
+  );
 }
 
 export function WebuiClientFoundationApp({
   label,
+  sessionPage,
+  loadSessions,
 }: WebuiClientFoundationAppProps): ReactElement {
+  const [page, setPage] = useState<WebuiClientSessionPage>(sessionPage ?? { sessions: [], hasMore: false });
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    if (!loadSessions || sessionPage) return;
+    let cancelled = false;
+    setLoading(true);
+    void loadSessions().then((nextPage) => {
+      if (!cancelled) setPage(nextPage);
+    }).finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [loadSessions, sessionPage]);
+  const loadMore = loadSessions && page.hasMore ? () => {
+    setLoading(true);
+    void loadSessions(page.nextCursor).then((nextPage) => {
+      setPage((current) => ({
+        sessions: [...current.sessions, ...nextPage.sessions],
+        hasMore: nextPage.hasMore,
+        nextCursor: nextPage.nextCursor,
+      }));
+    }).finally(() => setLoading(false));
+  } : undefined;
   return (
     <div
       data-webui-shell="two-column"
@@ -61,12 +154,7 @@ export function WebuiClientFoundationApp({
               Placeholder conversation surface
             </h1>
           </header>
-          <p className="text-text_default_secondary text-size_14 leading-line_height_20 max-w-[640px]">
-            Two-column shell with the desktop application's design tokens. The
-            harness data is not wired up in this slice; later tickets will
-            stream messages, render tool output and handle permission prompts
-            here.
-          </p>
+          <WebuiSessionList page={page} loading={loading} onLoadMore={loadMore} />
           <pre
             className="font-mono text-size_12 leading-line_height_16 bg-bg_grouped_secondary rounded-radius_8 p-spacing_8 text-text_default_secondary"
             data-webui-shell-placeholder="code-snippet"

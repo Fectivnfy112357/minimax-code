@@ -10,6 +10,10 @@
 // with `invalid_body`.
 
 import { WebuiErrorCode, type WebuiErrorCodeValue } from "./envelope.js";
+import type {
+  WebuiHarnessPort,
+  WebuiSessionListRequest,
+} from "./port.js";
 
 export interface WebuiOperationContext {
   readonly requestId: string;
@@ -24,7 +28,7 @@ export type WebuiOperationHandler<Body> = (
   body: unknown,
 ) => Promise<WebuiOperationResult<Body>> | WebuiOperationResult<Body>;
 
-export interface WebuiOperation<Body = unknown> {
+export interface WebuiOperation<Body = unknown, ResultBody = Body> {
   readonly name: string;
   readonly validate: (body: unknown) => WebuiOperationValidation<Body>;
 }
@@ -34,6 +38,7 @@ export type WebuiOperationValidation<Body> =
   | { readonly ok: false; readonly code: WebuiErrorCodeValue; readonly message: string };
 
 const VERSION_OPERATION_NAME = "version" as const;
+const LIST_SESSIONS_OPERATION_NAME = "listSessions" as const;
 
 type VersionRequestBody = undefined;
 
@@ -62,18 +67,46 @@ export const versionOperation: WebuiOperation<VersionRequestBody> = {
   validate: validateVersionRequestBody,
 };
 
+function validateListSessionsRequestBody(
+  body: unknown,
+): WebuiOperationValidation<WebuiSessionListRequest> {
+  if (body === null || typeof body !== "object" || Array.isArray(body))
+    return { ok: false, code: WebuiErrorCode.invalidBody, message: "listSessions body must be an object" };
+  const candidate = body as Record<string, unknown>;
+  if (typeof candidate.name !== "string" || candidate.name.trim() === "")
+    return { ok: false, code: WebuiErrorCode.invalidBody, message: "listSessions body requires a non-empty name" };
+  for (const key of ["limit", "offset"] as const) {
+    if (candidate[key] !== undefined && (!Number.isInteger(candidate[key]) || (candidate[key] as number) < 0))
+      return { ok: false, code: WebuiErrorCode.invalidBody, message: `${key} must be a non-negative integer` };
+  }
+  if (candidate.cursor !== undefined && typeof candidate.cursor !== "string")
+    return { ok: false, code: WebuiErrorCode.invalidBody, message: "cursor must be a string" };
+  return { ok: true, body: candidate as unknown as WebuiSessionListRequest };
+}
+
+export const listSessionsOperation: WebuiOperation<
+  WebuiSessionListRequest,
+  import("./port.js").WebuiSessionPage
+> = {
+  name: LIST_SESSIONS_OPERATION_NAME,
+  validate: validateListSessionsRequestBody,
+};
+
 export interface WebuiOperationRegistryEntry {
   readonly operation: WebuiOperation;
   readonly handle: WebuiOperationHandler<unknown>;
 }
 
-export interface WebuiOperationRegistration<Body = unknown> {
-  readonly operation: WebuiOperation<Body>;
-  readonly handle: WebuiOperationHandler<Body>;
+export interface WebuiOperationRegistration<Body = unknown, ResultBody = Body> {
+  readonly operation: WebuiOperation<Body, ResultBody>;
+  readonly handle: (
+    context: WebuiOperationContext,
+    body: Body,
+  ) => Promise<WebuiOperationResult<ResultBody>> | WebuiOperationResult<ResultBody>;
 }
 
 export function createOperationRegistry(
-  port: { version(): { version: string; protocolVersion: number } },
+  port: Pick<WebuiHarnessPort, "version" | "listSessions">,
 ): ReadonlyMap<string, WebuiOperationRegistryEntry> {
   const registry = new Map<string, WebuiOperationRegistryEntry>();
   registerOperation(registry, {
@@ -81,6 +114,10 @@ export function createOperationRegistry(
     handle: () => ({
       body: port.version(),
     }),
+  });
+  registerOperation(registry, {
+    operation: listSessionsOperation,
+    handle: async (_context, body) => ({ body: await port.listSessions(body) }),
   });
   return registry;
 }
@@ -91,9 +128,9 @@ export function createOperationRegistry(
  * fail-closed at registration time so the service never accepts a
  * request whose body it cannot structurally verify.
  */
-export function registerOperation<Body>(
+export function registerOperation<Body, ResultBody = Body>(
   registry: Map<string, WebuiOperationRegistryEntry>,
-  registration: WebuiOperationRegistration<Body>,
+  registration: WebuiOperationRegistration<Body, ResultBody>,
 ): void {
   const { operation, handle } = registration;
   if (typeof operation.validate !== "function")

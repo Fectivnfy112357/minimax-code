@@ -97,6 +97,7 @@ export class WebuiService {
         version: this.port.version().version,
         protocolVersion: this.port.version().protocolVersion,
       }),
+      listSessions: (request) => this.port.listSessions(request),
     });
     const factory = options.httpServerFactory ?? (() => createServer());
     this.httpServer = factory();

@@ -15,8 +15,46 @@ export interface WebuiVersionInfo {
   readonly protocolVersion: number;
 }
 
+export interface WebuiSessionListRequest {
+  readonly name: string;
+  readonly limit?: number;
+  readonly offset?: number;
+  readonly cursor?: string;
+  readonly includeArchived?: boolean;
+  readonly onlyArchived?: boolean;
+  readonly onlyCompressed?: boolean;
+  readonly includeHidden?: boolean;
+  readonly includePurposePrefix?: string;
+  readonly excludePurposePrefix?: string;
+}
+
+export interface WebuiSessionListItem {
+  readonly sessionId: string;
+  readonly agentName: string;
+  readonly sessionType?: string;
+  readonly archived?: boolean;
+  readonly status?: unknown;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+  readonly workspaceDir?: string;
+  readonly frameworkType?: string;
+  readonly isDefaultWorkspace?: boolean;
+  readonly visibility?: string;
+  readonly sessionKind?: string;
+  readonly title?: string;
+  readonly parentSessionId?: string;
+  readonly purpose?: string;
+}
+
+export interface WebuiSessionPage {
+  readonly sessions: readonly WebuiSessionListItem[];
+  readonly hasMore: boolean;
+  readonly nextCursor?: string;
+}
+
 export interface WebuiHarnessPort {
   version(): WebuiVersionInfo;
+  listSessions(request: WebuiSessionListRequest): Promise<WebuiSessionPage>;
   /**
    * Release anything the port owns. The service calls this after closing
    * every transport-side resource so the harness can tear itself down in

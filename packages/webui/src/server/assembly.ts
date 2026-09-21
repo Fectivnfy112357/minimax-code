@@ -38,6 +38,12 @@ export interface WebuiAssembledHost {
   readonly apiHost: { close(): Promise<void> };
   readonly dataDir: string;
   readonly appVersion?: string;
+  readonly cliService?: {
+    listSessions(
+      request: import("./port.js").WebuiSessionListRequest,
+      context?: Record<string, never>,
+    ): Promise<import("./port.js").WebuiSessionPage>;
+  };
 }
 
 /**

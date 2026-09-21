@@ -10,7 +10,7 @@ import { describe, it, expect } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
-import { WebuiClientFoundationApp } from "../../src/client/app.js";
+import { WebuiClientFoundationApp, WebuiSessionList } from "../../src/client/app.js";
 
 function renderShell(label = "webui-foundation"): string {
   return renderToStaticMarkup(
@@ -28,6 +28,35 @@ describe("WebUI shell", () => {
     expect(html).toMatch(/data-webui-shell="two-column"/u);
     expect(html).toMatch(/data-webui-shell-region="rail"/u);
     expect(html).toMatch(/data-webui-shell-region="surface"/u);
+  });
+
+  it("renders newest sessions, formats epoch milliseconds, and falls back when title is absent", () => {
+    const html = renderToStaticMarkup(
+      createElement(WebuiSessionList, {
+        page: {
+          sessions: [
+            { sessionId: "older-id", agentName: "older-agent", createdAt: 1000, updatedAt: 2000 },
+            { sessionId: "newer-id", agentName: "newer-agent", title: "Named session", createdAt: 3000, updatedAt: 4000 },
+          ],
+          hasMore: false,
+        },
+        loading: false,
+      }),
+    );
+    expect(html.indexOf("Named session")).toBeLessThan(html.indexOf("older-agent"));
+    expect(html).toContain("older-agent");
+    expect(html).toContain(new Date(2000).toLocaleString());
+    expect(html).toContain('data-webui-session-list="true"');
+  });
+
+  it("renders a legitimate empty shared-history state", () => {
+    const html = renderToStaticMarkup(
+      createElement(WebuiSessionList, {
+        page: { sessions: [], hasMore: false },
+        loading: false,
+      }),
+    );
+    expect(html).toContain("No sessions yet.");
   });
 
   it("uses token-derived background and text utilities", () => {

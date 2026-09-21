@@ -21,6 +21,7 @@ import {
   WebuiService,
   isWebuiFrame,
   type WebuiHarnessPort,
+  type WebuiSessionListRequest,
   type WebuiVersionInfo,
 } from "../../src/server/index.js";
 
@@ -43,6 +44,10 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
 
   version(): WebuiVersionInfo {
     return this.versionInfo;
+  }
+
+  async listSessions(_request: WebuiSessionListRequest) {
+    return { sessions: [], hasMore: false };
   }
 
   async close(): Promise<void> {
@@ -227,6 +232,61 @@ describe("WebUI service", () => {
     const body = response.body as { version: string; protocolVersion: number };
     expect(body.version).toBe("0.3.1-fixture");
     expect(body.protocolVersion).toBe(WEBUI_PROTOCOL_VERSION);
+    ws.close();
+  });
+
+  it("lists sessions through the narrow port and preserves cursor paging", async () => {
+    const calls: WebuiSessionListRequest[] = [];
+    const pages = [
+      {
+        sessions: [{ sessionId: "new", agentName: "main", createdAt: 20, updatedAt: 30 }],
+        hasMore: true,
+        nextCursor: "cursor-2",
+      },
+      {
+        sessions: [{ sessionId: "old", agentName: "main", createdAt: 10, updatedAt: 15 }],
+        hasMore: false,
+      },
+    ];
+    port.listSessions = async (request) => {
+      calls.push(request);
+      return pages[calls.length - 1];
+    };
+    const { url } = await bootService();
+    const { ws, upgrade } = openClient(url);
+    await upgrade;
+    const request = (requestId: string, body: unknown) => requestOnce(ws, {
+      protocolVersion: WEBUI_PROTOCOL_VERSION,
+      kind: "request",
+      requestId,
+      operation: "listSessions",
+      body,
+    });
+    const first = await request("req-list-1", { name: "main", limit: 1 });
+    const second = await request("req-list-2", { name: "main", limit: 1, cursor: "cursor-2" });
+    expect((first as { body: typeof pages[0] }).body.nextCursor).toBe("cursor-2");
+    expect((second as { body: typeof pages[1] }).body.sessions[0].sessionId).toBe("old");
+    expect(calls).toEqual([
+      { name: "main", limit: 1 },
+      { name: "main", limit: 1, cursor: "cursor-2" },
+    ]);
+    ws.close();
+  });
+
+  it("rejects a session-list body without the required harness name", async () => {
+    const { url } = await bootService();
+    const { ws, upgrade } = openClient(url);
+    await upgrade;
+    const response = await requestOnce(ws, {
+      protocolVersion: WEBUI_PROTOCOL_VERSION,
+      kind: "request",
+      requestId: "req-list-invalid",
+      operation: "listSessions",
+      body: { limit: 10 },
+    });
+    if (!isWebuiFrame(response)) throw new Error("expected frame");
+    expect(response.kind).toBe("error");
+    expect(response.code).toBe(WebuiErrorCode.invalidBody);
     ws.close();
   });
 
@@ -619,6 +679,9 @@ describe("WebUI shutdown order (criterion 7)", () => {
       version() {
         return { version: "0.4.2-shutdown-test", protocolVersion: 1 };
       },
+      async listSessions() {
+        return { sessions: [], hasMore: false };
+      },
       async close() {
         // The service awaits wsServer.close() and httpServer.close()
         // before calling port.close(), so by the time we land here the
@@ -686,6 +749,9 @@ describe("WebUI shutdown order (criterion 7)", () => {
       version() {
         versionCalls += 1;
         return { version: "0.4.2-shutdown-gate", protocolVersion: 1 };
+      },
+      async listSessions() {
+        return { sessions: [], hasMore: false };
       },
       async close() {
         await closeGate;
