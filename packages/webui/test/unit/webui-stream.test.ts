@@ -169,17 +169,47 @@ describe("WebUI Markdown", () => {
     expect(isSafeWebuiMarkdownHref("//evil.example")).toBe(false);
   });
 
-  it("renders partial fences and normal fenced code without injecting HTML", () => {
+  it("renders fenced code through the block branch — language, container, pre", () => {
+    // Real newlines, not the two-character sequence `\n`. The previous
+    // fixture used `"\\n"` so marked saw a paragraph with an inline
+    // codespan, not a code fence — the assertion `<code` therefore did
+    // not distinguish block rendering from inline rendering, and a
+    // mutation that drops the block branch would survive the suite.
+    // With real newlines marked emits a `code` token whose `lang` is the
+    // fence language and whose `text` is the body; the implementation
+    // wraps it in `webui-code-block` with a `data-language` attribute
+    // and a `<pre>` shell, and that is what the assertions check.
+    const html = renderToStaticMarkup(
+      createElement(WebuiMarkdown, { source: "```js\nconst a = 1\n```" }),
+    );
+    expect(html).toContain("webui-code-block");
+    expect(html).toContain('data-language="js"');
+    expect(html).toContain("<pre");
+    expect(html).toContain("const a = 1");
+    expect(html).not.toContain("dangerously");
+  });
+
+  it("renders a partial fence through the block branch without throwing", () => {
+    // An incomplete fence is still a `code` token in marked (it cannot
+    // close, but it is not a paragraph either), so the implementation
+    // must take the block branch and produce the `webui-code-block`
+    // container. The previous assertion only checked that render did
+    // not throw; the block branch produces the `data-language`
+    // attribute and the `<pre>` shell, neither of which the inline
+    // codespan renderer would emit, so this fixture fails the moment
+    // the block branch is dropped.
     expect(() =>
       renderToStaticMarkup(
-        createElement(WebuiMarkdown, { source: "```js\\nconst a" }),
+        createElement(WebuiMarkdown, { source: "```js\nconst a" }),
       ),
     ).not.toThrow();
     const html = renderToStaticMarkup(
-      createElement(WebuiMarkdown, { source: "```js\\nconst a = 1\\n```" }),
+      createElement(WebuiMarkdown, { source: "```js\nconst a" }),
     );
-    expect(html).toContain("<code");
-    expect(html).toContain("const a = 1");
+    expect(html).toContain("webui-code-block");
+    expect(html).toContain('data-language="js"');
+    expect(html).toContain("<pre");
+    expect(html).toContain("const a");
     expect(html).not.toContain("dangerously");
   });
 });

@@ -34,12 +34,14 @@ import {
   configureWebuiRuntimeEnvironment,
   type WebuiRuntimeScope,
 } from "../../src/server/runtime-environment.js";
+import { readWebuiAuthContext } from "../../src/server/auth-context.js";
 
 const RUNTIME_ENV_KEYS = [
   "MAVIS_REGION",
   "MAVIS_BUILD_ENV",
   "__MAVIS_RUNTIME_MANAGED",
 ] as const;
+const TOKEN = "token-from-the-installed-client";
 
 let dataDir: string;
 let snapshot: Record<string, string | undefined>;
@@ -69,14 +71,32 @@ function writeJson(filePath: string, value: unknown): void {
 }
 
 /** Writes the `cli-auth/<buildEnv>/<region>` directory the client owns. */
-function writeScope(buildEnv: string, region: string): void {
+function writeScope(
+  buildEnv: string,
+  region: string,
+  options: {
+    readonly token?: string;
+    readonly scopeRegion?: string;
+    readonly credential?: boolean;
+  } = {},
+): void {
   const directory = path.join(dataDir, "cli-auth", buildEnv, region);
   writeJson(path.join(directory, "cli-auth.scope.json"), {
     version: 1,
     updatedAtMs: 1,
-    region,
+    region: options.scopeRegion ?? region,
     buildEnv,
   });
+  if (options.credential !== false) {
+    writeJson(path.join(directory, "local-runtime.auth.json"), {
+      version: 1,
+      updatedAtMs: 1,
+      auth: {
+        accessToken: options.token ?? TOKEN,
+        realUserID: "user-1",
+      },
+    });
+  }
 }
 
 /** Writes the record naming the scope the client last used. */
@@ -276,5 +296,98 @@ describe("configureWebuiRuntimeEnvironment", () => {
     expect(process.env.MAVIS_REGION).toBeUndefined();
     expect(process.env.MAVIS_BUILD_ENV).toBeUndefined();
     expect(process.env.__MAVIS_RUNTIME_MANAGED).toBeUndefined();
+  });
+
+  it("falls through to a different scope when the projection's directory has no credential", () => {
+    // Shape C: the projection names prod/cn but its directory carries
+    // only the scope file (no `local-runtime.auth.json`), while the
+    // test/en directory does carry a credential. The projection must
+    // NOT win in that case — adopting a scope whose directory has no
+    // bearer would strand the runtime on the OAuth-preflight failure
+    // (`managed OAuth bearer is not synced`) for a different cause
+    // than the original symptom. The credential reader agrees.
+    writeScope("prod", "cn", { credential: false });
+    writeScope("test", "en");
+    writeProjection("prod", "cn");
+
+    const scope = configureWebuiRuntimeEnvironment({ dataDir });
+    const credential = readWebuiAuthContext(dataDir);
+
+    expect(scope).toEqual({
+      region: "en",
+      buildEnv: "test",
+      source: "directory",
+    });
+    expect(snapshotTarget()).toEqual(expectedWriteEffect(scope));
+    // Same decision on both sides: the runtime scope the harness picks
+    // up and the bearer the credential reader serves agree by
+    // construction. Without this assertion the projection-precedence
+    // mutation would still survive, because no prior fixture ever made
+    // the projection name a scope whose directory had no credential.
+    expect(credential?.realUserID).toBe("user-1");
+  });
+
+  it("lets the projection win when its directory carries the credential", () => {
+    // The companion to the previous case. When the projection names
+    // prod/cn and that directory's credential file is intact, the
+    // projection must beat the scan, even though `dev/en` would
+    // otherwise be the first hit the scanner returns (`dev` sorts
+    // before `prod`). Without this fixture a mutation that swaps the
+    // two branches would survive the suite.
+    writeScope("prod", "cn");
+    writeScope("dev", "en");
+    writeProjection("prod", "cn");
+
+    const scope = configureWebuiRuntimeEnvironment({ dataDir });
+    const credential = readWebuiAuthContext(dataDir);
+
+    expect(scope).toEqual({
+      region: "cn",
+      buildEnv: "prod",
+      source: "projection",
+    });
+    expect(snapshotTarget()).toEqual(expectedWriteEffect(scope));
+    expect(credential?.realUserID).toBe("user-1");
+  });
+
+  it("lets the scan pick the first directory with a credential when the projection is missing", () => {
+    // Shape B': no projection at all, but two scoped directories exist.
+    // The first one (`dev/en`) has only the scope file; the second
+    // (`prod/cn`) carries the credential. The scan walks sorted
+    // buildEnvs (`dev` < `prod`) and skips `dev/en` because its
+    // credential read fails — so `prod/cn` wins. A mutation that
+    // drops the credential guard would return `dev/en` here, the
+    // same string the reviewer observed on the wild.
+    writeScope("dev", "en", { credential: false });
+    writeScope("prod", "cn");
+
+    const scope = configureWebuiRuntimeEnvironment({ dataDir });
+    const credential = readWebuiAuthContext(dataDir);
+
+    expect(scope).toEqual({
+      region: "cn",
+      buildEnv: "prod",
+      source: "directory",
+    });
+    expect(snapshotTarget()).toEqual(expectedWriteEffect(scope));
+    expect(credential?.realUserID).toBe("user-1");
+  });
+
+  it("refuses a stale projection whose directory has no credential and the scan is empty", () => {
+    // The shape B the reviewer pointed out: the projection names a
+    // scope whose directory exists but carries only the scope file.
+    // No other directory exists. The resolver returns undefined and
+    // leaves the environment untouched — the OAuth preflight will then
+    // fail loudly rather than silently strand the runtime on a scope
+    // whose bearer does not exist.
+    writeScope("prod", "cn", { credential: false });
+    writeProjection("prod", "cn");
+
+    const scope = configureWebuiRuntimeEnvironment({ dataDir });
+    const credential = readWebuiAuthContext(dataDir);
+
+    expect(scope).toBeUndefined();
+    expect(snapshotTarget()).toEqual(expectedWriteEffect(undefined));
+    expect(credential).toBeUndefined();
   });
 });

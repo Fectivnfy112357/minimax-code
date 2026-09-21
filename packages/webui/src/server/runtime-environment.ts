@@ -27,7 +27,11 @@
 //     finds. The credential reader in `auth-context.ts` already
 //     implements that resolution (`resolveAuthScope`,
 //     `projectedScope`); this module reuses it so the OAuth bearer and
-//     the harness scope agree by construction.
+//     the harness scope agree by construction. A scope is adopted only
+//     when its directory actually carries a credential — a stale
+//     projection that names a scope whose directory is empty falls
+//     through, exactly the rule the credential reader applies. This is
+//     the one-decision / two-consumers rule (`auth-context.ts`).
 //   * Values are validated against the same allow-list the harness
 //     applies (`config.ts:120-151`), so a malformed store or an
 //     operator-supplied typo cannot poison the runtime.
@@ -142,12 +146,23 @@ export function configureWebuiRuntimeEnvironment(
       source: "env",
     };
   } else {
+    // `resolveAuthScope` and `readWebuiAuthContext` share one decision:
+    // a scope is only adopted when its directory actually carries a
+    // credential, otherwise the scan falls through. The label here is
+    // `"projection"` only when the projection's directory produced the
+    // scope we are returning — a projection that was overridden by the
+    // scan (its directory had no credential) is labelled `"directory"`.
     const stored = resolveAuthScope(options.dataDir);
+    const projected = projectedScope(options.dataDir);
     if (stored) {
+      const fromProjection =
+        projected !== undefined &&
+        projected.region === stored.region &&
+        projected.buildEnv === stored.buildEnv;
       scope = {
         region: stored.region,
         buildEnv: stored.buildEnv,
-        source: projectedScope(options.dataDir) ? "projection" : "directory",
+        source: fromProjection ? "projection" : "directory",
       };
     }
   }

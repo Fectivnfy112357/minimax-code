@@ -30,6 +30,16 @@
 //     place, so picking a renewal up is a read; only a rejected token is
 //     remembered, and only for this process's lifetime.
 //
+// One decision, two consumers. The scope picked here is also the scope
+// `MAVIS_REGION` / `MAVIS_BUILD_ENV` are written from
+// (`packages/webui/src/server/runtime-environment.ts`). The projection is
+// adopted only when its directory actually carries a credential; otherwise
+// the scan falls through to the first scoped directory that does. Without
+// this guard a stale projection strands the runtime on a scope whose
+// bearer does not exist — the same `managed OAuth bearer is not synced`
+// text the credential gap produced, but with the OAuth-bearer fix in
+// place, leaving the diagnosis ambiguous.
+//
 // Refresh: a successful read is cached for `AUTH_CONTEXT_TTL_MS` so one turn
 // resolving several models does not re-read the file per resolution, and the
 // cache expires so an upstream renewal becomes visible without a restart. Only
@@ -79,28 +89,61 @@ interface AuthScope {
   readonly buildEnv: string;
 }
 
-/**
- * Resolves the {@link AuthScope} the installed client last projected, falling
- * back to the first scoped directory that actually carries one. Returns
- * undefined when the data directory holds nothing the resolver can trust, so
- * the caller can choose to do nothing rather than guess.
- *
- * Exported so the runtime-environment module can share one implementation
- * with the credential reader — the same scope decides both the OAuth bearer
- * and the `MAVIS_REGION` / `MAVIS_BUILD_ENV` the harness picks up.
- */
-export function resolveAuthScope(dataDir: string): AuthScope | undefined {
-  const projected = projectedScope(dataDir);
-  if (projected) return projected;
-  for (const { scope } of scopedDirectories(dataDir)) {
-    return scope;
-  }
-  return undefined;
+type ScopeSource = "projection" | "directory";
+
+interface AdoptedScope {
+  readonly scope: AuthScope;
+  readonly source: ScopeSource;
+  readonly auth: WebuiAuthContext;
 }
 
 interface ScopedDirectory {
   readonly directory: string;
   readonly scope: AuthScope;
+}
+
+/**
+ * Picks the {@link AdoptedScope} the runtime host should run as. The rule
+ * is the one {@link readWebuiAuthContext} already applies to credentials:
+ * a scope is adopted only when its directory can produce a credential, so
+ * a stale projection cannot strand the runtime on a scope whose bearer
+ * does not exist (a divergence that previously surfaced as the same
+ * `managed OAuth bearer is not synced` error the credential gap produced
+ * for a different cause).
+ *
+ * Used by both consumers — the runtime-environment resolver and the
+ * credential reader — so the OAuth bearer and the
+ * `MAVIS_REGION` / `MAVIS_BUILD_ENV` the harness picks up agree by
+ * construction. Both reject when nothing is resolvable; both prefer the
+ * projection when it can be backed; both fall through to the directory
+ * scan otherwise.
+ */
+function adoptScope(dataDir: string): AdoptedScope | undefined {
+  const projected = projectedScope(dataDir);
+  if (projected) {
+    const auth = readScopedAuth(scopedDirectory(dataDir, projected), projected);
+    if (auth) return { scope: projected, source: "projection", auth };
+  }
+  for (const { directory, scope } of scopedDirectories(dataDir)) {
+    const auth = readScopedAuth(directory, scope);
+    if (auth) return { scope, source: "directory", auth };
+  }
+  return undefined;
+}
+
+/**
+ * Resolves the {@link AuthScope} the installed client last projected,
+ * falling back to the first scoped directory that actually carries a
+ * credential. Returns undefined when the data directory holds nothing the
+ * resolver can trust, so the caller can choose to do nothing rather than
+ * guess.
+ *
+ * Exported so the runtime-environment module can share one decision with
+ * the credential reader — the same scope decides both the OAuth bearer
+ * and the `MAVIS_REGION` / `MAVIS_BUILD_ENV` the harness picks up.
+ */
+export function resolveAuthScope(dataDir: string): AuthScope | undefined {
+  return adoptScope(dataDir)?.scope;
 }
 
 function optionalString(value: unknown): string | undefined {
@@ -233,21 +276,15 @@ function readScopedAuth(
 /**
  * Reads the account credential the installed client holds for `dataDir`.
  * Prefers the scope the client last projected and falls back to the first
- * scoped directory that carries one.
+ * scoped directory that carries one. Delegates to {@link adoptScope} so
+ * the scope picked here matches the one {@link resolveAuthScope} would
+ * return — the runtime environment and the credential can never disagree
+ * on what scope they belong to.
  */
 export function readWebuiAuthContext(
   dataDir: string,
 ): WebuiAuthContext | undefined {
-  const projected = projectedScope(dataDir);
-  if (projected) {
-    const auth = readScopedAuth(scopedDirectory(dataDir, projected), projected);
-    if (auth) return auth;
-  }
-  for (const { directory, scope } of scopedDirectories(dataDir)) {
-    const auth = readScopedAuth(directory, scope);
-    if (auth) return auth;
-  }
-  return undefined;
+  return adoptScope(dataDir)?.auth;
 }
 
 /**
