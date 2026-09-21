@@ -1,0 +1,21 @@
+/*
+ * Tailwind entry for the WebUI shell.
+ *
+ * Three layers are layered into one stylesheet:
+ *   1. tokens.css   — primitive ramps, opacity, scale tokens, and the 211
+ *                     semantic tokens with light and dark bindings.
+ *   2. Tailwind base/components/utilities layers — preflight plus the
+ *                     token-derived utilities declared in tailwind.config.cjs.
+ *   3. The desktop's preflight typography (font-family) is also supplied via
+ *      tailwind.config.cjs, so the sans/mono Chinese fallbacks flow from
+ *      `font-sans` / `font-mono` rather than from a separate rule.
+ *
+ * The compiled output is the single stylesheet consumed by both the Vite
+ * development server and the packaged esbuild artifact (ADR 0010).
+ */
+
+@import "./tokens.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
