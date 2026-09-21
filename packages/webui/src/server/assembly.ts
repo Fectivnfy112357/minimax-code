@@ -28,6 +28,7 @@ import {
 } from "./auth-context.js";
 import { createHarnessPortFromHost } from "./host.js";
 import type { WebuiHarnessPort } from "./port.js";
+import { configureWebuiRuntimeEnvironment } from "./runtime-environment.js";
 
 /**
  * Minimal host contract the assembly needs from whatever factory
@@ -154,6 +155,17 @@ export async function createWebuiRuntimeHost(
   // `auth-context.ts` for the store's layout and the deliberate differences
   // from the terminal client's reader.
   const authContext = createWebuiAuthContextReader(options.dataDir);
+  // Reflect the installed client's scope into this process's environment
+  // before the host is built, so `getRuntimeRegion()` /
+  // `getRuntimeBuildEnv()` / `isManagedRuntime()` see the same scope the
+  // credential reader served. The CLI does this for itself
+  // (`packages/tui/src/cli/environment.ts:40-72`); the WebUI has to do
+  // its own because ADR 0003 forbids importing that module. The resolver
+  // is a no-op when the store carries nothing and nothing is explicit in
+  // the environment, so a WebUI start without a client-side login still
+  // falls back to the harness defaults — `en` / `dev`,
+  // `isManagedRuntime()=false` — exactly as before this step existed.
+  configureWebuiRuntimeEnvironment({ dataDir: options.dataDir });
   const forwardedOptions: WebuiForwardedRuntimeHostOptions = {
     dataDir: options.dataDir,
     ...(options.appVersion !== undefined

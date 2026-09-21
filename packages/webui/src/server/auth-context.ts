@@ -79,6 +79,25 @@ interface AuthScope {
   readonly buildEnv: string;
 }
 
+/**
+ * Resolves the {@link AuthScope} the installed client last projected, falling
+ * back to the first scoped directory that actually carries one. Returns
+ * undefined when the data directory holds nothing the resolver can trust, so
+ * the caller can choose to do nothing rather than guess.
+ *
+ * Exported so the runtime-environment module can share one implementation
+ * with the credential reader — the same scope decides both the OAuth bearer
+ * and the `MAVIS_REGION` / `MAVIS_BUILD_ENV` the harness picks up.
+ */
+export function resolveAuthScope(dataDir: string): AuthScope | undefined {
+  const projected = projectedScope(dataDir);
+  if (projected) return projected;
+  for (const { scope } of scopedDirectories(dataDir)) {
+    return scope;
+  }
+  return undefined;
+}
+
 interface ScopedDirectory {
   readonly directory: string;
   readonly scope: AuthScope;
@@ -128,7 +147,7 @@ function scopedDirectory(dataDir: string, scope: AuthScope): string {
 }
 
 /** The scope the installed client last projected, if it left a record. */
-function projectedScope(dataDir: string): AuthScope | undefined {
+export function projectedScope(dataDir: string): AuthScope | undefined {
   return readScope(
     readJsonObject(join(dataDir, CLI_AUTH_DIRECTORY, CLI_SHARED_PROJECTION_FILE)),
   );
