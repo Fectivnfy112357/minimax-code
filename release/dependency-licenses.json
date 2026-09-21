@@ -1023,6 +1023,14 @@
       "homepage": "https://github.com/davidmarkclements/atomic-sleep#readme"
     },
     {
+      "name": "autoprefixer",
+      "versions": [
+        "10.4.20"
+      ],
+      "license": "MIT",
+      "homepage": "https://github.com/postcss/autoprefixer#readme"
+    },
+    {
       "name": "axios",
       "versions": [
         "1.20.0"
@@ -3562,6 +3570,14 @@
       ],
       "license": "MIT",
       "homepage": "https://github.com/inspect-js/node-supports-preserve-symlinks-flag#readme"
+    },
+    {
+      "name": "tailwindcss",
+      "versions": [
+        "3.4.17"
+      ],
+      "license": "MIT",
+      "homepage": "https://tailwindcss.com"
     },
     {
       "name": "tapable",

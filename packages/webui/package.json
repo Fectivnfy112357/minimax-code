@@ -10,6 +10,7 @@
   "scripts": {
     "typecheck:server": "tsc -p tsconfig.server.json --noEmit",
     "typecheck:client": "tsc -p tsconfig.client.json --noEmit",
+    "build:styles": "node ../../scripts/build-webui-styles.mjs",
     "test": "node ../../scripts/run-vitest-suite.mjs webui"
   },
   "dependencies": {
@@ -25,6 +26,9 @@
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
     "@types/ws": "8.18.1",
+    "autoprefixer": "10.4.20",
+    "postcss": "8.5.28",
+    "tailwindcss": "3.4.17",
     "tsx": "4.23.13",
     "typescript": "5.9.3",
     "vite": "7.3.6",
