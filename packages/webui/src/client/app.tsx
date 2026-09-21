@@ -52,6 +52,8 @@ import {
 import {
   buildWebuiStreamLoopSink,
   runWebuiStreamLoop,
+  type WebuiStreamLoopDeps,
+  type WebuiStreamLoopSink,
 } from "./stream-loop.js";
 import type { WebuiStreamFrame } from "../server/port.js";
 
@@ -590,6 +592,85 @@ function RailRow({
   );
 }
 
+/**
+ * Pure form-submit handler extracted from the React component so a test
+ * can drive the production app-to-helper seam without standing up a
+ * DOM. The React component in this file (`WebuiComposer`) calls this
+ * helper with the same handlers it derives from `useState`; the helper
+ * itself is the single source of truth for the production wiring.
+ *
+ * The seam that the test must cover is `buildWebuiStreamLoopSink`:
+ * omitting the helper, passing a no-op state setter, or ignoring the
+ * returned sink all leave the React component unable to render the
+ * stream. The shell test drives this function end-to-end and asserts
+ * the resulting state matches the reachable outcomes.
+ */
+export interface WebuiComposerSubmitArgs {
+  readonly sessionId?: string;
+  readonly draft: string;
+  readonly sending: boolean;
+  readonly deps: WebuiStreamLoopDeps;
+}
+
+export interface WebuiComposerSubmitHandlers {
+  readonly setStream: (
+    update: (current: WebuiStreamState) => WebuiStreamState,
+  ) => void;
+  readonly setSending: (sending: boolean) => void;
+  readonly onDraftChange: (next: string) => void;
+  readonly onNeedsSession?: (draft: string) => void;
+}
+
+/**
+ * Optional sink override for tests. The production wiring in
+ * `WebuiComposer` always passes the `setStream` helper; this override
+ * exists so a test can confirm the helper is the only path the loop
+ * ever sees. In production the value is `undefined` and the helper is
+ * used unconditionally.
+ */
+export interface WebuiComposerSubmitOptions {
+  readonly buildSink?: (
+    setStream: (
+      update: (current: WebuiStreamState) => WebuiStreamState,
+    ) => void,
+  ) => WebuiStreamLoopSink;
+}
+
+export async function submitWebuiComposerTurn(
+  args: WebuiComposerSubmitArgs,
+  handlers: WebuiComposerSubmitHandlers,
+  options?: WebuiComposerSubmitOptions,
+): Promise<void> {
+  const message = args.draft.trim();
+  if (!message || args.sending || !args.deps.sendMessage) return;
+  if (!args.sessionId) {
+    handlers.onNeedsSession?.(args.draft);
+    return;
+  }
+  handlers.setSending(true);
+  handlers.onDraftChange("");
+  // Initialise the reducer state via the live `setStream`. The
+  // production binding goes through `buildWebuiStreamLoopSink`; tests
+  // can swap the sink via `options.buildSink` to assert the helper is
+  // what the loop actually sees.
+  handlers.setStream((current) => ({
+    ...initialWebuiStreamState,
+    phase: "streaming",
+  }));
+  try {
+    const sink = options?.buildSink
+      ? options.buildSink(handlers.setStream)
+      : buildWebuiStreamLoopSink(handlers.setStream);
+    await runWebuiStreamLoop(
+      args.deps,
+      { sessionId: args.sessionId, message },
+      sink,
+    );
+  } finally {
+    handlers.setSending(false);
+  }
+}
+
 function WebuiComposer({
   sessionId,
   sendMessage,
@@ -620,33 +701,15 @@ function WebuiComposer({
   const sendable = canCompose && Boolean(draft.trim()) && !sending;
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const message = draft.trim();
-    if (!message || sending || !sendMessage) return;
-    if (!sessionId) {
-      onNeedsSession?.(draft);
-      return;
-    }
-    setSending(true);
-    onDraftChange("");
-    // The send/resume loop lives in `stream-loop.ts`; this handler only
-    // owns the React state and routes the loop's sink callbacks into
-    // `setStream`. Both failure signals — a WebSocket drop and a
-    // `resume_overflow` frame — are unified in the loop and observable
-    // through the `phase` field on the state we render below.
-    setStream({ ...initialWebuiStreamState, phase: "streaming" });
-    try {
-      // The sink-binding helper is exported from stream-loop.ts so the
-      // shell test can drive the same wiring the React component uses.
-      // Calling it from the production handler makes the binding
-      // source-controlled rather than hand-written.
-      await runWebuiStreamLoop(
-        { sendMessage, resumeSession, loadMessages },
-        { sessionId, message },
-        buildWebuiStreamLoopSink(setStream),
-      );
-    } finally {
-      setSending(false);
-    }
+    await submitWebuiComposerTurn(
+      {
+        sessionId,
+        draft,
+        sending,
+        deps: { sendMessage, resumeSession, loadMessages },
+      },
+      { setStream, setSending, onDraftChange, onNeedsSession },
+    );
   };
   return (
     <section aria-label="Compose message" className="w-full">

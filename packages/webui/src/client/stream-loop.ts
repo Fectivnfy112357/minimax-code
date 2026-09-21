@@ -7,10 +7,11 @@
 //
 // `runWebuiStreamLoop` resolves once the user's turn has reached a final
 // state (steady-state `[DONE]`, refusal, or a non-resumable failure). The
-// returned promise never rejects: the function swallows sink callback
-// failures and reports them through the sink's `refuse` callback instead.
-// This matches the React shell's `try/finally` shape at `app.tsx`, which
-// does not catch and would otherwise lose a sink-originated rejection.
+// returned promise never rejects: sink callback failures are contained
+// by `safeSink` and reported through the sink's `refuse` callback (with a
+// `console.error` fallback when every callback is broken). This matches
+// the React shell's `try/finally` shape at `app.tsx`, which does not
+// catch and would otherwise lose a sink-originated rejection.
 
 import type {
   WebuiClientMessageLoader,
@@ -49,39 +50,78 @@ export interface WebuiStreamLoopSink {
 }
 
 /**
- * Wrap a sink so that a callback throwing never escapes the loop's
- * promise contract. The loop must never reject because the React shell
- * does not catch (it only sets `sending` in `finally`), and we want
- * sink-related failures to surface as a visible refusal rather than a
- * swallowed rejection. The wrapper also tracks whether the initial
- * `setPhase("streaming")` succeeded so the loop does not silently
- * report a phase transition that never reached the sink.
+ * Snapshot of the first sink callback failure, kept so the loop can
+ * commit a refusal (or the fallback diagnostic) and skip the normal
+ * `done` commit. The label names the callback that failed; the error
+ * is the throw value, normalised to an `Error`.
  */
-function safeSink(sink: WebuiStreamLoopSink): WebuiStreamLoopSink {
+interface SinkFailure {
+  readonly label: "applyFrame" | "setPhase" | "setMessages" | "refuse";
+  readonly error: Error;
+}
+
+function describeError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
+}
+
+/**
+ * Wrap a sink so a callback throwing never escapes the loop's promise
+ * contract. The first failure is recorded and the wrapped callbacks
+ * become no-ops afterwards, so a half-broken sink does not cascade
+ * further exceptions and does not let the loop commit a normal `done`
+ * state. `reportSinkFailure` lets the loop surface the failure once
+ * after the loop body finishes — calling `sink.refuse` directly,
+ * bypassing the disable guard, and falling back to `console.error`
+ * when the raw refuse callback also throws.
+ */
+function safeSink(sink: WebuiStreamLoopSink): {
+  readonly safe: WebuiStreamLoopSink;
+  readonly firstFailure: () => SinkFailure | undefined;
+  readonly reportSinkFailure: () => boolean;
+} {
+  let first: SinkFailure | undefined;
   const wrap =
     <Args extends unknown[]>(
       fn: (...args: Args) => void,
-      label: string,
+      label: SinkFailure["label"],
     ): ((...args: Args) => void) =>
     (...args) => {
+      if (first !== undefined) return;
       try {
         fn(...args);
       } catch (error) {
-        // The safest thing to do here is to log and continue; we cannot
-        // safely call sink.refuse because we may already be inside it
-        // (recursion guard), and the React shell will not catch a
-        // thrown error either. The next setPhase call will surface the
-        // same problem again if it persists. We keep the label around
-        // for a future diagnostic.
-        void label;
-        void error;
+        first = { label, error: describeError(error) };
       }
     };
   return {
-    applyFrame: wrap(sink.applyFrame, "applyFrame"),
-    setPhase: wrap(sink.setPhase, "setPhase"),
-    setMessages: wrap(sink.setMessages, "setMessages"),
-    refuse: wrap(sink.refuse, "refuse"),
+    safe: {
+      applyFrame: wrap(sink.applyFrame, "applyFrame"),
+      setPhase: wrap(sink.setPhase, "setPhase"),
+      setMessages: wrap(sink.setMessages, "setMessages"),
+      refuse: wrap(sink.refuse, "refuse"),
+    },
+    firstFailure: () => first,
+    reportSinkFailure: () => {
+      // Direct, non-wrapped call to sink.refuse. If refuse itself was
+      // the failing callback we expect this to throw; the caller
+      // catches and falls back to console.error.
+      if (!first) return true;
+      const reason = `Sink callback "${first.label}" failed: ${first.error.message}`;
+      try {
+        sink.refuse(reason);
+        return true;
+      } catch {
+        try {
+          // eslint-disable-next-line no-console
+          console.error("[webui] sink refusal failed; diagnostic only:", reason, first.error);
+        } catch {
+          // Even console.error can throw in extreme environments. Give
+          // up — the failure has been observed at least once at this
+          // point.
+        }
+        return false;
+      }
+    },
   };
 }
 
@@ -137,7 +177,8 @@ export async function runWebuiStreamLoop(
 ): Promise<void> {
   const { sendMessage, resumeSession, loadMessages } = deps;
   const { sessionId, message } = args;
-  const safe = safeSink(sink);
+  const guarded = safeSink(sink);
+  const safe = guarded.safe;
 
   let cursor: string | undefined;
   let nextAction: "resume" | "resync" | undefined;
@@ -256,13 +297,29 @@ export async function runWebuiStreamLoop(
       }
       break;
     }
-    safe.setPhase("done");
+    // The normal completion path commits `phase: "done"` only when no
+    // sink callback has failed during the loop. If a failure was
+    // recorded, the loop refuses the turn and surfaces the failure
+    // through `guarded.reportSinkFailure`, which falls back to
+    // `console.error` if every sink callback is broken. The never-
+    // reject promise contract is preserved on every path.
+    if (guarded.firstFailure() === undefined) {
+      safe.setPhase("done");
+    } else {
+      guarded.reportSinkFailure();
+    }
   } catch (error) {
     // Transport/load errors that escape the per-iteration try blocks
     // land here. The never-reject guarantee is honoured: the promise
-    // resolves with `safe.refuse` called, not rejected.
-    const reason = error instanceof Error ? error.message : String(error);
-    safe.setPhase("refused");
-    safe.refuse(reason);
+    // resolves with `safe.refuse` called, not rejected. If a sink
+    // callback already failed, prefer the recorded failure over the
+    // transport error so we don't lose the diagnostic.
+    if (guarded.firstFailure() === undefined) {
+      const reason = error instanceof Error ? error.message : String(error);
+      safe.setPhase("refused");
+      safe.refuse(reason);
+    } else {
+      guarded.reportSinkFailure();
+    }
   }
 }
