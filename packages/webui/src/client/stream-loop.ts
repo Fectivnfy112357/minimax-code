@@ -45,8 +45,14 @@ export interface WebuiStreamLoopSink {
   readonly setPhase: (phase: WebuiStreamState["phase"]) => void;
   /** Replace the transcript without touching the rest of the state. */
   readonly setMessages: (messages: readonly WebuiStreamMessage[]) => void;
-  /** Record an unrecoverable failure with a user-visible reason. */
-  readonly refuse: (reason: string) => void;
+  /**
+   * Record an unrecoverable failure with a user-visible reason. The
+   * second argument is set when the reducer had already accepted at
+   * least one frame before the failure, so the user-visible
+   * transcript may be incomplete; the shell renders an additional
+   * message in that case.
+   */
+  readonly refuse: (reason: string, options?: { transcriptIncomplete?: boolean }) => void;
 }
 
 /**
@@ -74,7 +80,10 @@ function describeError(error: unknown): Error {
  * bypassing the disable guard, and falling back to `console.error`
  * when the raw refuse callback also throws.
  */
-function safeSink(sink: WebuiStreamLoopSink): {
+function safeSink(
+  sink: WebuiStreamLoopSink,
+  framesAcceptedBeforeFailureRef: { value: number },
+): {
   readonly safe: WebuiStreamLoopSink;
   readonly firstFailure: () => SinkFailure | undefined;
   readonly reportSinkFailure: () => boolean;
@@ -104,11 +113,17 @@ function safeSink(sink: WebuiStreamLoopSink): {
     reportSinkFailure: () => {
       // Direct, non-wrapped call to sink.refuse. If refuse itself was
       // the failing callback we expect this to throw; the caller
-      // catches and falls back to console.error.
+      // catches and falls back to console.error. The second argument
+      // carries `transcriptIncomplete` when frames had been accepted
+      // before the failure — the shell uses that flag to render a
+      // user-visible "transcript may be incomplete" message alongside
+      // the refusal.
       if (!first) return true;
       const reason = `Sink callback "${first.label}" failed: ${first.error.message}`;
       try {
-        sink.refuse(reason);
+        sink.refuse(reason, {
+          transcriptIncomplete: framesAcceptedBeforeFailureRef.value > 0,
+        });
         return true;
       } catch {
         try {
@@ -148,11 +163,12 @@ export function buildWebuiStreamLoopSink(
     setPhase: (phase) => setStream((current) => ({ ...current, phase })),
     setMessages: (messages) =>
       setStream((current) => ({ ...current, messages })),
-    refuse: (reason) =>
+    refuse: (reason, options) =>
       setStream((current) => ({
         ...current,
         phase: "refused",
         refusal: reason,
+        transcriptIncomplete: options?.transcriptIncomplete ?? false,
       })),
   };
 }
@@ -177,7 +193,15 @@ export async function runWebuiStreamLoop(
 ): Promise<void> {
   const { sendMessage, resumeSession, loadMessages } = deps;
   const { sessionId, message } = args;
-  const guarded = safeSink(sink);
+  // Count frames the reducer accepted before any sink failure was
+  // recorded. `transcriptIncomplete` is part of the R16 contract: when
+  // a sink failure ends the turn, the visible transcript may be stale.
+  // Frames accepted before the failure are the ones the user already
+  // saw, so the flag is set only when the counter is non-zero. We
+  // hold the count in a wrapper object so the closure captured by
+  // `safeSink` can read the live value when the failure report runs.
+  const framesAcceptedBeforeFailureRef = { value: 0 };
+  const guarded = safeSink(sink, framesAcceptedBeforeFailureRef);
   const safe = guarded.safe;
 
   let cursor: string | undefined;
@@ -195,7 +219,47 @@ export async function runWebuiStreamLoop(
     if (recogniseWebuiStreamPayload(frame.dataJson).kind === "resume_overflow") {
       nextAction = "resync";
     }
+    // The wrapper catches any throw and records the first failure;
+    // subsequent calls become no-ops. We only count a frame when the
+    // wrapper was not already disabled at entry — that is the case
+    // where the frame actually reached the reducer.
+    const wasDisabled = guarded.firstFailure() !== undefined;
     safe.applyFrame(frame);
+    if (!wasDisabled && guarded.firstFailure() === undefined) {
+      framesAcceptedBeforeFailureRef.value += 1;
+    }
+  };
+
+  /**
+   * Finalization helper called on every early-return path. When the
+   * loop is about to exit, this checks whether a sink callback has
+   * failed and either surfaces the failure through
+   * `guarded.reportSinkFailure()` (which bypasses the disabled
+   * wrapper and falls back to `console.error`) or commits a normal
+   * refusal with the given reason. The shared helper is non-
+   * recursive: it does not call the wrapped sink directly, only the
+   * raw sink via `guarded` or the `sink` parameter.
+   */
+  const finalizeOnExit = (reason: string): void => {
+    if (guarded.firstFailure() !== undefined) {
+      guarded.reportSinkFailure();
+      return;
+    }
+    // No sink failure recorded yet; commit the normal refusal path.
+    // The raw `sink.refuse` is used here on purpose — the loop is
+    // about to return, so the wrapper's disable rule does not need to
+    // guard against a cascade. If even this raw refuse throws, fall
+    // back to `console.error` rather than letting the promise reject.
+    try {
+      sink.refuse(reason);
+    } catch (rawRefuseError) {
+      try {
+        // eslint-disable-next-line no-console
+        console.error("[webui] early-exit refusal failed:", reason, rawRefuseError);
+      } catch {
+        // Give up; console.error can throw in extreme environments.
+      }
+    }
   };
 
   try {
@@ -204,9 +268,7 @@ export async function runWebuiStreamLoop(
       if (nextAction === "resync") {
         nextAction = undefined;
         if (!resumeSession) {
-          const reason = "resumeSession transport is unavailable";
-          safe.setPhase("refused");
-          safe.refuse(reason);
+          finalizeOnExit("resumeSession transport is unavailable");
           return;
         }
         // The server told us our view has fallen too far behind. Reload
@@ -229,8 +291,7 @@ export async function runWebuiStreamLoop(
           } catch (error) {
             const reason =
               error instanceof Error ? error.message : String(error);
-            safe.setPhase("refused");
-            safe.refuse(reason);
+            finalizeOnExit(reason);
             return;
           }
         }
@@ -248,8 +309,7 @@ export async function runWebuiStreamLoop(
               : !cursor
                 ? "Cannot resume: no cursor observed before the drop"
                 : "Cannot resume: resumeSession transport is unavailable";
-          safe.setPhase("refused");
-          safe.refuse(reason);
+          finalizeOnExit(reason);
           return;
         }
         safe.setPhase("reconnecting");
@@ -263,9 +323,7 @@ export async function runWebuiStreamLoop(
       if (!sent) {
         sent = true;
         if (!sendMessage) {
-          const reason = "sendMessage transport is unavailable";
-          safe.setPhase("refused");
-          safe.refuse(reason);
+          finalizeOnExit("sendMessage transport is unavailable");
           return;
         }
         try {
@@ -281,8 +339,7 @@ export async function runWebuiStreamLoop(
           // forever.
           const reason = error instanceof Error ? error.message : String(error);
           if (!cursor) {
-            safe.setPhase("refused");
-            safe.refuse(reason);
+            finalizeOnExit(reason);
             return;
           }
           nextAction = "resume";
@@ -316,8 +373,7 @@ export async function runWebuiStreamLoop(
     // transport error so we don't lose the diagnostic.
     if (guarded.firstFailure() === undefined) {
       const reason = error instanceof Error ? error.message : String(error);
-      safe.setPhase("refused");
-      safe.refuse(reason);
+      finalizeOnExit(reason);
     } else {
       guarded.reportSinkFailure();
     }

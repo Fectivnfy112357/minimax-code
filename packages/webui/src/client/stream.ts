@@ -33,6 +33,18 @@ export interface WebuiStreamState {
    * `getMessages` before establishing a new subscription.
    */
   readonly resumeRequired: boolean;
+  /**
+   * True when the loop ended in `refused` because a sink callback
+   * failed after frames had already been accepted by the reducer.
+   * The user-visible transcript may be incomplete — the frames the
+   * shell rendered before the failure are authoritative, but later
+   * frames from the same turn never reached the UI. The shell
+   * renders a user-visible message alongside the refusal when this
+   * flag is set. It is only set on the recoverable path (when the
+   * raw refuse callback still works); the unrecoverable path (every
+   * callback broken) is necessarily silent beyond `console.error`.
+   */
+  readonly transcriptIncomplete: boolean;
 }
 
 export const initialWebuiStreamState: WebuiStreamState = {
@@ -41,6 +53,7 @@ export const initialWebuiStreamState: WebuiStreamState = {
   runtimeEvents: [],
   actionDeltas: [],
   resumeRequired: false,
+  transcriptIncomplete: false,
 };
 
 function record(value: unknown): Record<string, unknown> | undefined {

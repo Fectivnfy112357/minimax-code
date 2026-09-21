@@ -622,24 +622,42 @@ export interface WebuiComposerSubmitHandlers {
 }
 
 /**
- * Optional sink override for tests. The production wiring in
- * `WebuiComposer` always passes the `setStream` helper; this override
- * exists so a test can confirm the helper is the only path the loop
- * ever sees. In production the value is `undefined` and the helper is
- * used unconditionally.
+ * Assemble the React-state setters the submit handler needs into the
+ * shape `submitWebuiComposerTurn` accepts. The component in this file
+ * calls this once per render with the setters it derives from
+ * `useState`, then hands the result to `submitWebuiComposerTurn`. The
+ * helper is a single-line pass-through by design — its job is to make
+ * the assembly a named unit that a test can drive, so a regression
+ * that drops, swaps, or ignores a field is caught by a failing
+ * assertion. The shell test
+ * `webui-shell.test.ts > "buildWebuiComposerHandlers passes every
+ * field through unchanged"` walks each field and asserts identity,
+ * which would die if a future change confused `setStream` with
+ * `setSending`.
+ *
+ * Note that this covers the helper itself, not the component's call
+ * into it. The component's `submit = async (event) => { ... await
+ * submitWebuiComposerTurn(args, buildWebuiComposerHandlers({...})) }`
+ * line is verified by inspection only — no DOM environment exists,
+ * and source-text assertions are not allowed in this project.
  */
-export interface WebuiComposerSubmitOptions {
-  readonly buildSink?: (
-    setStream: (
-      update: (current: WebuiStreamState) => WebuiStreamState,
-    ) => void,
-  ) => WebuiStreamLoopSink;
+export function buildWebuiComposerHandlers(args: {
+  readonly setStream: WebuiComposerSubmitHandlers["setStream"];
+  readonly setSending: WebuiComposerSubmitHandlers["setSending"];
+  readonly onDraftChange: WebuiComposerSubmitHandlers["onDraftChange"];
+  readonly onNeedsSession?: WebuiComposerSubmitHandlers["onNeedsSession"];
+}): WebuiComposerSubmitHandlers {
+  return {
+    setStream: args.setStream,
+    setSending: args.setSending,
+    onDraftChange: args.onDraftChange,
+    onNeedsSession: args.onNeedsSession,
+  };
 }
 
 export async function submitWebuiComposerTurn(
   args: WebuiComposerSubmitArgs,
   handlers: WebuiComposerSubmitHandlers,
-  options?: WebuiComposerSubmitOptions,
 ): Promise<void> {
   const message = args.draft.trim();
   if (!message || args.sending || !args.deps.sendMessage) return;
@@ -650,21 +668,19 @@ export async function submitWebuiComposerTurn(
   handlers.setSending(true);
   handlers.onDraftChange("");
   // Initialise the reducer state via the live `setStream`. The
-  // production binding goes through `buildWebuiStreamLoopSink`; tests
-  // can swap the sink via `options.buildSink` to assert the helper is
-  // what the loop actually sees.
+  // production binding goes through `buildWebuiStreamLoopSink`
+  // unconditionally — there is no test-only override; the seam
+  // coverage comes from the helper test and the production-path
+  // test that drives this function end-to-end.
   handlers.setStream((current) => ({
     ...initialWebuiStreamState,
     phase: "streaming",
   }));
   try {
-    const sink = options?.buildSink
-      ? options.buildSink(handlers.setStream)
-      : buildWebuiStreamLoopSink(handlers.setStream);
     await runWebuiStreamLoop(
       args.deps,
       { sessionId: args.sessionId, message },
-      sink,
+      buildWebuiStreamLoopSink(handlers.setStream),
     );
   } finally {
     handlers.setSending(false);
@@ -699,6 +715,21 @@ function WebuiComposer({
   // leaving the field disabled with no explanation.
   const canCompose = Boolean(sendMessage);
   const sendable = canCompose && Boolean(draft.trim()) && !sending;
+  // The submit handler is a single call into
+  // `submitWebuiComposerTurn` with the assembled handler bundle. The
+  // assembly itself is `buildWebuiComposerHandlers` — a named unit
+  // the shell test drives — so a regression that drops, swaps, or
+  // ignores a field inside the assembly is caught by a failing
+  // assertion. The component's call site here is verified by
+  // inspection: with no DOM environment, the React render path
+  // cannot be exercised, and source-text assertions are not part
+  // of this project's policy.
+  const handlers = buildWebuiComposerHandlers({
+    setStream,
+    setSending,
+    onDraftChange,
+    onNeedsSession,
+  });
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     await submitWebuiComposerTurn(
@@ -708,7 +739,7 @@ function WebuiComposer({
         sending,
         deps: { sendMessage, resumeSession, loadMessages },
       },
-      { setStream, setSending, onDraftChange, onNeedsSession },
+      handlers,
     );
   };
   return (
@@ -743,6 +774,15 @@ function WebuiComposer({
           className="text-text_default_secondary text-size_14 leading-line_height_20"
         >
           Unable to send message: {stream.refusal}
+        </p>
+      ) : null}
+      {stream.transcriptIncomplete ? (
+        <p
+          data-webui-transcript-incomplete="true"
+          className="text-text_default_secondary text-size_14 leading-line_height_20"
+        >
+          The displayed transcript may be incomplete; the last update
+          failed before all frames could be applied.
         </p>
       ) : null}
 

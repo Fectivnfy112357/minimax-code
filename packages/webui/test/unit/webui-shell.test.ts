@@ -25,6 +25,7 @@ import {
   WebuiClientFoundationApp,
   WebuiSessionList,
   WebuiSessionTranscript,
+  buildWebuiComposerHandlers,
   createdSessionId,
   groupWebuiTranscriptItems,
   projectWebuiMessage,
@@ -36,7 +37,12 @@ import {
 import {
   buildWebuiStreamLoopSink,
   runWebuiStreamLoop,
+  type WebuiStreamLoopSink,
 } from "../../src/client/stream-loop.js";
+import {
+  reduceWebuiStreamFrame,
+  type WebuiStreamState,
+} from "../../src/client/stream.js";
 import type {
   WebuiClientMessageLoader,
   WebuiClientMessageSender,
@@ -800,12 +806,19 @@ describe("WebUI composer sink binding", () => {
 // Coverage of the production app-to-helper seam. The earlier binding
 // tests exercised `buildWebuiStreamLoopSink` and the loop that uses
 // it; they did not exercise the React composer's submit handler at
-// `app.tsx:642-646`, where the seam actually lives. `submitWebuiComposerTurn`
-// is the extracted form-submit body — the React component in `app.tsx`
-// calls it once per submit — and these tests drive it directly with
-// the production `buildWebuiStreamLoopSink` helper. The hook is the
-// optional `options.buildSink`, which a test can swap to confirm the
-// helper is the binding the loop actually sees.
+// `app.tsx:702-712` (the seam where the component assembles its
+// handlers and hands them to `submitWebuiComposerTurn`). The new
+// shape: `submitWebuiComposerTurn` is the extracted form-submit body
+// that the React component calls once per submit, and
+// `buildWebuiComposerHandlers` is the extracted assembly the
+// component calls to bundle its setters. Tests drive both directly.
+//
+// Boundary: the component's single call into
+// `buildWebuiComposerHandlers({ setStream, ... })` is verified by
+// inspection only — no DOM environment exists, and source-text
+// assertions are not part of this project's policy. The helpers
+// themselves are covered by the tests below; the loop's reaction to
+// the bundled handlers is covered by the default-path test.
 describe("WebUI composer app-to-helper seam", () => {
   type Reducer = (current: WebuiStreamState) => WebuiStreamState;
   function makeRecording(): {
@@ -819,65 +832,39 @@ describe("WebUI composer app-to-helper seam", () => {
     return { setStream, getState: () => state };
   }
 
-  it("wires the live setStream through buildWebuiStreamLoopSink into the loop", async () => {
-    // The default path: `submitWebuiComposerTurn` builds the sink via
-    // `buildWebuiStreamLoopSink(setStream)`. A test that swaps
-    // `options.buildSink` would observe the sink the loop saw; the
-    // default is the production helper.
-    const { setStream, getState } = makeRecording();
-    let sinkSeen: unknown;
-    const customBuildSink = (
-      setStreamInner: (update: Reducer) => void,
-    ): unknown => {
-      const sink = buildWebuiStreamLoopSink(setStreamInner);
-      sinkSeen = sink;
-      return sink;
-    };
-    const sendMessage: WebuiClientMessageSender = vi.fn(
-      async (_req, onFrame) => {
-        onFrame({
-          dataJson:
-            '{"type":2,"agent_message":{"msg_id":"m1","msg_content":"hello"}}',
-        });
-        onFrame({ dataJson: "[DONE]" });
-      },
-    );
-    await submitWebuiComposerTurn(
-      { sessionId: "s", draft: "hi", sending: false, deps: { sendMessage } },
-      {
-        setStream,
-        setSending: () => undefined,
-        onDraftChange: () => undefined,
-      },
-      { buildSink: customBuildSink },
-    );
-    // The sink the loop saw is the production helper's output, not
-    // an empty object and not a no-op. The shape match is what makes
-    // the seam binding observable: a miswiring that passed an empty
-    // sink or `() => undefined` would leave `sinkSeen` as something
-    // other than a real sink object.
-    expect(sinkSeen).toBeDefined();
-    expect(typeof (sinkSeen as { applyFrame: unknown }).applyFrame).toBe(
-      "function",
-    );
-    expect(typeof (sinkSeen as { setPhase: unknown }).setPhase).toBe(
-      "function",
-    );
-    // The state went through the live reducer: messages accumulated,
-    // phase moved through streaming → done. The reducer only runs
-    // because the helper translated `applyFrame` into a `setStream`
-    // update — the same translation the React component relies on.
-    const final = getState();
-    expect(final.messages.map((m) => m.id)).toEqual(["m1"]);
-    expect(final.phase).toBe("done");
+  it("buildWebuiComposerHandlers passes every field through unchanged", () => {
+    // R13: the handler assembly is a named unit. A regression that
+    // drops `setStream`, swaps it for `setSending`, or ignores any
+    // other field is caught here. The component's single call into
+    // the helper is verified by inspection only — no DOM exists —
+    // but the helper itself is fully covered.
+    const setStream = vi.fn();
+    const setSending = vi.fn();
+    const onDraftChange = vi.fn();
+    const onNeedsSession = vi.fn();
+    const handlers = buildWebuiComposerHandlers({
+      setStream,
+      setSending,
+      onDraftChange,
+      onNeedsSession,
+    });
+    // Every field is the same function reference. A regression that
+    // returned a no-op sink, swapped `setStream` with `setSending`,
+    // or omitted any field dies here.
+    expect(handlers.setStream).toBe(setStream);
+    expect(handlers.setSending).toBe(setSending);
+    expect(handlers.onDraftChange).toBe(onDraftChange);
+    expect(handlers.onNeedsSession).toBe(onNeedsSession);
   });
 
-  it("fails when the buildSink override drops the live setStream wiring", async () => {
-    // Mutation A: ignored-result style. The override returns a
-    // sink object that looks like the production helper on the
-    // surface but ignores its `setStream` argument (every callback
-    // is a no-op). The live reducer never receives the frames the
-    // loop emits, so `messages.length === 0` and the test fails.
+  it("drives the production helper seam end-to-end", async () => {
+    // R11: the production path. `submitWebuiComposerTurn` calls
+    // `buildWebuiStreamLoopSink(handlers.setStream)` unconditionally
+    // and passes it to the loop. If a regression replaces the helper
+    // with an empty object, passes a no-op state setter, or ignores
+    // the returned sink, the live reducer never sees the frames and
+    // `messages` stays empty. This is the observable that fails when
+    // the seam is bypassed end-to-end.
     const { setStream, getState } = makeRecording();
     const sendMessage: WebuiClientMessageSender = vi.fn(
       async (_req, onFrame) => {
@@ -890,109 +877,11 @@ describe("WebUI composer app-to-helper seam", () => {
     );
     await submitWebuiComposerTurn(
       { sessionId: "s", draft: "hi", sending: false, deps: { sendMessage } },
-      {
+      buildWebuiComposerHandlers({
         setStream,
         setSending: () => undefined,
         onDraftChange: () => undefined,
-      },
-      {
-        buildSink: () => ({
-          applyFrame: () => undefined,
-          setPhase: () => undefined,
-          setMessages: () => undefined,
-          refuse: () => undefined,
-        }),
-      },
-    );
-    // The live setStream was passed to `buildSink` (we did pass it),
-    // but the sink ignores it. Frames never reach the reducer; the
-    // transcript is empty.
-    expect(getState().messages).toEqual([]);
-  });
-
-  it("fails when the buildSink override is omitted and the seam is bypassed", async () => {
-    // Mutation B: omitted-helper style. The React component used to
-    // call `buildWebuiStreamLoopSink(setStream)` directly; a
-    // regression that replaces the call with `{}` or `undefined`
-    // would let the loop run with nothing. We simulate this by
-    // injecting a buildSink that records `sinkSupplied = false`
-    // (proving the seam was reached) and returns `undefined`. The
-    // production code path then crashes when the loop reads
-    // `sink.applyFrame`; the test asserts the override ran and the
-    // resulting state is empty (the live reducer never received any
-    // frame). If a future regression removed the
-    // `buildWebuiStreamLoopSink(setStream)` call from the React
-    // component entirely, this override would no longer be reached
-    // and the first assertion would fail.
-    const { setStream, getState } = makeRecording();
-    let overrideReached = false;
-    const sendMessage: WebuiClientMessageSender = vi.fn(
-      async (_req, onFrame) => {
-        onFrame({
-          dataJson:
-            '{"type":2,"agent_message":{"msg_id":"m1","msg_content":"hello"}}',
-        });
-        onFrame({ dataJson: "[DONE]" });
-      },
-    );
-    const customBuildSink = (): unknown => {
-      overrideReached = true;
-      return undefined;
-    };
-    await expect(
-      submitWebuiComposerTurn(
-        {
-          sessionId: "s",
-          draft: "hi",
-          sending: false,
-          deps: { sendMessage },
-        },
-        {
-          setStream,
-          setSending: () => undefined,
-          onDraftChange: () => undefined,
-        },
-        { buildSink: customBuildSink as never },
-      ),
-    ).rejects.toThrow();
-    expect(overrideReached).toBe(true);
-    // The live reducer never received a frame because the loop saw
-    // an undefined sink — the messages list is the initial empty
-    // array. This is the observable that fails when the seam is
-    // bypassed end-to-end: a regression that returns a no-op sink
-    // (mutation A) leaves messages empty too, but the override
-    // path is still reached. The two mutations are distinguished
-    // by the override flag in mutation B and the empty messages in
-    // mutation A.
-    expect(getState().messages).toEqual([]);
-  });
-
-  it("drives the production helper seam end-to-end without the buildSink override", async () => {
-    // R11: the production path. `submitWebuiComposerTurn` must call
-    // `buildWebuiStreamLoopSink(setStream)` internally and pass the
-    // result to the loop. If a regression replaces the helper with
-    // an empty object, a no-op state setter, or ignores the result,
-    // the live reducer never sees the frames and `messages` stays
-    // empty. The override path tests cannot catch this because the
-    // override bypasses the production code; this test exercises the
-    // real seam.
-    const { setStream, getState } = makeRecording();
-    const sendMessage: WebuiClientMessageSender = vi.fn(
-      async (_req, onFrame) => {
-        onFrame({
-          dataJson:
-            '{"type":2,"agent_message":{"msg_id":"m1","msg_content":"hello"}}',
-        });
-        onFrame({ dataJson: "[DONE]" });
-      },
-    );
-    await submitWebuiComposerTurn(
-      { sessionId: "s", draft: "hi", sending: false, deps: { sendMessage } },
-      {
-        setStream,
-        setSending: () => undefined,
-        onDraftChange: () => undefined,
-      },
+      }),
     );
     const final = getState();
     // The live reducer accumulated the message and reached `done`.
@@ -1100,5 +989,336 @@ describe("WebUI composer sink-failure semantics", () => {
     } finally {
       errorSpy.mockRestore();
     }
+  });
+
+  it("routes the no-cursor-during-drop early return through the finalization helper", async () => {
+    // R14 site: sendMessage rejects before any cursor was observed;
+    // the loop's send-error branch used to return after the wrapped
+    // refuse recorded the failure, never finalising it. The reviewer
+    // reproduced this with a sink that only fails the raw refuse; the
+    // loop resolved with no refusal and no console diagnostic. With
+    // `finalizeOnExit`, the early-return path now calls the raw
+    // refuse through `guarded.reportSinkFailure`; that call also
+    // throws here, so the fallback `console.error` runs and the
+    // promise still resolves. The original buggy code resolved
+    // without either observable.
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    try {
+      const sink = {
+        applyFrame: () => undefined,
+        setPhase: (phase: string) => {
+          // setPhase works; only refuse throws.
+        },
+        setMessages: () => undefined,
+        refuse: () => {
+          throw new Error("refuse broken");
+        },
+      };
+      const sendMessage: WebuiClientMessageSender = vi.fn(async () => {
+        throw new Error("dropped before any frame");
+      });
+      await runWebuiStreamLoop(
+        { sendMessage },
+        { sessionId: "s", message: "hi" },
+        sink,
+      );
+      // The fallback diagnostic path ran. The buggy behaviour was
+      // no observable at all (no refuse event, no console.error).
+      expect(errorSpy).toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("routes the loadMessages-rejection early return through the finalization helper", async () => {
+    // R14 site: the resume_overflow path runs `loadMessages`, which
+    // rejects; the early-return inside that try/catch used to skip
+    // the failure report. With `finalizeOnExit`, the rejection
+    // reason is finalised through `sink.refuse` before returning.
+    // The reproduction mirrors the reviewer's
+    // "load-rejects-with-sink-throws" scenario in a recoverable
+    // form: a sink that records the failure but still accepts the
+    // raw refuse.
+    const events: string[] = [];
+    const sink = {
+      applyFrame: () => undefined,
+      setPhase: (phase: string) => {
+        events.push(`phase:${phase}`);
+      },
+      setMessages: () => undefined,
+      refuse: (reason: string) => {
+        events.push(`refuse:${reason}`);
+      },
+    };
+    const sendMessage: WebuiClientMessageSender = vi.fn(
+      async (_req, onFrame) => {
+        onFrame({ dataJson: '{"type":"resume_overflow"}' });
+        onFrame({ dataJson: "[DONE]" });
+      },
+    );
+    const loadMessages = vi.fn(async () => {
+      throw new Error("history unavailable");
+    });
+    await runWebuiStreamLoop(
+      { sendMessage, loadMessages, resumeSession: vi.fn() },
+      { sessionId: "s", message: "hi" },
+      sink,
+    );
+    expect(events).toContain("phase:reconnecting");
+    expect(
+      events.some(
+        (event) =>
+          event.startsWith("refuse:") && event.includes("history unavailable"),
+      ),
+    ).toBe(true);
+  });
+
+  it("routes the missing-resumeSession early return through the finalization helper", async () => {
+    // R14 site: the resync branch with no `resumeSession` available.
+    // The events observed end with a refuse call naming the missing
+    // transport.
+    const events: string[] = [];
+    const sink = {
+      applyFrame: () => undefined,
+      setPhase: (phase: string) => {
+        events.push(`phase:${phase}`);
+      },
+      setMessages: () => undefined,
+      refuse: (reason: string) => {
+        events.push(`refuse:${reason}`);
+      },
+    };
+    const sendMessage: WebuiClientMessageSender = vi.fn(
+      async (_req, onFrame) => {
+        onFrame({ dataJson: '{"type":"resume_overflow"}' });
+        onFrame({ dataJson: "[DONE]" });
+      },
+    );
+    await runWebuiStreamLoop(
+      // No resumeSession; no loadMessages.
+      { sendMessage },
+      { sessionId: "s", message: "hi" },
+      sink,
+    );
+    expect(
+      events.some(
+        (event) =>
+          event.startsWith("refuse:") &&
+          event.includes("resumeSession transport is unavailable"),
+      ),
+    ).toBe(true);
+  });
+
+  it("routes the missing-resumeSession-during-resume early return through the finalization helper", async () => {
+    // R14 site: the resume branch finds no `resumeSession`. We
+    // arrange for the loop to enter the resume branch with a cursor
+    // by emitting a cursor-bearing chunk first, then letting
+    // `sendMessage` reject. The loop schedules `resume`, schedules
+    // a session id, and the next iteration tries to resume — but
+    // `resumeSession` is undefined, so the early-return fires.
+    //
+    // Concretely: a `sendMessage` mock that emits a chunk frame
+    // with a cursor, then throws. The loop observes the cursor
+    // (`c1`), schedules `nextAction = "resume"`, and the next
+    // iteration enters the resume branch with `!resumeSession`.
+    const events: string[] = [];
+    const sink = {
+      applyFrame: () => undefined,
+      setPhase: (phase: string) => {
+        events.push(`phase:${phase}`);
+      },
+      setMessages: () => undefined,
+      refuse: (reason: string) => {
+        events.push(`refuse:${reason}`);
+      },
+    };
+    const sendMessage: WebuiClientMessageSender = vi.fn(
+      async (_req, onFrame) => {
+        onFrame({
+          dataJson:
+            '{"type":6,"agent_message_chunk":{"msg_id":"m1","msg_content":"partial"}}',
+          cursor: "c1",
+        });
+        throw new Error("dropped mid-stream");
+      },
+    );
+    await runWebuiStreamLoop(
+      // No resumeSession — the resume branch refuses.
+      { sendMessage },
+      { sessionId: "s", message: "hi" },
+      sink,
+    );
+    expect(
+      events.some(
+        (event) =>
+          event.startsWith("refuse:") &&
+          event.includes("resumeSession transport is unavailable"),
+      ),
+    ).toBe(true);
+  });
+
+  it("routes the missing-sendMessage early return through the finalization helper", async () => {
+    // R14 site: the very first iteration finds `sendMessage` is
+    // missing and refuses with the documented reason.
+    const events: string[] = [];
+    const sink = {
+      applyFrame: () => undefined,
+      setPhase: (phase: string) => {
+        events.push(`phase:${phase}`);
+      },
+      setMessages: () => undefined,
+      refuse: (reason: string) => {
+        events.push(`refuse:${reason}`);
+      },
+    };
+    await runWebuiStreamLoop(
+      // No sendMessage at all.
+      {},
+      { sessionId: "s", message: "hi" },
+      sink,
+    );
+    expect(
+      events.some(
+        (event) =>
+          event.startsWith("refuse:") &&
+          event.includes("sendMessage transport is unavailable"),
+      ),
+    ).toBe(true);
+  });
+});
+
+// R16 — when the loop ends in `refused` because a sink callback failed
+// after the reducer had already accepted frames, the rendered
+// transcript may be incomplete. The state field `transcriptIncomplete`
+// is set as part of the failure transition; the shell renders an
+// additional user-visible message alongside the refusal. The
+// `applyFrame`-throw case after some frames flips the flag; the
+// applyFrame-throw-before-any-frame case does not.
+describe("WebUI composer transcriptIncomplete", () => {
+  it("sets transcriptIncomplete when a sink failure happens after frames were accepted", async () => {
+    let state = initialWebuiStreamState;
+    const setStream = (
+      update: (current: WebuiStreamState) => WebuiStreamState,
+    ): void => {
+      state = update(state);
+    };
+    // The third frame is delivered by the transport, but the sink's
+    // applyFrame throws before the reducer sees it. We wire a sink
+    // whose third call blows up; the loop must record the failure,
+    // refuse with `transcriptIncomplete: true`, and leave the
+    // previously accepted frames in state.
+    let applyCount = 0;
+    const sink: WebuiStreamLoopSink = {
+      applyFrame: (frame) => {
+        applyCount += 1;
+        if (applyCount >= 3) throw new Error("third applyFrame blew up");
+        setStream((current) => reduceWebuiStreamFrame(current, frame));
+      },
+      setPhase: (phase) =>
+        setStream((current) => ({ ...current, phase })),
+      setMessages: (messages) =>
+        setStream((current) => ({ ...current, messages })),
+      refuse: (reason, options) =>
+        setStream((current) => ({
+          ...current,
+          phase: "refused",
+          refusal: reason,
+          transcriptIncomplete: options?.transcriptIncomplete ?? false,
+        })),
+    };
+    const sendMessage: WebuiClientMessageSender = vi.fn(
+      async (_req, onFrame) => {
+        onFrame({
+          dataJson:
+            '{"type":2,"agent_message":{"msg_id":"m1","msg_content":"first answer"}}',
+        });
+        onFrame({
+          dataJson:
+            '{"type":2,"agent_message":{"msg_id":"m2","msg_content":"partial"}}',
+        });
+        onFrame({
+          dataJson:
+            '{"type":2,"agent_message":{"msg_id":"m3","msg_content":"never rendered"}}',
+        });
+        onFrame({ dataJson: "[DONE]" });
+      },
+    );
+    await runWebuiStreamLoop(
+      { sendMessage },
+      { sessionId: "s", message: "hi" },
+      sink,
+    );
+    // The failure landed in refuse; the loop did not commit `done`;
+    // and `transcriptIncomplete` is set because the reducer had
+    // accepted frames before the failure.
+    expect(state.phase).toBe("refused");
+    expect(state.transcriptIncomplete).toBe(true);
+    // The user-visible transcript still contains the frames that
+    // arrived before the failure — the reducer accumulated them
+    // before the third `applyFrame` threw. The third frame did not
+    // reach the reducer, so it is not in the list.
+    expect(state.messages.map((m) => m.id)).toEqual(["m1", "m2"]);
+  });
+
+  it("does not set transcriptIncomplete when the failure happens before any frame", async () => {
+    let state = initialWebuiStreamState;
+    const setStream = (
+      update: (current: WebuiStreamState) => WebuiStreamState,
+    ): void => {
+      state = update(state);
+    };
+    // A sink whose applyFrame throws on the very first call. The
+    // reducer never accepted a frame; `transcriptIncomplete` must
+    // stay false (there is nothing incomplete to flag).
+    let applyCount = 0;
+    const sink: WebuiStreamLoopSink = {
+      applyFrame: () => {
+        applyCount += 1;
+        throw new Error("applyFrame blew up before any frame");
+      },
+      setPhase: (phase) =>
+        setStream((current) => ({ ...current, phase })),
+      setMessages: (messages) =>
+        setStream((current) => ({ ...current, messages })),
+      refuse: (reason, options) =>
+        setStream((current) => ({
+          ...current,
+          phase: "refused",
+          refusal: reason,
+          transcriptIncomplete: options?.transcriptIncomplete ?? false,
+        })),
+    };
+    const sendMessage: WebuiClientMessageSender = vi.fn(
+      async (_req, onFrame) => {
+        onFrame({ dataJson: '{"type":10}' });
+        onFrame({ dataJson: "[DONE]" });
+      },
+    );
+    await runWebuiStreamLoop(
+      { sendMessage },
+      { sessionId: "s", message: "hi" },
+      sink,
+    );
+    expect(state.phase).toBe("refused");
+    expect(state.transcriptIncomplete).toBe(false);
+    expect(state.messages).toEqual([]);
+    expect(applyCount).toBe(1);
+  });
+
+  it("does not render the incomplete-state paragraph unless transcriptIncomplete is set", () => {
+    // The composer renders a paragraph with
+    // `data-webui-transcript-incomplete="true"` only when the flag
+    // is true. We render the foundation app with no transcript state
+    // and assert the paragraph is absent — the state-side tests
+    // above pin the flag's truthiness; this guards the markup side.
+    const html = renderToStaticMarkup(
+      createElement(WebuiClientFoundationApp, {
+        label: "webui-foundation",
+        sendMessage: () => Promise.resolve(),
+      }),
+    );
+    expect(html).not.toContain("data-webui-transcript-incomplete");
   });
 });
