@@ -1,4 +1,4 @@
-// Service tests for the WebUI ticket 03 seam.
+// Service tests for the WebUI loopback service and runtime seam.
 //
 // The brief calls for TDD at the service seam: construct the real
 // `WebuiService` with a scripted stand-in for the harness port, connect a
@@ -1683,6 +1683,101 @@ describe("WebUI runtime host assembly", () => {
       expect(calls).toContain("command-path");
       await assembled.harnessPort.close();
       expect(calls).toEqual(["command-path", "runtime", "broker", "browser"]);
+    } finally {
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it("releases capability owners when host creation fails", async () => {
+    const { createWebuiRuntimeHost } =
+      await import("../../src/server/index.js");
+    const dataDir = await mkdtemp(
+      path.join(os.tmpdir(), "webui-assembly-startup-failure-"),
+    );
+    const calls: string[] = [];
+    try {
+      await expect(
+        createWebuiRuntimeHost({
+          dataDir,
+          browserProvider: {
+            adapter: {
+              async execute(): Promise<unknown> {
+                return undefined;
+              },
+            },
+            close: () => {
+              calls.push("browser");
+            },
+          },
+          mcodeToolsRequested: true,
+          mcodeTools: {
+            prepare: async () => ({
+              requested: true,
+              ready: true,
+              category: "ready" as const,
+              ensureCommandPath: () => undefined,
+              dispose: async () => {
+                calls.push("broker");
+              },
+            }),
+          },
+          factory: async () => {
+            throw new Error("host creation failed");
+          },
+        }),
+      ).rejects.toThrow("host creation failed");
+      expect(calls).toEqual(["broker", "browser"]);
+    } finally {
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it("closes the partially created host when command-path setup fails", async () => {
+    const { createWebuiRuntimeHost } =
+      await import("../../src/server/index.js");
+    const dataDir = await mkdtemp(
+      path.join(os.tmpdir(), "webui-assembly-command-failure-"),
+    );
+    const calls: string[] = [];
+    try {
+      await expect(
+        createWebuiRuntimeHost({
+          dataDir,
+          browserProvider: {
+            adapter: {
+              async execute(): Promise<unknown> {
+                return undefined;
+              },
+            },
+            close: () => {
+              calls.push("browser");
+            },
+          },
+          mcodeToolsRequested: true,
+          mcodeTools: {
+            prepare: async () => ({
+              requested: true,
+              ready: true,
+              category: "ready" as const,
+              ensureCommandPath: () => {
+                throw new Error("command path failed");
+              },
+              dispose: async () => {
+                calls.push("broker");
+              },
+            }),
+          },
+          factory: async (options) => ({
+            apiHost: {
+              close: async () => {
+                calls.push("runtime");
+              },
+            },
+            dataDir: options.dataDir,
+          }),
+        }),
+      ).rejects.toThrow("command path failed");
+      expect(calls).toEqual(["runtime", "broker", "browser"]);
     } finally {
       await rm(dataDir, { recursive: true, force: true });
     }

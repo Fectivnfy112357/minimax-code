@@ -6,10 +6,9 @@
 // browser; both emit a metafile that `scripts/check-webui-boundary.mjs`
 // inspects.
 //
-// Vite's own bundler is not invoked here on purpose: ticket 01 ships
-// without a transport, so the client bundle is a single JS file plus the
-// HTML wrapper, and adding a second tool with its own metafile format
-// would defeat the boundary check.
+// Vite's own bundler is not invoked here on purpose: the WebUI artifact is
+// built as one client bundle plus the HTML wrapper, and adding a second tool
+// with its own metafile format would defeat the boundary check.
 //
 // ADR 0010: only the esbuild artifact is verified and shipped. The
 // development server is not a verification surface, and a check that only

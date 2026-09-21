@@ -334,9 +334,30 @@ export async function createWebuiRuntimeHost(
   // `packages/local-runtime/src/runtime/host-factory-types.ts:32-47`); the
   // cast below is narrowly scoped to the factory boundary and exists only
   // because the typecheck can't see the upstream shape.
-  const host = await factory(
-    forwardedOptions as unknown as CreateLocalRuntimeHostOptions,
-  );
+  let host: WebuiAssembledHost;
+  try {
+    host = await factory(
+      forwardedOptions as unknown as CreateLocalRuntimeHostOptions,
+    );
+  } catch (error) {
+    // The factory is allowed to fail before it returns an apiHost.  The
+    // capability owners were already acquired above, so release them on this
+    // path as well; otherwise a broker socket or Browser profile survives a
+    // failed WebUI start and contaminates the next attempt.
+    const failures: unknown[] = [error];
+    try {
+      await mcodeTools.dispose();
+    } catch (cleanupError) {
+      failures.push(cleanupError);
+    }
+    try {
+      await options.browserProvider?.close();
+    } catch (cleanupError) {
+      failures.push(cleanupError);
+    }
+    if (failures.length === 1) throw failures[0];
+    throw new AggregateError(failures, "WebUI runtime startup failed");
+  }
   const runtimeClose = host.apiHost.close.bind(host.apiHost);
   let closed = false;
   host.apiHost.close = async () => {
@@ -362,7 +383,20 @@ export async function createWebuiRuntimeHost(
     if (failures.length > 1)
       throw new AggregateError(failures, "WebUI runtime shutdown failed");
   };
-  mcodeTools.ensureCommandPath();
+  try {
+    mcodeTools.ensureCommandPath();
+  } catch (error) {
+    const failures: unknown[] = [error];
+    try {
+      // `apiHost.close` is already wrapped above and therefore closes the
+      // runtime followed by both capability owners exactly once.
+      await host.apiHost.close();
+    } catch (cleanupError) {
+      failures.push(cleanupError);
+    }
+    if (failures.length === 1) throw failures[0];
+    throw new AggregateError(failures, "WebUI runtime startup failed");
+  }
   const harnessPort = createHarnessPortFromHost(host);
   return { harnessPort, host, forwardedOptions, mcodeTools };
 }

@@ -1,4 +1,4 @@
-// Verify the shell (ticket 04; retailored by the visual-alignment pass).
+// Verify the WebUI shell (retailored by the visual-alignment pass).
 //
 // The shell renders the desktop application's anatomy: a 240px rail on
 // `bg_default_scrim`, a main surface on `bg_grouped_secondary`, a window strip

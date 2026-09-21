@@ -469,9 +469,9 @@ const tailwindConfig = {
   },
   plugins: [],
   // The shell uses a small set of token-derived utilities; the safelist
-  // guarantees that the brief's named examples are present in the
-  // compiled stylesheet even if no source file currently references them
-  // (later tickets will adopt them as the conversation surface grows).
+  // guarantees that the brief's named examples are present in the compiled
+  // stylesheet even when a state-specific branch is not visible to Tailwind's
+  // static class scan.
   safelist: [
     "bg-bg_default_primary",
     "bg-bg_default_secondary",

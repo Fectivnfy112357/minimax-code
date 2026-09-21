@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "WebUI client for the harness layer. Foundation only; first end-to-end behaviour ships in later slices.",
+  "description": "WebUI client and loopback service for the process-local harness layer.",
   "engines": {
     "node": ">=22.19 <23 || >=24.2 <27"
   },

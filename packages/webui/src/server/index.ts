@@ -1,5 +1,5 @@
-// Server entry for the WebUI package. Ticket 03 ships the real service
-// seam: a process that owns a runtime host, binds loopback, refuses
+// Server entry for the WebUI package. The server owns a runtime host,
+// binds loopback, refuses
 // foreign Host / Origin headers and missing per-start credentials, answers
 // the version query, and shuts down in the order the assembly checklist
 // step 13 requires. Source ends at `WEBUI_FOUNDATION_VERSION` so the

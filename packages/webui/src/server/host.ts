@@ -8,9 +8,8 @@
 // assembly checklist requires.
 //
 // The host shape is structural so the WebUI does not need to bundle the
-// whole harness layer to type-check; the real adapter call site
-// (a later ticket that boots the process for real) passes the host
-// directly.
+// whole harness layer to type-check; the runtime assembly passes the host
+// directly at process start.
 
 import { WEBUI_PROTOCOL_VERSION } from "./envelope.js";
 import type {

@@ -1,7 +1,7 @@
 // WebUI service: owns a runtime host, binds loopback, runs the wire
 // envelope with access control, and shuts down in order.
 //
-// This is the seam ticket 03 ships. It composes:
+// This is the server seam. It composes:
 //   * a harness port (real: script of the host's `CliService` facade;
 //     test: scripted stand-in),
 //   * a per-start credential,
