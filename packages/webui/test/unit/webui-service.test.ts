@@ -7,8 +7,7 @@
 // surface honest (the harness never runs against real history, per ADR
 // 0006) while the wire side exercises the real `ws` package.
 
-import { existsSync } from "node:fs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { once, type once as onceFn } from "node:events";
 import os from "node:os";
 import path from "node:path";
@@ -767,56 +766,55 @@ describe("WebUI shutdown order (criterion 7)", () => {
   });
 });
 
-describe("WebUI restart-with-persisted-jobs (criterion 8)", () => {
-  it("does not execute a persisted job on the second boot, observable as the quarantined policy", async () => {
+describe("WebUI assembly unconditionally forwards the quarantined startup policy (criterion 8)", () => {
+  // This test pins the seam the assembly actually controls: the value of
+  // `startupExecutionPolicy` that `createWebuiRuntimeHost` hands to the
+  // harness factory on every boot. It does NOT prove that the harness
+  // refrains from executing persisted jobs — that contract lives behind
+  // `isLocalRuntimeStartupExecutionEnabled(options.startupExecutionPolicy)`
+  // in `packages/local-runtime-v2/src/runtime.ts:831`, which gates the
+  // background-runtime boot. Pinning the forwarded value here is the
+  // WebUI's part of that joint contract; coverage for the harness's
+  // gating lives in `packages/local-runtime-v2`.
+  it("sets startupExecutionPolicy to 'quarantined' on every boot, including a second boot against the same dataDir", async () => {
     const { createWebuiRuntimeHost } = await import(
       "../../src/server/index.js"
     );
     const dataDir = await mkdtemp(
-      path.join(os.tmpdir(), "webui-c8-fixture-"),
+      path.join(os.tmpdir(), "webui-c8-policy-"),
     );
-    const fixturePath = path.join(dataDir, "persisted-job");
-    let executionCount = 0;
-    let lastOptions: Record<string, unknown> | undefined;
+    const forwarded: Array<{ startupExecutionPolicy?: string }> = [];
     type FactoryOptions = {
       dataDir: string;
       startupExecutionPolicy?: string;
     };
-    try {
-      const stubFactory = async (options: FactoryOptions) => {
-        lastOptions = { ...options };
-        // The "persisted job" is observed on disk only; the assembly's
-        // quarantined policy means this branch never executes it.
-        if (existsSync(fixturePath)) {
-          if (options.startupExecutionPolicy !== "quarantined") {
-            executionCount += 1;
-          }
-        }
-        return {
-          apiHost: { close: async () => undefined },
-          dataDir: options.dataDir,
-        };
+    const stubFactory = async (options: FactoryOptions) => {
+      forwarded.push({ startupExecutionPolicy: options.startupExecutionPolicy });
+      return {
+        apiHost: { close: async () => undefined },
+        dataDir: options.dataDir,
       };
-      // First boot: no fixture on disk yet.
+    };
+    try {
       const first = await createWebuiRuntimeHost({
         dataDir,
         factory: stubFactory,
       });
-      expect(lastOptions?.startupExecutionPolicy).toBe("quarantined");
-      expect(existsSync(fixturePath)).toBe(false);
-      await first.harnessPort.close();
-      // Drop a fixture on disk to simulate a previously running session
-      // that survived the first boot.
-      await writeFile(fixturePath, "persisted-job", "utf8");
-      expect(existsSync(fixturePath)).toBe(true);
-      // Second boot: the fixture is restored, the policy is still
-      // quarantined, so the persisted job is NOT executed.
       const second = await createWebuiRuntimeHost({
         dataDir,
         factory: stubFactory,
       });
-      expect(lastOptions?.startupExecutionPolicy).toBe("quarantined");
-      expect(executionCount).toBe(0);
+      // Both boots forward the quarantined policy unconditionally. The
+      // second boot here proves the value is not derived from "is there
+      // state on disk?" but is the same constant the assembly applies to
+      // any boot.
+      expect(forwarded).toEqual([
+        { startupExecutionPolicy: "quarantined" },
+        { startupExecutionPolicy: "quarantined" },
+      ]);
+      expect(first.forwardedOptions.startupExecutionPolicy).toBe("quarantined");
+      expect(second.forwardedOptions.startupExecutionPolicy).toBe("quarantined");
+      await first.harnessPort.close();
       await second.harnessPort.close();
     } finally {
       await rm(dataDir, { recursive: true, force: true });

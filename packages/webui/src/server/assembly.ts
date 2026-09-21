@@ -41,6 +41,35 @@ export interface WebuiAssembledHost {
 }
 
 /**
+ * Structural shape of the options the WebUI assembly forwards to the
+ * harness factory. Mirrors the relevant fields of
+ * `CreateLocalRuntimeHostOptions` (declared in
+ * `packages/local-runtime/src/runtime/host-factory-types.ts:103` and
+ * extended by `packages/local-runtime-v2/src/local/host-contract.ts:56`).
+ *
+ * Defining the type locally lets the assembly type-check against the
+ * real field set without depending on the harness package's exported
+ * type, whose transitive imports (vendored pi-mono) collapse in this
+ * repo's typecheck (see the v7 brief's item 3). The factory signature
+ * still uses the upstream type so production wiring is unchanged.
+ */
+export interface WebuiForwardedRuntimeHostOptions {
+  readonly dataDir: string;
+  readonly appVersion?: string;
+  readonly runtimeOwnerKind: "cli";
+  readonly capabilityProfile: "cli";
+  readonly runtimeMode: "clean";
+  readonly startupExecutionPolicy: "quarantined";
+  readonly capabilities: {
+    readonly cliEmbedded: true;
+    readonly questionnaireReply: true;
+    readonly permissionPrompt: true;
+    readonly elicitation: true;
+  };
+  readonly configGetter: typeof getDefaultLocalRuntimeConfig;
+}
+
+/**
  * Factory signature the assembly delegates to. The default is
  * `createLocalRuntimeHostV2`; tests inject a stub that records the
  * options it received.
@@ -66,7 +95,7 @@ export interface WebuiRuntimeHost {
   /** The host the assembly produced; tests inspect it directly. */
   readonly host: WebuiAssembledHost;
   /** The exact options the assembly forwarded to the factory. */
-  readonly forwardedOptions: CreateLocalRuntimeHostOptions;
+  readonly forwardedOptions: WebuiForwardedRuntimeHostOptions;
 }
 
 /**
@@ -79,7 +108,7 @@ export async function createWebuiRuntimeHost(
   options: CreateWebuiRuntimeHostOptions,
 ): Promise<WebuiRuntimeHost> {
   const factory = options.factory ?? defaultWebuiRuntimeHostFactory;
-  const forwardedOptions = {
+  const forwardedOptions: WebuiForwardedRuntimeHostOptions = {
     dataDir: options.dataDir,
     ...(options.appVersion !== undefined
       ? { appVersion: options.appVersion }
@@ -100,8 +129,22 @@ export async function createWebuiRuntimeHost(
       elicitation: true,
     },
     configGetter: getDefaultLocalRuntimeConfig,
-  } as CreateLocalRuntimeHostOptions;
-  const host = await factory(forwardedOptions);
+  };
+  // The factory parameter is `CreateLocalRuntimeHostOptions`, but in this
+  // typecheck the upstream type collapses to `{}` (no keys) because the
+  // transitive import chain through `@mavis/local-runtime-v2` →
+  // `@mavis/local-runtime` → `@mavis/agent-core` → `@earendil-works/pi-*`
+  // fails to resolve — the vendored pi-mono packages ship no `dist/` and
+  // there is no workspace build script that emits one (see the v7 brief's
+  // item 3). The forwarded fields are correct against the source type
+  // (`runtimeOwnerKind` / `capabilityProfile` / `runtimeMode` /
+  // `startupExecutionPolicy` / `capabilities` all live in
+  // `packages/local-runtime/src/runtime/host-factory-types.ts:32-47`); the
+  // cast below is narrowly scoped to the factory boundary and exists only
+  // because the typecheck can't see the upstream shape.
+  const host = await factory(
+    forwardedOptions as unknown as CreateLocalRuntimeHostOptions,
+  );
   const harnessPort = createHarnessPortFromHost(host);
   return { harnessPort, host, forwardedOptions };
 }
