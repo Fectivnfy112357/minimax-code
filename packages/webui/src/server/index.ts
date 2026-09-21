@@ -104,6 +104,8 @@ export {
   type WebuiAssembledHost,
   type WebuiRuntimeHost,
   type WebuiRuntimeHostFactory,
+  type WebuiBrowserAdapter,
+  type WebuiBrowserToolExposure,
   type WebuiBrowserProvider,
 } from "./assembly.js";
 export {
