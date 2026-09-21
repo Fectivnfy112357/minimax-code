@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { WebuiMarkdown } from "../../src/client/markdown.js";
+import {
+  isSafeWebuiMarkdownHref,
+  WebuiMarkdown,
+} from "../../src/client/markdown.js";
 import {
   initialWebuiStreamState,
   reduceWebuiStreamFrame,
@@ -50,6 +53,31 @@ describe("WebUI mixed stream reducer", () => {
     expect(state.phase).toBe("done");
   });
 
+  it("updates a chunk's message by identity rather than by position", () => {
+    let state = reduceWebuiStreamFrame(
+      initialWebuiStreamState,
+      frame(
+        '{"type":2,"agent_message":{"msg_id":"first","msg_content":"one"}}',
+      ),
+    );
+    state = reduceWebuiStreamFrame(
+      state,
+      frame(
+        '{"type":2,"agent_message":{"msg_id":"second","msg_content":"two"}}',
+      ),
+    );
+    state = reduceWebuiStreamFrame(
+      state,
+      frame(
+        '{"type":6,"agent_message_chunk":{"msg_id":"first","msg_content":" updated"}}',
+      ),
+    );
+    expect(state.messages).toEqual([
+      { id: "first", answer: "one updated", thinking: "" },
+      { id: "second", answer: "two", thinking: "" },
+    ]);
+  });
+
   it("does not throw on malformed or unknown data", () => {
     expect(() =>
       reduceWebuiStreamFrame(initialWebuiStreamState, frame("{")),
@@ -64,6 +92,18 @@ describe("WebUI mixed stream reducer", () => {
 });
 
 describe("WebUI Markdown", () => {
+  it("allows web, mail and relative links but renders unsafe schemes as text", () => {
+    expect(isSafeWebuiMarkdownHref("https://example.com")).toBe(true);
+    expect(isSafeWebuiMarkdownHref("http://example.com")).toBe(true);
+    expect(isSafeWebuiMarkdownHref("mailto:user@example.com")).toBe(true);
+    expect(isSafeWebuiMarkdownHref("/docs")).toBe(true);
+    expect(isSafeWebuiMarkdownHref("../docs")).toBe(true);
+    expect(isSafeWebuiMarkdownHref("#section")).toBe(true);
+    expect(isSafeWebuiMarkdownHref("javascript:alert(1)")).toBe(false);
+    expect(isSafeWebuiMarkdownHref("data:text/html,bad")).toBe(false);
+    expect(isSafeWebuiMarkdownHref("//evil.example")).toBe(false);
+  });
+
   it("renders partial fences and normal fenced code without injecting HTML", () => {
     expect(() =>
       renderToStaticMarkup(

@@ -333,6 +333,112 @@ describe("WebUI service", () => {
     ws.close();
   });
 
+  it("drives the fresh-page list, selection, history and send sequence over one credential", async () => {
+    port.listSessions = async () => ({
+      sessions: [
+        {
+          sessionId: "fresh-session",
+          agentName: "main",
+          createdAt: 1,
+          updatedAt: 2,
+        },
+      ],
+      hasMore: false,
+    });
+    port.getMessages = async (request) => ({
+      messages: [
+        {
+          msgId: "history-1",
+          role: "assistant",
+          msgContent: `history for ${request.id}`,
+        },
+      ],
+      hasMore: false,
+    });
+    port.sendResult = {
+      ok: true,
+      source: [
+        { dataJson: '{"type":10}' },
+        {
+          dataJson:
+            '{"type":6,"agent_message_chunk":{"msg_id":"reply-1","msg_content":"reply"}}',
+        },
+        { dataJson: "[DONE]" },
+      ],
+    };
+    const { url } = await bootService();
+    const { ws, upgrade } = openClient(url);
+    await upgrade;
+    const request = (requestId: string, operation: string, body: unknown) =>
+      requestOnce(ws, {
+        protocolVersion: WEBUI_PROTOCOL_VERSION,
+        kind: "request",
+        requestId,
+        operation,
+        body,
+      });
+    const listed = await request("req-page-list", "listSessions", {
+      name: "main",
+    });
+    const selectedId = (
+      listed as { body: { sessions: Array<{ sessionId: string }> } }
+    ).body.sessions[0]!.sessionId;
+    expect(selectedId).toBe("fresh-session");
+    const history = await request("req-page-history", "getMessages", {
+      id: selectedId,
+    });
+    expect(
+      (history as { body: { messages: Array<{ msgContent?: string }> } }).body
+        .messages[0]!.msgContent,
+    ).toBe("history for fresh-session");
+
+    const frames: Array<{ kind: string; body?: { dataJson?: string } }> = [];
+    const completed = new Promise<void>((resolve, reject) => {
+      ws.on("message", (raw) => {
+        try {
+          const frame = JSON.parse(
+            raw.toString("utf8"),
+          ) as (typeof frames)[number];
+          frames.push(frame);
+          if (frame.body?.dataJson === "[DONE]") resolve();
+        } catch (error) {
+          reject(error);
+        }
+      });
+    });
+    ws.send(
+      JSON.stringify({
+        protocolVersion: WEBUI_PROTOCOL_VERSION,
+        kind: "request",
+        requestId: "req-page-send",
+        operation: "sendMessage",
+        body: { id: selectedId, content: "hello" },
+      }),
+    );
+    await completed;
+    expect(frames.map((frame) => frame.body?.dataJson)).toEqual([
+      '{"type":10}',
+      '{"type":6,"agent_message_chunk":{"msg_id":"reply-1","msg_content":"reply"}}',
+      "[DONE]",
+    ]);
+
+    port.sendResult = {
+      ok: false,
+      status: 409,
+      body: { key: "delivery_closed", message: "The turn delivery is closed." },
+    };
+    const refused = await request("req-page-refused", "sendMessage", {
+      id: selectedId,
+      content: "again",
+    });
+    expect(refused).toMatchObject({
+      kind: "error",
+      requestId: "req-page-refused",
+      code: "delivery_closed",
+    });
+    ws.close();
+  });
+
   it("turns an refused send result into a client-visible error", async () => {
     port.sendResult = {
       ok: false,

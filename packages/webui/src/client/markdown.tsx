@@ -6,6 +6,14 @@ import {
   type ReactNode,
 } from "react";
 
+export function isSafeWebuiMarkdownHref(href: string): boolean {
+  const value = href.trim();
+  if (value.startsWith("#")) return true;
+  if (value.startsWith("//")) return false;
+  if (/^(?:https?|mailto):/iu.test(value)) return true;
+  return !/^[a-z][a-z\d+.-]*:/iu.test(value);
+}
+
 function inline(tokens: readonly Token[] | undefined): ReactNode[] {
   return (tokens ?? []).map((token, index) => {
     const key = `${token.type}-${index}`;
@@ -14,10 +22,12 @@ function inline(tokens: readonly Token[] | undefined): ReactNode[] {
     if (token.type === "em") return <em key={key}>{inline(token.tokens)}</em>;
     if (token.type === "codespan") return <code key={key}>{token.text}</code>;
     if (token.type === "link")
-      return (
+      return isSafeWebuiMarkdownHref(token.href) ? (
         <a key={key} href={token.href} rel="noreferrer">
           {inline(token.tokens)}
         </a>
+      ) : (
+        <Fragment key={key}>{inline(token.tokens)}</Fragment>
       );
     if (token.type === "br") return <br key={key} />;
     if (token.type === "text")
