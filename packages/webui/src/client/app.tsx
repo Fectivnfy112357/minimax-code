@@ -111,7 +111,7 @@ export function subscribeToSessionHash(onChange: (sessionId: string | undefined)
   return () => window.removeEventListener("hashchange", onHashChange);
 }
 
-function createdSessionId(result: WebuiClientCreateSessionResult): string | undefined {
+export function createdSessionId(result: WebuiClientCreateSessionResult): string | undefined {
   return result.sessionId?.trim() || result.session?.sessionId?.trim() || undefined;
 }
 

@@ -309,6 +309,9 @@ describe("WebUI service", () => {
       expect(calls).toEqual([{ name: "main", workspaceDir }]);
       const relative = await request("req-create-relative", { name: "main", workspaceDir: "relative" });
       expect((relative as { code: string }).code).toBe(WebuiErrorCode.invalidBody);
+      const currentDirectory = await request("req-create-current-directory", { name: "main", workspaceDir: "." });
+      expect((currentDirectory as { code: string }).code).toBe(WebuiErrorCode.invalidBody);
+      expect(calls).toHaveLength(1);
       const missing = await request("req-create-missing", { name: "main", workspaceDir: path.join(workspaceDir, "missing") });
       expect((missing as { code: string }).code).toBe(WebuiErrorCode.invalidBody);
       const absent = await request("req-create-absent", { name: "", workspaceDir });

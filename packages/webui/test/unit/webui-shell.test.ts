@@ -14,6 +14,7 @@ import {
   WebuiClientFoundationApp,
   WebuiSessionList,
   WebuiSessionTranscript,
+  createdSessionId,
   projectWebuiMessage,
   readSessionIdFromHash,
   sessionHash,
@@ -27,6 +28,15 @@ function renderShell(label = "webui-foundation"): string {
 }
 
 describe("WebUI shell", () => {
+  it("reads a created session id from either supported response shape", () => {
+    expect(createdSessionId({ sessionId: "a" })).toBe("a");
+    expect(createdSessionId({ session: { sessionId: "b" } })).toBe("b");
+    expect(createdSessionId({ sessionId: "  c  " })).toBe("c");
+    expect(createdSessionId({ session: { sessionId: "  d  " } })).toBe("d");
+    expect(createdSessionId({})).toBeUndefined();
+    expect(createdSessionId({ agentName: "x" } as Parameters<typeof createdSessionId>[0])).toBeUndefined();
+  });
+
   it("round-trips the selected session through the URL hash", () => {
     expect(sessionHash("session with spaces")).toBe("#session=session+with+spaces");
     expect(readSessionIdFromHash("#session=session+with+spaces")).toBe("session with spaces");
