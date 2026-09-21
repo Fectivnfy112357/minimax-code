@@ -61,8 +61,8 @@ mkdirSync(outdir, { recursive: true });
   if (result.status !== 0) {
     throw new Error(
       `WebUI stylesheet build failed (exit ${result.status}); ` +
-        "the styles pipeline is run before the bundle so the metafile " +
-        "covers every input the artifact ships with.",
+        "the styles pipeline is run before the bundle so the stylesheet " +
+        "and bundle are produced by the same build.",
     );
   }
 }

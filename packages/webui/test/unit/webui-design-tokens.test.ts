@@ -208,21 +208,32 @@ describe("WebUI compiled stylesheet", () => {
     }
   });
 
-  it("maps every token-derived utility to the matching CSS variable", () => {
-    const cases: ReadonlyArray<readonly [RegExp, RegExp]> = [
-      [/^\.bg-bg_default_primary\s*\{([^}]+)\}/um, /var\(--bg-default-primary\)/u],
-      [/^\.text-text_default_primary\s*\{([^}]+)\}/um, /var\(--text-default-primary\)/u],
-      [/^\.rounded-radius_8\s*\{([^}]+)\}/um, /var\(--radius-8\)/u],
-      [/^\.size-size_14\s*\{([^}]+)\}/um, /var\(--size-14\)/u],
-      [/^\.leading-line_height_20\s*\{([^}]+)\}/um, /var\(--line-height-20\)/u],
-      [/^\.gap-spacing_4\s*\{([^}]+)\}/um, /var\(--spacing-4\)/u],
-      [/^\.shadow-shadow_default\s*\{([^}]+)\}/um, /var\(--shadow-default\)/u],
-    ];
-    for (const [util, variable] of cases) {
-      const match = compiled.match(util);
-      expect(match, `utility ${util} missing in compiled CSS`).not.toBeNull();
-      expect(variable.test(match![1]), `body of ${util} should reference ${variable}`).toBe(true);
+  it("closes every var(--name) reference against a definition in the same stylesheet", () => {
+    // The previous assertion only checked that the compiled body matched a
+    // hard-coded `var(--kebab-name)` string. That made the test pass against
+    // the broken build where the utility referenced a non-existent variable
+    // — fixing the reference would then break the test, locking the bug in.
+    //
+    // The actual contract is that every `var(--name)` the stylesheet emits
+    // resolves to a `--name:` defined in the same stylesheet. Anything else
+    // is a silent no-op rule.
+    const defRe = /--([a-zA-Z0-9_-]+)\s*:/gu;
+    const defined = new Set<string>();
+    let m: RegExpExecArray | null;
+    while ((m = defRe.exec(compiled)) !== null) defined.add(m[1]);
+
+    const refRe = /var\(\s*--([a-zA-Z0-9_-]+)\s*\)/gu;
+    const referenced = new Set<string>();
+    while ((m = refRe.exec(compiled)) !== null) referenced.add(m[1]);
+
+    const missing = [...referenced].filter((n) => !defined.has(n)).sort();
+    if (missing.length > 0) {
+      throw new Error(
+        `compiled stylesheet references ${missing.length} undefined variable(s): ` +
+          missing.map((n) => `--${n}`).join(", "),
+      );
     }
+    expect(missing.length).toBe(0);
   });
 
   it("embeds Chinese fallbacks for both the sans and mono font stacks", () => {

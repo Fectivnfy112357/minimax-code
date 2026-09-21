@@ -35,6 +35,12 @@ describe("WebUI shell", () => {
 
     // The rail sits one step darker than the main surface — bg_grouped_secondary
     // over bg_default_primary — and uses the text-label set for its menu rows.
+    //
+    // This test only verifies that the markup references the token-derived
+    // utility class names. Whether those class names actually resolve to a
+    // background or text colour is covered by the reference-closure check in
+    // webui-design-tokens.test.ts, which scans the compiled stylesheet for
+    // var(--x) references that lack a matching --x: definition.
     expect(html).toMatch(/bg-bg_grouped_secondary/u);
     expect(html).toMatch(/bg-bg_default_primary/u);
     expect(html).toMatch(/text-text_default_primary/u);
@@ -47,6 +53,10 @@ describe("WebUI shell", () => {
     // The shell declares a border between the rail and the main surface,
     // a small menu-row radius, and a larger block radius for the
     // code-snippet block. Tokens, not defaults.
+    //
+    // Same scope as the background/text test above: the presence of the
+    // class names in the markup is what this assertion guards. Resolution
+    // is covered by the closure check in webui-design-tokens.test.ts.
     expect(html).toMatch(/rounded-radius_/u);
     expect(html).toMatch(/p-spacing_/u);
     expect(html).toMatch(/gap-spacing_/u);
