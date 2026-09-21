@@ -48,6 +48,25 @@ const sourcePlugin = createWorkspaceSourcesPlugin(packages, root, [
 rmSync(outdir, { recursive: true, force: true });
 mkdirSync(outdir, { recursive: true });
 
+// Compile the stylesheet first so the bundled client HTML can link to it
+// (ADR 0010). The stylesheet is its own artifact; both the development
+// server and the packaged esbuild output consume the same compiled CSS.
+{
+  const { spawnSync } = await import("node:child_process");
+  const result = spawnSync(
+    process.execPath,
+    [path.join(root, "scripts/build-webui-styles.mjs")],
+    { stdio: "inherit", cwd: root },
+  );
+  if (result.status !== 0) {
+    throw new Error(
+      `WebUI stylesheet build failed (exit ${result.status}); ` +
+        "the styles pipeline is run before the bundle so the metafile " +
+        "covers every input the artifact ships with.",
+    );
+  }
+}
+
 const server = await build({
   absWorkingDir: packageDir,
   entryPoints: {
