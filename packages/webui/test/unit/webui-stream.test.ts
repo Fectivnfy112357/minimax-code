@@ -154,6 +154,125 @@ describe("WebUI mixed stream reducer", () => {
       ).runtimeEvents,
     ).toHaveLength(1);
   });
+
+  it("advances the cursor only on cursor-bearing frames (whole-group discipline)", () => {
+    // The cursor rides only on the last mapped frame of a source-frame
+    // group. The reducer must therefore only advance the cursor when the
+    // frame carries one — never per frame, never on a middle-of-group frame
+    // — so a resume never lands mid-group. A "per-frame" mutation that
+    // records every frame's cursor (or worse, applies the cursor before
+    // the rest of the group's frames are applied) would advance the cursor
+    // before the group has finished being applied; this fixture asserts
+    // the cursor is held back until a cursor-bearing frame actually
+    // arrives.
+    let state = reduceWebuiStreamFrame(
+      initialWebuiStreamState,
+      frame('{"type":10}'),
+    );
+    expect(state.cursor).toBeUndefined();
+    state = reduceWebuiStreamFrame(
+      state,
+      frame(
+        '{"type":6,"agent_message_chunk":{"msg_id":"m1","msg_content":"partial"}}',
+      ),
+    );
+    expect(state.cursor).toBeUndefined();
+    state = reduceWebuiStreamFrame(
+      state,
+      frame(
+        '{"type":6,"agent_message_chunk":{"msg_id":"m1","msg_content":" more"}}',
+      ),
+    );
+    expect(state.cursor).toBeUndefined();
+    state = reduceWebuiStreamFrame(state, {
+      dataJson:
+        '{"type":2,"agent_message":{"msg_id":"m1","msg_content":"whole"}}',
+      cursor: "c1",
+    });
+    expect(state.cursor).toBe("c1");
+    // A subsequent frame without a cursor leaves the cursor untouched.
+    state = reduceWebuiStreamFrame(
+      state,
+      frame('{"type":"session_status","session_status":{"type":"finished"}}'),
+    );
+    expect(state.cursor).toBe("c1");
+    // The next cursor-bearing frame advances again.
+    state = reduceWebuiStreamFrame(state, {
+      dataJson: "[DONE]",
+      cursor: "c2",
+    });
+    expect(state.cursor).toBe("c2");
+  });
+
+  it("does not duplicate a message the reducer has already seen when a resumed stream re-sends it", () => {
+    // Identity rule: whole-message frames carry `msg_id`. A resumed stream
+    // may legitimately replay the last fully-applied message; the reducer
+    // must upsert on `msg_id`, never append. This is the dedup contract a
+    // resume relies on.
+    let state = reduceWebuiStreamFrame(
+      initialWebuiStreamState,
+      frame(
+        '{"type":2,"agent_message":{"msg_id":"turn-1","msg_content":"first answer","thinking_content":"first thought"}}',
+      ),
+    );
+    state = reduceWebuiStreamFrame(
+      state,
+      frame(
+        '{"type":2,"agent_message":{"msg_id":"turn-2","msg_content":"second answer","thinking_content":"second thought"}}',
+      ),
+    );
+    expect(state.messages.map((message) => message.id)).toEqual([
+      "turn-1",
+      "turn-2",
+    ]);
+    // Resume replay: the server re-sends the last whole-message frame and
+    // a new one. The replay must not produce a second `turn-2`.
+    state = reduceWebuiStreamFrame(
+      state,
+      frame(
+        '{"type":2,"agent_message":{"msg_id":"turn-2","msg_content":"second answer","thinking_content":"second thought"}}',
+      ),
+    );
+    state = reduceWebuiStreamFrame(
+      state,
+      frame(
+        '{"type":2,"agent_message":{"msg_id":"turn-3","msg_content":"third answer","thinking_content":"third thought"}}',
+      ),
+    );
+    expect(state.messages.map((message) => message.id)).toEqual([
+      "turn-1",
+      "turn-2",
+      "turn-3",
+    ]);
+    expect(state.messages[1]?.answer).toBe("second answer");
+  });
+
+  it("flips to reconnecting and sets resumeRequired when the server emits resume_overflow", () => {
+    // The harness maps a `resync-required` source frame to
+    // `{type:"resume_overflow"}` on the way out (see
+    // `session-stream-delivery.ts:116`). The WebUI client must recognise
+    // this signal and surface a `reconnecting` phase the shell can render
+    // as visible state, and a `resumeRequired` flag the shell reads to
+    // reload authoritative history and establish a new subscription. The
+    // previous behaviour fell through into the generic runtime-event
+    // branch and silently swallowed the signal.
+    let state = reduceWebuiStreamFrame(
+      initialWebuiStreamState,
+      frame(
+        '{"type":6,"agent_message_chunk":{"msg_id":"m1","msg_content":"partial"}}',
+      ),
+    );
+    state = reduceWebuiStreamFrame(state, {
+      dataJson: '{"type":"resume_overflow"}',
+      cursor: "c-overflow",
+    });
+    expect(state.phase).toBe("reconnecting");
+    expect(state.resumeRequired).toBe(true);
+    // The cursor that came with the resume_overflow frame is recorded so a
+    // reload can establish a fresh subscription immediately after
+    // `getMessages` resolves.
+    expect(state.cursor).toBe("c-overflow");
+  });
 });
 
 describe("WebUI Markdown", () => {

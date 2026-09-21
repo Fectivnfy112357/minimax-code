@@ -151,6 +151,7 @@ export class WebuiService {
       getSession: (request) => this.port.getSession(request),
       getMessages: (request) => this.port.getMessages(request),
       sendMessage: (request) => this.port.sendMessage(request),
+      resumeSession: (request) => this.port.resumeSession(request),
     });
     const factory = options.httpServerFactory ?? (() => createServer());
     this.httpServer = factory();

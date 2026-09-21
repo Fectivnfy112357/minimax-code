@@ -29,6 +29,8 @@ import {
   type WebuiVersionInfo,
   type WebuiSendMessageRequest,
   type WebuiSendMessageResult,
+  type WebuiResumeSessionRequest,
+  type WebuiStreamResult,
 } from "../../src/server/index.js";
 import { createWebuiTransport } from "../../src/client/transport.js";
 
@@ -45,6 +47,11 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
     ok: true,
     source: [{ dataJson: '{"type":10}' }, { dataJson: "[DONE]" }],
   };
+  public resumeResult: WebuiStreamResult = {
+    ok: true,
+    source: [{ dataJson: '{"type":10}' }, { dataJson: "[DONE]" }],
+  };
+  public lastResumeRequest: WebuiResumeSessionRequest | undefined;
 
   recordLog(version: string) {
     this.versionInfo = {
@@ -79,6 +86,13 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
     _request: WebuiSendMessageRequest,
   ): Promise<WebuiSendMessageResult> {
     return this.sendResult;
+  }
+
+  async resumeSession(
+    request: WebuiResumeSessionRequest,
+  ): Promise<WebuiStreamResult> {
+    this.lastResumeRequest = request;
+    return this.resumeResult;
   }
 
   async close(): Promise<void> {
@@ -572,6 +586,143 @@ describe("WebUI service", () => {
     ws.close();
   });
 
+  it("streams resumeSession as ordered event frames and forwards the cursor the client supplies", async () => {
+    // resumeSession shares the wire shape of sendMessage (the harness
+    // contract returns the same iterable source — see
+    // `cli-service.ts:294-301`). The service forwards the body verbatim
+    // and the registered handler resolves to `{stream: ...}` so the
+    // service's `for await` loop emits `event` frames with the harness's
+    // frames as the body.
+    port.resumeResult = {
+      ok: true,
+      source: [
+        { dataJson: '{"type":10}' },
+        {
+          dataJson:
+            '{"type":2,"agent_message":{"msg_id":"replayed","msg_content":"after-c1"}}',
+          cursor: "c2",
+        },
+        { dataJson: "[DONE]" },
+      ],
+    };
+    const { url } = await bootService();
+    const { ws, upgrade } = openClient(url);
+    await upgrade;
+    const frames: unknown[] = [];
+    const completed = new Promise<void>((resolve, reject) => {
+      ws.on("message", (raw) => {
+        try {
+          const frame = JSON.parse(raw.toString("utf8")) as {
+            kind: string;
+            body?: { dataJson?: string; cursor?: string };
+          };
+          frames.push(frame);
+          if (frame.kind === "event" && frame.body?.dataJson === "[DONE]")
+            resolve();
+        } catch (error) {
+          reject(error);
+        }
+      });
+    });
+    ws.send(
+      JSON.stringify({
+        protocolVersion: WEBUI_PROTOCOL_VERSION,
+        kind: "request",
+        requestId: "req-resume",
+        operation: "resumeSession",
+        body: { id: "session-1", afterCursor: "c1" },
+      }),
+    );
+    await completed;
+    expect(frames).toHaveLength(3);
+    expect(
+      (frames[1] as { body: { cursor: string } }).body.cursor,
+    ).toBe("c2");
+    // The body the service forwarded to the port is the body the client
+    // sent — including `afterCursor`. The harness is what eventually
+    // honours it; the service does not rewrite or strip it.
+    expect(port.lastResumeRequest).toEqual({
+      id: "session-1",
+      afterCursor: "c1",
+    });
+    ws.close();
+  });
+
+  it("lets the server-side turn keep running when the client WebSocket closes mid-stream", async () => {
+    // Closing a tab must unsubscribe without stopping the turn. The
+    // service wires each operation to a per-request `for await` loop
+    // (see `service.ts:#handleMessage`), which calls `sendFrame` for
+    // every harness frame. `sendFrame` no-ops once the socket is closed,
+    // but the harness source keeps emitting until it is exhausted, and
+    // the server-side promise of `entry.handle(...)` resolves when the
+    // source is done. We assert that promise resolves after the client
+    // closes, which means the turn ran to completion on the server
+    // side even though the client went away.
+    let resolveHarness!: () => void;
+    const harnessDone = new Promise<void>((resolve) => {
+      resolveHarness = resolve;
+    });
+    let harnessFrameCount = 0;
+    const slowSource = {
+      [Symbol.asyncIterator]() {
+        return {
+          next: async () => {
+            harnessFrameCount += 1;
+            // Emit three frames then close. The second frame is what
+            // the client receives before it closes the socket; the
+            // third only lands server-side.
+            if (harnessFrameCount === 1)
+              return { value: { dataJson: '{"type":10}' }, done: false };
+            if (harnessFrameCount === 2)
+              return {
+                value: {
+                  dataJson:
+                    '{"type":6,"agent_message_chunk":{"msg_id":"m1","msg_content":"partial"}}',
+                },
+                done: false,
+              };
+            resolveHarness();
+            return { value: { dataJson: "[DONE]" }, done: true };
+          },
+        };
+      },
+    };
+    port.sendResult = { ok: true, source: slowSource };
+    const { url } = await bootService();
+    const { ws, upgrade } = openClient(url);
+    await upgrade;
+    const receivedBeforeClose = new Promise<unknown>((resolve) => {
+      ws.on("message", (raw) => {
+        try {
+          const frame = JSON.parse(raw.toString("utf8")) as {
+            kind: string;
+            body?: { dataJson?: string };
+          };
+          if (frame.body?.dataJson?.includes("partial")) resolve(frame);
+        } catch {
+          // ignore parse errors
+        }
+      });
+    });
+    ws.send(
+      JSON.stringify({
+        protocolVersion: WEBUI_PROTOCOL_VERSION,
+        kind: "request",
+        requestId: "req-midstream-close",
+        operation: "sendMessage",
+        body: { id: "session-1", content: "hello" },
+      }),
+    );
+    // Wait for the client to receive a frame, then close mid-stream.
+    await receivedBeforeClose;
+    ws.close();
+    // The harness stream must still drain to completion on the server
+    // side even though the client went away. If it were tied to the
+    // socket lifecycle this promise would never resolve.
+    await harnessDone;
+    expect(harnessFrameCount).toBe(3);
+  });
+
   it("serves the built client only with the credential and injects runtime configuration", async () => {
     const { credential } = await bootService();
     const response = await fetch(
@@ -1059,6 +1210,11 @@ describe("WebUI operation allowlist", () => {
       expect(registry.has("sendMessage")).toBe(true);
       expect(registry.has("getSession")).toBe(true);
       expect(registry.has("getMessages")).toBe(true);
+      // resumeSession sits next to sendMessage in the allowlist because it
+      // shares the same wire shape (the brief's "resume is not a second
+      // transport"). It must be registered, validator-bound, and reachable
+      // through the same `entry.handle(...)` plumbing.
+      expect(registry.has("resumeSession")).toBe(true);
     } finally {
       await service.close();
     }

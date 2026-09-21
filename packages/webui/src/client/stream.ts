@@ -7,12 +7,32 @@ export interface WebuiStreamMessage {
 }
 
 export interface WebuiStreamState {
-  readonly phase: "idle" | "streaming" | "done" | "refused" | "error";
+  readonly phase:
+    | "idle"
+    | "streaming"
+    | "done"
+    | "refused"
+    | "error"
+    | "reconnecting";
   readonly messages: readonly WebuiStreamMessage[];
   readonly runtimeEvents: readonly Record<string, unknown>[];
   readonly actionDeltas: readonly Record<string, unknown>[];
   readonly status?: string;
   readonly refusal?: string;
+  /**
+   * Stream cursor of the last fully-applied frame group. The cursor rides only
+   * on the last mapped frame of each source-frame group, so it advances only
+   * on cursor-bearing frames. Holding the cursor in the reducer means a
+   * reconnect can resume from exactly where the rendered transcript left off
+   * without ever landing mid-group.
+   */
+  readonly cursor?: string;
+  /**
+   * True when the server emitted `resume_overflow`: the client's view has
+   * fallen too far behind and must reload authoritative history through
+   * `getMessages` before establishing a new subscription.
+   */
+  readonly resumeRequired: boolean;
 }
 
 export const initialWebuiStreamState: WebuiStreamState = {
@@ -20,6 +40,7 @@ export const initialWebuiStreamState: WebuiStreamState = {
   messages: [],
   runtimeEvents: [],
   actionDeltas: [],
+  resumeRequired: false,
 };
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -76,52 +97,67 @@ export function reduceWebuiStreamFrame(
   state: WebuiStreamState,
   frame: WebuiStreamFrame,
 ): WebuiStreamState {
+  // Cursor discipline: the cursor rides only on the last mapped frame of a
+  // source-frame group, so a cursor-bearing frame is the last frame of its
+  // group. We only advance `state.cursor` when the frame itself carries one;
+  // recording it per frame would land a resume mid-group, because the cursor
+  // would advance before the rest of the group's frames were applied.
+  let next: WebuiStreamState =
+    frame.cursor !== undefined && frame.cursor !== state.cursor
+      ? { ...state, cursor: frame.cursor }
+      : state;
   if (frame.messageActionDeltas)
-    return {
-      ...state,
-      actionDeltas: [...state.actionDeltas, ...frame.messageActionDeltas],
+    next = {
+      ...next,
+      actionDeltas: [...next.actionDeltas, ...frame.messageActionDeltas],
     };
   const payload = frame.dataJson?.trim();
-  if (!payload) return state;
-  if (payload === "[DONE]") return { ...state, phase: "done" };
+  if (!payload) return next;
+  if (payload === "[DONE]") return { ...next, phase: "done" };
   let parsed: unknown;
   try {
     parsed = JSON.parse(payload);
   } catch {
-    return state;
+    return next;
   }
   const event = record(parsed);
-  if (!event) return state;
+  if (!event) return next;
   const type = event.type;
+  if (type === "resume_overflow") {
+    // The harness signals that this client has fallen too far behind the
+    // server's authoritative history. The shell observes `resumeRequired`
+    // and re-establishes a fresh subscription after `getMessages`.
+    return { ...next, phase: "reconnecting", resumeRequired: true };
+  }
   if (type === 10 || type === "heartbeat")
-    return { ...state, phase: "streaming" };
+    return { ...next, phase: "streaming" };
   if (type === 2 || type === "agent_message") {
     const message = record(event.agent_message) ?? record(event.agentMessage);
-    if (!message) return state;
+    if (!message) return next;
     const messages = Array.isArray(message.messages)
       ? message.messages.reduce(
           (all, item) =>
             record(item) ? upsertMessage(all, record(item)!, false) : all,
-          state.messages,
+          next.messages,
         )
-      : upsertMessage(state.messages, message, false);
-    return { ...state, phase: "streaming", messages };
+      : upsertMessage(next.messages, message, false);
+    return { ...next, phase: "streaming", messages };
   }
   if (type === 6 || type === "agent_message_chunk") {
     const message =
       record(event.agent_message_chunk) ?? record(event.agentMessageChunk);
     return message
       ? {
-          ...state,
+          ...next,
           phase: "streaming",
-          messages: upsertMessage(state.messages, message, true),
+          messages: upsertMessage(next.messages, message, true),
         }
-      : state;
+      : next;
   }
   if (type === "session_status" || type === 3 || type === 4) {
     const status = record(event.session_status);
     return {
-      ...state,
+      ...next,
       phase: "streaming",
       status: text(status ?? event, ["type", "status"]) || undefined,
     };
@@ -132,9 +168,9 @@ export function reduceWebuiStreamFrame(
     typeof type === "string"
   )
     return {
-      ...state,
+      ...next,
       phase: "streaming",
-      runtimeEvents: [...state.runtimeEvents, event],
+      runtimeEvents: [...next.runtimeEvents, event],
     };
-  return state;
+  return next;
 }

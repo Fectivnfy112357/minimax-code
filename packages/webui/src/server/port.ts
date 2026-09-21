@@ -116,6 +116,22 @@ export interface WebuiSendMessageRequest {
   readonly clientIntent?: string;
 }
 
+/**
+ * Wire shape for `resumeSession` on the WebUI envelope. The harness
+ * `ResumeSessionInput` is what the runtime layer ultimately consumes; this
+ * type is a deliberately narrow projection so the browser can ask for a
+ * resume without importing the harness contract.
+ */
+export interface WebuiResumeSessionRequest {
+  readonly id: string;
+  /** Resume from the stream cursor the client last advanced past. */
+  readonly afterCursor?: string;
+  /** Resume from after a specific persisted message id, when known. */
+  readonly afterMsgId?: string;
+  /** Drain any queued turns after the resume point. */
+  readonly drainQueued?: boolean;
+}
+
 export interface WebuiStreamFrame {
   readonly cursor?: string;
   readonly eventJson?: string;
@@ -123,11 +139,19 @@ export interface WebuiStreamFrame {
   readonly messageActionDeltas?: readonly Record<string, unknown>[];
 }
 
-export type WebuiSendMessageResult =
+/**
+ * Result envelope shared between `sendMessage` and `resumeSession`: the
+ * harness session-stream contract returns an iterable source on success or
+ * a structured error body on failure. The wire envelope (`event` frames
+ * over a WebSocket) is the same in both cases — see the brief's "two
+ * facts that make this ticket small".
+ */
+export type WebuiStreamResult =
   | {
       readonly ok: true;
       readonly source:
-        AsyncIterable<WebuiStreamFrame> | Iterable<WebuiStreamFrame>;
+        | AsyncIterable<WebuiStreamFrame>
+        | Iterable<WebuiStreamFrame>;
     }
   | {
       readonly ok: false;
@@ -138,6 +162,9 @@ export type WebuiSendMessageResult =
         readonly detail?: string;
       };
     };
+
+/** `sendMessage` returns the same shape as a resume — kept as an alias. */
+export type WebuiSendMessageResult = WebuiStreamResult;
 
 export interface WebuiHarnessPort {
   version(): WebuiVersionInfo;
@@ -152,6 +179,15 @@ export interface WebuiHarnessPort {
   sendMessage(
     request: WebuiSendMessageRequest,
   ): Promise<WebuiSendMessageResult>;
+  /**
+   * Resume a session stream from a cursor the client previously advanced
+   * past. Returns the same iterable source as `sendMessage` — the harness
+   * reuses the session-stream contract for both — so the wire envelope and
+   * the reducer can stay unchanged.
+   */
+  resumeSession(
+    request: WebuiResumeSessionRequest,
+  ): Promise<WebuiStreamResult>;
   /**
    * Release anything the port owns. The service calls this after closing
    * every transport-side resource so the harness can tear itself down in

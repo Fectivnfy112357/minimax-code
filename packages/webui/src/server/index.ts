@@ -37,6 +37,7 @@ export {
   getSessionOperation,
   getMessagesOperation,
   sendMessageOperation,
+  resumeSessionOperation,
   type WebuiOperation,
   type WebuiOperationHandler,
   type WebuiOperationRegistryEntry,
@@ -78,6 +79,8 @@ export type {
   WebuiMessagesResult,
   WebuiSendMessageRequest,
   WebuiSendMessageResult,
+  WebuiResumeSessionRequest,
+  WebuiStreamResult,
   WebuiStreamFrame,
 } from "./port.js";
 export {

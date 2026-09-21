@@ -48,6 +48,7 @@ import {
 import {
   initialWebuiStreamState,
   reduceWebuiStreamFrame,
+  type WebuiStreamMessage,
   type WebuiStreamState,
 } from "./stream.js";
 import type { WebuiStreamFrame } from "../server/port.js";
@@ -110,6 +111,16 @@ export type WebuiClientMessageSender = (
   onFrame: (frame: WebuiStreamFrame) => void,
 ) => Promise<void>;
 
+export type WebuiClientSessionResumer = (
+  request: {
+    readonly id: string;
+    readonly afterCursor?: string;
+    readonly afterMsgId?: string;
+    readonly drainQueued?: boolean;
+  },
+  onFrame: (frame: WebuiStreamFrame) => void,
+) => Promise<void>;
+
 export function readSessionIdFromHash(hash: string): string | undefined {
   const params = new URLSearchParams(
     hash.startsWith("#") ? hash.slice(1) : hash,
@@ -169,6 +180,7 @@ export interface WebuiClientFoundationAppProps {
   readonly locationHash?: string;
   readonly createSession?: WebuiClientSessionCreator;
   readonly sendMessage?: WebuiClientMessageSender;
+  readonly resumeSession?: WebuiClientSessionResumer;
   /**
    * What the identity row shows under the product name. The desktop puts the signed-in
    * account's plan there; the WebUI is loopback-only and has no account, so it reports
@@ -579,12 +591,16 @@ function RailRow({
 function WebuiComposer({
   sessionId,
   sendMessage,
+  resumeSession,
+  loadMessages,
   draft,
   onDraftChange,
   onNeedsSession,
 }: {
   readonly sessionId?: string;
   readonly sendMessage?: WebuiClientMessageSender;
+  readonly resumeSession?: WebuiClientSessionResumer;
+  readonly loadMessages?: WebuiClientMessageLoader;
   /** The draft lives on the shell so it survives the session-creation detour. */
   readonly draft: string;
   readonly onDraftChange: (next: string) => void;
@@ -610,11 +626,118 @@ function WebuiComposer({
     }
     setSending(true);
     onDraftChange("");
+    // The reducer tracks the latest cursor the server confirmed, and a
+    // boolean the shell observes to reload + restart the subscription
+    // after a `resume_overflow`. The loop below owns those locally so it
+    // can decide whether the next call is a `sendMessage` (fresh prompt)
+    // or a `resumeSession` (re-subscribing after the socket dropped or
+    // after the server asked for a resync).
+    let cursor: string | undefined;
+    let needsHistoryReload = false;
     setStream({ ...initialWebuiStreamState, phase: "streaming" });
     try {
-      await sendMessage({ id: sessionId, content: message }, (frame) =>
-        setStream((current) => reduceWebuiStreamFrame(current, frame)),
-      );
+      let sent = false;
+      while (true) {
+        // The reducer's `resumeRequired` flips when a frame carries
+        // `{type:"resume_overflow"}`; the helper below mirrors that
+        // signal into the loop's local state.
+        const captureFrame =
+          (onFrame: (frame: WebuiStreamFrame) => void) =>
+          (frame: WebuiStreamFrame): void => {
+            onFrame(frame);
+            if (frame.cursor !== undefined) cursor = frame.cursor;
+            const parsed = (() => {
+              try {
+                return JSON.parse(String(frame.dataJson ?? ""));
+              } catch {
+                return undefined;
+              }
+            })();
+            if (
+              parsed &&
+              typeof parsed === "object" &&
+              (parsed as { type?: unknown }).type === "resume_overflow"
+            ) {
+              needsHistoryReload = true;
+            }
+          };
+        if (needsHistoryReload) {
+          // The server told us our view has fallen too far behind. Reset
+          // the reducer to a clean state, reload authoritative history,
+          // and establish a fresh subscription with no cursor so the
+          // server replays from the latest persisted point.
+          needsHistoryReload = false;
+          cursor = undefined;
+          setStream({
+            ...initialWebuiStreamState,
+            phase: "reconnecting",
+          });
+          if (loadMessages) {
+            const page = await loadMessages({ id: sessionId });
+            setStream((current) => ({
+              ...current,
+              phase: "reconnecting",
+              messages: (page.messages ?? []).flatMap(projectWebuiMessage).map(
+                (item): WebuiStreamMessage => ({
+                  id: item.messageId,
+                  answer: "text" in item ? item.text : "",
+                  thinking: item.kind === "thinking" ? item.text : "",
+                }),
+              ),
+            }));
+          }
+          if (!resumeSession) {
+            setStream((current) => ({
+              ...current,
+              phase: "refused",
+              refusal: "resumeSession transport is unavailable",
+            }));
+            return;
+          }
+          await resumeSession(
+            { id: sessionId },
+            captureFrame((frame) =>
+              setStream((current) => reduceWebuiStreamFrame(current, frame)),
+            ),
+          );
+          // A fresh subscription has been established; we are no longer
+          // reconnecting. Resume the steady-state phase.
+          break;
+        }
+        if (!sent) {
+          sent = true;
+          await sendMessage(
+            { id: sessionId, content: message },
+            captureFrame((frame) =>
+              setStream((current) => reduceWebuiStreamFrame(current, frame)),
+            ),
+          );
+          // `sendMessage` resolves only on `[DONE]`, so the loop exits
+          // once the server signals the end of the stream.
+          break;
+        }
+        // The WebSocket dropped mid-stream and the reducer kept a cursor
+        // from before the drop. Reconnect from the cursor the loop has
+        // been tracking; this is the reconnection path the brief calls
+        // out, kept deliberately small: no retry policy, no exponential
+        // backoff — a single resume attempt from the last good cursor.
+        if (!resumeSession) {
+          setStream((current) => ({
+            ...current,
+            phase: "refused",
+            refusal: "resumeSession transport is unavailable",
+          }));
+          return;
+        }
+        setStream((current) => ({ ...current, phase: "reconnecting" }));
+        await resumeSession(
+          cursor ? { id: sessionId, afterCursor: cursor } : { id: sessionId },
+          captureFrame((frame) =>
+            setStream((current) => reduceWebuiStreamFrame(current, frame)),
+          ),
+        );
+        break;
+      }
     } catch (error) {
       setStream((current) => ({
         ...current,
@@ -627,6 +750,15 @@ function WebuiComposer({
   };
   return (
     <section aria-label="Compose message" className="w-full">
+      {stream.phase === "reconnecting" ? (
+        <p
+          role="status"
+          data-webui-reconnecting="true"
+          className="text-text_default_secondary text-size_14 leading-line_height_20"
+        >
+          Reconnecting…
+        </p>
+      ) : null}
       {stream.messages.map((message) => (
         <article
           key={message.id}
@@ -802,6 +934,7 @@ export function WebuiClientFoundationApp({
   loadMessages,
   createSession,
   sendMessage,
+  resumeSession,
   hostLabel,
 }: WebuiClientFoundationAppProps): ReactElement {
   const [page, setPage] = useState<WebuiClientSessionPage>(
@@ -1097,6 +1230,8 @@ export function WebuiClientFoundationApp({
                   <WebuiComposer
                     sessionId={selectedSessionId}
                     sendMessage={sendMessage}
+                    resumeSession={resumeSession}
+                    loadMessages={loadMessages}
                     draft={draft}
                     onDraftChange={setDraft}
                     onNeedsSession={() => setCreateOpen(true)}

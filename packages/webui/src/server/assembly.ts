@@ -62,6 +62,10 @@ export interface WebuiAssembledHost {
       request: import("./port.js").WebuiSendMessageRequest,
       context?: Record<string, never>,
     ): Promise<import("./port.js").WebuiSendMessageResult>;
+    resumeSession(
+      request: import("./port.js").WebuiResumeSessionRequest,
+      context?: Record<string, never>,
+    ): Promise<import("./port.js").WebuiStreamResult>;
   };
 }
 

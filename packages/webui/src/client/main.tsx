@@ -30,6 +30,7 @@ root.render(
     loadMessages={transport.loadMessages}
     createSession={transport.createSession}
     sendMessage={transport.sendMessage}
+    resumeSession={transport.resumeSession}
   />,
 );
 

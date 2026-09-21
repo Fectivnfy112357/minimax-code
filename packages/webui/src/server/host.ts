@@ -22,6 +22,8 @@ import type {
   WebuiVersionInfo,
   WebuiSendMessageRequest,
   WebuiSendMessageResult,
+  WebuiResumeSessionRequest,
+  WebuiStreamResult,
 } from "./port.js";
 
 export interface WebuiRuntimeHostHandle {
@@ -49,6 +51,10 @@ export interface WebuiRuntimeHostHandle {
       request: WebuiSendMessageRequest,
       context?: Record<string, never>,
     ): Promise<WebuiSendMessageResult>;
+    resumeSession(
+      request: WebuiResumeSessionRequest,
+      context?: Record<string, never>,
+    ): Promise<WebuiStreamResult>;
   };
 }
 
@@ -94,6 +100,11 @@ export function createHarnessPortFromHost(
       if (!host.cliService)
         throw new Error("runtime host does not expose the CLI service");
       return host.cliService.sendMessage(request, {});
+    },
+    async resumeSession(request) {
+      if (!host.cliService)
+        throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.resumeSession(request, {});
     },
     async close() {
       if (closed) return;

@@ -22,6 +22,7 @@ import type {
   WebuiCreateSessionRequest,
   WebuiCreateSessionResult,
   WebuiSendMessageRequest,
+  WebuiResumeSessionRequest,
 } from "./port.js";
 
 export interface WebuiOperationContext {
@@ -63,6 +64,7 @@ const CREATE_SESSION_OPERATION_NAME = "createSession" as const;
 const GET_SESSION_OPERATION_NAME = "getSession" as const;
 const GET_MESSAGES_OPERATION_NAME = "getMessages" as const;
 const SEND_MESSAGE_OPERATION_NAME = "sendMessage" as const;
+const RESUME_SESSION_OPERATION_NAME = "resumeSession" as const;
 
 type VersionRequestBody = undefined;
 
@@ -338,6 +340,67 @@ export const sendMessageOperation: WebuiOperation<WebuiSendMessageRequest> = {
   validate: validateSendMessageRequestBody,
 };
 
+function validateResumeSessionRequestBody(
+  body: unknown,
+): WebuiOperationValidation<WebuiResumeSessionRequest> {
+  // `resumeSession` accepts the same session id envelope as `sendMessage`
+  // (it targets the same session), plus the optional resume controls. The
+  // validator is structural: a non-string `id`, a non-string cursor/msg id,
+  // or any non-boolean flag is rejected up front rather than handed to the
+  // harness, which trusts the wire shape because the operation is gated
+  // through the registry.
+  const session = validateSessionIdBody(RESUME_SESSION_OPERATION_NAME, body);
+  if (!session.ok) return session;
+  const candidate = body as Record<string, unknown>;
+  if (
+    candidate.afterCursor !== undefined &&
+    typeof candidate.afterCursor !== "string"
+  )
+    return {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: "afterCursor must be a string",
+    };
+  if (
+    candidate.afterMsgId !== undefined &&
+    typeof candidate.afterMsgId !== "string"
+  )
+    return {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: "afterMsgId must be a string",
+    };
+  if (
+    candidate.drainQueued !== undefined &&
+    typeof candidate.drainQueued !== "boolean"
+  )
+    return {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: "drainQueued must be a boolean",
+    };
+  return {
+    ok: true,
+    body: {
+      id: session.body.id,
+      ...(candidate.afterCursor === undefined
+        ? {}
+        : { afterCursor: candidate.afterCursor as string }),
+      ...(candidate.afterMsgId === undefined
+        ? {}
+        : { afterMsgId: candidate.afterMsgId as string }),
+      ...(candidate.drainQueued === undefined
+        ? {}
+        : { drainQueued: candidate.drainQueued as boolean }),
+    },
+  };
+}
+
+export const resumeSessionOperation: WebuiOperation<WebuiResumeSessionRequest> = {
+  name: RESUME_SESSION_OPERATION_NAME,
+  validate: validateResumeSessionRequestBody,
+};
+
 export interface WebuiOperationRegistryEntry {
   readonly operation: WebuiOperation;
   readonly handle: WebuiOperationHandler<unknown>;
@@ -363,6 +426,7 @@ export function createOperationRegistry(
     | "getSession"
     | "getMessages"
     | "sendMessage"
+    | "resumeSession"
   >,
 ): ReadonlyMap<string, WebuiOperationRegistryEntry> {
   const registry = new Map<string, WebuiOperationRegistryEntry>();
@@ -394,6 +458,12 @@ export function createOperationRegistry(
     operation: sendMessageOperation,
     handle: async (_context, body) => ({
       stream: await port.sendMessage(body),
+    }),
+  });
+  registerOperation(registry, {
+    operation: resumeSessionOperation,
+    handle: async (_context, body) => ({
+      stream: await port.resumeSession(body),
     }),
   });
   return registry;
