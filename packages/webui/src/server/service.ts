@@ -42,6 +42,18 @@ import type { WebuiHarnessPort } from "./port.js";
 export const WEBUI_MAX_MESSAGE_BYTES = 256 * 1024;
 const WEBUI_CLOSE_GRACE_MS = 1000;
 
+/**
+ * Truthy env-var spellings that turn the development mode on. Anything that
+ * is not on this list is ignored, so `WEBUI_DEV=0` / `WEBUI_DEV=false` /
+ * unset all leave production semantics intact.
+ */
+function readEnvFlag(name: string): boolean {
+  const raw = process.env[name];
+  if (!raw) return false;
+  const trimmed = raw.trim().toLowerCase();
+  return trimmed === "1" || trimmed === "true" || trimmed === "yes" || trimmed === "on";
+}
+
 export interface WebuiServiceOptions {
   readonly port: WebuiHarnessPort;
   /** Defaults to the protocol version the wire envelope ships. */
@@ -61,6 +73,30 @@ export interface WebuiServiceOptions {
   readonly credential?: WebuiCredential;
   /** Optional server factory; tests inject an HTTP server without listening. */
   readonly httpServerFactory?: () => Server;
+  /**
+   * Development mode: when `true`, the HTTP and WebSocket paths do not
+   * require a credential so a developer can open the served page in a
+   * plain browser without scraping a per-start token out of the log.
+   * Host and Origin discipline stay intact (ADR 0004). Default mode keeps
+   * today's per-start credential requirement.
+   *
+   * The env var `WEBUI_DEV=1` (also accepts `true`/`yes`/`on`) turns it
+   * on for the lifecycle of the process — there is no path that flips
+   * it back to off without restarting the service, so a misconfigured
+   * environment cannot be widened by accident. The option wins over the
+   * env var so tests can pin the boot mode without touching the
+   * environment.
+   */
+  readonly dev?: boolean;
+  /**
+   * Override the directory the service reads `index.html`, `client.js`
+   * and `styles.css` from. Tests inject the built-artifact path
+   * (`dist-webui/client`) so they can assert the assets the served page
+   * references load without inventing tokens; the dev preview launcher
+   * uses it to point at the same path. When unset the service picks the
+   * first existing candidate under `findClientDirectory()`.
+   */
+  readonly clientDir?: string;
 }
 
 export interface WebuiServiceInfo {
@@ -78,6 +114,8 @@ export class WebuiService {
   private readonly maxMessageBytes: number;
   private readonly credential: WebuiCredential;
   private readonly protocolVersion: number;
+  private readonly dev: boolean;
+  private readonly clientDirOverride: string | undefined;
   private readonly operations: ReadonlyMap<string, WebuiOperationRegistryEntry>;
   private readonly httpServer: Server;
   private readonly wsServer: WebSocketServer;
@@ -97,6 +135,12 @@ export class WebuiService {
     this.maxMessageBytes = options.maxMessageBytes ?? WEBUI_MAX_MESSAGE_BYTES;
     this.credential = options.credential ?? createWebuiCredential();
     this.protocolVersion = options.protocolVersion ?? WEBUI_PROTOCOL_VERSION;
+    // The option is the source of truth for tests; the env var is the
+    // convenience for the dev preview launcher. The option must win
+    // when both are set so a test that pins `dev: false` cannot be
+    // widened by a stray `WEBUI_DEV=1` in the environment.
+    this.dev = options.dev ?? readEnvFlag("WEBUI_DEV");
+    this.clientDirOverride = options.clientDir;
     this.operations = createOperationRegistry({
       version: () => ({
         version: this.port.version().version,
@@ -145,7 +189,7 @@ export class WebuiService {
     }
     const url = parseHttpUrl(request.url);
     const presented = url?.searchParams.get("token");
-    if (!credentialMatches(this.credential, presented)) {
+    if (!this.dev && !credentialMatches(this.credential, presented)) {
       rejectHttp(response, 401, "Unauthorized");
       return;
     }
@@ -166,7 +210,7 @@ export class WebuiService {
       return;
     }
     try {
-      const clientDir = findClientDirectory();
+      const clientDir = findClientDirectory(this.clientDirOverride);
       let body = await readFile(path.join(clientDir, name), "utf8");
       if (name === "index.html") {
         const config = JSON.stringify({
@@ -298,7 +342,7 @@ export class WebuiService {
       return;
     }
     const presented = url.searchParams.get("token");
-    if (!credentialMatches(this.credential, presented)) {
+    if (!this.dev && !credentialMatches(this.credential, presented)) {
       rejectUpgrade(socket, 401, "Unauthorized");
       return;
     }
@@ -526,7 +570,11 @@ function contentType(name: string): string {
       : "text/html; charset=utf-8";
 }
 
-function findClientDirectory(): string {
+function findClientDirectory(override: string | undefined): string {
+  // Caller-supplied override wins so tests pin the served directory and the
+  // dev preview launcher can point at the built artifacts; if it does not
+  // exist we fall back to the discovery below rather than 404 the page.
+  if (override && existsSync(override)) return override;
   const candidates = [
     path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../client"),
     path.resolve(

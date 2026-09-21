@@ -115,6 +115,34 @@ describe("WebUI mixed stream reducer", () => {
     ]);
   });
 
+  it("appends a chunk's thinking to the accumulated thinking of the same message", () => {
+    // Red-first fixture: the previous "keeps accumulated thinking"
+    // test passed under the mutation `messages[index]!.thinking +
+    // thinking → thinking` because it only fed whole-message frames,
+    // which take the `!chunk` branch. This fixture feeds a chunk and
+    // never lets a later whole-message frame re-supply the same text,
+    // so the mutation cannot hide behind it.
+    let state = reduceWebuiStreamFrame(
+      initialWebuiStreamState,
+      frame(
+        '{"type":2,"agent_message":{"msg_id":"thinking-message","msg_content":"answer","thinking_content":"first thought"}}',
+      ),
+    );
+    state = reduceWebuiStreamFrame(
+      state,
+      frame(
+        '{"type":6,"agent_message_chunk":{"msg_id":"thinking-message","msg_content":" more","thinking_content":" plus"}}',
+      ),
+    );
+    expect(state.messages).toEqual([
+      {
+        id: "thinking-message",
+        answer: "answer more",
+        thinking: "first thought plus",
+      },
+    ]);
+  });
+
   it("does not throw on malformed or unknown data", () => {
     expect(() =>
       reduceWebuiStreamFrame(initialWebuiStreamState, frame("{")),

@@ -587,6 +587,125 @@ describe("WebUI service", () => {
     ).toBe(401);
   });
 
+  it("serves the linked assets without a credential when dev mode is on", async () => {
+    // This is the test that would have caught the blank page. The served
+    // HTML references `./styles.css` and `./client.js` as relative URLs —
+    // a real browser resolves them without ever seeing the `?token=`
+    // query. Without dev mode the asset requests 401 and the page is
+    // unstyled; with dev mode they must succeed without inventing query
+    // parameters.
+    //
+    // The assets are read from the `clientDir` override so the test does
+    // not depend on which source-layout path `findClientDirectory()`
+    // happens to pick — both modes are exercised against the same
+    // hermetic fixture.
+    const fixtureDir = await mkdtemp(
+      path.join(os.tmpdir(), "webui-clientdir-"),
+    );
+    const { writeFile } = await import("node:fs/promises");
+    await writeFile(
+      path.join(fixtureDir, "index.html"),
+      "<!doctype html><html><head></head><body data-fixture='true'></body></html>",
+    );
+    await writeFile(
+      path.join(fixtureDir, "client.js"),
+      "// client-fixture",
+    );
+    await writeFile(
+      path.join(fixtureDir, "styles.css"),
+      "/* styles-fixture */",
+    );
+    try {
+      const devService = new WebuiService({
+        port,
+        dev: true,
+        clientDir: fixtureDir,
+      });
+      try {
+        await devService.start();
+        const port1 = devService.info().tcpPort;
+        for (const path of ["/", "/client.js", "/styles.css"]) {
+          const response = await fetch(`http://127.0.0.1:${port1}${path}`);
+          expect(response.status, `dev-mode GET ${path}`).toBe(200);
+        }
+      } finally {
+        await devService.close();
+      }
+      // Default mode still requires the credential on the same paths.
+      const prodService = new WebuiService({
+        port,
+        clientDir: fixtureDir,
+      });
+      try {
+        await prodService.start();
+        const port2 = prodService.info().tcpPort;
+        for (const path of ["/", "/client.js", "/styles.css"]) {
+          const response = await fetch(`http://127.0.0.1:${port2}${path}`);
+          expect(response.status, `default-mode GET ${path}`).toBe(401);
+        }
+      } finally {
+        await prodService.close();
+      }
+    } finally {
+      await rm(fixtureDir, { recursive: true, force: true });
+    }
+  });
+
+  it("reads assets from the supplied clientDir override rather than the discovered path", async () => {
+    // The brief asks for the built-artifact path to be testable so the
+    // blank-page regression cannot come back. We stage a small fixture
+    // and assert the override reaches the served page without the
+    //    credential the previous mode demanded.
+    const workspaceDir = await mkdtemp(
+      path.join(os.tmpdir(), "webui-clientdir-"),
+    );
+    try {
+      const { writeFile } = await import("node:fs/promises");
+      await writeFile(
+        path.join(workspaceDir, "index.html"),
+        "<!doctype html><html><head></head><body data-fixture='true'></body></html>",
+      );
+      await writeFile(
+        path.join(workspaceDir, "client.js"),
+        "// client-fixture",
+      );
+      await writeFile(
+        path.join(workspaceDir, "styles.css"),
+        "/* styles-fixture */",
+      );
+      service = new WebuiService({
+        port,
+        dev: true,
+        clientDir: workspaceDir,
+      });
+      await service.start();
+      const tcpPort = service.info().tcpPort;
+      const html = await (await fetch(`http://127.0.0.1:${tcpPort}/`)).text();
+      expect(html).toContain("data-fixture='true'");
+      const js = await (
+        await fetch(`http://127.0.0.1:${tcpPort}/client.js`)
+      ).text();
+      expect(js).toBe("// client-fixture");
+      const css = await (
+        await fetch(`http://127.0.0.1:${tcpPort}/styles.css`)
+      ).text();
+      expect(css).toBe("/* styles-fixture */");
+    } finally {
+      await rm(workspaceDir, { recursive: true, force: true });
+    }
+  });
+
+  it("accepts a websocket upgrade without a credential when dev mode is on", async () => {
+    // The HTTP asset path is only half of the contract — the WebSocket
+    // upgrade must follow the same gate so the runtime configuration the
+    // page boots with can actually connect.
+    service = new WebuiService({ port, dev: true });
+    await service.start();
+    const url = `ws://127.0.0.1:${service.info().tcpPort}`;
+    const { upgrade } = openClient(url);
+    await upgrade;
+  });
+
   it("lists sessions through the narrow port and preserves cursor paging", async () => {
     const calls: WebuiSessionListRequest[] = [];
     const pages = [
