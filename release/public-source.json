@@ -3301,6 +3301,7 @@
     "packages/webui/src/client/stream.ts",
     "packages/webui/src/client/styles/index.css",
     "packages/webui/src/client/styles/tokens.css",
+    "packages/webui/src/client/transport.ts",
     "packages/webui/src/server/assembly.ts",
     "packages/webui/src/server/credentials.ts",
     "packages/webui/src/server/envelope.ts",

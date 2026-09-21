@@ -30,6 +30,7 @@ import {
   type WebuiSendMessageRequest,
   type WebuiSendMessageResult,
 } from "../../src/server/index.js";
+import { createWebuiTransport } from "../../src/client/transport.js";
 
 type CloseEvent = [number, Buffer];
 type OncePromise<T> = ReturnType<typeof onceFn<T>>;
@@ -82,6 +83,35 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
 
   async close(): Promise<void> {
     this.closed = true;
+  }
+}
+
+class ClosingSocket {
+  private readonly listeners = new Map<string, Array<(event: unknown) => void>>();
+  private closed = false;
+
+  constructor(_url: string) {
+    queueMicrotask(() => this.emit("open", {}));
+  }
+
+  addEventListener(type: string, listener: (event: unknown) => void): void {
+    const listeners = this.listeners.get(type) ?? [];
+    listeners.push(listener);
+    this.listeners.set(type, listeners);
+  }
+
+  send(_data: string): void {
+    this.close();
+  }
+
+  close(): void {
+    if (this.closed) return;
+    this.closed = true;
+    this.emit("close", {});
+  }
+
+  private emit(type: string, event: unknown): void {
+    for (const listener of this.listeners.get(type) ?? []) listener(event);
   }
 }
 
@@ -437,6 +467,84 @@ describe("WebUI service", () => {
       code: "delivery_closed",
     });
     ws.close();
+  });
+
+  it("executes the shipped client transport against the real service", async () => {
+    const workspaceDir = await mkdtemp(path.join(os.tmpdir(), "webui-transport-"));
+    port.listSessions = async () => ({
+      sessions: [
+        {
+          sessionId: "transport-session",
+          agentName: "main",
+          createdAt: 1,
+          updatedAt: 2,
+        },
+      ],
+      hasMore: false,
+    });
+    port.getMessages = async (request) => ({
+      messages: [
+        {
+          msgId: "transport-history",
+          role: "assistant",
+          msgContent: `history for ${request.id}`,
+        },
+      ],
+      hasMore: false,
+    });
+    port.createSession = async () => ({ sessionId: "transport-created" });
+    port.sendResult = {
+      ok: true,
+      source: [
+        { dataJson: '{"type":10}' },
+        { dataJson: '{"type":6,"agent_message_chunk":{"msg_id":"reply","msg_content":"hello"}}' },
+        { dataJson: "[DONE]" },
+      ],
+    };
+    try {
+      const { credential } = await bootService();
+      const transport = createWebuiTransport({
+        websocketUrl: service.info().boundUrl,
+        token: credential.token,
+        webSocket: WebSocket as unknown as NonNullable<
+          Parameters<typeof createWebuiTransport>[0]["webSocket"]
+        >,
+      });
+      const listed = await transport.loadSessions();
+      const selectedId = listed.sessions[0]?.sessionId;
+      expect(selectedId).toBe("transport-session");
+      const history = await transport.loadMessages({ id: selectedId! });
+      expect(history.messages?.[0]?.msgContent).toBe(
+        "history for transport-session",
+      );
+      const created = await transport.createSession({
+        name: "main",
+        workspaceDir,
+      });
+      expect(created.sessionId).toBe("transport-created");
+      const frames: string[] = [];
+      await transport.sendMessage(
+        { id: selectedId!, content: "hello" },
+        (frame) => frames.push(frame.dataJson ?? ""),
+      );
+      expect(frames).toEqual(['{"type":10}', '{"type":6,"agent_message_chunk":{"msg_id":"reply","msg_content":"hello"}}', "[DONE]"]);
+    } finally {
+      await rm(workspaceDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects request and stream promises when the client socket closes without a response", async () => {
+    const transport = createWebuiTransport({
+      websocketUrl: "ws://127.0.0.1:1",
+      token: "fixture-token",
+      webSocket: ClosingSocket,
+    });
+    await expect(transport.loadSessions()).rejects.toThrow(
+      "WebUI connection closed before the response",
+    );
+    await expect(
+      transport.sendMessage({ id: "session", content: "hello" }, () => undefined),
+    ).rejects.toThrow("WebUI connection closed before [DONE]");
   });
 
   it("turns an refused send result into a client-visible error", async () => {

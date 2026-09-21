@@ -78,6 +78,43 @@ describe("WebUI mixed stream reducer", () => {
     ]);
   });
 
+  it("preserves earlier messages when successive whole-message frames arrive", () => {
+    let state = reduceWebuiStreamFrame(
+      initialWebuiStreamState,
+      frame(
+        '{"type":2,"agent_message":{"messages":[{"msg_id":"first","msg_content":"one","thinking_content":"first thought"}]}}',
+      ),
+    );
+    state = reduceWebuiStreamFrame(
+      state,
+      frame(
+        '{"type":2,"agent_message":{"messages":[{"msg_id":"second","msg_content":"two","thinking_content":"second thought"}]}}',
+      ),
+    );
+    expect(state.messages).toEqual([
+      { id: "first", answer: "one", thinking: "first thought" },
+      { id: "second", answer: "two", thinking: "second thought" },
+    ]);
+  });
+
+  it("keeps accumulated thinking when a later whole-message frame omits it", () => {
+    let state = reduceWebuiStreamFrame(
+      initialWebuiStreamState,
+      frame(
+        '{"type":2,"agent_message":{"msg_id":"thinking-message","msg_content":"answer","thinking_content":"first thought"}}',
+      ),
+    );
+    state = reduceWebuiStreamFrame(
+      state,
+      frame(
+        '{"type":2,"agent_message":{"msg_id":"thinking-message","msg_content":"answer"}}',
+      ),
+    );
+    expect(state.messages).toEqual([
+      { id: "thinking-message", answer: "answer", thinking: "first thought" },
+    ]);
+  });
+
   it("does not throw on malformed or unknown data", () => {
     expect(() =>
       reduceWebuiStreamFrame(initialWebuiStreamState, frame("{")),
