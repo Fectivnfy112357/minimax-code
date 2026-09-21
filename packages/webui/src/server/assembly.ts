@@ -22,6 +22,10 @@
 import { getDefaultLocalRuntimeConfig } from "@mavis/local-runtime-v2";
 import type { CreateLocalRuntimeHostOptions } from "@mavis/local-runtime-v2/process-local";
 
+import {
+  createWebuiAuthContextReader,
+  type WebuiAuthContext,
+} from "./auth-context.js";
 import { createHarnessPortFromHost } from "./host.js";
 import type { WebuiHarnessPort } from "./port.js";
 
@@ -87,6 +91,18 @@ export interface WebuiForwardedRuntimeHostOptions {
     readonly elicitation: true;
   };
   readonly configGetter: typeof getDefaultLocalRuntimeConfig;
+  /**
+   * Assembly step 3 of `docs/webui-v1-scope.md`. Managed MiniMax login sends no
+   * API key — the credential is an OAuth access token — so the runtime resolves
+   * it through this pair, and the harness defaults both to undefined when they
+   * are absent. Absent them, every turn on a managed provider fails at the
+   * agent preflight with "managed OAuth bearer is not synced".
+   */
+  readonly authContextGetter: () => WebuiAuthContext | undefined;
+  readonly authContextInvalidator: (
+    rejectedAccessToken?: string,
+    loginEpoch?: string,
+  ) => void;
 }
 
 /**
@@ -99,7 +115,12 @@ export type WebuiRuntimeHostFactory = (
 ) => Promise<WebuiAssembledHost>;
 
 export interface CreateWebuiRuntimeHostOptions {
-  /** Process-local data directory; never `~/.minimax`. */
+  /**
+   * The CLI data directory (`~/.minimax` by default), shared per ADR 0006 and
+   * assembly step 1 of `docs/webui-v1-scope.md`. It carries the login state,
+   * the provider configuration and the session history the WebUI shows, so a
+   * run that needs a clean slate has to opt into `MINIMAX_DATA_DIR` instead.
+   */
   readonly dataDir: string;
   /** Build identity forwarded to the host for metric labels. */
   readonly appVersion?: string;
@@ -128,6 +149,11 @@ export async function createWebuiRuntimeHost(
   options: CreateWebuiRuntimeHostOptions,
 ): Promise<WebuiRuntimeHost> {
   const factory = options.factory ?? defaultWebuiRuntimeHostFactory;
+  // The account credential is read from the same directory the installed
+  // client uses, so a browser session never has to sign in again. See
+  // `auth-context.ts` for the store's layout and the deliberate differences
+  // from the terminal client's reader.
+  const authContext = createWebuiAuthContextReader(options.dataDir);
   const forwardedOptions: WebuiForwardedRuntimeHostOptions = {
     dataDir: options.dataDir,
     ...(options.appVersion !== undefined
@@ -149,6 +175,8 @@ export async function createWebuiRuntimeHost(
       elicitation: true,
     },
     configGetter: getDefaultLocalRuntimeConfig,
+    authContextGetter: authContext.getter,
+    authContextInvalidator: authContext.invalidator,
   };
   // The factory parameter is `CreateLocalRuntimeHostOptions`, but in this
   // typecheck the upstream type collapses to `{}` (no keys) because the

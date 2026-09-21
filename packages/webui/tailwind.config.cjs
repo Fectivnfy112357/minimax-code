@@ -450,6 +450,21 @@ const tailwindConfig = {
         semibold: "600",
         bold: "700",
       },
+      // The desktop's named type scale, read out of its compiled stylesheet. Its
+      // markup writes `text-body-base` / `text-caption-base` rather than raw sizes,
+      // so the reading column cannot be reproduced without these names.
+      fontSize: {
+        "body-base": ["14px", { lineHeight: "22px", letterSpacing: "-0.1px" }],
+        "caption-base": ["12px", { lineHeight: "18px", letterSpacing: "0" }],
+        "activity-body-small": [
+          "14px",
+          { lineHeight: "22px", letterSpacing: "0" },
+        ],
+        "caption-small-strong": [
+          "11px",
+          { lineHeight: "16px", letterSpacing: "0" },
+        ],
+      },
     },
   },
   plugins: [],

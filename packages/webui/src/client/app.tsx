@@ -23,6 +23,7 @@ import {
   useEffect,
   useId,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
   type ReactElement,
@@ -228,11 +229,13 @@ export function WebuiSessionList({
   loading,
   onLoadMore,
   selectedSessionId,
+  error,
 }: {
   readonly page: WebuiClientSessionPage;
   readonly loading: boolean;
   readonly onLoadMore?: () => void;
   readonly selectedSessionId?: string;
+  readonly error?: string;
 }): ReactElement {
   const sessions = useMemo(
     () =>
@@ -257,7 +260,15 @@ export function WebuiSessionList({
           {sessions.length}
         </span>
       </div>
-      {sessions.length === 0 ? (
+      {error ? (
+        <p
+          role="alert"
+          className="px-1 pb-1 text-text_default_secondary text-size_12 leading-line_height_16"
+        >
+          Unable to load sessions: {error}
+        </p>
+      ) : null}
+      {!error && sessions.length === 0 ? (
         <p className="webui-empty-state mx-1 text-text_default_secondary text-size_12 leading-line_height_16">
           No sessions yet.
         </p>
@@ -315,6 +326,24 @@ export function WebuiSessionList({
   );
 }
 
+/**
+ * Group a flat transcript into one block per message, so a single turn renders
+ * as the desktop renders it: one block carrying its process steps and its
+ * answer. Exported because it is the contract the transcript's markup depends
+ * on.
+ */
+export function groupWebuiTranscriptItems(
+  items: readonly WebuiTranscriptItem[],
+): { messageId: string; items: WebuiTranscriptItem[] }[] {
+  const out: { messageId: string; items: WebuiTranscriptItem[] }[] = [];
+  for (const item of items) {
+    const last = out[out.length - 1];
+    if (last && last.messageId === item.messageId) last.items.push(item);
+    else out.push({ messageId: item.messageId, items: [item] });
+  }
+  return out;
+}
+
 export function WebuiSessionTranscript({
   sessionId,
   loadMessages,
@@ -348,6 +377,10 @@ export function WebuiSessionTranscript({
     () => (page.messages ?? []).flatMap(projectWebuiMessage),
     [page.messages],
   );
+  // Group by message so one turn renders as one block, the way the desktop
+  // does: a process disclosure carrying the thinking and the tool steps, then
+  // the assistant's markdown. A user turn is its own block.
+  const groups = useMemo(() => groupWebuiTranscriptItems(items), [items]);
   const loadOlder =
     page.hasMore && page.nextCursor
       ? () => {
@@ -370,12 +403,12 @@ export function WebuiSessionTranscript({
     <section
       aria-label="Transcript"
       data-webui-transcript={sessionId}
-      className="w-full"
+      className="flex w-full flex-col"
     >
-      <div className="webui-card flex w-full flex-col gap-spacing_8 p-spacing_16">
-        <h2 className="text-text_default_primary text-size_16 leading-line_height_22 font-weight_medium">
-          Conversation
-        </h2>
+      <div
+        className="flex w-full flex-col gap-spacing_8"
+        data-webui-message-list="true"
+      >
         {error ? (
           <p
             role="alert"
@@ -389,25 +422,6 @@ export function WebuiSessionTranscript({
             No messages in this session.
           </p>
         ) : null}
-        <ol className="flex flex-col gap-spacing_8">
-          {items.map((item, index) => (
-            <li
-              key={`${item.messageId}-${item.kind}-${index}`}
-              data-webui-message-kind={item.kind}
-              className={
-                item.kind === "tool"
-                  ? "text-text_default_secondary text-size_14 leading-line_height_20"
-                  : item.kind === "thinking"
-                    ? "text-text_default_tertiary text-size_14 leading-line_height_20"
-                    : "text-text_default_primary text-size_14 leading-line_height_20"
-              }
-            >
-              {item.kind === "tool"
-                ? `Tool activity (${item.tools.length})`
-                : item.text}
-            </li>
-          ))}
-        </ol>
         {loadOlder ? (
           <div className="flex justify-start">
             <button
@@ -420,6 +434,98 @@ export function WebuiSessionTranscript({
             </button>
           </div>
         ) : null}
+        {groups.map((group) => {
+          const userItem = group.items.find(
+            (item): item is Extract<WebuiTranscriptItem, { text: string }> =>
+              item.kind === "user",
+          );
+          if (userItem)
+            return (
+              <div
+                key={group.messageId}
+                className="webui-message"
+                data-webui-message-root={group.messageId}
+                data-webui-message-role="user"
+              >
+                <div className="flex w-full justify-end">
+                  <div className="flex w-full flex-col items-end gap-spacing_8">
+                    <div
+                      className="webui-user-bubble"
+                      data-webui-user-bubble="true"
+                    >
+                      <div className="webui-user-text-clamp">
+                        <p
+                          className="webui-user-text"
+                          data-webui-message-kind="user"
+                          data-webui-user-text="true"
+                        >
+                          <span>{userItem.text}</span>
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          const processItems = group.items.filter(
+            (item) => item.kind === "thinking" || item.kind === "tool",
+          );
+          const answers = group.items.filter(
+            (
+              item,
+            ): item is Extract<WebuiTranscriptItem, { text: string }> =>
+              item.kind === "assistant",
+          );
+          return (
+            <div
+              key={group.messageId}
+              className="webui-message"
+              data-webui-message-root={group.messageId}
+              data-webui-message-role="assistant"
+            >
+              <div className="flex w-full flex-col">
+                {processItems.length ? (
+                  <section
+                    className="pt-spacing_8"
+                    data-webui-turn-process="true"
+                  >
+                    <details>
+                      <summary className="flex w-fit cursor-pointer list-none items-center gap-spacing_4 py-spacing_4 text-activity-body-small text-text_default_tertiary">
+                        <span>{`共 ${processItems.length} 步`}</span>
+                      </summary>
+                      <div className="webui-turn-process-separator" />
+                      <div className="flex min-w-0 flex-col gap-spacing_8 overflow-hidden pt-spacing_8">
+                        {processItems.map((item, index) => (
+                          <div
+                            key={`${item.messageId}-process-${index}`}
+                            data-webui-message-kind={item.kind}
+                            className="text-text_default_secondary text-size_14 leading-line_height_20"
+                          >
+                            {item.kind === "tool" ? (
+                              `Tool activity (${item.tools.length})`
+                            ) : (
+                              <div className="webui-markdown-thinking">
+                                <WebuiMarkdown source={item.text} />
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  </section>
+                ) : null}
+                {answers.map((item, index) => (
+                  <div
+                    key={`${item.messageId}-answer-${index}`}
+                    data-webui-message-kind="assistant"
+                  >
+                    <WebuiMarkdown source={item.text} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </section>
   );
@@ -473,23 +579,37 @@ function RailRow({
 function WebuiComposer({
   sessionId,
   sendMessage,
+  draft,
+  onDraftChange,
+  onNeedsSession,
 }: {
   readonly sessionId?: string;
   readonly sendMessage?: WebuiClientMessageSender;
+  /** The draft lives on the shell so it survives the session-creation detour. */
+  readonly draft: string;
+  readonly onDraftChange: (next: string) => void;
+  readonly onNeedsSession?: (draft: string) => void;
 }): ReactElement {
-  const [content, setContent] = useState("");
   const [stream, setStream] = useState<WebuiStreamState>(
     initialWebuiStreamState,
   );
   const [sending, setSending] = useState(false);
   const fieldId = useId();
-  const live = Boolean(sessionId) && Boolean(sendMessage);
+  // Typing is always available: composing a message does not need a target yet.
+  // Only the send path does, and it asks for the one missing thing instead of
+  // leaving the field disabled with no explanation.
+  const canCompose = Boolean(sendMessage);
+  const sendable = canCompose && Boolean(draft.trim()) && !sending;
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const message = content.trim();
-    if (!message || sending || !sessionId || !sendMessage) return;
+    const message = draft.trim();
+    if (!message || sending || !sendMessage) return;
+    if (!sessionId) {
+      onNeedsSession?.(draft);
+      return;
+    }
     setSending(true);
-    setContent("");
+    onDraftChange("");
     setStream({ ...initialWebuiStreamState, phase: "streaming" });
     try {
       await sendMessage({ id: sessionId, content: message }, (frame) =>
@@ -543,9 +663,9 @@ function WebuiComposer({
                   id={`${fieldId}-content`}
                   name="content"
                   rows={2}
-                  value={content}
-                  onChange={(event) => setContent(event.target.value)}
-                  disabled={sending || !live}
+                  value={draft}
+                  onChange={(event) => onDraftChange(event.target.value)}
+                  disabled={!canCompose || sending}
                   placeholder="输入消息…（输入 / 唤起命令）"
                   className="webui-textarea webui-composer-input text-text_default_primary"
                   data-webui-composer-input="true"
@@ -557,7 +677,9 @@ function WebuiComposer({
               >
                 <button
                   type="button"
-                  disabled={!live}
+                  disabled
+                  aria-disabled="true"
+                  tabIndex={-1}
                   aria-label="添加附件"
                   data-webui-placeholder-chrome="attach"
                   className="webui-icon-button text-icon_default_tertiary"
@@ -567,7 +689,9 @@ function WebuiComposer({
                 <div className="ml-auto flex items-center gap-1">
                   <button
                     type="button"
-                    disabled={!live}
+                    disabled
+                    aria-disabled="true"
+                    tabIndex={-1}
                     aria-label="选择模型"
                     data-webui-placeholder-chrome="model-selector"
                     className="webui-pill text-sm text-text_default_primary"
@@ -577,7 +701,7 @@ function WebuiComposer({
                   </button>
                   <button
                     type="submit"
-                    disabled={sending || !live}
+                    disabled={!sendable}
                     aria-label="发送"
                     data-webui-composer-submit="true"
                     className="webui-send-button"
@@ -689,14 +813,33 @@ export function WebuiClientFoundationApp({
   const [createError, setCreateError] = useState<string | undefined>();
   const [creating, setCreating] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [pageError, setPageError] = useState<string | undefined>();
   const createHintId = useId();
+  const createFormRef = useRef<HTMLFormElement | null>(null);
+  // Opening the form answers "send with nowhere to send". Bring it into view: it
+  // renders below the composer, and on a short window it lands under the fold,
+  // where it reads as the button having done nothing.
+  useEffect(() => {
+    if (!createOpen) return;
+    createFormRef.current?.scrollIntoView({ block: "center" });
+  }, [createOpen]);
   useEffect(() => {
     if (!loadSessions || sessionPage) return;
     let cancelled = false;
     setLoading(true);
     void loadSessions()
       .then((nextPage) => {
-        if (!cancelled) setPage(nextPage);
+        if (!cancelled) {
+          setPage(nextPage);
+          setPageError(undefined);
+        }
+      })
+      .catch((reason: unknown) => {
+        // Without this the rail renders "No sessions yet." for a list that never
+        // loaded, which reads as "you have no sessions" rather than as a failure.
+        if (!cancelled)
+          setPageError(reason instanceof Error ? reason.message : String(reason));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -738,6 +881,19 @@ export function WebuiClientFoundationApp({
             );
           setSelectedSessionId(id);
           setCreateOpen(false);
+          // The rail lists the shared history as it was at page load, so a session
+          // created here would not show up until a reload.
+          if (loadSessions)
+            void loadSessions()
+              .then((nextPage) => {
+                setPage(nextPage);
+                setPageError(undefined);
+              })
+              .catch((reason: unknown) =>
+                setPageError(
+                  reason instanceof Error ? reason.message : String(reason),
+                ),
+              );
           if (typeof window !== "undefined")
             window.location.hash = sessionHash(id);
         } catch (error) {
@@ -847,6 +1003,7 @@ export function WebuiClientFoundationApp({
                     loading={loading}
                     onLoadMore={loadMore}
                     selectedSessionId={selectedSessionId}
+                    error={pageError}
                   />
                 </div>
                 <div
@@ -913,7 +1070,9 @@ export function WebuiClientFoundationApp({
                 }
                 data-webui-home-content={homeMode ? "true" : "false"}
               >
-                <div className="flex w-full max-w-[743px] flex-col items-center gap-2 px-4">
+                <div
+                  className={`flex w-full ${homeMode ? "max-w-[743px]" : "max-w-[768px]"} flex-col items-center gap-2 px-4`}
+                >
                   {homeMode ? (
                     <div className="flex flex-col items-center gap-2 text-center">
                       <div className="group/avatar relative size-16 flex-shrink-0">
@@ -938,12 +1097,14 @@ export function WebuiClientFoundationApp({
                   <WebuiComposer
                     sessionId={selectedSessionId}
                     sendMessage={sendMessage}
+                    draft={draft}
+                    onDraftChange={setDraft}
+                    onNeedsSession={() => setCreateOpen(true)}
                   />
-
-                  {homeMode ? <WebuiRecommendationChips /> : null}
 
                   {createOpen && submitCreate ? (
                     <form
+                      ref={createFormRef}
                       aria-label="Create session"
                       onSubmit={submitCreate}
                       className="webui-card mt-spacing_16 flex w-full flex-col gap-spacing_8 p-spacing_16"
@@ -996,6 +1157,8 @@ export function WebuiClientFoundationApp({
                       ) : null}
                     </form>
                   ) : null}
+
+                  {homeMode ? <WebuiRecommendationChips /> : null}
 
                   {selectedSessionId && loadMessages ? (
                     <WebuiSessionTranscript

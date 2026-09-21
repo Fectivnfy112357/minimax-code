@@ -279,6 +279,21 @@ describe("WebUI compiled stylesheet", () => {
       /\.webui-textarea:focus-visible/u,
       /\.webui-button-primary:focus-visible/u,
       /\.webui-button-secondary:focus-visible/u,
+      // The conversation surface: the message blocks, the user bubble, the
+      // process disclosure, and the markdown layer the assistant's replies
+      // render through.
+      /\.webui-message\s*\{/u,
+      /\.webui-user-bubble\s*\{/u,
+      /\.webui-user-text\s*\{/u,
+      /\.webui-user-text-clamp\s*\{/u,
+      /\.webui-turn-process-separator\s*\{/u,
+      /\.webui-markdown\s*\{/u,
+      /\.webui-markdown blockquote::before\s*\{/u,
+      /\.webui-markdown-thinking \.webui-markdown\s*\{/u,
+      /\.webui-code-block\s*\{/u,
+      /\.webui-code-block pre\s*\{/u,
+      /\.webui-table-shell\s*\{/u,
+      /\.webui-markdown table\s*\{/u,
     ];
     for (const re of required) {
       expect(re.test(compiled), `compiled CSS missing ${re}`).toBe(true);

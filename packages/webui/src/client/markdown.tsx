@@ -2,6 +2,7 @@ import { marked, type Token } from "marked";
 import {
   createElement,
   Fragment,
+  type CSSProperties,
   type ReactElement,
   type ReactNode,
 } from "react";
@@ -55,10 +56,53 @@ function blocks(tokens: readonly Token[] | undefined): ReactNode[] {
       return createElement(`h${token.depth}`, { key }, ...inline(token.tokens));
     if (token.type === "code")
       return (
-        <pre key={key}>
-          <code data-language={token.lang ?? undefined}>{token.text}</code>
-        </pre>
+        <div key={key} className="webui-code-block">
+          <pre>
+            <code data-language={token.lang ?? undefined}>{token.text}</code>
+          </pre>
+        </div>
       );
+    if (token.type === "table") {
+      type Align = "left" | "right" | "center" | null | undefined;
+      const table = token as {
+        header: Array<{ text: string; tokens?: Token[]; align?: Align }>;
+        rows: Array<Array<{ text: string; tokens?: Token[]; align?: Align }>>;
+        align?: Align[];
+      };
+      const cellAlign = (
+        cell: { align?: Align },
+        index: number,
+      ): CSSProperties | undefined => {
+        const value = cell.align ?? table.align?.[index];
+        return value ? { textAlign: value } : undefined;
+      };
+      return (
+        <div key={key} className="webui-table-shell">
+          <table>
+            <thead>
+              <tr>
+                {table.header.map((cell, index) => (
+                  <th key={index} style={cellAlign(cell, index)}>
+                    {inline(cell.tokens)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {table.rows.map((row, rowIndex) => (
+                <tr key={rowIndex}>
+                  {row.map((cell, cellIndex) => (
+                    <td key={cellIndex} style={cellAlign(cell, cellIndex)}>
+                      {inline(cell.tokens)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
     if (token.type === "blockquote")
       return <blockquote key={key}>{blocks(token.tokens)}</blockquote>;
     if (token.type === "list") {
@@ -100,5 +144,9 @@ export function WebuiMarkdown({
   } catch {
     tokens = [{ type: "text", raw: source, text: source }];
   }
-  return <div data-webui-markdown="true">{blocks(tokens)}</div>;
+  return (
+    <div data-webui-markdown="true" className="webui-markdown">
+      {blocks(tokens)}
+    </div>
+  );
 }

@@ -352,4 +352,236 @@
     padding: var(--spacing_8) var(--spacing_12);
     line-height: var(--line_height_20);
   }
+
+  /* ------------------------------------------------------ conversation */
+
+  /* Every message, either role. `mb-4` is the desktop's inter-message gap. */
+  .webui-message {
+    margin-bottom: var(--spacing_16);
+  }
+
+  /* The user's turn: a 16px-radius bubble on the grouped-tertiary surface,
+   * right-aligned, capped at 80% of the reading column, body capped at 240px. */
+  .webui-user-bubble {
+    max-width: 80%;
+    padding: var(--spacing_8) var(--spacing_12);
+    border-radius: var(--radius_16);
+    background-color: var(--bg_grouped_tertiary);
+    text-align: left;
+  }
+  .webui-user-text {
+    margin: 0;
+    font-size: 14px;
+    line-height: 22px;
+    letter-spacing: -0.1px;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    color: var(--text_default_primary);
+  }
+  .webui-user-text-clamp {
+    max-height: 240px;
+    overflow: hidden;
+  }
+
+  /* The assistant's process disclosure: a summary line, a hairline, and the
+   * collapsible body that carries the thinking and the tool steps. */
+  .webui-turn-process-separator {
+    margin-top: var(--spacing_8);
+    border-bottom: 0.5px solid var(--border_default);
+  }
+
+  /* A 26px square action under a message. The desktop keeps these and the
+   * timestamp hidden until the message is hovered or focused; the WebUI's
+   * message model carries neither a per-message timestamp nor clipboard
+   * actions, so this row is not rendered yet and the rule is not carried. */
+
+  /* --------------------------------------------------------- markdown */
+
+  /* The desktop renders assistant and thinking content through
+   * `.matrix-markdown`. Values below are read from its compiled stylesheet; in
+   * the chat reading column the body resolves to 15px/24px. */
+  .webui-markdown {
+    font-size: 15px;
+    line-height: 24px;
+    color: var(--text_default_primary);
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+  .webui-markdown > * {
+    min-width: 0;
+    margin-block-start: 0;
+    margin-block-end: 0;
+  }
+  .webui-markdown > * + * {
+    margin-block-start: var(--spacing_12);
+  }
+  .webui-markdown > p + :is(ul, ol) {
+    margin-block-start: 10px;
+  }
+  .webui-markdown > p + .webui-code-block {
+    margin-block-start: 14px;
+  }
+  .webui-markdown p {
+    margin: 0;
+  }
+  /* The desktop's `--thinking` variant: a step down from the chat body, and
+   * never bolded. */
+  .webui-markdown-thinking .webui-markdown {
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--text_default_primary);
+  }
+  .webui-markdown-thinking .webui-markdown :is(strong, b) {
+    font-weight: 400;
+  }
+  .webui-markdown :is(h1, h2, h3, h4, h5, h6):first-child {
+    margin-block-start: 0;
+  }
+  .webui-markdown h1,
+  .webui-markdown h2 {
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 26px;
+    margin-block-start: var(--spacing_12);
+  }
+  .webui-markdown h3 {
+    font-size: 18px;
+    font-weight: 600;
+    line-height: 24px;
+    margin-block-start: var(--spacing_12);
+  }
+  .webui-markdown h4,
+  .webui-markdown h5 {
+    font-size: 16px;
+    font-weight: 500;
+    line-height: 22px;
+    margin-block-start: var(--spacing_8);
+  }
+  .webui-markdown h6 {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 22px;
+    margin-block-start: var(--spacing_8);
+  }
+  .webui-markdown strong,
+  .webui-markdown b {
+    font-weight: var(--weight_medium);
+  }
+  .webui-markdown a {
+    color: var(--text_default_primary);
+    text-decoration: none;
+  }
+  .webui-markdown a:hover {
+    color: var(--text_default_accent);
+    text-decoration: underline;
+  }
+  .webui-markdown ul {
+    margin: 0 0 0 1.8em;
+    padding: 0;
+    list-style-type: disc;
+  }
+  .webui-markdown ol {
+    margin: 0 0 0 1.8em;
+    padding: 0;
+    list-style-type: decimal;
+  }
+  .webui-markdown ul ul {
+    list-style-type: circle;
+  }
+  .webui-markdown ul ul ul {
+    list-style-type: square;
+  }
+  .webui-markdown li {
+    line-height: 24px;
+    padding-bottom: var(--spacing_4);
+  }
+  .webui-markdown li:last-of-type {
+    padding-bottom: 0;
+  }
+  .webui-markdown li > p {
+    margin: 0;
+  }
+  .webui-markdown li :is(ul, ol) {
+    margin: 0 0 0 1.2em;
+  }
+  .webui-markdown hr {
+    border: none;
+    border-top: 0.5px solid var(--border_default);
+    margin: var(--spacing_16) 0;
+  }
+  .webui-markdown blockquote {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing_12);
+    margin: 0;
+    padding: var(--spacing_8) 0 var(--spacing_8) var(--spacing_16);
+  }
+  .webui-markdown blockquote::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: var(--spacing_8);
+    bottom: var(--spacing_8);
+    width: 4px;
+    border-radius: var(--radius_full);
+    background-color: var(--border_tertiary_inactive);
+  }
+  .webui-markdown blockquote * {
+    color: var(--text_default_primary);
+  }
+  .webui-markdown blockquote :is(p, ul, ol) {
+    margin: 0;
+  }
+  /* Inline code carries its own surface; the fenced block gets the wrapper. */
+  .webui-markdown code {
+    font-size: 13px;
+    line-height: 20px;
+  }
+  .webui-markdown :not(pre) > code {
+    padding: 0.18em 0.5em;
+    border-radius: 6px;
+    background-color: var(--bg_grouped_tertiary);
+  }
+  .webui-code-block {
+    background-color: var(--bg_grouped_tertiary);
+    border-radius: var(--radius_16);
+    overflow: hidden;
+  }
+  .webui-code-block pre {
+    margin: 0;
+    max-height: 400px;
+    overflow: auto;
+    padding: var(--spacing_12) var(--spacing_16);
+    background-color: transparent;
+  }
+  .webui-table-shell {
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    padding: var(--spacing_4) 0;
+  }
+  .webui-markdown table {
+    width: max-content;
+    min-width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    line-height: 20px;
+  }
+  .webui-markdown table tr {
+    border-bottom: 1px solid var(--border_light);
+  }
+  .webui-markdown table thead tr {
+    border-bottom: 1px solid var(--border_tertiary_press);
+  }
+  .webui-markdown table th,
+  .webui-markdown table td {
+    padding: 10px var(--spacing_16) 10px 0;
+    text-align: left;
+    vertical-align: top;
+  }
+  .webui-markdown table th {
+    min-width: 60px;
+    font-weight: var(--weight_medium);
+  }
 }

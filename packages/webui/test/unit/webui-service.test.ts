@@ -7,7 +7,7 @@
 // surface honest (the harness never runs against real history, per ADR
 // 0006) while the wire side exercises the real `ws` package.
 
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { once, type once as onceFn } from "node:events";
 import os from "node:os";
 import path from "node:path";
@@ -1121,6 +1121,59 @@ describe("WebUI runtime host assembly", () => {
       expect(lastOptions?.appVersion).toBe("0.4.2-assembly-test");
       const capabilities = lastOptions?.capabilities as Record<string, unknown>;
       expect(capabilities.cliEmbedded).toBe(true);
+    } finally {
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it("hands the runtime an auth context getter and invalidator for managed login", async () => {
+    // Assembly step 3 of `docs/webui-v1-scope.md`. Managed MiniMax login has no
+    // API key, so without this pair the resolver throws "managed OAuth bearer is
+    // not synced" and every turn dies at the agent preflight — even with the
+    // credential sitting in the data directory.
+    const { createWebuiRuntimeHost } =
+      await import("../../src/server/index.js");
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), "webui-assembly-auth-"));
+    const scopeDirectory = path.join(dataDir, "cli-auth", "prod", "cn");
+    let lastOptions: Record<string, unknown> | undefined;
+    try {
+      await mkdir(scopeDirectory, { recursive: true });
+      await writeFile(
+        path.join(scopeDirectory, "cli-auth.scope.json"),
+        `${JSON.stringify({ version: 1, updatedAtMs: 1, region: "cn", buildEnv: "prod" })}\n`,
+        "utf8",
+      );
+      await writeFile(
+        path.join(scopeDirectory, "local-runtime.auth.json"),
+        `${JSON.stringify({
+          version: 1,
+          updatedAtMs: 1,
+          auth: { accessToken: "assembled-token", realUserID: "user-1" },
+        })}\n`,
+        "utf8",
+      );
+
+      const assembled = await createWebuiRuntimeHost({
+        dataDir,
+        factory: async (options) => {
+          lastOptions = { ...options };
+          return { apiHost: { close: async () => undefined }, dataDir };
+        },
+      });
+      await assembled.harnessPort.close();
+
+      const getter = lastOptions?.authContextGetter as
+        | (() => { accessToken?: string } | undefined)
+        | undefined;
+      const invalidator = lastOptions?.authContextInvalidator as
+        | ((rejectedAccessToken?: string) => void)
+        | undefined;
+      expect(typeof getter).toBe("function");
+      expect(typeof invalidator).toBe("function");
+      expect(getter?.()?.accessToken).toBe("assembled-token");
+      // A token the runtime rejected is not handed back a second time.
+      invalidator?.("assembled-token");
+      expect(getter?.()).toBeUndefined();
     } finally {
       await rm(dataDir, { recursive: true, force: true });
     }

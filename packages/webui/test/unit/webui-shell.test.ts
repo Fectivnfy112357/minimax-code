@@ -26,6 +26,7 @@ import {
   WebuiSessionList,
   WebuiSessionTranscript,
   createdSessionId,
+  groupWebuiTranscriptItems,
   projectWebuiMessage,
   readSessionIdFromHash,
   sessionHash,
@@ -77,6 +78,43 @@ describe("WebUI shell", () => {
       loadMessages: async () => ({ messages: [], hasMore: false }),
     }));
     expect(html).toContain('data-webui-transcript="empty-session"');
+  });
+
+  it("groups a flat transcript into one block per message", () => {
+    // The desktop renders one block per turn: a process disclosure carrying the
+    // thinking and the tool steps, then the answer. Both belong to the same
+    // message and must stay together; a user turn is its own block.
+    const groups = groupWebuiTranscriptItems([
+      ...projectWebuiMessage({ msgId: "turn-1", role: "user", msgContent: "Question" }),
+      ...projectWebuiMessage({
+        msgId: "turn-2",
+        thinkingContent: "Reasoning",
+        toolCalls: [{ name: "read" }],
+        msgContent: "Answer",
+      }),
+      ...projectWebuiMessage({ msgId: "turn-3", msgContent: "Afterwards" }),
+    ]);
+    expect(groups.map((group) => group.messageId)).toEqual([
+      "turn-1",
+      "turn-2",
+      "turn-3",
+    ]);
+    expect(groups[1].items.map((item) => item.kind)).toEqual([
+      "thinking",
+      "tool",
+      "assistant",
+    ]);
+    expect(groupWebuiTranscriptItems([])).toEqual([]);
+  });
+
+  it("keeps the conversation's reading column and message chrome in the markup", () => {
+    const html = renderToStaticMarkup(createElement(WebuiSessionTranscript, {
+      sessionId: "reading-column",
+      loadMessages: async () => ({ messages: [], hasMore: false }),
+    }));
+    // The reading column and the message list region survive regardless of
+    // whether any message loaded.
+    expect(html).toContain('data-webui-message-list="true"');
   });
 
   it("renders newest sessions, formats epoch milliseconds, and falls back when title is absent", () => {
@@ -272,6 +310,27 @@ describe("WebUI shell — desktop anatomy", () => {
       ...html.slice(0, at).matchAll(/data-webui-nav-item="([^"]*)"/gu),
     ].pop();
     expect(owner?.[1]).toBe("新建任务");
+  });
+
+  it("lets the composer take a draft before a session exists", () => {
+    // Composing does not need a target; only sending does. With a transport present
+    // the field must accept text even though nothing is selected yet — leaving it
+    // disabled is what made the first screen look like it could not be used at all.
+    const html = renderToStaticMarkup(
+      createElement(WebuiClientFoundationApp, {
+        label: "webui-foundation",
+        sendMessage: async () => undefined,
+      }),
+    );
+    const at = html.indexOf("<textarea");
+    const field = html.slice(at, html.indexOf(">", at) + 1);
+    expect(field).toMatch(/data-webui-composer-input="true"/u);
+    expect(field).not.toMatch(/(?:^|\s)disabled(?:=|\s|>)/u);
+
+    // The send action stays unavailable until there is something to send.
+    const sendAt = html.indexOf("webui-send-button");
+    const send = html.slice(html.lastIndexOf("<button", sendAt), html.indexOf(">", sendAt) + 1);
+    expect(send).toMatch(/(?:^|\s)disabled(?:=|\s|>)/u);
   });
 
   it("puts the hero, the composer and the chips on the home surface", () => {
