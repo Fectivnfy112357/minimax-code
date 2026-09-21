@@ -19,7 +19,9 @@
 // factory; tests inject a stub that records the options and reports
 // the policy's observable effect without driving the host.
 
-import { getDefaultLocalRuntimeConfig } from "@mavis/local-runtime-v2";
+import {
+  getDefaultLocalRuntimeConfig,
+} from "@mavis/local-runtime-v2";
 import type { CreateLocalRuntimeHostOptions } from "@mavis/local-runtime-v2/process-local";
 
 import {
@@ -29,6 +31,12 @@ import {
 import { createHarnessPortFromHost } from "./host.js";
 import type { WebuiHarnessPort } from "./port.js";
 import { configureWebuiRuntimeEnvironment } from "./runtime-environment.js";
+import {
+  createWebuiAuthLeaseSession,
+  prepareWebuiMcodeToolsIntegration,
+  type WebuiMcodeToolsIntegrationDependencies,
+  type WebuiMcodeToolsReadiness,
+} from "./mcode-tools.js";
 
 /**
  * Minimal host contract the assembly needs from whatever factory
@@ -66,7 +74,67 @@ export interface WebuiAssembledHost {
       request: import("./port.js").WebuiResumeSessionRequest,
       context?: Record<string, never>,
     ): Promise<import("./port.js").WebuiStreamResult>;
+    watchEvents(signal?: AbortSignal): AsyncIterable<import("./port.js").WebuiRuntimeEvent>;
+    listPendingPermissions(): Promise<{
+      readonly requests: readonly import("./port.js").WebuiPendingPermission[];
+    }>;
+    getPendingQuestionnaire(request: {
+      readonly name: string;
+      readonly sessionId: string;
+    }): Promise<{ readonly request?: import("./port.js").WebuiQuestionnaireRequest }>;
+    replyPermission(request: {
+      readonly name: string;
+      readonly requestId: string;
+      readonly reply: number;
+    }): Promise<import("./port.js").WebuiInteractionReplyResult>;
+    replyQuestionnaire(request: {
+      readonly name: string;
+      readonly requestId: string;
+      readonly schemaVersion: number;
+      readonly answers: readonly import("./port.js").WebuiQuestionnaireAnswer[];
+    }): Promise<import("./port.js").WebuiInteractionReplyResult>;
+    dismissQuestionnaire(request: {
+      readonly name: string;
+      readonly requestId: string;
+    }): Promise<import("./port.js").WebuiInteractionReplyResult>;
+    abortSession(request: { readonly id: string }): Promise<{ readonly success?: boolean }>;
+    listQueueMessages(request: { readonly id: string }): Promise<{
+      readonly items?: readonly import("./port.js").WebuiQueueItem[];
+      readonly paused?: boolean;
+      readonly pendingCount?: number;
+    }>;
+    deleteQueueItem(request: {
+      readonly id: string;
+      readonly itemId: string;
+    }): Promise<{ readonly item?: import("./port.js").WebuiQueueItem }>;
+    listModels(request?: { readonly sessionId?: string }): Promise<readonly import("./port.js").WebuiModelEntry[]>;
+    selectModel(request: {
+      readonly providerId: string;
+      readonly modelId: string;
+      readonly variant?: string;
+      readonly sessionId?: string;
+    }): Promise<{ readonly success?: boolean }>;
+    getSessionUsage(request: { readonly id: string }): Promise<Record<string, unknown>>;
+    getAccountStatus(request?: { readonly sessionId?: string }): Promise<Record<string, unknown>>;
   };
+}
+
+export type WebuiBrowserToolExposure = "compact" | "full" | "both";
+
+export interface WebuiBrowserAdapter {
+  readonly getCapabilities?: () => unknown;
+  readonly disposeSession?: (sessionId: string) => Promise<void>;
+  execute(
+    context: unknown,
+    action: string,
+    input: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<unknown>;
+}
+
+export interface WebuiBrowserProvider {
+  readonly adapter: WebuiBrowserAdapter;
+  close(): void | Promise<void>;
 }
 
 /**
@@ -95,7 +163,7 @@ export interface WebuiForwardedRuntimeHostOptions {
     readonly permissionPrompt: true;
     readonly elicitation: true;
   };
-  readonly configGetter: typeof getDefaultLocalRuntimeConfig;
+  readonly configGetter: () => ReturnType<typeof getDefaultLocalRuntimeConfig>;
   /**
    * Assembly step 3 of `docs/webui-v1-scope.md`. Managed MiniMax login sends no
    * API key — the credential is an OAuth access token — so the runtime resolves
@@ -108,6 +176,8 @@ export interface WebuiForwardedRuntimeHostOptions {
     rejectedAccessToken?: string,
     loginEpoch?: string,
   ) => void;
+  readonly browserAdapter?: WebuiBrowserAdapter;
+  readonly browserToolExposure?: WebuiBrowserToolExposure;
 }
 
 /**
@@ -129,6 +199,17 @@ export interface CreateWebuiRuntimeHostOptions {
   readonly dataDir: string;
   /** Build identity forwarded to the host for metric labels. */
   readonly appVersion?: string;
+  /** Browser provider explicitly owned by the WebUI process, when enabled. */
+  readonly browserProvider?: WebuiBrowserProvider;
+  readonly browserToolExposure?: WebuiBrowserToolExposure;
+  /** Defaults to the configured beta switch, but the effective runtime value is readiness-gated. */
+  readonly mcodeToolsRequested?: boolean;
+  readonly mcodeTools?: {
+    readonly prepare?: (
+      options: Parameters<typeof prepareWebuiMcodeToolsIntegration>[0],
+      dependencies?: WebuiMcodeToolsIntegrationDependencies,
+    ) => Promise<WebuiMcodeToolsReadiness>;
+  };
   /**
    * Factory override; defaults to `createLocalRuntimeHostV2`. Tests
    * inject a stub; production callers leave it untouched.
@@ -142,6 +223,7 @@ export interface WebuiRuntimeHost {
   readonly host: WebuiAssembledHost;
   /** The exact options the assembly forwarded to the factory. */
   readonly forwardedOptions: WebuiForwardedRuntimeHostOptions;
+  readonly mcodeTools: WebuiMcodeToolsReadiness;
 }
 
 /**
@@ -169,7 +251,27 @@ export async function createWebuiRuntimeHost(
   // the environment, so a WebUI start without a client-side login still
   // falls back to the harness defaults — `en` / `dev`,
   // `isManagedRuntime()=false` — exactly as before this step existed.
-  configureWebuiRuntimeEnvironment({ dataDir: options.dataDir });
+  const baseConfig = getDefaultLocalRuntimeConfig();
+  const scope = configureWebuiRuntimeEnvironment({ dataDir: options.dataDir });
+  const requestedMcodeTools =
+    options.mcodeToolsRequested ?? baseConfig.beta?.mcodeTools === true;
+  const mcodeTools = await (
+    options.mcodeTools?.prepare ?? prepareWebuiMcodeToolsIntegration
+  )({
+    requested: requestedMcodeTools,
+    dataDir: options.dataDir,
+    buildEnv: (scope?.buildEnv ?? process.env.MAVIS_BUILD_ENV ?? "dev") as
+      | "dev"
+      | "test"
+      | "staging"
+      | "prod",
+    region: (scope?.region ?? process.env.MAVIS_REGION ?? "en") as "cn" | "en",
+    session: createWebuiAuthLeaseSession(
+      authContext.getter,
+      authContext.invalidator,
+    ),
+    entryUrl: import.meta.url,
+  });
   const forwardedOptions: WebuiForwardedRuntimeHostOptions = {
     dataDir: options.dataDir,
     ...(options.appVersion !== undefined
@@ -190,9 +292,22 @@ export async function createWebuiRuntimeHost(
       permissionPrompt: true,
       elicitation: true,
     },
-    configGetter: getDefaultLocalRuntimeConfig,
+    configGetter: () => ({
+      ...baseConfig,
+      beta: {
+        ...baseConfig.beta,
+        mcodeTools: mcodeTools.ready,
+        browserUseTooling: options.browserProvider !== undefined,
+      },
+    }),
     authContextGetter: authContext.getter,
     authContextInvalidator: authContext.invalidator,
+    ...(options.browserProvider
+      ? { browserAdapter: options.browserProvider.adapter }
+      : {}),
+    ...(options.browserToolExposure
+      ? { browserToolExposure: options.browserToolExposure }
+      : {}),
   };
   // The factory parameter is `CreateLocalRuntimeHostOptions`, but in this
   // typecheck the upstream type collapses to `{}` (no keys) because the
@@ -209,8 +324,34 @@ export async function createWebuiRuntimeHost(
   const host = await factory(
     forwardedOptions as unknown as CreateLocalRuntimeHostOptions,
   );
+  const runtimeClose = host.apiHost.close.bind(host.apiHost);
+  let closed = false;
+  host.apiHost.close = async () => {
+    if (closed) return;
+    closed = true;
+    const failures: unknown[] = [];
+    try {
+      await runtimeClose();
+    } catch (error) {
+      failures.push(error);
+    }
+    try {
+      await mcodeTools.dispose();
+    } catch (error) {
+      failures.push(error);
+    }
+    try {
+      await options.browserProvider?.close();
+    } catch (error) {
+      failures.push(error);
+    }
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1)
+      throw new AggregateError(failures, "WebUI runtime shutdown failed");
+  };
+  mcodeTools.ensureCommandPath();
   const harnessPort = createHarnessPortFromHost(host);
-  return { harnessPort, host, forwardedOptions };
+  return { harnessPort, host, forwardedOptions, mcodeTools };
 }
 
 /**

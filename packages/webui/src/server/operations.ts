@@ -23,10 +23,13 @@ import type {
   WebuiCreateSessionResult,
   WebuiSendMessageRequest,
   WebuiResumeSessionRequest,
+  WebuiPermissionDecision,
+  WebuiQuestionnaireAnswer,
 } from "./port.js";
 
 export interface WebuiOperationContext {
   readonly requestId: string;
+  readonly signal?: AbortSignal;
 }
 
 export interface WebuiOperationResult<Body> {
@@ -34,7 +37,9 @@ export interface WebuiOperationResult<Body> {
 }
 
 export interface WebuiOperationStreamResult {
-  readonly stream: import("./port.js").WebuiSendMessageResult;
+  readonly stream:
+    | import("./port.js").WebuiSendMessageResult
+    | import("./port.js").WebuiWatchEventsResult;
 }
 
 export type WebuiOperationHandler<Body> = (
@@ -65,6 +70,19 @@ const GET_SESSION_OPERATION_NAME = "getSession" as const;
 const GET_MESSAGES_OPERATION_NAME = "getMessages" as const;
 const SEND_MESSAGE_OPERATION_NAME = "sendMessage" as const;
 const RESUME_SESSION_OPERATION_NAME = "resumeSession" as const;
+const WATCH_EVENTS_OPERATION_NAME = "watchEvents" as const;
+const LIST_PENDING_PERMISSIONS_OPERATION_NAME = "listPendingPermissions" as const;
+const GET_PENDING_QUESTIONNAIRE_OPERATION_NAME = "getPendingQuestionnaire" as const;
+const REPLY_PERMISSION_OPERATION_NAME = "replyPermission" as const;
+const REPLY_QUESTIONNAIRE_OPERATION_NAME = "replyQuestionnaire" as const;
+const DISMISS_QUESTIONNAIRE_OPERATION_NAME = "dismissQuestionnaire" as const;
+const ABORT_SESSION_OPERATION_NAME = "abortSession" as const;
+const LIST_QUEUE_MESSAGES_OPERATION_NAME = "listQueueMessages" as const;
+const DELETE_QUEUE_ITEM_OPERATION_NAME = "deleteQueueItem" as const;
+const LIST_MODELS_OPERATION_NAME = "listModels" as const;
+const SELECT_MODEL_OPERATION_NAME = "selectModel" as const;
+const GET_SESSION_USAGE_OPERATION_NAME = "getSessionUsage" as const;
+const GET_ACCOUNT_STATUS_OPERATION_NAME = "getAccountStatus" as const;
 
 type VersionRequestBody = undefined;
 
@@ -401,6 +419,327 @@ export const resumeSessionOperation: WebuiOperation<WebuiResumeSessionRequest> =
   validate: validateResumeSessionRequestBody,
 };
 
+function validateOptionalObjectBody(
+  operation: string,
+  body: unknown,
+): WebuiOperationValidation<Record<string, unknown>> {
+  if (body === undefined) return { ok: true, body: {} };
+  if (body === null || typeof body !== "object" || Array.isArray(body))
+    return {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: `${operation} body must be an object`,
+    };
+  return { ok: true, body: body as Record<string, unknown> };
+}
+
+export const watchEventsOperation: WebuiOperation<Record<string, unknown>> = {
+  name: WATCH_EVENTS_OPERATION_NAME,
+  validate: (body) => validateOptionalObjectBody(WATCH_EVENTS_OPERATION_NAME, body),
+};
+
+export const listPendingPermissionsOperation: WebuiOperation<Record<string, unknown>> = {
+  name: LIST_PENDING_PERMISSIONS_OPERATION_NAME,
+  validate: (body) => validateOptionalObjectBody(LIST_PENDING_PERMISSIONS_OPERATION_NAME, body),
+};
+
+function validateNamedSessionBody(
+  operation: string,
+  body: unknown,
+): WebuiOperationValidation<{ readonly name: string; readonly sessionId: string }> {
+  if (body === null || typeof body !== "object" || Array.isArray(body))
+    return {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: `${operation} body must be an object`,
+    };
+  const candidate = body as Record<string, unknown>;
+  const name = typeof candidate.name === "string" ? candidate.name.trim() : "";
+  const sessionId =
+    typeof candidate.sessionId === "string" ? candidate.sessionId.trim() : "";
+  if (!name || !sessionId)
+    return {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: `${operation} body requires name and sessionId`,
+    };
+  return { ok: true, body: { name, sessionId } };
+}
+
+export const getPendingQuestionnaireOperation: WebuiOperation<{
+  readonly name: string;
+  readonly sessionId: string;
+}, { readonly request?: import("./port.js").WebuiQuestionnaireRequest }> = {
+  name: GET_PENDING_QUESTIONNAIRE_OPERATION_NAME,
+  validate: (body) =>
+    validateNamedSessionBody(GET_PENDING_QUESTIONNAIRE_OPERATION_NAME, body),
+};
+
+function validatePermissionDecision(value: unknown): value is WebuiPermissionDecision {
+  return value === "allowOnce" || value === "allowAlways" || value === "deny";
+}
+
+export const replyPermissionOperation: WebuiOperation<{
+  readonly name: string;
+  readonly requestId: string;
+  readonly reply: WebuiPermissionDecision;
+}, import("./port.js").WebuiInteractionReplyResult> = {
+  name: REPLY_PERMISSION_OPERATION_NAME,
+  validate: (body) => {
+    if (body === null || typeof body !== "object" || Array.isArray(body))
+      return {
+        ok: false,
+        code: WebuiErrorCode.invalidBody,
+        message: "replyPermission body must be an object",
+      };
+    const candidate = body as Record<string, unknown>;
+    const name = typeof candidate.name === "string" ? candidate.name.trim() : "";
+    const requestId =
+      typeof candidate.requestId === "string" ? candidate.requestId.trim() : "";
+    if (!name || !requestId || !validatePermissionDecision(candidate.reply))
+      return {
+        ok: false,
+        code: WebuiErrorCode.invalidBody,
+        message: "replyPermission body requires name, requestId and a valid reply",
+      };
+    return { ok: true, body: { name, requestId, reply: candidate.reply } };
+  },
+};
+
+function validateQuestionnaireAnswers(value: unknown): value is WebuiQuestionnaireAnswer[] {
+  return (
+    Array.isArray(value) &&
+    value.every((answer) => {
+      if (answer === null || typeof answer !== "object" || Array.isArray(answer))
+        return false;
+      const candidate = answer as Record<string, unknown>;
+      if (typeof candidate.stepId !== "string" || !candidate.stepId.trim()) return false;
+      if (
+        candidate.selectedOptionIds !== undefined &&
+        (!Array.isArray(candidate.selectedOptionIds) ||
+          !candidate.selectedOptionIds.every((id) => typeof id === "string"))
+      )
+        return false;
+      return (
+        (candidate.selectedOther === undefined || typeof candidate.selectedOther === "boolean") &&
+        (candidate.otherText === undefined || typeof candidate.otherText === "string") &&
+        (candidate.skipped === undefined || typeof candidate.skipped === "boolean")
+      );
+    })
+  );
+}
+
+export const replyQuestionnaireOperation: WebuiOperation<{
+  readonly name: string;
+  readonly requestId: string;
+  readonly schemaVersion: number;
+  readonly answers: WebuiQuestionnaireAnswer[];
+}, import("./port.js").WebuiInteractionReplyResult> = {
+  name: REPLY_QUESTIONNAIRE_OPERATION_NAME,
+  validate: (body) => {
+    if (body === null || typeof body !== "object" || Array.isArray(body))
+      return {
+        ok: false,
+        code: WebuiErrorCode.invalidBody,
+        message: "replyQuestionnaire body must be an object",
+      };
+    const candidate = body as Record<string, unknown>;
+    const name = typeof candidate.name === "string" ? candidate.name.trim() : "";
+    const requestId =
+      typeof candidate.requestId === "string" ? candidate.requestId.trim() : "";
+    if (
+      !name ||
+      !requestId ||
+      !Number.isInteger(candidate.schemaVersion) ||
+      !validateQuestionnaireAnswers(candidate.answers)
+    )
+      return {
+        ok: false,
+        code: WebuiErrorCode.invalidBody,
+        message: "replyQuestionnaire body requires name, requestId, schemaVersion and answers",
+      };
+    return {
+      ok: true,
+      body: {
+        name,
+        requestId,
+        schemaVersion: candidate.schemaVersion as number,
+        answers: candidate.answers,
+      },
+    };
+  },
+};
+
+export const dismissQuestionnaireOperation: WebuiOperation<{
+  readonly name: string;
+  readonly requestId: string;
+}, import("./port.js").WebuiInteractionReplyResult> = {
+  name: DISMISS_QUESTIONNAIRE_OPERATION_NAME,
+  validate: (body) => {
+    if (body === null || typeof body !== "object" || Array.isArray(body))
+      return {
+        ok: false,
+        code: WebuiErrorCode.invalidBody,
+        message: "dismissQuestionnaire body must be an object",
+      };
+    const raw = body as Record<string, unknown>;
+    const name = typeof raw.name === "string" ? raw.name.trim() : "";
+    const requestId =
+      typeof raw.requestId === "string" ? raw.requestId.trim() : "";
+    if (!name || !requestId)
+      return {
+        ok: false,
+        code: WebuiErrorCode.invalidBody,
+        message: "dismissQuestionnaire body requires name and requestId",
+      };
+    return { ok: true, body: { name, requestId } };
+  },
+};
+
+export const abortSessionOperation: WebuiOperation<{
+  readonly id: string;
+}, { readonly success?: boolean }> = {
+  name: ABORT_SESSION_OPERATION_NAME,
+  validate: (body) => validateSessionIdBody(ABORT_SESSION_OPERATION_NAME, body),
+};
+
+export const listQueueMessagesOperation: WebuiOperation<{
+  readonly id: string;
+}, {
+  readonly items?: readonly import("./port.js").WebuiQueueItem[];
+  readonly paused?: boolean;
+  readonly pendingCount?: number;
+}> = {
+  name: LIST_QUEUE_MESSAGES_OPERATION_NAME,
+  validate: (body) =>
+    validateSessionIdBody(LIST_QUEUE_MESSAGES_OPERATION_NAME, body),
+};
+
+export const deleteQueueItemOperation: WebuiOperation<{
+  readonly id: string;
+  readonly itemId: string;
+}, { readonly item?: import("./port.js").WebuiQueueItem }> = {
+  name: DELETE_QUEUE_ITEM_OPERATION_NAME,
+  validate: (body) => {
+    if (body === null || typeof body !== "object" || Array.isArray(body))
+      return {
+        ok: false,
+        code: WebuiErrorCode.invalidBody,
+        message: "deleteQueueItem body must be an object",
+      };
+    const candidate = body as Record<string, unknown>;
+    const id = typeof candidate.id === "string" ? candidate.id.trim() : "";
+    const itemId =
+      typeof candidate.itemId === "string" ? candidate.itemId.trim() : "";
+    if (!id || !itemId)
+      return {
+        ok: false,
+        code: WebuiErrorCode.invalidBody,
+        message: "deleteQueueItem body requires id and itemId",
+      };
+    return { ok: true, body: { id, itemId } };
+  },
+};
+
+export const listModelsOperation: WebuiOperation<
+  { readonly sessionId?: string },
+  readonly import("./port.js").WebuiModelEntry[]
+> = {
+  name: LIST_MODELS_OPERATION_NAME,
+  validate: (body) => {
+    const value = validateOptionalObjectBody(LIST_MODELS_OPERATION_NAME, body);
+    if (!value.ok) return value;
+    if (value.body.sessionId !== undefined && typeof value.body.sessionId !== "string")
+      return {
+        ok: false,
+        code: WebuiErrorCode.invalidBody,
+        message: "sessionId must be a string",
+      };
+    return {
+      ok: true,
+      body: value.body.sessionId ? { sessionId: value.body.sessionId } : {},
+    };
+  },
+};
+
+export const selectModelOperation: WebuiOperation<{
+  readonly providerId: string;
+  readonly modelId: string;
+  readonly variant?: string;
+  readonly sessionId?: string;
+}, { readonly success?: boolean }> = {
+  name: SELECT_MODEL_OPERATION_NAME,
+  validate: (body) => {
+    if (body === null || typeof body !== "object" || Array.isArray(body))
+      return {
+        ok: false,
+        code: WebuiErrorCode.invalidBody,
+        message: "selectModel body must be an object",
+      };
+    const candidate = body as Record<string, unknown>;
+    const providerId =
+      typeof candidate.providerId === "string" ? candidate.providerId.trim() : "";
+    const modelId =
+      typeof candidate.modelId === "string" ? candidate.modelId.trim() : "";
+    if (!providerId || !modelId)
+      return {
+        ok: false,
+        code: WebuiErrorCode.invalidBody,
+        message: "selectModel body requires providerId and modelId",
+      };
+    if (candidate.variant !== undefined && typeof candidate.variant !== "string")
+      return {
+        ok: false,
+        code: WebuiErrorCode.invalidBody,
+        message: "variant must be a string",
+      };
+    if (candidate.sessionId !== undefined && typeof candidate.sessionId !== "string")
+      return {
+        ok: false,
+        code: WebuiErrorCode.invalidBody,
+        message: "sessionId must be a string",
+      };
+    return {
+      ok: true,
+      body: {
+        providerId,
+        modelId,
+        ...(typeof candidate.variant === "string" ? { variant: candidate.variant } : {}),
+        ...(typeof candidate.sessionId === "string" ? { sessionId: candidate.sessionId } : {}),
+      },
+    };
+  },
+};
+
+export const getSessionUsageOperation: WebuiOperation<
+  { readonly id: string },
+  Record<string, unknown>
+> = {
+  name: GET_SESSION_USAGE_OPERATION_NAME,
+  validate: (body) => validateSessionIdBody(GET_SESSION_USAGE_OPERATION_NAME, body),
+};
+
+export const getAccountStatusOperation: WebuiOperation<
+  { readonly sessionId?: string },
+  Record<string, unknown>
+> = {
+  name: GET_ACCOUNT_STATUS_OPERATION_NAME,
+  validate: (body) => {
+    const value = validateOptionalObjectBody(GET_ACCOUNT_STATUS_OPERATION_NAME, body);
+    if (!value.ok) return value;
+    if (value.body.sessionId !== undefined && typeof value.body.sessionId !== "string")
+      return {
+        ok: false,
+        code: WebuiErrorCode.invalidBody,
+        message: "sessionId must be a string",
+      };
+    return {
+      ok: true,
+      body: value.body.sessionId ? { sessionId: value.body.sessionId } : {},
+    };
+  },
+};
+
 export interface WebuiOperationRegistryEntry {
   readonly operation: WebuiOperation;
   readonly handle: WebuiOperationHandler<unknown>;
@@ -427,6 +766,19 @@ export function createOperationRegistry(
     | "getMessages"
     | "sendMessage"
     | "resumeSession"
+    | "watchEvents"
+    | "listPendingPermissions"
+    | "getPendingQuestionnaire"
+    | "replyPermission"
+    | "replyQuestionnaire"
+    | "dismissQuestionnaire"
+    | "abortSession"
+    | "listQueueMessages"
+    | "deleteQueueItem"
+    | "listModels"
+    | "selectModel"
+    | "getSessionUsage"
+    | "getAccountStatus"
   >,
 ): ReadonlyMap<string, WebuiOperationRegistryEntry> {
   const registry = new Map<string, WebuiOperationRegistryEntry>();
@@ -434,6 +786,71 @@ export function createOperationRegistry(
     operation: createSessionOperation,
     handle: async (_context, body) => ({
       body: await port.createSession(body),
+    }),
+  });
+  registerOperation(registry, {
+    operation: abortSessionOperation,
+    handle: async (_context, body) => ({ body: await port.abortSession(body) }),
+  });
+  registerOperation(registry, {
+    operation: listQueueMessagesOperation,
+    handle: async (_context, body) => ({
+      body: await port.listQueueMessages(body),
+    }),
+  });
+  registerOperation(registry, {
+    operation: deleteQueueItemOperation,
+    handle: async (_context, body) => ({ body: await port.deleteQueueItem(body) }),
+  });
+  registerOperation(registry, {
+    operation: listModelsOperation,
+    handle: async (_context, body) => ({ body: await port.listModels(body) }),
+  });
+  registerOperation(registry, {
+    operation: selectModelOperation,
+    handle: async (_context, body) => ({ body: await port.selectModel(body) }),
+  });
+  registerOperation(registry, {
+    operation: getSessionUsageOperation,
+    handle: async (_context, body) => ({ body: await port.getSessionUsage(body) }),
+  });
+  registerOperation(registry, {
+    operation: getAccountStatusOperation,
+    handle: async (_context, body) => ({ body: await port.getAccountStatus(body) }),
+  });
+  registerOperation(registry, {
+    operation: watchEventsOperation,
+    handle: (context) => ({
+      stream: {
+        ok: true,
+        source: port.watchEvents(context.signal),
+      },
+    }),
+  });
+  registerOperation(registry, {
+    operation: listPendingPermissionsOperation,
+    handle: async () => ({ body: await port.listPendingPermissions() }),
+  });
+  registerOperation(registry, {
+    operation: getPendingQuestionnaireOperation,
+    handle: async (_context, body) => ({
+      body: await port.getPendingQuestionnaire(body),
+    }),
+  });
+  registerOperation(registry, {
+    operation: replyPermissionOperation,
+    handle: async (_context, body) => ({ body: await port.replyPermission(body) }),
+  });
+  registerOperation(registry, {
+    operation: replyQuestionnaireOperation,
+    handle: async (_context, body) => ({
+      body: await port.replyQuestionnaire(body),
+    }),
+  });
+  registerOperation(registry, {
+    operation: dismissQuestionnaireOperation,
+    handle: async (_context, body) => ({
+      body: await port.dismissQuestionnaire(body),
     }),
   });
   registerOperation(registry, {

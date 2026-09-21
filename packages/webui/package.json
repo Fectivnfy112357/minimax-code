@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@mavis/local-runtime-v2": "workspace:*",
+    "@mavis/mcode-tools-host": "workspace:*",
     "@mavis/protocol": "workspace:*",
     "@mavis/shared": "workspace:^",
     "marked": "18.0.12",

@@ -82,6 +82,14 @@ export type {
   WebuiResumeSessionRequest,
   WebuiStreamResult,
   WebuiStreamFrame,
+  WebuiPendingPermission,
+  WebuiQuestionnaireRequest,
+  WebuiQuestionnaireAnswer,
+  WebuiRuntimeEvent,
+  WebuiInteractionReplyResult,
+  WebuiPermissionDecision,
+  WebuiQueueItem,
+  WebuiModelEntry,
 } from "./port.js";
 export {
   createHarnessPortFromHost,
@@ -93,4 +101,12 @@ export {
   type WebuiAssembledHost,
   type WebuiRuntimeHost,
   type WebuiRuntimeHostFactory,
+  type WebuiBrowserProvider,
 } from "./assembly.js";
+export {
+  prepareWebuiMcodeToolsIntegration,
+  createWebuiAuthLeaseSession,
+  type WebuiMcodeToolsReadiness,
+  type WebuiMcodeToolsIntegrationOptions,
+  type WebuiMcodeToolsIntegrationDependencies,
+} from "./mcode-tools.js";

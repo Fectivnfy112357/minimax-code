@@ -24,6 +24,14 @@ import type {
   WebuiSendMessageResult,
   WebuiResumeSessionRequest,
   WebuiStreamResult,
+  WebuiPendingPermission,
+  WebuiQuestionnaireRequest,
+  WebuiQuestionnaireAnswer,
+  WebuiRuntimeEvent,
+  WebuiInteractionReplyResult,
+  WebuiPermissionDecision,
+  WebuiQueueItem,
+  WebuiModelEntry,
 } from "./port.js";
 
 export interface WebuiRuntimeHostHandle {
@@ -55,6 +63,48 @@ export interface WebuiRuntimeHostHandle {
       request: WebuiResumeSessionRequest,
       context?: Record<string, never>,
     ): Promise<WebuiStreamResult>;
+    watchEvents(signal?: AbortSignal): AsyncIterable<WebuiRuntimeEvent>;
+    listPendingPermissions(): Promise<{
+      readonly requests: readonly WebuiPendingPermission[];
+    }>;
+    getPendingQuestionnaire(request: {
+      readonly name: string;
+      readonly sessionId: string;
+    }): Promise<{ readonly request?: WebuiQuestionnaireRequest }>;
+    replyPermission(request: {
+      readonly name: string;
+      readonly requestId: string;
+      readonly reply: number;
+    }): Promise<WebuiInteractionReplyResult>;
+    replyQuestionnaire(request: {
+      readonly name: string;
+      readonly requestId: string;
+      readonly schemaVersion: number;
+      readonly answers: readonly WebuiQuestionnaireAnswer[];
+    }): Promise<WebuiInteractionReplyResult>;
+    dismissQuestionnaire(request: {
+      readonly name: string;
+      readonly requestId: string;
+    }): Promise<WebuiInteractionReplyResult>;
+    abortSession(request: { readonly id: string }): Promise<{ readonly success?: boolean }>;
+    listQueueMessages(request: { readonly id: string }): Promise<{
+      readonly items?: readonly WebuiQueueItem[];
+      readonly paused?: boolean;
+      readonly pendingCount?: number;
+    }>;
+    deleteQueueItem(request: {
+      readonly id: string;
+      readonly itemId: string;
+    }): Promise<{ readonly item?: WebuiQueueItem }>;
+    listModels(request?: { readonly sessionId?: string }): Promise<readonly WebuiModelEntry[]>;
+    selectModel(request: {
+      readonly providerId: string;
+      readonly modelId: string;
+      readonly variant?: string;
+      readonly sessionId?: string;
+    }): Promise<{ readonly success?: boolean }>;
+    getSessionUsage(request: { readonly id: string }): Promise<Record<string, unknown>>;
+    getAccountStatus(request?: { readonly sessionId?: string }): Promise<Record<string, unknown>>;
   };
 }
 
@@ -106,10 +156,90 @@ export function createHarnessPortFromHost(
         throw new Error("runtime host does not expose the CLI service");
       return host.cliService.resumeSession(request, {});
     },
+    watchEvents(signal) {
+      if (!host.cliService)
+        throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.watchEvents(signal);
+    },
+    async listPendingPermissions() {
+      if (!host.cliService)
+        throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.listPendingPermissions();
+    },
+    async getPendingQuestionnaire(request) {
+      if (!host.cliService)
+        throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.getPendingQuestionnaire(request);
+    },
+    async replyPermission(request) {
+      if (!host.cliService)
+        throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.replyPermission({
+        name: request.name,
+        requestId: request.requestId,
+        reply: permissionReplyValue(request.reply),
+      });
+    },
+    async replyQuestionnaire(request) {
+      if (!host.cliService)
+        throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.replyQuestionnaire(request);
+    },
+    async dismissQuestionnaire(request) {
+      if (!host.cliService)
+        throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.dismissQuestionnaire(request);
+    },
+    async abortSession(request) {
+      if (!host.cliService)
+        throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.abortSession(request);
+    },
+    async listQueueMessages(request) {
+      if (!host.cliService)
+        throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.listQueueMessages(request);
+    },
+    async deleteQueueItem(request) {
+      if (!host.cliService)
+        throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.deleteQueueItem(request);
+    },
+    async listModels(request) {
+      if (!host.cliService)
+        throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.listModels(request);
+    },
+    async selectModel(request) {
+      if (!host.cliService)
+        throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.selectModel(request);
+    },
+    async getSessionUsage(request) {
+      if (!host.cliService)
+        throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.getSessionUsage(request);
+    },
+    async getAccountStatus(request) {
+      if (!host.cliService)
+        throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.getAccountStatus(request);
+    },
     async close() {
       if (closed) return;
       closed = true;
       await host.apiHost.close();
     },
   };
+}
+
+function permissionReplyValue(reply: WebuiPermissionDecision): number {
+  switch (reply) {
+    case "allowOnce":
+      return 0;
+    case "allowAlways":
+      return 1;
+    case "deny":
+      return 2;
+  }
 }

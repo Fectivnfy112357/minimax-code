@@ -10,6 +10,7 @@ export interface WebuiStreamState {
   readonly phase:
     | "idle"
     | "streaming"
+    | "waiting"
     | "done"
     | "refused"
     | "error"

@@ -23,11 +23,13 @@ import {
   cpSync,
   writeFileSync,
   existsSync,
+  chmodSync,
 } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readExtraction } from "./lib/release-metadata.mjs";
 import { createWorkspaceSourcesPlugin } from "./lib/workspace-sources-plugin.mjs";
+import { copyMcodeToolsArtifact } from "./lib/mcode-tools-artifact.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const packageDir = path.join(root, "packages/webui");
@@ -43,6 +45,10 @@ const packages = new Map(
 );
 const sourcePlugin = createWorkspaceSourcesPlugin(packages, root, [
   "@mavis/local-runtime-v2",
+  "@mavis/config",
+  "@mavis/mcode-tools-host",
+  "@mavis/agent-tools",
+  "@mavis/agent-tools/desktop",
 ]);
 
 rmSync(outdir, { recursive: true, force: true });
@@ -71,6 +77,7 @@ const server = await build({
   absWorkingDir: packageDir,
   entryPoints: {
     server: "src/server/index.ts",
+    "mcode-tools": "src/server/mcode-tools-entry.ts",
     shared: "src/shared/placeholder.ts",
   },
   bundle: true,
@@ -84,7 +91,13 @@ const server = await build({
   // resolves `@mavis/local-runtime-v2` via `node_modules/` like any
   // third-party dependency. The boundary check therefore never sees
   // the harness internals in the build graph.
-  external: ["@mavis/local-runtime-v2"],
+  external: [
+    "@mavis/local-runtime-v2",
+    "@mavis/config",
+    "@mavis/mcode-tools-host",
+    "@mavis/agent-tools",
+    "@mavis/agent-tools/desktop",
+  ],
   plugins: [sourcePlugin],
   logLevel: "info",
 });
@@ -119,6 +132,18 @@ writeFileSync(
 const htmlSource = path.join(packageDir, "src/client/index.html");
 if (existsSync(htmlSource))
   cpSync(htmlSource, path.join(outdir, "client/index.html"));
+
+// The WebUI server owns its own mcode-tools process boundary. Keep the
+// embedded entry and the command launcher beside the server bundle so the
+// host's short-lived broker can validate the exact artifact it starts.
+await copyMcodeToolsArtifact(root, path.join(outdir, "server"));
+cpSync(
+  path.join(root, "packages/tui/src/cli/mcode-tools-launchers"),
+  path.join(outdir, "server/internal-bin"),
+  { recursive: true },
+);
+chmodSync(path.join(outdir, "server/mcode-tools.js"), 0o755);
+chmodSync(path.join(outdir, "server/internal-bin/mcode-tools"), 0o755);
 
 console.log(
   `Built WebUI foundation. ` +

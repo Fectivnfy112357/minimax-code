@@ -31,6 +31,8 @@ import {
   type WebuiSendMessageResult,
   type WebuiResumeSessionRequest,
   type WebuiStreamResult,
+  type WebuiRuntimeEvent,
+  type WebuiPermissionDecision,
 } from "../../src/server/index.js";
 import { createWebuiTransport } from "../../src/client/transport.js";
 
@@ -93,6 +95,74 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
   ): Promise<WebuiStreamResult> {
     this.lastResumeRequest = request;
     return this.resumeResult;
+  }
+
+  async *watchEvents(signal?: AbortSignal): AsyncIterable<WebuiRuntimeEvent> {
+    yield {
+      type: "session.start",
+      payload: { sessionId: "fixture-session", agentName: "main" },
+      timestamp: Date.now(),
+      source: "test",
+    };
+    await new Promise<void>((resolve) => {
+      if (signal?.aborted) {
+        resolve();
+        return;
+      }
+      signal?.addEventListener("abort", () => resolve(), { once: true });
+    });
+  }
+
+  async listPendingPermissions() {
+    return { requests: [] };
+  }
+
+  async getPendingQuestionnaire() {
+    return {};
+  }
+
+  async replyPermission(_request: {
+    readonly name: string;
+    readonly requestId: string;
+    readonly reply: WebuiPermissionDecision;
+  }) {
+    return { success: true };
+  }
+
+  async replyQuestionnaire() {
+    return { ok: true };
+  }
+
+  async dismissQuestionnaire() {
+    return { ok: true };
+  }
+
+  async abortSession() {
+    return { success: true };
+  }
+
+  async listQueueMessages() {
+    return { items: [], paused: false, pendingCount: 0 };
+  }
+
+  async deleteQueueItem() {
+    return {};
+  }
+
+  async listModels() {
+    return [];
+  }
+
+  async selectModel() {
+    return { success: true };
+  }
+
+  async getSessionUsage() {
+    return {};
+  }
+
+  async getAccountStatus() {
+    return { available: true };
   }
 
   async close(): Promise<void> {
@@ -1192,6 +1262,43 @@ describe("WebUI service", () => {
     expect(closeEvent.code).toBeGreaterThanOrEqual(1000);
     expect(port.closed).toBe(true);
   });
+
+  it("forwards global runtime events on a connection-scoped watcher", async () => {
+    const { url } = await bootService();
+    const { ws, upgrade } = openClient(url);
+    await upgrade;
+    const event = new Promise<Record<string, unknown>>((resolve, reject) => {
+      const onMessage = (raw: RawData) => {
+        try {
+          const frame = JSON.parse(raw.toString("utf8")) as Record<string, unknown>;
+          if (frame.kind === "event") {
+            ws.off("error", onError);
+            resolve(frame);
+          }
+        } catch (error) {
+          reject(error);
+        }
+      };
+      const onError = (error: Error) => {
+        ws.off("message", onMessage);
+        reject(error);
+      };
+      ws.on("message", onMessage);
+      ws.once("error", onError);
+    });
+    ws.send(
+      JSON.stringify({
+        protocolVersion: WEBUI_PROTOCOL_VERSION,
+        kind: "request",
+        requestId: "watch-events",
+        operation: "watchEvents",
+      }),
+    );
+    const frame = await event;
+    expect(frame.requestId).toBe("watch-events");
+    expect(frame.body).toMatchObject({ type: "session.start", source: "test" });
+    ws.close();
+  });
 });
 
 describe("WebUI operation allowlist", () => {
@@ -1215,6 +1322,11 @@ describe("WebUI operation allowlist", () => {
       // transport"). It must be registered, validator-bound, and reachable
       // through the same `entry.handle(...)` plumbing.
       expect(registry.has("resumeSession")).toBe(true);
+      expect(registry.has("watchEvents")).toBe(true);
+      expect(registry.has("replyPermission")).toBe(true);
+      expect(registry.has("abortSession")).toBe(true);
+      expect(registry.has("listModels")).toBe(true);
+      expect(registry.has("getAccountStatus")).toBe(true);
     } finally {
       await service.close();
     }
@@ -1416,6 +1528,68 @@ describe("WebUI runtime host assembly", () => {
       expect(assembled.harnessPort.version).toBeTypeOf("function");
       await assembled.harnessPort.close();
       expect(apiHostClosed).toBe(true);
+    } finally {
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it("assembles tool capabilities explicitly and releases both owners on shutdown", async () => {
+    const { createWebuiRuntimeHost } =
+      await import("../../src/server/index.js");
+    const dataDir = await mkdtemp(
+      path.join(os.tmpdir(), "webui-assembly-tools-"),
+    );
+    const calls: string[] = [];
+    let forwarded: Record<string, unknown> | undefined;
+    const browserAdapter = {
+      async execute(): Promise<unknown> {
+        return { success: true, url: "https://example.test" };
+      },
+    };
+    try {
+      const assembled = await createWebuiRuntimeHost({
+        dataDir,
+        mcodeToolsRequested: true,
+        browserToolExposure: "both",
+        browserProvider: {
+          adapter: browserAdapter,
+          close: () => {
+            calls.push("browser");
+          },
+        },
+        mcodeTools: {
+          prepare: async () => ({
+            requested: true,
+            ready: true,
+            category: "ready" as const,
+            ensureCommandPath: () => calls.push("command-path"),
+            dispose: async () => {
+              calls.push("broker");
+            },
+          }),
+        },
+        factory: async (options) => {
+          forwarded = { ...options };
+          return {
+            apiHost: {
+              close: async () => {
+                calls.push("runtime");
+              },
+            },
+            dataDir: options.dataDir,
+          };
+        },
+      });
+      const config = (forwarded?.configGetter as () => {
+        beta?: Record<string, unknown>;
+      })();
+      expect(config.beta?.mcodeTools).toBe(true);
+      expect(config.beta?.browserUseTooling).toBe(true);
+      expect(forwarded?.browserAdapter).toBe(browserAdapter);
+      expect(forwarded?.browserToolExposure).toBe("both");
+      expect(calls).toContain("command-path");
+      await assembled.harnessPort.close();
+      expect(calls).toEqual(["command-path", "runtime", "broker", "browser"]);
     } finally {
       await rm(dataDir, { recursive: true, force: true });
     }

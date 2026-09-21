@@ -879,6 +879,9 @@ importers:
       '@mavis/local-runtime-v2':
         specifier: workspace:*
         version: link:../local-runtime-v2
+      '@mavis/mcode-tools-host':
+        specifier: workspace:*
+        version: link:../mcode-tools-host
       '@mavis/protocol':
         specifier: workspace:*
         version: link:../protocol

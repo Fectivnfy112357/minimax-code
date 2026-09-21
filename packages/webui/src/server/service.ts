@@ -120,6 +120,7 @@ export class WebuiService {
   private readonly httpServer: Server;
   private readonly wsServer: WebSocketServer;
   private readonly connections = new Set<WebSocket>();
+  private readonly connectionSignals = new Map<WebSocket, AbortController>();
   private accepting = true;
   private startedPromise: Promise<WebuiServiceInfo> | undefined;
   private bound: { info: WebuiServiceInfo } | undefined;
@@ -152,6 +153,20 @@ export class WebuiService {
       getMessages: (request) => this.port.getMessages(request),
       sendMessage: (request) => this.port.sendMessage(request),
       resumeSession: (request) => this.port.resumeSession(request),
+      watchEvents: (signal) => this.port.watchEvents(signal),
+      listPendingPermissions: () => this.port.listPendingPermissions(),
+      getPendingQuestionnaire: (request) =>
+        this.port.getPendingQuestionnaire(request),
+      replyPermission: (request) => this.port.replyPermission(request),
+      replyQuestionnaire: (request) => this.port.replyQuestionnaire(request),
+      dismissQuestionnaire: (request) => this.port.dismissQuestionnaire(request),
+      abortSession: (request) => this.port.abortSession(request),
+      listQueueMessages: (request) => this.port.listQueueMessages(request),
+      deleteQueueItem: (request) => this.port.deleteQueueItem(request),
+      listModels: (request) => this.port.listModels(request),
+      selectModel: (request) => this.port.selectModel(request),
+      getSessionUsage: (request) => this.port.getSessionUsage(request),
+      getAccountStatus: (request) => this.port.getAccountStatus(request),
     });
     const factory = options.httpServerFactory ?? (() => createServer());
     this.httpServer = factory();
@@ -289,6 +304,7 @@ export class WebuiService {
     // `wsServer.close()` waits for the client to ack the close handshake
     // and can hang for the duration of the platform TCP timeout.
     for (const connection of this.connections) {
+      this.connectionSignals.get(connection)?.abort();
       try {
         connection.terminate();
       } catch {
@@ -296,6 +312,7 @@ export class WebuiService {
       }
     }
     this.connections.clear();
+    this.connectionSignals.clear();
     await new Promise<void>((resolve) => {
       this.wsServer.close(() => resolve());
     });
@@ -358,11 +375,17 @@ export class WebuiService {
       return;
     }
     this.connections.add(ws);
+    const connectionController = new AbortController();
+    this.connectionSignals.set(ws, connectionController);
     ws.on("close", () => {
       this.connections.delete(ws);
+      connectionController.abort();
+      this.connectionSignals.delete(ws);
     });
     ws.on("error", () => {
       this.connections.delete(ws);
+      connectionController.abort();
+      this.connectionSignals.delete(ws);
     });
     ws.on("message", (raw, isBinary) => {
       void this.#handleMessage(ws, raw, isBinary);
@@ -466,7 +489,10 @@ export class WebuiService {
     }
     try {
       const result = await entry.handle(
-        { requestId: parsed.requestId },
+        {
+          requestId: parsed.requestId,
+          signal: this.connectionSignals.get(ws)?.signal,
+        },
         validated.body,
       );
       if ("stream" in result) {

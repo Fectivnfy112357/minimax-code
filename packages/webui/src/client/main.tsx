@@ -31,6 +31,19 @@ root.render(
     createSession={transport.createSession}
     sendMessage={transport.sendMessage}
     resumeSession={transport.resumeSession}
+    watchEvents={transport.watchEvents}
+    listPendingPermissions={transport.listPendingPermissions}
+    getPendingQuestionnaire={transport.getPendingQuestionnaire}
+    replyPermission={transport.replyPermission}
+    replyQuestionnaire={transport.replyQuestionnaire}
+    dismissQuestionnaire={transport.dismissQuestionnaire}
+    abortSession={transport.abortSession}
+    listQueueMessages={transport.listQueueMessages}
+    deleteQueueItem={transport.deleteQueueItem}
+    listModels={transport.listModels}
+    selectModel={transport.selectModel}
+    getSessionUsage={transport.getSessionUsage}
+    getAccountStatus={transport.getAccountStatus}
   />,
 );
 

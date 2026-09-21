@@ -132,6 +132,89 @@ export interface WebuiResumeSessionRequest {
   readonly drainQueued?: boolean;
 }
 
+export interface WebuiPendingPermission {
+  readonly requestId: string;
+  readonly sessionId: string;
+  readonly agentName: string;
+  readonly toolName: string;
+  readonly ruleContents: readonly string[];
+  readonly toolInput?: string;
+  readonly toolDescription?: string;
+  readonly reason: string;
+  readonly allowAlwaysSupported: boolean;
+  readonly createdAt: number;
+}
+
+export interface WebuiQuestionnaireOption {
+  readonly id: string;
+  readonly label: string;
+  readonly description?: string;
+  readonly recommended?: boolean;
+}
+
+export interface WebuiQuestionnaireStep {
+  readonly id: string;
+  readonly header?: string;
+  readonly question: string;
+  readonly description?: string;
+  readonly selectionMode: number;
+  readonly options?: readonly WebuiQuestionnaireOption[];
+  readonly allowOther: boolean;
+  readonly otherPlaceholder: string;
+  readonly required: boolean;
+}
+
+export interface WebuiQuestionnaireRequest {
+  readonly schemaVersion: number;
+  readonly id: string;
+  readonly title?: string;
+  readonly requester?: {
+    readonly sessionId: string;
+    readonly runId?: string;
+    readonly toolCallId?: string;
+    readonly agentName?: string;
+  };
+  readonly presentation: {
+    readonly replaceComposer: boolean;
+    readonly showProgress: boolean;
+    readonly allowBackNavigation: boolean;
+  };
+  readonly steps: readonly WebuiQuestionnaireStep[];
+  readonly expiresAt?: number;
+  readonly status?: number;
+  readonly createdAt?: number;
+  readonly mode?: string;
+  readonly purpose?: number;
+}
+
+export interface WebuiQuestionnaireAnswer {
+  readonly stepId: string;
+  readonly selectedOptionIds?: readonly string[];
+  readonly selectedOther?: boolean;
+  readonly otherText?: string;
+  readonly skipped?: boolean;
+}
+
+export type WebuiPermissionDecision = "allowOnce" | "allowAlways" | "deny";
+
+export interface WebuiRuntimeEvent {
+  readonly type: string;
+  readonly payload: Record<string, unknown>;
+  readonly timestamp: number;
+  readonly source: string;
+}
+
+export type WebuiWatchEventsResult =
+  | {
+      readonly ok: true;
+      readonly source: AsyncIterable<WebuiRuntimeEvent> | Iterable<WebuiRuntimeEvent>;
+    }
+  | {
+      readonly ok: false;
+      readonly status: number;
+      readonly body: { readonly key?: string; readonly message: string; readonly detail?: string };
+    };
+
 export interface WebuiStreamFrame {
   readonly cursor?: string;
   readonly eventJson?: string;
@@ -166,6 +249,42 @@ export type WebuiStreamResult =
 /** `sendMessage` returns the same shape as a resume — kept as an alias. */
 export type WebuiSendMessageResult = WebuiStreamResult;
 
+export interface WebuiInteractionReplyResult {
+  readonly success?: boolean;
+  readonly ok?: boolean;
+  readonly requestId?: string;
+  readonly sessionId?: string;
+  readonly answeredAt?: number;
+  readonly dismissedAt?: number;
+}
+
+export interface WebuiQueueItem {
+  readonly itemId: string;
+  readonly sessionId: string;
+  readonly status: string;
+  readonly content?: string;
+  readonly source?: string;
+  readonly failedReason?: string;
+  readonly createdAt?: number;
+  readonly startedAt?: number;
+  readonly finishedAt?: number;
+}
+
+export interface WebuiModelEntry {
+  readonly providerId: string;
+  readonly modelId: string;
+  readonly displayName?: string;
+  readonly selected?: boolean;
+  readonly enabled?: boolean;
+  readonly variant?: string;
+  readonly providerName?: string;
+  readonly status?: {
+    readonly state?: string;
+    readonly lastErrorMessage?: string;
+  };
+  readonly [key: string]: unknown;
+}
+
 export interface WebuiHarnessPort {
   version(): WebuiVersionInfo;
   listSessions(request: WebuiSessionListRequest): Promise<WebuiSessionPage>;
@@ -188,6 +307,48 @@ export interface WebuiHarnessPort {
   resumeSession(
     request: WebuiResumeSessionRequest,
   ): Promise<WebuiStreamResult>;
+  watchEvents(signal?: AbortSignal): AsyncIterable<WebuiRuntimeEvent>;
+  listPendingPermissions(): Promise<{
+    readonly requests: readonly WebuiPendingPermission[];
+  }>;
+  getPendingQuestionnaire(request: {
+    readonly name: string;
+    readonly sessionId: string;
+  }): Promise<{ readonly request?: WebuiQuestionnaireRequest }>;
+  replyPermission(request: {
+    readonly name: string;
+    readonly requestId: string;
+    readonly reply: WebuiPermissionDecision;
+  }): Promise<WebuiInteractionReplyResult>;
+  replyQuestionnaire(request: {
+    readonly name: string;
+    readonly requestId: string;
+    readonly schemaVersion: number;
+    readonly answers: readonly WebuiQuestionnaireAnswer[];
+  }): Promise<WebuiInteractionReplyResult>;
+  dismissQuestionnaire(request: {
+    readonly name: string;
+    readonly requestId: string;
+  }): Promise<WebuiInteractionReplyResult>;
+  abortSession(request: { readonly id: string }): Promise<{ readonly success?: boolean }>;
+  listQueueMessages(request: { readonly id: string }): Promise<{
+    readonly items?: readonly WebuiQueueItem[];
+    readonly paused?: boolean;
+    readonly pendingCount?: number;
+  }>;
+  deleteQueueItem(request: {
+    readonly id: string;
+    readonly itemId: string;
+  }): Promise<{ readonly item?: WebuiQueueItem }>;
+  listModels(request?: { readonly sessionId?: string }): Promise<readonly WebuiModelEntry[]>;
+  selectModel(request: {
+    readonly providerId: string;
+    readonly modelId: string;
+    readonly variant?: string;
+    readonly sessionId?: string;
+  }): Promise<{ readonly success?: boolean }>;
+  getSessionUsage(request: { readonly id: string }): Promise<Record<string, unknown>>;
+  getAccountStatus(request?: { readonly sessionId?: string }): Promise<Record<string, unknown>>;
   /**
    * Release anything the port owns. The service calls this after closing
    * every transport-side resource so the harness can tear itself down in
