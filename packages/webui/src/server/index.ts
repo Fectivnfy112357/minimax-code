@@ -11,7 +11,8 @@ import {
   type WebuiFoundationVersion,
 } from "../shared/placeholder.js";
 
-export const WEBUI_SERVER_VERSION: WebuiFoundationVersion = WEBUI_FOUNDATION_VERSION;
+export const WEBUI_SERVER_VERSION: WebuiFoundationVersion =
+  WEBUI_FOUNDATION_VERSION;
 
 export interface WebuiServerFoundation {
   readonly version: WebuiFoundationVersion;
@@ -35,6 +36,7 @@ export {
   createSessionOperation,
   getSessionOperation,
   getMessagesOperation,
+  sendMessageOperation,
   type WebuiOperation,
   type WebuiOperationHandler,
   type WebuiOperationRegistryEntry,
@@ -53,6 +55,7 @@ export {
   type WebuiRequestFrame,
   type WebuiResponseFrame,
   type WebuiErrorFrame,
+  type WebuiEventFrame,
   type WebuiServerFrame,
   type WebuiClientFrame,
   type WebuiFrame,
@@ -73,6 +76,9 @@ export type {
   WebuiMessage,
   WebuiMessagesRequest,
   WebuiMessagesResult,
+  WebuiSendMessageRequest,
+  WebuiSendMessageResult,
+  WebuiStreamFrame,
 } from "./port.js";
 export {
   createHarnessPortFromHost,

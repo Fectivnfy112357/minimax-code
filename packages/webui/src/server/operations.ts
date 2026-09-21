@@ -21,6 +21,7 @@ import type {
   WebuiSessionListRequest,
   WebuiCreateSessionRequest,
   WebuiCreateSessionResult,
+  WebuiSendMessageRequest,
 } from "./port.js";
 
 export interface WebuiOperationContext {
@@ -31,10 +32,17 @@ export interface WebuiOperationResult<Body> {
   readonly body: Body;
 }
 
+export interface WebuiOperationStreamResult {
+  readonly stream: import("./port.js").WebuiSendMessageResult;
+}
+
 export type WebuiOperationHandler<Body> = (
   context: WebuiOperationContext,
   body: unknown,
-) => Promise<WebuiOperationResult<Body>> | WebuiOperationResult<Body>;
+) =>
+  | Promise<WebuiOperationResult<Body> | WebuiOperationStreamResult>
+  | WebuiOperationResult<Body>
+  | WebuiOperationStreamResult;
 
 export interface WebuiOperation<Body = unknown, ResultBody = Body> {
   readonly name: string;
@@ -43,13 +51,18 @@ export interface WebuiOperation<Body = unknown, ResultBody = Body> {
 
 export type WebuiOperationValidation<Body> =
   | { readonly ok: true; readonly body: Body }
-  | { readonly ok: false; readonly code: WebuiErrorCodeValue; readonly message: string };
+  | {
+      readonly ok: false;
+      readonly code: WebuiErrorCodeValue;
+      readonly message: string;
+    };
 
 const VERSION_OPERATION_NAME = "version" as const;
 const LIST_SESSIONS_OPERATION_NAME = "listSessions" as const;
 const CREATE_SESSION_OPERATION_NAME = "createSession" as const;
 const GET_SESSION_OPERATION_NAME = "getSession" as const;
 const GET_MESSAGES_OPERATION_NAME = "getMessages" as const;
+const SEND_MESSAGE_OPERATION_NAME = "sendMessage" as const;
 
 type VersionRequestBody = undefined;
 
@@ -82,16 +95,35 @@ function validateListSessionsRequestBody(
   body: unknown,
 ): WebuiOperationValidation<WebuiSessionListRequest> {
   if (body === null || typeof body !== "object" || Array.isArray(body))
-    return { ok: false, code: WebuiErrorCode.invalidBody, message: "listSessions body must be an object" };
+    return {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: "listSessions body must be an object",
+    };
   const candidate = body as Record<string, unknown>;
   if (typeof candidate.name !== "string" || candidate.name.trim() === "")
-    return { ok: false, code: WebuiErrorCode.invalidBody, message: "listSessions body requires a non-empty name" };
+    return {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: "listSessions body requires a non-empty name",
+    };
   for (const key of ["limit", "offset"] as const) {
-    if (candidate[key] !== undefined && (!Number.isInteger(candidate[key]) || (candidate[key] as number) < 0))
-      return { ok: false, code: WebuiErrorCode.invalidBody, message: `${key} must be a non-negative integer` };
+    if (
+      candidate[key] !== undefined &&
+      (!Number.isInteger(candidate[key]) || (candidate[key] as number) < 0)
+    )
+      return {
+        ok: false,
+        code: WebuiErrorCode.invalidBody,
+        message: `${key} must be a non-negative integer`,
+      };
   }
   if (candidate.cursor !== undefined && typeof candidate.cursor !== "string")
-    return { ok: false, code: WebuiErrorCode.invalidBody, message: "cursor must be a string" };
+    return {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: "cursor must be a string",
+    };
   return { ok: true, body: candidate as unknown as WebuiSessionListRequest };
 }
 
@@ -107,21 +139,48 @@ function validateCreateSessionRequestBody(
   body: unknown,
 ): WebuiOperationValidation<WebuiCreateSessionRequest> {
   if (body === null || typeof body !== "object" || Array.isArray(body))
-    return { ok: false, code: WebuiErrorCode.invalidBody, message: "createSession body must be an object" };
+    return {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: "createSession body must be an object",
+    };
   const candidate = body as Record<string, unknown>;
   const name = typeof candidate.name === "string" ? candidate.name.trim() : "";
   if (!name)
-    return { ok: false, code: WebuiErrorCode.invalidBody, message: "createSession body requires a non-empty name" };
-  const workspaceDir = typeof candidate.workspaceDir === "string" ? candidate.workspaceDir.trim() : "";
+    return {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: "createSession body requires a non-empty name",
+    };
+  const workspaceDir =
+    typeof candidate.workspaceDir === "string"
+      ? candidate.workspaceDir.trim()
+      : "";
   if (!workspaceDir)
-    return { ok: false, code: WebuiErrorCode.invalidBody, message: "createSession body requires a working directory" };
+    return {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: "createSession body requires a working directory",
+    };
   if (!isAbsolute(workspaceDir))
-    return { ok: false, code: WebuiErrorCode.invalidBody, message: "workspaceDir must be an absolute path" };
+    return {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: "workspaceDir must be an absolute path",
+    };
   try {
     if (!statSync(workspaceDir).isDirectory())
-      return { ok: false, code: WebuiErrorCode.invalidBody, message: "workspaceDir must be an existing directory" };
+      return {
+        ok: false,
+        code: WebuiErrorCode.invalidBody,
+        message: "workspaceDir must be an existing directory",
+      };
   } catch {
-    return { ok: false, code: WebuiErrorCode.invalidBody, message: "workspaceDir must be an existing directory" };
+    return {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: "workspaceDir must be an existing directory",
+    };
   }
   return { ok: true, body: { name, workspaceDir } };
 }
@@ -139,10 +198,18 @@ function validateSessionIdBody(
   body: unknown,
 ): WebuiOperationValidation<WebuiSessionLookupRequest> {
   if (body === null || typeof body !== "object" || Array.isArray(body))
-    return { ok: false, code: WebuiErrorCode.invalidBody, message: `${operation} body must be an object` };
+    return {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: `${operation} body must be an object`,
+    };
   const candidate = body as Record<string, unknown>;
   if (typeof candidate.id !== "string" || candidate.id.trim() === "")
-    return { ok: false, code: WebuiErrorCode.invalidBody, message: `${operation} body requires a non-empty id` };
+    return {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: `${operation} body requires a non-empty id`,
+    };
   return { ok: true, body: { id: candidate.id } };
 }
 
@@ -160,19 +227,46 @@ function validateGetMessagesBody(
   const session = validateSessionIdBody(GET_MESSAGES_OPERATION_NAME, body);
   if (!session.ok) return session;
   const candidate = body as Record<string, unknown>;
-  if (candidate.limit !== undefined && (!Number.isInteger(candidate.limit) || (candidate.limit as number) < 0))
-    return { ok: false, code: WebuiErrorCode.invalidBody, message: "limit must be a non-negative integer" };
+  if (
+    candidate.limit !== undefined &&
+    (!Number.isInteger(candidate.limit) || (candidate.limit as number) < 0)
+  )
+    return {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: "limit must be a non-negative integer",
+    };
   if (candidate.before !== undefined && typeof candidate.before !== "string")
-    return { ok: false, code: WebuiErrorCode.invalidBody, message: "before must be a string" };
-  if (candidate.includeAttachmentReadUrls !== undefined && typeof candidate.includeAttachmentReadUrls !== "boolean")
-    return { ok: false, code: WebuiErrorCode.invalidBody, message: "includeAttachmentReadUrls must be a boolean" };
+    return {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: "before must be a string",
+    };
+  if (
+    candidate.includeAttachmentReadUrls !== undefined &&
+    typeof candidate.includeAttachmentReadUrls !== "boolean"
+  )
+    return {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: "includeAttachmentReadUrls must be a boolean",
+    };
   return {
     ok: true,
     body: {
       id: session.body.id,
-      ...(candidate.limit === undefined ? {} : { limit: candidate.limit as number }),
-      ...(candidate.before === undefined ? {} : { before: candidate.before as string }),
-      ...(candidate.includeAttachmentReadUrls === undefined ? {} : { includeAttachmentReadUrls: candidate.includeAttachmentReadUrls as boolean }),
+      ...(candidate.limit === undefined
+        ? {}
+        : { limit: candidate.limit as number }),
+      ...(candidate.before === undefined
+        ? {}
+        : { before: candidate.before as string }),
+      ...(candidate.includeAttachmentReadUrls === undefined
+        ? {}
+        : {
+            includeAttachmentReadUrls:
+              candidate.includeAttachmentReadUrls as boolean,
+          }),
     },
   };
 }
@@ -185,6 +279,65 @@ export const getMessagesOperation: WebuiOperation<
   validate: validateGetMessagesBody,
 };
 
+function validateSendMessageRequestBody(
+  body: unknown,
+): WebuiOperationValidation<WebuiSendMessageRequest> {
+  if (body === null || typeof body !== "object" || Array.isArray(body))
+    return {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: "sendMessage body must be an object",
+    };
+  const candidate = body as Record<string, unknown>;
+  if (typeof candidate.id !== "string" || candidate.id.trim() === "")
+    return {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: "sendMessage body requires a non-empty id",
+    };
+  if (candidate.content !== undefined && typeof candidate.content !== "string")
+    return {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: "content must be a string",
+    };
+  if (candidate.turnId !== undefined && typeof candidate.turnId !== "string")
+    return {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: "turnId must be a string",
+    };
+  if (
+    candidate.clientIntent !== undefined &&
+    typeof candidate.clientIntent !== "string"
+  )
+    return {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: "clientIntent must be a string",
+    };
+  return {
+    ok: true,
+    body: {
+      id: candidate.id as string,
+      ...(candidate.content === undefined
+        ? {}
+        : { content: candidate.content as string }),
+      ...(candidate.turnId === undefined
+        ? {}
+        : { turnId: candidate.turnId as string }),
+      ...(candidate.clientIntent === undefined
+        ? {}
+        : { clientIntent: candidate.clientIntent as string }),
+    },
+  };
+}
+
+export const sendMessageOperation: WebuiOperation<WebuiSendMessageRequest> = {
+  name: SEND_MESSAGE_OPERATION_NAME,
+  validate: validateSendMessageRequestBody,
+};
+
 export interface WebuiOperationRegistryEntry {
   readonly operation: WebuiOperation;
   readonly handle: WebuiOperationHandler<unknown>;
@@ -195,16 +348,29 @@ export interface WebuiOperationRegistration<Body = unknown, ResultBody = Body> {
   readonly handle: (
     context: WebuiOperationContext,
     body: Body,
-  ) => Promise<WebuiOperationResult<ResultBody>> | WebuiOperationResult<ResultBody>;
+  ) =>
+    | Promise<WebuiOperationResult<ResultBody> | WebuiOperationStreamResult>
+    | WebuiOperationResult<ResultBody>
+    | WebuiOperationStreamResult;
 }
 
 export function createOperationRegistry(
-  port: Pick<WebuiHarnessPort, "version" | "listSessions" | "createSession" | "getSession" | "getMessages">,
+  port: Pick<
+    WebuiHarnessPort,
+    | "version"
+    | "listSessions"
+    | "createSession"
+    | "getSession"
+    | "getMessages"
+    | "sendMessage"
+  >,
 ): ReadonlyMap<string, WebuiOperationRegistryEntry> {
   const registry = new Map<string, WebuiOperationRegistryEntry>();
   registerOperation(registry, {
     operation: createSessionOperation,
-    handle: async (_context, body) => ({ body: await port.createSession(body) }),
+    handle: async (_context, body) => ({
+      body: await port.createSession(body),
+    }),
   });
   registerOperation(registry, {
     operation: versionOperation,
@@ -223,6 +389,12 @@ export function createOperationRegistry(
   registerOperation(registry, {
     operation: listSessionsOperation,
     handle: async (_context, body) => ({ body: await port.listSessions(body) }),
+  });
+  registerOperation(registry, {
+    operation: sendMessageOperation,
+    handle: async (_context, body) => ({
+      stream: await port.sendMessage(body),
+    }),
   });
   return registry;
 }

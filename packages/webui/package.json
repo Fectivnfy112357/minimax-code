@@ -17,6 +17,7 @@
     "@mavis/local-runtime-v2": "workspace:*",
     "@mavis/protocol": "workspace:*",
     "@mavis/shared": "workspace:^",
+    "marked": "18.0.12",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "ws": "8.21.3"

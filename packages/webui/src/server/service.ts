@@ -12,8 +12,12 @@
 // new operations, then close every connection, then close the harness.
 
 import { createServer, type IncomingMessage, type Server } from "node:http";
+import { readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import type { AddressInfo } from "node:net";
+import path from "node:path";
 import type { Duplex } from "node:stream";
+import { fileURLToPath } from "node:url";
 import { WebSocketServer, type WebSocket } from "ws";
 
 import {
@@ -30,6 +34,7 @@ import {
   WebuiErrorCode,
   WEBUI_PROTOCOL_VERSION,
   type WebuiErrorFrame,
+  type WebuiEventFrame,
   type WebuiResponseFrame,
 } from "./envelope.js";
 import type { WebuiHarnessPort } from "./port.js";
@@ -101,6 +106,7 @@ export class WebuiService {
       createSession: (request) => this.port.createSession(request),
       getSession: (request) => this.port.getSession(request),
       getMessages: (request) => this.port.getMessages(request),
+      sendMessage: (request) => this.port.sendMessage(request),
     });
     const factory = options.httpServerFactory ?? (() => createServer());
     this.httpServer = factory();
@@ -109,7 +115,77 @@ export class WebuiService {
       maxPayload: this.maxMessageBytes,
     });
     this.httpServer.on("upgrade", this.#onUpgrade);
+    this.httpServer.on("request", this.#onRequest);
     this.wsServer.on("connection", this.#onConnection);
+  }
+
+  #onRequest = (
+    request: IncomingMessage,
+    response: import("node:http").ServerResponse,
+  ): void => {
+    void this.#serveClient(request, response);
+  };
+
+  async #serveClient(
+    request: IncomingMessage,
+    response: import("node:http").ServerResponse,
+  ): Promise<void> {
+    const requestHost = (request.headers.host ?? "").toLowerCase();
+    const requestOrigin = (request.headers.origin ?? "").toLowerCase();
+    if (!requestHost || !isLoopbackHost(requestHost.split(":")[0] ?? "")) {
+      rejectHttp(response, 403, "Forbidden Host");
+      return;
+    }
+    if (
+      requestOrigin &&
+      !isAllowedOrigin(requestOrigin, this.host, this.bound?.info.tcpPort)
+    ) {
+      rejectHttp(response, 403, "Forbidden Origin");
+      return;
+    }
+    const url = parseHttpUrl(request.url);
+    const presented = url?.searchParams.get("token");
+    if (!credentialMatches(this.credential, presented)) {
+      rejectHttp(response, 401, "Unauthorized");
+      return;
+    }
+    if (request.method !== "GET" || !url) {
+      rejectHttp(response, 404, "Not Found");
+      return;
+    }
+    const name =
+      url.pathname === "/" || url.pathname === "/index.html"
+        ? "index.html"
+        : url.pathname === "/client.js"
+          ? "client.js"
+          : url.pathname === "/styles.css"
+            ? "styles.css"
+            : undefined;
+    if (!name) {
+      rejectHttp(response, 404, "Not Found");
+      return;
+    }
+    try {
+      const clientDir = findClientDirectory();
+      let body = await readFile(path.join(clientDir, name), "utf8");
+      if (name === "index.html") {
+        const config = JSON.stringify({
+          websocketUrl: `ws://${this.host}:${this.bound?.info.tcpPort ?? this.tcpPort}`,
+          token: this.credential.token,
+        }).replace(/</gu, "\\u003c");
+        body = body.replace(
+          "</head>",
+          `<script>window.__WEBUI_CONFIG__=${config};</script></head>`,
+        );
+      }
+      response.writeHead(200, {
+        "Content-Type": contentType(name),
+        "Cache-Control": "no-store",
+      });
+      response.end(body);
+    } catch {
+      rejectHttp(response, 404, "Not Found");
+    }
   }
 
   /**
@@ -254,14 +330,25 @@ export class WebuiService {
     isBinary: boolean,
   ): Promise<void> {
     if (isBinary) {
-      sendFrame(ws, errorFrame("anonymous", WebuiErrorCode.invalidEnvelope, "binary frames are not accepted"));
+      sendFrame(
+        ws,
+        errorFrame(
+          "anonymous",
+          WebuiErrorCode.invalidEnvelope,
+          "binary frames are not accepted",
+        ),
+      );
       return;
     }
     const text = raw.toString("utf8");
     if (Buffer.byteLength(text, "utf8") > this.maxMessageBytes) {
       sendFrame(
         ws,
-        errorFrame("anonymous", WebuiErrorCode.payloadTooLarge, "frame exceeds the message size limit"),
+        errorFrame(
+          "anonymous",
+          WebuiErrorCode.payloadTooLarge,
+          "frame exceeds the message size limit",
+        ),
       );
       return;
     }
@@ -271,28 +358,44 @@ export class WebuiService {
     } catch {
       sendFrame(
         ws,
-        errorFrame("anonymous", WebuiErrorCode.invalidEnvelope, "frame is not valid JSON"),
+        errorFrame(
+          "anonymous",
+          WebuiErrorCode.invalidEnvelope,
+          "frame is not valid JSON",
+        ),
       );
       return;
     }
     if (!isWebuiFrame(parsed)) {
       sendFrame(
         ws,
-        errorFrame("anonymous", WebuiErrorCode.protocolMismatch, "frame does not match the WebUI envelope"),
+        errorFrame(
+          "anonymous",
+          WebuiErrorCode.protocolMismatch,
+          "frame does not match the WebUI envelope",
+        ),
       );
       return;
     }
     if (parsed.kind !== "request") {
       sendFrame(
         ws,
-        errorFrame(parsed.requestId, WebuiErrorCode.invalidEnvelope, "servers do not accept client non-request frames"),
+        errorFrame(
+          parsed.requestId,
+          WebuiErrorCode.invalidEnvelope,
+          "servers do not accept client non-request frames",
+        ),
       );
       return;
     }
     if (!this.accepting) {
       sendFrame(
         ws,
-        errorFrame(parsed.requestId, WebuiErrorCode.shuttingDown, "service is shutting down"),
+        errorFrame(
+          parsed.requestId,
+          WebuiErrorCode.shuttingDown,
+          "service is shutting down",
+        ),
       );
       return;
     }
@@ -300,17 +403,43 @@ export class WebuiService {
     if (!entry) {
       sendFrame(
         ws,
-        errorFrame(parsed.requestId, WebuiErrorCode.unknownOperation, `unknown operation: ${parsed.operation}`),
+        errorFrame(
+          parsed.requestId,
+          WebuiErrorCode.unknownOperation,
+          `unknown operation: ${parsed.operation}`,
+        ),
       );
       return;
     }
     const validated = entry.operation.validate(parsed.body);
     if (!validated.ok) {
-      sendFrame(ws, errorFrame(parsed.requestId, validated.code, validated.message));
+      sendFrame(
+        ws,
+        errorFrame(parsed.requestId, validated.code, validated.message),
+      );
       return;
     }
     try {
-      const result = await entry.handle({ requestId: parsed.requestId }, validated.body);
+      const result = await entry.handle(
+        { requestId: parsed.requestId },
+        validated.body,
+      );
+      if ("stream" in result) {
+        if (!result.stream.ok) {
+          sendFrame(
+            ws,
+            errorFrame(
+              parsed.requestId,
+              result.stream.body.key ?? WebuiErrorCode.harnessError,
+              result.stream.body.message,
+            ),
+          );
+          return;
+        }
+        for await (const frame of result.stream.source)
+          sendFrame(ws, eventFrame(parsed.requestId, frame));
+        return;
+      }
       sendFrame(ws, responseFrame(parsed.requestId, result.body));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -322,9 +451,21 @@ export class WebuiService {
   }
 }
 
-function sendFrame(ws: WebSocket, frame: WebuiResponseFrame | WebuiErrorFrame) {
+function sendFrame(
+  ws: WebSocket,
+  frame: WebuiResponseFrame | WebuiErrorFrame | WebuiEventFrame,
+) {
   if (ws.readyState !== ws.OPEN) return;
   ws.send(JSON.stringify(frame));
+}
+
+function eventFrame(requestId: string, body: unknown): WebuiEventFrame {
+  return {
+    protocolVersion: WEBUI_PROTOCOL_VERSION,
+    kind: "event",
+    requestId,
+    body,
+  };
 }
 
 function responseFrame(requestId: string, body: unknown): WebuiResponseFrame {
@@ -350,16 +491,53 @@ function errorFrame(
   };
 }
 
-function rejectUpgrade(
-  socket: Duplex,
+function rejectUpgrade(socket: Duplex, status: number, reason: string): void {
+  const reasonLine = reason.replace(/[\r\n]/gu, " ");
+  socket.write(`HTTP/1.1 ${status} ${reasonLine}\r\nConnection: close\r\n\r\n`);
+  socket.destroy();
+}
+
+function rejectHttp(
+  response: import("node:http").ServerResponse,
   status: number,
   reason: string,
 ): void {
-  const reasonLine = reason.replace(/[\r\n]/gu, " ");
-  socket.write(
-    `HTTP/1.1 ${status} ${reasonLine}\r\nConnection: close\r\n\r\n`,
+  response.writeHead(status, {
+    "Content-Type": "text/plain; charset=utf-8",
+    Connection: "close",
+  });
+  response.end(reason);
+}
+
+function parseHttpUrl(rawUrl: string | undefined): URL | undefined {
+  if (!rawUrl) return undefined;
+  try {
+    return new URL(rawUrl, "http://127.0.0.1");
+  } catch {
+    return undefined;
+  }
+}
+
+function contentType(name: string): string {
+  return name.endsWith(".css")
+    ? "text/css; charset=utf-8"
+    : name.endsWith(".js")
+      ? "text/javascript; charset=utf-8"
+      : "text/html; charset=utf-8";
+}
+
+function findClientDirectory(): string {
+  const candidates = [
+    path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../client"),
+    path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      "../../../dist-webui/client",
+    ),
+  ];
+  // The built server uses the first path; source tests and development use the second.
+  return (
+    candidates.find((candidate) => existsSync(candidate)) ?? candidates[0]!
   );
-  socket.destroy();
 }
 
 function parseWebSocketUrl(rawUrl: string | undefined): URL | undefined {
@@ -404,7 +582,9 @@ function isAllowedOrigin(origin: string, host: string, port?: number): boolean {
   const hostname = parsed.hostname.toLowerCase();
   if (hostname !== "127.0.0.1" && hostname !== "localhost") return false;
   if (port === undefined) return true;
-  const portNumber = parsed.port ? Number(parsed.port) : defaultPortForProtocol(protocol);
+  const portNumber = parsed.port
+    ? Number(parsed.port)
+    : defaultPortForProtocol(protocol);
   return portNumber === port && parsed.hostname === host;
 }
 

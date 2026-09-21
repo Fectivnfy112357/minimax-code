@@ -19,9 +19,7 @@
 // factory; tests inject a stub that records the options and reports
 // the policy's observable effect without driving the host.
 
-import {
-  getDefaultLocalRuntimeConfig,
-} from "@mavis/local-runtime-v2";
+import { getDefaultLocalRuntimeConfig } from "@mavis/local-runtime-v2";
 import type { CreateLocalRuntimeHostOptions } from "@mavis/local-runtime-v2/process-local";
 
 import { createHarnessPortFromHost } from "./host.js";
@@ -55,6 +53,10 @@ export interface WebuiAssembledHost {
       request: import("./port.js").WebuiMessagesRequest,
       context?: Record<string, never>,
     ): Promise<import("./port.js").WebuiMessagesResult>;
+    sendMessage(
+      request: import("./port.js").WebuiSendMessageRequest,
+      context?: Record<string, never>,
+    ): Promise<import("./port.js").WebuiSendMessageResult>;
   };
 }
 
@@ -175,9 +177,7 @@ export async function createWebuiRuntimeHost(
 const defaultWebuiRuntimeHostFactory: WebuiRuntimeHostFactory = async (
   options,
 ) => {
-  const { createLocalRuntimeHostV2 } = await import(
-    "@mavis/local-runtime-v2"
-  );
+  const { createLocalRuntimeHostV2 } = await import("@mavis/local-runtime-v2");
   return (await createLocalRuntimeHostV2(
     options,
   )) as unknown as WebuiAssembledHost;

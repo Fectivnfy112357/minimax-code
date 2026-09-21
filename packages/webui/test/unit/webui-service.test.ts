@@ -27,6 +27,8 @@ import {
   type WebuiSessionLookupRequest,
   type WebuiSessionListRequest,
   type WebuiVersionInfo,
+  type WebuiSendMessageRequest,
+  type WebuiSendMessageResult,
 } from "../../src/server/index.js";
 
 type CloseEvent = [number, Buffer];
@@ -38,6 +40,10 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
     protocolVersion: WEBUI_PROTOCOL_VERSION,
   };
   public closed = false;
+  public sendResult: WebuiSendMessageResult = {
+    ok: true,
+    source: [{ dataJson: '{"type":10}' }, { dataJson: "[DONE]" }],
+  };
 
   recordLog(version: string) {
     this.versionInfo = {
@@ -62,8 +68,16 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
     return { session: { sessionId: "fixture-session" } };
   }
 
-  async getMessages(_request: WebuiMessagesRequest): Promise<WebuiMessagesResult> {
+  async getMessages(
+    _request: WebuiMessagesRequest,
+  ): Promise<WebuiMessagesResult> {
     return { messages: [], hasMore: false };
+  }
+
+  async sendMessage(
+    _request: WebuiSendMessageRequest,
+  ): Promise<WebuiSendMessageResult> {
+    return this.sendResult;
   }
 
   async close(): Promise<void> {
@@ -85,7 +99,10 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
 // taken up-front because the library emits it on the same tick as
 // `error`; attaching it after the rejection has already landed loses
 // the event and the test hangs.
-function openClient(url: string, headers: Record<string, string> = {}): {
+function openClient(
+  url: string,
+  headers: Record<string, string> = {},
+): {
   ws: WebSocket;
   upgrade: OncePromise<unknown>;
   closed: Promise<{ code: number; reason: string }>;
@@ -211,7 +228,9 @@ describe("WebUI service", () => {
     await bootService();
     const info = service.info();
     const url = `ws://127.0.0.1:${info.tcpPort}/?token=${info.credential.token}`;
-    const { ws, upgrade, closed } = openClient(url, { Host: "evil.example:80" });
+    const { ws, upgrade, closed } = openClient(url, {
+      Host: "evil.example:80",
+    });
     await assertRefusal(upgrade, /403/);
     expect((await closed).code).not.toBe(1000);
   });
@@ -251,16 +270,123 @@ describe("WebUI service", () => {
     ws.close();
   });
 
+  it("streams sendMessage as ordered event frames and preserves mixed frame bodies", async () => {
+    port.sendResult = {
+      ok: true,
+      source: [
+        { dataJson: '{"type":10}' },
+        {
+          dataJson:
+            '{"type":6,"agent_message_chunk":{"msg_id":"m1","msg_content":"Hi"}}',
+          cursor: "c1",
+        },
+        {
+          dataJson:
+            '{"type":"session_status","session_status":{"type":"finished"}}',
+        },
+        { messageActionDeltas: [{ action: "open" }] },
+        { dataJson: "[DONE]" },
+      ],
+    };
+    const { url } = await bootService();
+    const { ws, upgrade } = openClient(url);
+    await upgrade;
+    const frames: unknown[] = [];
+    const completed = new Promise<void>((resolve, reject) => {
+      ws.on("message", (raw) => {
+        try {
+          const frame = JSON.parse(raw.toString("utf8")) as {
+            kind: string;
+            body?: { dataJson?: string };
+          };
+          frames.push(frame);
+          if (frame.kind === "event" && frame.body?.dataJson === "[DONE]")
+            resolve();
+        } catch (error) {
+          reject(error);
+        }
+      });
+    });
+    ws.send(
+      JSON.stringify({
+        protocolVersion: WEBUI_PROTOCOL_VERSION,
+        kind: "request",
+        requestId: "req-send",
+        operation: "sendMessage",
+        body: { id: "session-1", content: "hello" },
+      }),
+    );
+    await completed;
+    expect(frames).toHaveLength(5);
+    expect(
+      frames.every((frame) => (frame as { kind: string }).kind === "event"),
+    ).toBe(true);
+    expect(
+      (frames[1] as { body: { dataJson: string; cursor: string } }).body
+        .dataJson,
+    ).toContain('"type":6');
+    expect((frames[1] as { body: { cursor: string } }).body.cursor).toBe("c1");
+    expect(
+      (frames[3] as { body: { messageActionDeltas: unknown[] } }).body
+        .messageActionDeltas,
+    ).toHaveLength(1);
+    ws.close();
+  });
+
+  it("turns an refused send result into a client-visible error", async () => {
+    port.sendResult = {
+      ok: false,
+      status: 409,
+      body: { key: "delivery_closed", message: "The turn delivery is closed." },
+    };
+    const { url } = await bootService();
+    const { ws, upgrade } = openClient(url);
+    await upgrade;
+    const response = await requestOnce(ws, {
+      protocolVersion: WEBUI_PROTOCOL_VERSION,
+      kind: "request",
+      requestId: "req-refused",
+      operation: "sendMessage",
+      body: { id: "session-1", content: "hello" },
+    });
+    expect(response).toMatchObject({
+      kind: "error",
+      requestId: "req-refused",
+      code: "delivery_closed",
+      message: "The turn delivery is closed.",
+    });
+    ws.close();
+  });
+
+  it("serves the built client only with the credential and injects runtime configuration", async () => {
+    const { credential } = await bootService();
+    const response = await fetch(
+      `http://127.0.0.1:${service.info().tcpPort}/?token=${encodeURIComponent(credential.token)}`,
+    );
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).toContain("__WEBUI_CONFIG__");
+    expect(html).toContain(credential.token);
+    expect(html).toContain("client.js");
+    expect(
+      (await fetch(`http://127.0.0.1:${service.info().tcpPort}/`)).status,
+    ).toBe(401);
+  });
+
   it("lists sessions through the narrow port and preserves cursor paging", async () => {
     const calls: WebuiSessionListRequest[] = [];
     const pages = [
       {
-        sessions: [{ sessionId: "new", agentName: "main", createdAt: 20, updatedAt: 30 }],
+        sessions: [
+          { sessionId: "new", agentName: "main", createdAt: 20, updatedAt: 30 },
+        ],
         hasMore: true,
         nextCursor: "cursor-2",
       },
       {
-        sessions: [{ sessionId: "old", agentName: "main", createdAt: 10, updatedAt: 15 }],
+        sessions: [
+          { sessionId: "old", agentName: "main", createdAt: 10, updatedAt: 15 },
+        ],
         hasMore: false,
       },
     ];
@@ -271,17 +397,26 @@ describe("WebUI service", () => {
     const { url } = await bootService();
     const { ws, upgrade } = openClient(url);
     await upgrade;
-    const request = (requestId: string, body: unknown) => requestOnce(ws, {
-      protocolVersion: WEBUI_PROTOCOL_VERSION,
-      kind: "request",
-      requestId,
-      operation: "listSessions",
-      body,
-    });
+    const request = (requestId: string, body: unknown) =>
+      requestOnce(ws, {
+        protocolVersion: WEBUI_PROTOCOL_VERSION,
+        kind: "request",
+        requestId,
+        operation: "listSessions",
+        body,
+      });
     const first = await request("req-list-1", { name: "main", limit: 1 });
-    const second = await request("req-list-2", { name: "main", limit: 1, cursor: "cursor-2" });
-    expect((first as { body: typeof pages[0] }).body.nextCursor).toBe("cursor-2");
-    expect((second as { body: typeof pages[1] }).body.sessions[0].sessionId).toBe("old");
+    const second = await request("req-list-2", {
+      name: "main",
+      limit: 1,
+      cursor: "cursor-2",
+    });
+    expect((first as { body: (typeof pages)[0] }).body.nextCursor).toBe(
+      "cursor-2",
+    );
+    expect(
+      (second as { body: (typeof pages)[1] }).body.sessions[0].sessionId,
+    ).toBe("old");
     expect(calls).toEqual([
       { name: "main", limit: 1 },
       { name: "main", limit: 1, cursor: "cursor-2" },
@@ -294,28 +429,64 @@ describe("WebUI service", () => {
     const calls: WebuiCreateSessionRequest[] = [];
     port.createSession = async (request) => {
       calls.push(request);
-      return { session: { sessionId: "created-session", workspaceDir: request.workspaceDir } };
+      return {
+        session: {
+          sessionId: "created-session",
+          workspaceDir: request.workspaceDir,
+        },
+      };
     };
     try {
       const { url } = await bootService();
       const { ws, upgrade } = openClient(url);
       await upgrade;
-      const request = (requestId: string, body: unknown) => requestOnce(ws, {
-        protocolVersion: WEBUI_PROTOCOL_VERSION, kind: "request", requestId,
-        operation: "createSession", body,
+      const request = (requestId: string, body: unknown) =>
+        requestOnce(ws, {
+          protocolVersion: WEBUI_PROTOCOL_VERSION,
+          kind: "request",
+          requestId,
+          operation: "createSession",
+          body,
+        });
+      const created = await request("req-create", {
+        name: " main ",
+        workspaceDir: ` ${workspaceDir} `,
+        ignored: true,
       });
-      const created = await request("req-create", { name: " main ", workspaceDir: ` ${workspaceDir} `, ignored: true });
-      expect((created as { body: { session: { sessionId: string } } }).body.session.sessionId).toBe("created-session");
+      expect(
+        (created as { body: { session: { sessionId: string } } }).body.session
+          .sessionId,
+      ).toBe("created-session");
       expect(calls).toEqual([{ name: "main", workspaceDir }]);
-      const relative = await request("req-create-relative", { name: "main", workspaceDir: "relative" });
-      expect((relative as { code: string }).code).toBe(WebuiErrorCode.invalidBody);
-      const currentDirectory = await request("req-create-current-directory", { name: "main", workspaceDir: "." });
-      expect((currentDirectory as { code: string }).code).toBe(WebuiErrorCode.invalidBody);
+      const relative = await request("req-create-relative", {
+        name: "main",
+        workspaceDir: "relative",
+      });
+      expect((relative as { code: string }).code).toBe(
+        WebuiErrorCode.invalidBody,
+      );
+      const currentDirectory = await request("req-create-current-directory", {
+        name: "main",
+        workspaceDir: ".",
+      });
+      expect((currentDirectory as { code: string }).code).toBe(
+        WebuiErrorCode.invalidBody,
+      );
       expect(calls).toHaveLength(1);
-      const missing = await request("req-create-missing", { name: "main", workspaceDir: path.join(workspaceDir, "missing") });
-      expect((missing as { code: string }).code).toBe(WebuiErrorCode.invalidBody);
-      const absent = await request("req-create-absent", { name: "", workspaceDir });
-      expect((absent as { code: string }).code).toBe(WebuiErrorCode.invalidBody);
+      const missing = await request("req-create-missing", {
+        name: "main",
+        workspaceDir: path.join(workspaceDir, "missing"),
+      });
+      expect((missing as { code: string }).code).toBe(
+        WebuiErrorCode.invalidBody,
+      );
+      const absent = await request("req-create-absent", {
+        name: "",
+        workspaceDir,
+      });
+      expect((absent as { code: string }).code).toBe(
+        WebuiErrorCode.invalidBody,
+      );
       expect(calls).toHaveLength(1);
       ws.close();
     } finally {
@@ -350,21 +521,51 @@ describe("WebUI service", () => {
     port.getMessages = async (request) => {
       messageCalls.push(request);
       return request.before
-        ? { messages: [{ msgId: "older", role: "user", msgContent: "Earlier" }], hasMore: false }
-        : { messages: [{ msgId: "newer", role: "assistant", msgContent: "Later" }], nextCursor: "before-1", hasMore: true };
+        ? {
+            messages: [{ msgId: "older", role: "user", msgContent: "Earlier" }],
+            hasMore: false,
+          }
+        : {
+            messages: [
+              { msgId: "newer", role: "assistant", msgContent: "Later" },
+            ],
+            nextCursor: "before-1",
+            hasMore: true,
+          };
     };
     const { url } = await bootService();
     const { ws, upgrade } = openClient(url);
     await upgrade;
-    const request = (requestId: string, operation: string, body: unknown) => requestOnce(ws, {
-      protocolVersion: WEBUI_PROTOCOL_VERSION, kind: "request", requestId, operation, body,
+    const request = (requestId: string, operation: string, body: unknown) =>
+      requestOnce(ws, {
+        protocolVersion: WEBUI_PROTOCOL_VERSION,
+        kind: "request",
+        requestId,
+        operation,
+        body,
+      });
+    const sessionResponse = await request("req-session", "getSession", {
+      id: "session-1",
     });
-    const sessionResponse = await request("req-session", "getSession", { id: "session-1" });
-    const first = await request("req-messages-1", "getMessages", { id: "session-1", limit: 1 });
-    const second = await request("req-messages-2", "getMessages", { id: "session-1", limit: 1, before: "before-1" });
-    expect((sessionResponse as { body: { session: { title: string } } }).body.session.title).toBe("History");
-    expect((first as { body: WebuiMessagesResult }).body.nextCursor).toBe("before-1");
-    expect((second as { body: WebuiMessagesResult }).body.messages?.[0].msgId).toBe("older");
+    const first = await request("req-messages-1", "getMessages", {
+      id: "session-1",
+      limit: 1,
+    });
+    const second = await request("req-messages-2", "getMessages", {
+      id: "session-1",
+      limit: 1,
+      before: "before-1",
+    });
+    expect(
+      (sessionResponse as { body: { session: { title: string } } }).body.session
+        .title,
+    ).toBe("History");
+    expect((first as { body: WebuiMessagesResult }).body.nextCursor).toBe(
+      "before-1",
+    );
+    expect(
+      (second as { body: WebuiMessagesResult }).body.messages?.[0].msgId,
+    ).toBe("older");
     expect(sessionCalls).toEqual([{ id: "session-1" }]);
     expect(messageCalls).toEqual([
       { id: "session-1", limit: 1 },
@@ -378,8 +579,11 @@ describe("WebUI service", () => {
     const { ws, upgrade } = openClient(url);
     await upgrade;
     const response = await requestOnce(ws, {
-      protocolVersion: WEBUI_PROTOCOL_VERSION, kind: "request", requestId: "req-messages-invalid",
-      operation: "getMessages", body: { sessionId: "wrong-field" },
+      protocolVersion: WEBUI_PROTOCOL_VERSION,
+      kind: "request",
+      requestId: "req-messages-invalid",
+      operation: "getMessages",
+      body: { sessionId: "wrong-field" },
     });
     if (!isWebuiFrame(response)) throw new Error("expected frame");
     expect(response.kind).toBe("error");
@@ -395,7 +599,7 @@ describe("WebUI service", () => {
       protocolVersion: WEBUI_PROTOCOL_VERSION,
       kind: "request",
       requestId: "req-unknown",
-      operation: "sendMessage",
+      operation: "not-an-operation",
       body: {},
     };
     const response = await requestOnce(ws, request);
@@ -515,12 +719,11 @@ describe("WebUI operation allowlist", () => {
       // The transport already exercises this with the ws test; here we
       // exercise the operations module directly so the test stays in
       // scope for future operations without spinning up another server.
-      const { createOperationRegistry } = await import(
-        "../../src/server/index.js"
-      );
+      const { createOperationRegistry } =
+        await import("../../src/server/index.js");
       const registry = createOperationRegistry(port);
       expect(registry.has("version")).toBe(true);
-      expect(registry.has("sendMessage")).toBe(false);
+      expect(registry.has("sendMessage")).toBe(true);
       expect(registry.has("getSession")).toBe(true);
       expect(registry.has("getMessages")).toBe(true);
     } finally {
@@ -531,9 +734,8 @@ describe("WebUI operation allowlist", () => {
 
 describe("WebUI host factory", () => {
   it("is a thin adapter over the harness layer's host", async () => {
-    const { createHarnessPortFromHost } = await import(
-      "../../src/server/index.js"
-    );
+    const { createHarnessPortFromHost } =
+      await import("../../src/server/index.js");
     const apiHost = {
       closeCalls: 0,
       async close(): Promise<void> {
@@ -557,12 +759,9 @@ describe("WebUI host factory", () => {
 
 describe("WebUI runtime host assembly", () => {
   it("creates exactly one host per process with the assembly step 6 owner combination", async () => {
-    const { createWebuiRuntimeHost } = await import(
-      "../../src/server/index.js"
-    );
-    const dataDir = await mkdtemp(
-      path.join(os.tmpdir(), "webui-assembly-c1-"),
-    );
+    const { createWebuiRuntimeHost } =
+      await import("../../src/server/index.js");
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), "webui-assembly-c1-"));
     let calls = 0;
     let lastOptions: Record<string, unknown> | undefined;
     try {
@@ -595,12 +794,9 @@ describe("WebUI runtime host assembly", () => {
   });
 
   it("declares the three interaction capabilities explicitly (criterion 2)", async () => {
-    const { createWebuiRuntimeHost } = await import(
-      "../../src/server/index.js"
-    );
-    const dataDir = await mkdtemp(
-      path.join(os.tmpdir(), "webui-assembly-c2-"),
-    );
+    const { createWebuiRuntimeHost } =
+      await import("../../src/server/index.js");
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), "webui-assembly-c2-"));
     let lastOptions: Record<string, unknown> | undefined;
     try {
       const assembled = await createWebuiRuntimeHost({
@@ -627,9 +823,8 @@ describe("WebUI runtime host assembly", () => {
   });
 
   it("does not add a 'webui' value to surface (ADR 0004)", async () => {
-    const { createWebuiRuntimeHost } = await import(
-      "../../src/server/index.js"
-    );
+    const { createWebuiRuntimeHost } =
+      await import("../../src/server/index.js");
     const dataDir = await mkdtemp(
       path.join(os.tmpdir(), "webui-assembly-surface-"),
     );
@@ -657,9 +852,8 @@ describe("WebUI runtime host assembly", () => {
   });
 
   it("wires the assembled host through the harness port that WebuiService tears down last", async () => {
-    const { createWebuiRuntimeHost } = await import(
-      "../../src/server/index.js"
-    );
+    const { createWebuiRuntimeHost } =
+      await import("../../src/server/index.js");
     const dataDir = await mkdtemp(
       path.join(os.tmpdir(), "webui-assembly-port-"),
     );
@@ -692,9 +886,9 @@ describe("WebUI loopback binding invariant", () => {
     expect(() => new WebuiService({ port: harness, host: "0.0.0.0" })).toThrow(
       /loopback/i,
     );
-    expect(
-      () => new WebuiService({ port: harness, host: "10.0.0.5" }),
-    ).toThrow(/loopback/i);
+    expect(() => new WebuiService({ port: harness, host: "10.0.0.5" })).toThrow(
+      /loopback/i,
+    );
     expect(
       () => new WebuiService({ port: harness, host: "evil.example" }),
     ).toThrow(/loopback/i);
@@ -739,9 +933,8 @@ describe("WebUI operation body validation", () => {
   });
 
   it("refuses to register an operation without a body validator", async () => {
-    const { registerOperation, versionOperation } = await import(
-      "../../src/server/index.js"
-    );
+    const { registerOperation, versionOperation } =
+      await import("../../src/server/index.js");
     const registry = new Map();
     const validatorlessOperation = {
       name: "noValidator",
@@ -960,19 +1153,18 @@ describe("WebUI assembly unconditionally forwards the quarantined startup policy
   // WebUI's part of that joint contract; coverage for the harness's
   // gating lives in `packages/local-runtime-v2`.
   it("sets startupExecutionPolicy to 'quarantined' on every boot, including a second boot against the same dataDir", async () => {
-    const { createWebuiRuntimeHost } = await import(
-      "../../src/server/index.js"
-    );
-    const dataDir = await mkdtemp(
-      path.join(os.tmpdir(), "webui-c8-policy-"),
-    );
+    const { createWebuiRuntimeHost } =
+      await import("../../src/server/index.js");
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), "webui-c8-policy-"));
     const forwarded: Array<{ startupExecutionPolicy?: string }> = [];
     type FactoryOptions = {
       dataDir: string;
       startupExecutionPolicy?: string;
     };
     const stubFactory = async (options: FactoryOptions) => {
-      forwarded.push({ startupExecutionPolicy: options.startupExecutionPolicy });
+      forwarded.push({
+        startupExecutionPolicy: options.startupExecutionPolicy,
+      });
       return {
         apiHost: { close: async () => undefined },
         dataDir: options.dataDir,
@@ -996,7 +1188,9 @@ describe("WebUI assembly unconditionally forwards the quarantined startup policy
         { startupExecutionPolicy: "quarantined" },
       ]);
       expect(first.forwardedOptions.startupExecutionPolicy).toBe("quarantined");
-      expect(second.forwardedOptions.startupExecutionPolicy).toBe("quarantined");
+      expect(second.forwardedOptions.startupExecutionPolicy).toBe(
+        "quarantined",
+      );
       await first.harnessPort.close();
       await second.harnessPort.close();
     } finally {

@@ -11,7 +11,7 @@
 
 export const WEBUI_PROTOCOL_VERSION = 1 as const;
 
-export type WebuiEnvelopeKind = "request" | "response" | "error";
+export type WebuiEnvelopeKind = "request" | "response" | "error" | "event";
 
 export interface WebuiRequestFrame {
   readonly protocolVersion: typeof WEBUI_PROTOCOL_VERSION;
@@ -36,7 +36,15 @@ export interface WebuiErrorFrame {
   readonly message: string;
 }
 
-export type WebuiServerFrame = WebuiResponseFrame | WebuiErrorFrame;
+export interface WebuiEventFrame {
+  readonly protocolVersion: typeof WEBUI_PROTOCOL_VERSION;
+  readonly kind: "event";
+  readonly requestId: string;
+  readonly body: unknown;
+}
+
+export type WebuiServerFrame =
+  WebuiResponseFrame | WebuiErrorFrame | WebuiEventFrame;
 export type WebuiClientFrame = WebuiRequestFrame;
 export type WebuiFrame = WebuiServerFrame | WebuiClientFrame;
 
@@ -64,7 +72,8 @@ export function isWebuiFrame(value: unknown): value is WebuiFrame {
     candidate.protocolVersion === WEBUI_PROTOCOL_VERSION &&
     (candidate.kind === "request" ||
       candidate.kind === "response" ||
-      candidate.kind === "error") &&
+      candidate.kind === "error" ||
+      candidate.kind === "event") &&
     typeof candidate.requestId === "string"
   );
 }

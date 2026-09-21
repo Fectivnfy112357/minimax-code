@@ -52,7 +52,9 @@ export interface WebuiSessionPage {
   readonly nextCursor?: string;
 }
 
-export interface WebuiSessionLookupRequest { readonly id: string; }
+export interface WebuiSessionLookupRequest {
+  readonly id: string;
+}
 export interface WebuiSessionInfo {
   readonly sessionId?: string;
   readonly agentName?: string;
@@ -62,7 +64,9 @@ export interface WebuiSessionInfo {
   readonly workspaceDir?: string;
   readonly [key: string]: unknown;
 }
-export interface WebuiSessionLookupResult { readonly session?: WebuiSessionInfo; }
+export interface WebuiSessionLookupResult {
+  readonly session?: WebuiSessionInfo;
+}
 export interface WebuiCreateSessionRequest {
   readonly name: string;
   readonly workspaceDir: string;
@@ -104,12 +108,50 @@ export interface WebuiMessagesResult {
   readonly turnResults?: readonly Record<string, unknown>[];
 }
 
+/** Deliberately small WebUI-owned shape; the browser does not import the harness contract. */
+export interface WebuiSendMessageRequest {
+  readonly id: string;
+  readonly content?: string;
+  readonly turnId?: string;
+  readonly clientIntent?: string;
+}
+
+export interface WebuiStreamFrame {
+  readonly cursor?: string;
+  readonly eventJson?: string;
+  readonly dataJson?: string;
+  readonly messageActionDeltas?: readonly Record<string, unknown>[];
+}
+
+export type WebuiSendMessageResult =
+  | {
+      readonly ok: true;
+      readonly source:
+        AsyncIterable<WebuiStreamFrame> | Iterable<WebuiStreamFrame>;
+    }
+  | {
+      readonly ok: false;
+      readonly status: number;
+      readonly body: {
+        readonly key?: string;
+        readonly message: string;
+        readonly detail?: string;
+      };
+    };
+
 export interface WebuiHarnessPort {
   version(): WebuiVersionInfo;
   listSessions(request: WebuiSessionListRequest): Promise<WebuiSessionPage>;
-  createSession(request: WebuiCreateSessionRequest): Promise<WebuiCreateSessionResult>;
-  getSession(request: WebuiSessionLookupRequest): Promise<WebuiSessionLookupResult>;
+  createSession(
+    request: WebuiCreateSessionRequest,
+  ): Promise<WebuiCreateSessionResult>;
+  getSession(
+    request: WebuiSessionLookupRequest,
+  ): Promise<WebuiSessionLookupResult>;
   getMessages(request: WebuiMessagesRequest): Promise<WebuiMessagesResult>;
+  sendMessage(
+    request: WebuiSendMessageRequest,
+  ): Promise<WebuiSendMessageResult>;
   /**
    * Release anything the port owns. The service calls this after closing
    * every transport-side resource so the harness can tear itself down in
