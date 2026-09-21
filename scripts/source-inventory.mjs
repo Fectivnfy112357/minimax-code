@@ -15,6 +15,7 @@ const skipped = new Set([
   ".cache",
   ".pnpm-store",
   ".turbo",
+  ".idea",
   ".DS_Store",
 ]);
 function filesIn(directory, prefix = "") {
