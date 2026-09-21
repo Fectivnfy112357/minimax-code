@@ -7,6 +7,7 @@ import { createWebuiTransport } from "./transport.js";
 declare const document: {
   getElementById(elementId: string): HTMLElement | null;
 };
+declare const location: { readonly host: string };
 
 const rootElement = document.getElementById("webui-root");
 if (!rootElement) throw new Error("WebUI mount node #webui-root is missing");
@@ -24,6 +25,7 @@ const root: Root = createRoot(rootElement);
 root.render(
   <WebuiClientFoundationApp
     label="webui-foundation"
+    hostLabel={location.host}
     loadSessions={transport.loadSessions}
     loadMessages={transport.loadMessages}
     createSession={transport.createSession}

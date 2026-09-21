@@ -2,16 +2,269 @@
  * Shell-level component styles.
  *
  * Tailwind's @layer components slot sits between preflight (base) and the
- * generated utilities (utilities). Rules here ride on the class of the
- * component (or its data-attribute hook) so the markup can stay short
- * while the rendered shell keeps the desktop's visual conventions.
+ * generated utilities (utilities). Rules here carry the parts of a component a
+ * utility composition cannot state — a state hook, a compound shape, a
+ * descendant — while geometry the desktop's own markup already expresses as
+ * utilities stays a utility, so a class composition lifted from the desktop
+ * reads the same here.
  *
- * Every token referenced below must resolve to a definition in
- * tokens.css — the compiled-stylesheet closure check in
- * webui-design-tokens.test.ts enforces that contract.
+ * Every token referenced below must resolve to a definition in tokens.css — the
+ * compiled-stylesheet closure check in webui-design-tokens.test.ts enforces that
+ * contract. Values that are plain geometry the token scale does not carry (the
+ * desktop's `rounded-[10px]` pills, its 3px grip) are written literally, the way
+ * the desktop writes them.
+ *
+ * Rail, composer card and type hierarchy come from
+ * `minimax-code-webui-work/webui-visual-align-spec.md`.
  */
 
 @layer components {
+  /* --------------------------------------------------------------- surfaces */
+
+  /* The rail: 240px, one step off the main surface, no border between them. */
+  .webui-rail {
+    display: flex;
+    flex-direction: column;
+    width: 240px;
+    background-color: var(--bg_default_scrim);
+  }
+
+  /* A block surface in the main column. The desktop's composer card is this
+   * shape: a hairline border with a soft layer underneath it. The border alone
+   * reads as nothing on a light surface; the shadow is what makes the layer
+   * visible at all. */
+  .webui-card {
+    background-color: var(--bg_default_primary);
+    border: 1px solid var(--border_default);
+    border-radius: var(--radius_16);
+    box-shadow: 0 0 10px 0 var(--shadow_default);
+  }
+
+  /* The floating composer card. Same layer as `.webui-card`, at the desktop's
+   * 20px radius, with the shadow the desktop adds from `sm` upward. Same reason
+   * as `.webui-hero-avatar` for living here instead of in the markup. */
+  .webui-composer-card {
+    box-shadow: 0 0 10px 0 var(--shadow_default);
+  }
+
+  /* Bottom fade for the rail's scroll region. */
+  .webui-scroll-fade {
+    background-image: linear-gradient(
+      to top,
+      var(--bg_default_scrim),
+      transparent
+    );
+  }
+
+  /* The hero avatar's soft halo. The desktop writes it as a literal
+   * `rgba(10,10,10,0.08)`; `--shadow_default` (#0a0a0a14) carries the same
+   * colour and keeps the value closed against tokens.css. Shadows belong in this
+   * layer rather than in an arbitrary-value utility: the utility form compiles
+   * the token's underscore into a space (an invalid custom-property reference)
+   * and emits a shadow-colour reference that this stylesheet never defines. */
+  .webui-hero-avatar {
+    box-shadow: 0 0 20px 0 var(--shadow_default);
+  }
+
+  /* Resizer affordance: a 48px pill that appears on rail hover. */
+  .webui-rail-grip {
+    width: 3px;
+    height: var(--spacing_48);
+    border-radius: var(--radius_full);
+    background-color: var(--text_default_tertiary);
+  }
+
+  /* --------------------------------------------------------------- rail rows */
+
+  /* Navigation rows. The row's geometry is the desktop's own utility
+   * composition (`h-8`, `rounded-lg`, `gap-2`, `pl-2 pr-2.5`); this rule carries
+   * the selected state, which those utilities cannot express. */
+  .webui-nav-item {
+    border-radius: var(--radius_8);
+  }
+  .webui-nav-item[data-webui-nav-active="true"] {
+    background-color: var(--bg_interaction_tertiary_hover);
+    color: var(--text_default_primary);
+  }
+
+  /* A session row in the rail: 30px tall, 8px radius, a 0.5px hairline in the
+   * gutter, fill on hover or while it is the open session. */
+  .webui-session-card {
+    display: flex;
+    width: 100%;
+    height: 30px;
+    align-items: center;
+    gap: var(--spacing_8);
+    border-radius: var(--radius_8);
+    padding-left: var(--spacing_8);
+    padding-right: 2px;
+    text-align: left;
+    transition: background-color 120ms ease;
+  }
+  .webui-session-card:hover {
+    background-color: var(--bg_interaction_tertiary_hover);
+  }
+  .webui-session-card[data-webui-session-active="true"] {
+    background-color: var(--bg_interaction_tertiary_selected);
+  }
+
+  /* The "load more" row under the session list. */
+  .webui-rail-more {
+    display: flex;
+    width: 100%;
+    height: 28px;
+    align-items: center;
+    border-radius: var(--radius_8);
+    padding-left: var(--spacing_8);
+    padding-right: var(--spacing_8);
+    font-size: var(--size_12);
+    line-height: var(--line_height_16);
+    text-align: left;
+    transition: background-color 120ms ease;
+  }
+  .webui-rail-more:hover:not(:disabled) {
+    background-color: var(--bg_interaction_tertiary_hover);
+  }
+  .webui-rail-more:disabled {
+    color: var(--text_default_tertiary);
+    cursor: not-allowed;
+  }
+
+  /* ---------------------------------------------------------- segmented pill */
+
+  /* The desktop's source switcher. */
+  .webui-segmented {
+    display: inline-flex;
+    align-items: center;
+    height: 30px;
+    padding: 2px;
+    border-radius: var(--radius_full);
+    background-color: var(--bg_grouped_tertiary);
+  }
+  .webui-segmented-item {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing_4);
+    height: 26px;
+    padding: 0 var(--spacing_12);
+    border-radius: var(--radius_full);
+    font-size: var(--size_14);
+    line-height: var(--line_height_22);
+    color: var(--text_default_tertiary);
+    white-space: nowrap;
+  }
+  .webui-segmented-item[aria-current="true"] {
+    color: var(--text_default_primary);
+  }
+  .webui-segmented-item[aria-disabled="true"] {
+    cursor: default;
+  }
+
+  /* ---------------------------------------------------------------- composer */
+
+  /* A pill control in the composer toolbar and the workspace row: 32px, 10px
+   * radius, fill on hover. */
+  .webui-pill {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing_4);
+    height: 32px;
+    padding: 0 var(--spacing_8);
+    border-radius: 10px;
+    font-size: var(--size_14);
+    line-height: var(--line_height_20);
+    transition: background-color 120ms ease;
+  }
+  .webui-pill:hover:not(:disabled) {
+    background-color: var(--bg_interaction_tertiary_hover);
+  }
+  .webui-pill:disabled {
+    cursor: default;
+  }
+
+  /* A square icon control: 28px, 8px radius. */
+  .webui-icon-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    border-radius: var(--radius_8);
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+  .webui-icon-button:hover:not(:disabled) {
+    background-color: var(--bg_interaction_tertiary_hover);
+    color: var(--icon_default_primary);
+  }
+  .webui-icon-button:disabled {
+    cursor: default;
+  }
+
+  /* The one restrained call to action on the page: dark fill, inverted glyph. */
+  .webui-send-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    flex-shrink: 0;
+    border-radius: var(--radius_12);
+    background-color: var(--bg_interaction_primary_default);
+    color: var(--text_default_inverted);
+    transition: background-color 120ms ease;
+  }
+  .webui-send-button:hover:not(:disabled) {
+    background-color: var(--bg_interaction_primary_hover);
+  }
+  .webui-send-button:disabled {
+    background-color: var(--bg_interaction_primary_inactive);
+    color: var(--text_label_secondary_inactive);
+    cursor: not-allowed;
+  }
+  .webui-send-button:focus-visible {
+    outline: 2px solid var(--border_accent);
+    outline-offset: 2px;
+  }
+
+  /* The composer field sits inside the card rather than on the surface: no
+   * border of its own, no resize handle, and a floor so the card keeps its
+   * height while the field is empty. Compound with `.webui-textarea` so the
+   * override does not depend on rule order. */
+  .webui-textarea.webui-composer-input {
+    width: 100%;
+    min-height: 56px;
+    border: 0;
+    background-color: transparent;
+    resize: none;
+    outline: none;
+  }
+
+  /* A quick-action chip: 32px, 8px radius, a hairline ring. */
+  .webui-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing_4);
+    height: 32px;
+    flex-shrink: 0;
+    padding: 0 var(--spacing_8);
+    border-radius: var(--radius_8);
+    box-shadow: inset 0 0 0 1px var(--border_default);
+    font-size: var(--size_14);
+    line-height: var(--line_height_20);
+    transition: background-color 120ms ease;
+  }
+  .webui-chip:hover:not(:disabled) {
+    background-color: var(--bg_interaction_tertiary_hover);
+  }
+  .webui-chip:disabled {
+    cursor: default;
+  }
+
+  /* ---------------------------------------------------------------- actions */
+
   /* Primary action button: the accent fill the desktop uses for one
    * restrained call to action on the page (Create session, Send). The
    * hover/selected/focus states ride on the same token family. */
@@ -38,9 +291,9 @@
     outline-offset: 2px;
   }
 
-  /* Secondary action button: the muted "Load more" / "Load older"
-   * control. Uses the grouped-secondary surface so it sits in the
-   * layout without competing for the eye. */
+  /* Secondary action button: the muted "Load older" control. Uses the
+   * grouped-secondary surface so it sits in the layout without competing
+   * for the eye. */
   .webui-button-secondary {
     background-color: var(--bg_grouped_secondary);
     color: var(--text_default_primary);
@@ -62,6 +315,8 @@
     outline: 2px solid var(--border_accent);
     outline-offset: 2px;
   }
+
+  /* --------------------------------------------------------------- fields */
 
   /* Inputs and textareas share the same shape: border, radius, padding,
    * a background that contrasts the rail behind it, and an accent
@@ -92,42 +347,12 @@
     color: var(--text_default_tertiary);
   }
 
-  /* Navigation rail items: a pill that fills the selected one with the
-   * primary accent surface and uses a soft surface for the rest. */
-  .webui-nav-item {
-    border-radius: var(--radius_8);
-    padding: var(--spacing_6) var(--spacing_12);
-    line-height: var(--line_height_20);
-    transition: background-color 120ms ease, color 120ms ease;
-  }
-  .webui-nav-item:hover {
-    background-color: var(--bg_grouped_primary);
-  }
-  .webui-nav-item[data-webui-nav-active="true"] {
-    background-color: var(--bg_interaction_primary_selected);
-    color: var(--text_default_primary);
-  }
-
-  /* Session list items: a card that sits flush with the surface, with a
-   * soft border so the surrounding whitespace reads. */
-  .webui-session-card {
-    border-radius: var(--radius_12);
-    background-color: var(--bg_default_primary);
-    border: 1px solid var(--border_default);
-    padding: var(--spacing_8) var(--spacing_12);
-    transition: border-color 120ms ease, box-shadow 120ms ease;
-  }
-  .webui-session-card:hover {
-    border-color: var(--border_heavy);
-    box-shadow: var(--shadow_default);
-  }
-
   /* The empty state gets the same surface as a card so it breathes the
    * same way without competing for visual weight. */
   .webui-empty-state {
-    border-radius: var(--radius_12);
+    border-radius: var(--radius_8);
     background-color: var(--bg_grouped_secondary);
-    padding: var(--spacing_12) var(--spacing_16);
+    padding: var(--spacing_8) var(--spacing_12);
     line-height: var(--line_height_20);
   }
 }

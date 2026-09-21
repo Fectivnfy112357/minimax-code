@@ -3295,6 +3295,7 @@
     "packages/webui/README.md",
     "packages/webui/package.json",
     "packages/webui/src/client/app.tsx",
+    "packages/webui/src/client/icons.tsx",
     "packages/webui/src/client/index.html",
     "packages/webui/src/client/main.tsx",
     "packages/webui/src/client/markdown.tsx",

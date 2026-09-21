@@ -1,10 +1,21 @@
-// Verify the two-column shell (ticket 04).
+// Verify the shell (ticket 04; retailored by the visual-alignment pass).
 //
-// The shell renders a left navigation rail and a main surface; it uses
-// token-derived utility classes so the layout reads from the desktop
-// application's visual conventions. We render the React component to a
-// string and assert the regions are present in the markup, without
-// depending on the exact attribute set every later ticket will rewrite.
+// The shell renders the desktop application's anatomy: a 240px rail on
+// `bg_default_scrim`, a main surface on `bg_grouped_secondary`, a window strip
+// carrying the rail controls, a fixed "new task" row, the navigation block, the
+// source switcher, the recent-tasks block, the identity row, and on the surface
+// a centred hero with the floating composer and the quick-action chips.
+//
+// The criterion for a visual change is the rendered result, and a markup
+// assertion cannot establish that on its own: a class name in the output says
+// nothing about whether the class resolves or what it paints. What this file
+// guards is the contract the rest of the code depends on — region markers, state
+// hooks, the utility and component classes that must reach the stylesheet, and
+// the rule that a reproduced-but-unbacked control is inert. The compiled side of
+// that contract (each named component class lands in the output, and every
+// `var(--x)` in it closes against a definition) is asserted in
+// webui-design-tokens.test.ts against the stylesheet `pnpm build:webui` produces,
+// which is also where the desktop's mono stack for `code`/`pre` is checked.
 
 import { describe, it, expect } from "vitest";
 import { createElement } from "react";
@@ -26,6 +37,9 @@ function renderShell(label = "webui-foundation"): string {
     createElement(WebuiClientFoundationApp, { label }),
   );
 }
+
+/** The four rail destinations the desktop ships that the WebUI has no feature for. */
+const INERT_NAV_LABELS = ["插件", "定时", "网站", "远程"];
 
 describe("WebUI shell", () => {
   it("reads a created session id from either supported response shape", () => {
@@ -65,17 +79,6 @@ describe("WebUI shell", () => {
     expect(html).toContain('data-webui-transcript="empty-session"');
   });
 
-  it("renders a two-column layout with a rail and a main surface", () => {
-    const html = renderShell();
-
-    // The shell declares a data attribute on its outermost element so later
-    // tickets can locate it without scraping class names; the rail and main
-    // surface each have their own region marker.
-    expect(html).toMatch(/data-webui-shell="two-column"/u);
-    expect(html).toMatch(/data-webui-shell-region="rail"/u);
-    expect(html).toMatch(/data-webui-shell-region="surface"/u);
-  });
-
   it("renders newest sessions, formats epoch milliseconds, and falls back when title is absent", () => {
     const html = renderToStaticMarkup(
       createElement(WebuiSessionList, {
@@ -93,6 +96,9 @@ describe("WebUI shell", () => {
     expect(html).toContain("older-agent");
     expect(html).toContain(new Date(2000).toLocaleString());
     expect(html).toContain('data-webui-session-list="true"');
+    // The row's component class is on the anchor, which only exists once there
+    // is a session to render.
+    expect(html).toMatch(/webui-session-card/u);
   });
 
   it("reacts to hashchange so navigation selects a different transcript without reload", () => {
@@ -142,67 +148,148 @@ describe("WebUI shell", () => {
     );
     expect(html).toContain("No sessions yet.");
   });
+});
 
-  it("uses token-derived background and text utilities", () => {
+describe("WebUI shell — desktop anatomy", () => {
+  it("declares the shell as a two-column rail plus surface", () => {
+    const html = renderShell();
+    expect(html).toMatch(/data-webui-shell="two-column"/u);
+    expect(html).toMatch(/data-webui-shell-region="rail"/u);
+    expect(html).toMatch(/data-webui-shell-region="surface"/u);
+  });
+
+  it("sizes and colours the rail the way the desktop does", () => {
     const html = renderShell();
 
-    // The rail sits one step darker than the main surface — bg_grouped_secondary
-    // over bg_default_primary — and uses the text-label set for its menu rows.
-    //
-    // This test only verifies that the markup references the token-derived
-    // utility class names. Whether those class names actually resolve to a
-    // background or text colour is covered by the reference-closure check in
-    // webui-design-tokens.test.ts, which scans the compiled stylesheet for
-    // var(--x) references that lack a matching --x: definition.
+    // 240px fixed, one step off the main surface, and no border between the two.
+    expect(html).toMatch(/data-webui-rail-width="240"/u);
+    expect(html).toMatch(/w-\[240px\]/u);
+    expect(html).toMatch(/bg-bg_default_scrim/u);
+    // The main surface is the lightest step.
     expect(html).toMatch(/bg-bg_grouped_secondary/u);
+    // The selected segmented item is painted with the primary surface token.
     expect(html).toMatch(/bg-bg_default_primary/u);
+  });
+
+  it("stacks the rail in the desktop's order", () => {
+    const html = renderShell();
+    const order = [
+      'data-webui-sidebar-toggle="true"',
+      'data-webui-rail-fixed-row="true"',
+      'data-webui-nav-item="插件"',
+      'data-webui-conversation-source="true"',
+      'data-webui-rail-section-header="true"',
+      'data-webui-rail-identity="true"',
+    ];
+    let cursor = -1;
+    for (const marker of order) {
+      const at = html.indexOf(marker);
+      expect(at, `${marker} missing from the rail`).toBeGreaterThan(-1);
+      expect(at, `${marker} is out of order`).toBeGreaterThan(cursor);
+      cursor = at;
+    }
+  });
+
+  it("leaves the reproduced nav block inert rather than wired to nothing", () => {
+    const html = renderShell();
+
+    // Exactly one marker per reproduced destination, and the control inside each
+    // row is disabled rather than wired to nothing.
+    const markers =
+      html.match(/data-webui-placeholder-chrome="rail-nav"/gu) ?? [];
+    expect(markers).toHaveLength(INERT_NAV_LABELS.length);
+
+    for (const label of INERT_NAV_LABELS) {
+      const at = html.indexOf(`data-webui-nav-item="${label}"`);
+      expect(at, `nav row ${label} missing`).toBeGreaterThan(-1);
+      expect(
+        html.slice(at, at + 500),
+        `nav row ${label} is not inert`,
+      ).toMatch(/disabled/u);
+    }
+
+    // The current destination carries the state hook, so the selected row has
+    // something to read.
+    expect(html).toMatch(/data-webui-nav-active="true"/u);
+  });
+
+  it("uses token-derived colour utilities and the shell's component classes", () => {
+    const html = renderShell();
+
     expect(html).toMatch(/text-text_default_primary/u);
     expect(html).toMatch(/text-text_default_secondary/u);
-  });
-
-  it("uses token-derived radii, spacing and type-size utilities", () => {
-    const html = renderShell();
-
-    // The shell declares a border between the rail and the main surface,
-    // a small menu-row radius, and a larger block radius for the
-    // code-snippet block. Tokens, not defaults.
-    //
-    // Same scope as the background/text test above: the presence of the
-    // class names in the markup is what this assertion guards. Resolution
-    // is covered by the closure check in webui-design-tokens.test.ts.
-    expect(html).toMatch(/rounded-radius_/u);
-    expect(html).toMatch(/p-spacing_/u);
-    expect(html).toMatch(/gap-spacing_/u);
-    expect(html).toMatch(/text-size_/u);
-    expect(html).toMatch(/leading-line_height_/u);
+    expect(html).toMatch(/text-text_default_tertiary/u);
+    expect(html).toMatch(/text-icon_default_tertiary/u);
     expect(html).toMatch(/border-border_default/u);
-  });
+    expect(html).toMatch(/text-size_12/u);
+    expect(html).toMatch(/leading-line_height_16/u);
 
-  it("uses the shell-level component classes for nav items, sessions, and the empty state", () => {
-    // The rendered result is the contract; the markup is the proxy.
-    // `webui-design-tokens.test.ts` then asserts every token the
-    // component classes resolve to has a definition in tokens.css.
-    const html = renderShell();
-
-    // Navigation rail items ride on `.webui-nav-item` and carry the
-    // active-state hook so a selected item reads differently from a
-    // hover-only item.
     expect(html).toMatch(/webui-nav-item/u);
-    expect(html).toMatch(/data-webui-nav-active="true"/u);
-
-    // The empty-state surface for the session list gets the dedicated
-    // card treatment so it breathes the same way as a populated card
-    // rather than reading as an unstyled placeholder.
     expect(html).toMatch(/webui-empty-state/u);
-    expect(html).toMatch(/No sessions yet\./u);
+    expect(html).toMatch(/webui-textarea/u);
+    expect(html).toMatch(/webui-pill/u);
   });
 
-  it("falls back to the desktop mono stack for code blocks", () => {
+  it("uses the desktop's own class composition for rows and pills", () => {
     const html = renderShell();
 
-    // font-mono is the only utility Tailwind ships that maps directly onto
-    // the desktop's `code, kbd, pre, samp` font-family rule.
-    expect(html).toMatch(/font-mono/u);
+    // Row and control geometry the desktop states as utilities rather than as
+    // tokens: 32px nav rows on an 8px radius, 48px identity row on 10px,
+    // 14px body type.
+    expect(html).toMatch(/h-8/u);
+    expect(html).toMatch(/rounded-lg/u);
+    expect(html).toMatch(/text-sm/u);
+    expect(html).toMatch(/h-12/u);
+    expect(html).toMatch(/rounded-\[10px\]/u);
+  });
+
+  it("puts the hero, the composer and the chips on the home surface", () => {
+    const html = renderShell();
+
+    expect(html).toMatch(/data-webui-home-content="true"/u);
+    expect(html).toContain("MiniMax Code，让工作更简单。");
+    // The hero column is the desktop's 743px measure under its 240px top pad.
+    expect(html).toMatch(/max-w-\[743px\]/u);
+    expect(html).toMatch(/pt-\[240px\]/u);
+    expect(html).toMatch(/data-webui-recommendations="true"/u);
+    expect(html).toMatch(
+      /data-webui-placeholder-chrome="recommendation-chips"/u,
+    );
+
+    // The composer card carries the desktop's own geometry: a 20px radius over a
+    // hairline border plus the soft layer. The border alone reads as nothing on
+    // this surface, so the shadow is the load-bearing part.
+    expect(html).toMatch(/data-webui-composer="true"/u);
+    expect(html).toMatch(/data-webui-composer-input="true"/u);
+    expect(html).toMatch(/data-webui-composer-toolbar="true"/u);
+    expect(html).toMatch(/data-webui-workspace-toolbar="true"/u);
+    expect(html).toMatch(/rounded-\[20px\]/u);
+    // The card's second layer is a component rule with a token value, not an
+    // arbitrary-value utility: `shadow-[…var(--a_b)]` compiles the token's
+    // underscore into a space (an invalid reference) and emits a
+    // `--tw-shadow-color` reference nothing defines, which the closure check in
+    // webui-design-tokens.test.ts rejects.
+    expect(html).toMatch(/webui-composer-card/u);
+    expect(html).toMatch(/webui-hero-avatar/u);
+  });
+
+  it("keeps the token-named spacing and type scale in the blocks that use it", () => {
+    // The desktop composes both scales; the WebUI's own surfaces (the transcript,
+    // the create form) are written in the token-named one, so assert it where it
+    // is actually rendered rather than in the home shell.
+    const transcript = renderToStaticMarkup(
+      createElement(WebuiSessionTranscript, {
+        sessionId: "s",
+        loadMessages: async () => ({ messages: [], hasMore: false }),
+      }),
+    );
+    expect(transcript).toMatch(/p-spacing_/u);
+    expect(transcript).toMatch(/gap-spacing_/u);
+    expect(transcript).toMatch(/text-size_/u);
+    expect(transcript).toMatch(/leading-line_height_/u);
+    // `webui-button-secondary` belongs to the "Load older" control, which only
+    // renders once a second page is known to exist; that the class reaches the
+    // compiled stylesheet is asserted in webui-design-tokens.test.ts.
   });
 });
 
