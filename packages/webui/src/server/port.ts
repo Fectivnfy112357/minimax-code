@@ -52,9 +52,54 @@ export interface WebuiSessionPage {
   readonly nextCursor?: string;
 }
 
+export interface WebuiSessionLookupRequest { readonly id: string; }
+export interface WebuiSessionInfo {
+  readonly sessionId?: string;
+  readonly agentName?: string;
+  readonly title?: string;
+  readonly createdAt?: number;
+  readonly updatedAt?: number;
+  readonly workspaceDir?: string;
+  readonly [key: string]: unknown;
+}
+export interface WebuiSessionLookupResult { readonly session?: WebuiSessionInfo; }
+export interface WebuiMessage {
+  readonly msgId: string;
+  readonly parentMsgId?: string;
+  readonly timestamp?: number;
+  readonly msgContent?: string;
+  readonly msgType?: number;
+  readonly role?: string;
+  readonly thinkingContent?: string;
+  readonly thinkingDurationMs?: number;
+  readonly finishReason?: string;
+  readonly toolCalls?: readonly Record<string, unknown>[];
+  readonly source?: string;
+  readonly kind?: string;
+  readonly turnId?: string;
+  readonly [key: string]: unknown;
+}
+export interface WebuiMessagesRequest {
+  readonly id: string;
+  readonly limit?: number;
+  readonly before?: string;
+  readonly includeAttachmentReadUrls?: boolean;
+}
+export interface WebuiMessagesResult {
+  readonly messages?: readonly WebuiMessage[];
+  readonly nextCursor?: string;
+  readonly lastMsgId?: string;
+  readonly hasMore?: boolean;
+  readonly todosJson?: string;
+  readonly queryCollapseViews?: readonly Record<string, unknown>[];
+  readonly turnResults?: readonly Record<string, unknown>[];
+}
+
 export interface WebuiHarnessPort {
   version(): WebuiVersionInfo;
   listSessions(request: WebuiSessionListRequest): Promise<WebuiSessionPage>;
+  getSession(request: WebuiSessionLookupRequest): Promise<WebuiSessionLookupResult>;
+  getMessages(request: WebuiMessagesRequest): Promise<WebuiMessagesResult>;
   /**
    * Release anything the port owns. The service calls this after closing
    * every transport-side resource so the harness can tear itself down in

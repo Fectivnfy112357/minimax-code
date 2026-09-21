@@ -11,6 +11,15 @@
 
 import { useEffect, useMemo, useState, type ReactElement } from "react";
 
+export interface WebuiClientMessage {
+  readonly msgId: string;
+  readonly msgContent?: string;
+  readonly role?: string;
+  readonly thinkingContent?: string;
+  readonly thinkingDurationMs?: number;
+  readonly toolCalls?: readonly Record<string, unknown>[];
+}
+
 export interface WebuiClientSession {
   readonly sessionId: string;
   readonly agentName: string;
@@ -27,10 +36,50 @@ export interface WebuiClientSessionPage {
 
 export type WebuiClientSessionLoader = (cursor?: string) => Promise<WebuiClientSessionPage>;
 
+export interface WebuiClientMessagePage {
+  readonly messages?: readonly WebuiClientMessage[];
+  readonly nextCursor?: string;
+  readonly hasMore?: boolean;
+}
+
+export type WebuiClientMessageLoader = (request: {
+  readonly id: string;
+  readonly before?: string;
+}) => Promise<WebuiClientMessagePage>;
+
+export function readSessionIdFromHash(hash: string): string | undefined {
+  const params = new URLSearchParams(hash.startsWith("#") ? hash.slice(1) : hash);
+  const id = params.get("session");
+  return id?.trim() || undefined;
+}
+
+export function sessionHash(sessionId: string): string {
+  const params = new URLSearchParams();
+  params.set("session", sessionId);
+  return `#${params.toString()}`;
+}
+
+export type WebuiTranscriptItem =
+  | { readonly kind: "user" | "assistant" | "thinking"; readonly text: string; readonly messageId: string }
+  | { readonly kind: "tool"; readonly messageId: string; readonly tools: readonly Record<string, unknown>[] };
+
+export function projectWebuiMessage(message: WebuiClientMessage): WebuiTranscriptItem[] {
+  const items: WebuiTranscriptItem[] = [];
+  if (message.thinkingContent)
+    items.push({ kind: "thinking", text: message.thinkingContent, messageId: message.msgId });
+  if (message.toolCalls?.length)
+    items.push({ kind: "tool", tools: message.toolCalls, messageId: message.msgId });
+  if (message.msgContent)
+    items.push({ kind: message.role === "user" ? "user" : "assistant", text: message.msgContent, messageId: message.msgId });
+  return items;
+}
+
 export interface WebuiClientFoundationAppProps {
   readonly label: string;
   readonly sessionPage?: WebuiClientSessionPage;
   readonly loadSessions?: WebuiClientSessionLoader;
+  readonly loadMessages?: WebuiClientMessageLoader;
+  readonly locationHash?: string;
 }
 
 function sessionLabel(session: WebuiClientSession): string {
@@ -63,7 +112,9 @@ export function WebuiSessionList({
         <ul className="flex flex-col gap-spacing_4" data-webui-session-list="true">
           {sessions.map((session) => (
             <li key={session.sessionId} className="rounded-radius_8 bg-bg_grouped_secondary p-spacing_8">
-              <div className="text-text_default_primary text-size_14 leading-line_height_20">{sessionLabel(session)}</div>
+              <a href={sessionHash(session.sessionId)} data-webui-session-link={session.sessionId}>
+                <div className="text-text_default_primary text-size_14 leading-line_height_20">{sessionLabel(session)}</div>
+              </a>
               <time
                 className="text-text_default_secondary text-size_12 leading-line_height_16"
                 dateTime={new Date(session.updatedAt).toISOString()}
@@ -83,13 +134,67 @@ export function WebuiSessionList({
   );
 }
 
+export function WebuiSessionTranscript({
+  sessionId,
+  loadMessages,
+}: {
+  readonly sessionId: string;
+  readonly loadMessages: WebuiClientMessageLoader;
+}): ReactElement {
+  const [page, setPage] = useState<WebuiClientMessagePage>({});
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | undefined>();
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(undefined);
+    void loadMessages({ id: sessionId }).then((nextPage) => {
+      if (!cancelled) setPage(nextPage);
+    }).catch((reason: unknown) => {
+      if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
+    }).finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [loadMessages, sessionId]);
+  const items = useMemo(() => (page.messages ?? []).flatMap(projectWebuiMessage), [page.messages]);
+  const loadOlder = page.hasMore && page.nextCursor ? () => {
+    setLoading(true);
+    void loadMessages({ id: sessionId, before: page.nextCursor }).then((olderPage) => {
+      setPage((current) => ({
+        messages: [...(olderPage.messages ?? []), ...(current.messages ?? [])],
+        nextCursor: olderPage.nextCursor,
+        hasMore: olderPage.hasMore,
+      }));
+    }).finally(() => setLoading(false));
+  } : undefined;
+  return (
+    <section aria-label="Transcript" data-webui-transcript={sessionId}>
+      <h2>Conversation</h2>
+      {error ? <p role="alert">Unable to load messages: {error}</p> : null}
+      {!error && !loading && items.length === 0 ? <p>No messages in this session.</p> : null}
+      <ol>{items.map((item, index) => (
+        <li key={`${item.messageId}-${item.kind}-${index}`} data-webui-message-kind={item.kind}>
+          {item.kind === "tool" ? `Tool activity (${item.tools.length})` : item.text}
+        </li>
+      ))}</ol>
+      {loadOlder ? <button type="button" onClick={loadOlder} disabled={loading}>Load older</button> : null}
+    </section>
+  );
+}
+
 export function WebuiClientFoundationApp({
   label,
   sessionPage,
   loadSessions,
+  locationHash,
+  loadMessages,
 }: WebuiClientFoundationAppProps): ReactElement {
   const [page, setPage] = useState<WebuiClientSessionPage>(sessionPage ?? { sessions: [], hasMore: false });
   const [loading, setLoading] = useState(false);
+  const [selectedSessionId] = useState(() =>
+    readSessionIdFromHash(locationHash ?? (typeof window === "undefined" ? "" : window.location.hash)),
+  );
   useEffect(() => {
     if (!loadSessions || sessionPage) return;
     let cancelled = false;
@@ -155,6 +260,9 @@ export function WebuiClientFoundationApp({
             </h1>
           </header>
           <WebuiSessionList page={page} loading={loading} onLoadMore={loadMore} />
+          {selectedSessionId && loadMessages ? (
+            <WebuiSessionTranscript sessionId={selectedSessionId} loadMessages={loadMessages} />
+          ) : null}
           <pre
             className="font-mono text-size_12 leading-line_height_16 bg-bg_grouped_secondary rounded-radius_8 p-spacing_8 text-text_default_secondary"
             data-webui-shell-placeholder="code-snippet"

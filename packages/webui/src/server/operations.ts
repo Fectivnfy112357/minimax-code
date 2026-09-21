@@ -12,6 +12,10 @@
 import { WebuiErrorCode, type WebuiErrorCodeValue } from "./envelope.js";
 import type {
   WebuiHarnessPort,
+  WebuiMessagesRequest,
+  WebuiMessagesResult,
+  WebuiSessionLookupRequest,
+  WebuiSessionLookupResult,
   WebuiSessionListRequest,
 } from "./port.js";
 
@@ -39,6 +43,8 @@ export type WebuiOperationValidation<Body> =
 
 const VERSION_OPERATION_NAME = "version" as const;
 const LIST_SESSIONS_OPERATION_NAME = "listSessions" as const;
+const GET_SESSION_OPERATION_NAME = "getSession" as const;
+const GET_MESSAGES_OPERATION_NAME = "getMessages" as const;
 
 type VersionRequestBody = undefined;
 
@@ -92,6 +98,57 @@ export const listSessionsOperation: WebuiOperation<
   validate: validateListSessionsRequestBody,
 };
 
+function validateSessionIdBody(
+  operation: string,
+  body: unknown,
+): WebuiOperationValidation<WebuiSessionLookupRequest> {
+  if (body === null || typeof body !== "object" || Array.isArray(body))
+    return { ok: false, code: WebuiErrorCode.invalidBody, message: `${operation} body must be an object` };
+  const candidate = body as Record<string, unknown>;
+  if (typeof candidate.id !== "string" || candidate.id.trim() === "")
+    return { ok: false, code: WebuiErrorCode.invalidBody, message: `${operation} body requires a non-empty id` };
+  return { ok: true, body: { id: candidate.id } };
+}
+
+export const getSessionOperation: WebuiOperation<
+  WebuiSessionLookupRequest,
+  WebuiSessionLookupResult
+> = {
+  name: GET_SESSION_OPERATION_NAME,
+  validate: (body) => validateSessionIdBody(GET_SESSION_OPERATION_NAME, body),
+};
+
+function validateGetMessagesBody(
+  body: unknown,
+): WebuiOperationValidation<WebuiMessagesRequest> {
+  const session = validateSessionIdBody(GET_MESSAGES_OPERATION_NAME, body);
+  if (!session.ok) return session;
+  const candidate = body as Record<string, unknown>;
+  if (candidate.limit !== undefined && (!Number.isInteger(candidate.limit) || (candidate.limit as number) < 0))
+    return { ok: false, code: WebuiErrorCode.invalidBody, message: "limit must be a non-negative integer" };
+  if (candidate.before !== undefined && typeof candidate.before !== "string")
+    return { ok: false, code: WebuiErrorCode.invalidBody, message: "before must be a string" };
+  if (candidate.includeAttachmentReadUrls !== undefined && typeof candidate.includeAttachmentReadUrls !== "boolean")
+    return { ok: false, code: WebuiErrorCode.invalidBody, message: "includeAttachmentReadUrls must be a boolean" };
+  return {
+    ok: true,
+    body: {
+      id: session.body.id,
+      ...(candidate.limit === undefined ? {} : { limit: candidate.limit as number }),
+      ...(candidate.before === undefined ? {} : { before: candidate.before as string }),
+      ...(candidate.includeAttachmentReadUrls === undefined ? {} : { includeAttachmentReadUrls: candidate.includeAttachmentReadUrls as boolean }),
+    },
+  };
+}
+
+export const getMessagesOperation: WebuiOperation<
+  WebuiMessagesRequest,
+  WebuiMessagesResult
+> = {
+  name: GET_MESSAGES_OPERATION_NAME,
+  validate: validateGetMessagesBody,
+};
+
 export interface WebuiOperationRegistryEntry {
   readonly operation: WebuiOperation;
   readonly handle: WebuiOperationHandler<unknown>;
@@ -106,7 +163,7 @@ export interface WebuiOperationRegistration<Body = unknown, ResultBody = Body> {
 }
 
 export function createOperationRegistry(
-  port: Pick<WebuiHarnessPort, "version" | "listSessions">,
+  port: Pick<WebuiHarnessPort, "version" | "listSessions" | "getSession" | "getMessages">,
 ): ReadonlyMap<string, WebuiOperationRegistryEntry> {
   const registry = new Map<string, WebuiOperationRegistryEntry>();
   registerOperation(registry, {
@@ -114,6 +171,14 @@ export function createOperationRegistry(
     handle: () => ({
       body: port.version(),
     }),
+  });
+  registerOperation(registry, {
+    operation: getSessionOperation,
+    handle: async (_context, body) => ({ body: await port.getSession(body) }),
+  });
+  registerOperation(registry, {
+    operation: getMessagesOperation,
+    handle: async (_context, body) => ({ body: await port.getMessages(body) }),
   });
   registerOperation(registry, {
     operation: listSessionsOperation,

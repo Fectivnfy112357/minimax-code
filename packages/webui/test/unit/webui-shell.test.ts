@@ -10,7 +10,14 @@ import { describe, it, expect } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
-import { WebuiClientFoundationApp, WebuiSessionList } from "../../src/client/app.js";
+import {
+  WebuiClientFoundationApp,
+  WebuiSessionList,
+  WebuiSessionTranscript,
+  projectWebuiMessage,
+  readSessionIdFromHash,
+  sessionHash,
+} from "../../src/client/app.js";
 
 function renderShell(label = "webui-foundation"): string {
   return renderToStaticMarkup(
@@ -19,6 +26,34 @@ function renderShell(label = "webui-foundation"): string {
 }
 
 describe("WebUI shell", () => {
+  it("round-trips the selected session through the URL hash", () => {
+    expect(sessionHash("session with spaces")).toBe("#session=session+with+spaces");
+    expect(readSessionIdFromHash("#session=session+with+spaces")).toBe("session with spaces");
+    const html = renderToStaticMarkup(createElement(WebuiSessionList, {
+      page: { sessions: [{ sessionId: "session-1", agentName: "agent", createdAt: 1, updatedAt: 2 }], hasMore: false },
+      loading: false,
+    }));
+    expect(html).toContain('href="#session=session-1"');
+  });
+
+  it("projects every persisted message facet independently", () => {
+    expect(projectWebuiMessage({ msgId: "thinking", thinkingContent: "Reasoning" })).toEqual([
+      { kind: "thinking", text: "Reasoning", messageId: "thinking" },
+    ]);
+    expect(projectWebuiMessage({ msgId: "tools", toolCalls: [{ name: "read" }] })[0].kind).toBe("tool");
+    expect(projectWebuiMessage({ msgId: "both", thinkingContent: "Think", toolCalls: [{ name: "read" }], msgContent: "Answer" }).map((item) => item.kind)).toEqual(["thinking", "tool", "assistant"]);
+    expect(projectWebuiMessage({ msgId: "answer", role: "user", msgContent: "Question" })[0].kind).toBe("user");
+    expect(projectWebuiMessage({ msgId: "empty" })).toEqual([]);
+  });
+
+  it("renders an empty transcript without treating it as an error", () => {
+    const html = renderToStaticMarkup(createElement(WebuiSessionTranscript, {
+      sessionId: "empty-session",
+      loadMessages: async () => ({ messages: [], hasMore: false }),
+    }));
+    expect(html).toContain('data-webui-transcript="empty-session"');
+  });
+
   it("renders a two-column layout with a rail and a main surface", () => {
     const html = renderShell();
 

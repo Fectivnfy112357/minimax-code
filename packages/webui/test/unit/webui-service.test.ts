@@ -21,6 +21,9 @@ import {
   WebuiService,
   isWebuiFrame,
   type WebuiHarnessPort,
+  type WebuiMessagesRequest,
+  type WebuiMessagesResult,
+  type WebuiSessionLookupRequest,
   type WebuiSessionListRequest,
   type WebuiVersionInfo,
 } from "../../src/server/index.js";
@@ -48,6 +51,14 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
 
   async listSessions(_request: WebuiSessionListRequest) {
     return { sessions: [], hasMore: false };
+  }
+
+  async getSession(_request: WebuiSessionLookupRequest) {
+    return { session: { sessionId: "fixture-session" } };
+  }
+
+  async getMessages(_request: WebuiMessagesRequest): Promise<WebuiMessagesResult> {
+    return { messages: [], hasMore: false };
   }
 
   async close(): Promise<void> {
@@ -290,6 +301,53 @@ describe("WebUI service", () => {
     ws.close();
   });
 
+  it("opens a session and reads message history with the CLI-level id and before cursor", async () => {
+    const sessionCalls: WebuiSessionLookupRequest[] = [];
+    const messageCalls: WebuiMessagesRequest[] = [];
+    port.getSession = async (request) => {
+      sessionCalls.push(request);
+      return { session: { sessionId: request.id, title: "History" } };
+    };
+    port.getMessages = async (request) => {
+      messageCalls.push(request);
+      return request.before
+        ? { messages: [{ msgId: "older", role: "user", msgContent: "Earlier" }], hasMore: false }
+        : { messages: [{ msgId: "newer", role: "assistant", msgContent: "Later" }], nextCursor: "before-1", hasMore: true };
+    };
+    const { url } = await bootService();
+    const { ws, upgrade } = openClient(url);
+    await upgrade;
+    const request = (requestId: string, operation: string, body: unknown) => requestOnce(ws, {
+      protocolVersion: WEBUI_PROTOCOL_VERSION, kind: "request", requestId, operation, body,
+    });
+    const sessionResponse = await request("req-session", "getSession", { id: "session-1" });
+    const first = await request("req-messages-1", "getMessages", { id: "session-1", limit: 1 });
+    const second = await request("req-messages-2", "getMessages", { id: "session-1", limit: 1, before: "before-1" });
+    expect((sessionResponse as { body: { session: { title: string } } }).body.session.title).toBe("History");
+    expect((first as { body: WebuiMessagesResult }).body.nextCursor).toBe("before-1");
+    expect((second as { body: WebuiMessagesResult }).body.messages?.[0].msgId).toBe("older");
+    expect(sessionCalls).toEqual([{ id: "session-1" }]);
+    expect(messageCalls).toEqual([
+      { id: "session-1", limit: 1 },
+      { id: "session-1", limit: 1, before: "before-1" },
+    ]);
+    ws.close();
+  });
+
+  it("rejects session history bodies that use sessionId instead of id", async () => {
+    const { url } = await bootService();
+    const { ws, upgrade } = openClient(url);
+    await upgrade;
+    const response = await requestOnce(ws, {
+      protocolVersion: WEBUI_PROTOCOL_VERSION, kind: "request", requestId: "req-messages-invalid",
+      operation: "getMessages", body: { sessionId: "wrong-field" },
+    });
+    if (!isWebuiFrame(response)) throw new Error("expected frame");
+    expect(response.kind).toBe("error");
+    expect(response.code).toBe(WebuiErrorCode.invalidBody);
+    ws.close();
+  });
+
   it("rejects a request whose operation is outside the allowlist", async () => {
     const { url } = await bootService();
     const { ws, upgrade } = openClient(url);
@@ -424,6 +482,8 @@ describe("WebUI operation allowlist", () => {
       const registry = createOperationRegistry(port);
       expect(registry.has("version")).toBe(true);
       expect(registry.has("sendMessage")).toBe(false);
+      expect(registry.has("getSession")).toBe(true);
+      expect(registry.has("getMessages")).toBe(true);
     } finally {
       await service.close();
     }
@@ -682,6 +742,12 @@ describe("WebUI shutdown order (criterion 7)", () => {
       async listSessions() {
         return { sessions: [], hasMore: false };
       },
+      async getSession() {
+        return { session: { sessionId: "shutdown" } };
+      },
+      async getMessages() {
+        return { messages: [], hasMore: false };
+      },
       async close() {
         // The service awaits wsServer.close() and httpServer.close()
         // before calling port.close(), so by the time we land here the
@@ -752,6 +818,12 @@ describe("WebUI shutdown order (criterion 7)", () => {
       },
       async listSessions() {
         return { sessions: [], hasMore: false };
+      },
+      async getSession() {
+        return { session: { sessionId: "shutdown" } };
+      },
+      async getMessages() {
+        return { messages: [], hasMore: false };
       },
       async close() {
         await closeGate;

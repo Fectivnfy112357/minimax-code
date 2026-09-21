@@ -32,6 +32,8 @@ export {
   registerOperation,
   versionOperation,
   listSessionsOperation,
+  getSessionOperation,
+  getMessagesOperation,
   type WebuiOperation,
   type WebuiOperationHandler,
   type WebuiOperationRegistryEntry,
@@ -62,6 +64,12 @@ export type {
   WebuiSessionListRequest,
   WebuiSessionListItem,
   WebuiSessionPage,
+  WebuiSessionLookupRequest,
+  WebuiSessionInfo,
+  WebuiSessionLookupResult,
+  WebuiMessage,
+  WebuiMessagesRequest,
+  WebuiMessagesResult,
 } from "./port.js";
 export {
   createHarnessPortFromHost,

@@ -43,6 +43,14 @@ export interface WebuiAssembledHost {
       request: import("./port.js").WebuiSessionListRequest,
       context?: Record<string, never>,
     ): Promise<import("./port.js").WebuiSessionPage>;
+    getSession(
+      request: import("./port.js").WebuiSessionLookupRequest,
+      context?: Record<string, never>,
+    ): Promise<import("./port.js").WebuiSessionLookupResult>;
+    getMessages(
+      request: import("./port.js").WebuiMessagesRequest,
+      context?: Record<string, never>,
+    ): Promise<import("./port.js").WebuiMessagesResult>;
   };
 }
 
