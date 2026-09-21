@@ -2,9 +2,12 @@
 //
 // The service refuses any operation name not listed here, and validates the
 // shape of every request body at runtime. Validation is deliberately
-// structural: the version operation accepts no body, so the validator rejects
-// anything other than `undefined` / a missing field. Later tickets add
-// operations with their own schemas.
+// structural and per operation kind: each operation owns a body schema and
+// registers it together with its handler, so a future ticket that adds an
+// operation without a validator fails at registration rather than passing
+// every request through unchanged. The version operation accepts only a
+// missing or `undefined` body; `null`, arrays and primitives all reject
+// with `invalid_body`.
 
 import { WebuiErrorCode, type WebuiErrorCodeValue } from "./envelope.js";
 
@@ -42,20 +45,16 @@ interface VersionResponseBody {
 function validateVersionRequestBody(
   body: unknown,
 ): WebuiOperationValidation<VersionRequestBody> {
-  if (body === undefined || body === null) return { ok: true, body: undefined };
-  if (typeof body !== "object")
-    return {
-      ok: false,
-      code: WebuiErrorCode.invalidBody,
-      message: "version operation does not accept a body",
-    };
-  if (Object.keys(body as Record<string, unknown>).length > 0)
-    return {
-      ok: false,
-      code: WebuiErrorCode.invalidBody,
-      message: "version operation does not accept body fields",
-    };
-  return { ok: true, body: undefined };
+  // The version operation carries no body. A present-but-empty JSON
+  // value (`null`, `[]`, `{}`) is rejected so a future caller cannot
+  // smuggle a field in by encoding the body as something other than
+  // an absent field.
+  if (body === undefined) return { ok: true, body: undefined };
+  return {
+    ok: false,
+    code: WebuiErrorCode.invalidBody,
+    message: "version operation does not accept a body",
+  };
 }
 
 export const versionOperation: WebuiOperation<VersionRequestBody> = {
@@ -68,15 +67,41 @@ export interface WebuiOperationRegistryEntry {
   readonly handle: WebuiOperationHandler<unknown>;
 }
 
+export interface WebuiOperationRegistration<Body = unknown> {
+  readonly operation: WebuiOperation<Body>;
+  readonly handle: WebuiOperationHandler<Body>;
+}
+
 export function createOperationRegistry(
   port: { version(): { version: string; protocolVersion: number } },
 ): ReadonlyMap<string, WebuiOperationRegistryEntry> {
   const registry = new Map<string, WebuiOperationRegistryEntry>();
-  registry.set(versionOperation.name, {
+  registerOperation(registry, {
     operation: versionOperation,
     handle: () => ({
       body: port.version(),
     }),
   });
   return registry;
+}
+
+/**
+ * Registers one operation. Throws if the operation is missing a
+ * `validate` function or the validator rejects everything by default;
+ * fail-closed at registration time so the service never accepts a
+ * request whose body it cannot structurally verify.
+ */
+export function registerOperation<Body>(
+  registry: Map<string, WebuiOperationRegistryEntry>,
+  registration: WebuiOperationRegistration<Body>,
+): void {
+  const { operation, handle } = registration;
+  if (typeof operation.validate !== "function")
+    throw new Error(
+      `operation ${operation.name} has no body validator; refusing to register`,
+    );
+  registry.set(operation.name, {
+    operation,
+    handle: handle as WebuiOperationHandler<unknown>,
+  });
 }

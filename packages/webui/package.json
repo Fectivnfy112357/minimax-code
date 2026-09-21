@@ -13,6 +13,7 @@
     "test": "node ../../scripts/run-vitest-suite.mjs webui"
   },
   "dependencies": {
+    "@mavis/local-runtime-v2": "workspace:*",
     "@mavis/protocol": "workspace:*",
     "@mavis/shared": "workspace:^",
     "react": "18.3.1",

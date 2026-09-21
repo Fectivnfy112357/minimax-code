@@ -41,7 +41,9 @@ const packages = new Map(
     return [manifest.name, { directory, manifest }];
   }),
 );
-const sourcePlugin = createWorkspaceSourcesPlugin(packages, root);
+const sourcePlugin = createWorkspaceSourcesPlugin(packages, root, [
+  "@mavis/local-runtime-v2",
+]);
 
 rmSync(outdir, { recursive: true, force: true });
 mkdirSync(outdir, { recursive: true });
@@ -58,6 +60,12 @@ const server = await build({
   target: "node22",
   outdir: path.join(outdir, "server"),
   metafile: true,
+  // The harness layer ships as an installed workspace package at
+  // runtime; keeping it out of the bundle means the server entry
+  // resolves `@mavis/local-runtime-v2` via `node_modules/` like any
+  // third-party dependency. The boundary check therefore never sees
+  // the harness internals in the build graph.
+  external: ["@mavis/local-runtime-v2"],
   plugins: [sourcePlugin],
   logLevel: "info",
 });

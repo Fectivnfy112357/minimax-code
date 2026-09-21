@@ -3297,6 +3297,7 @@
     "packages/webui/src/client/app.tsx",
     "packages/webui/src/client/index.html",
     "packages/webui/src/client/main.tsx",
+    "packages/webui/src/server/assembly.ts",
     "packages/webui/src/server/credentials.ts",
     "packages/webui/src/server/envelope.ts",
     "packages/webui/src/server/host.ts",

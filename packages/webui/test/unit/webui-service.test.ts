@@ -7,8 +7,12 @@
 // surface honest (the harness never runs against real history, per ADR
 // 0006) while the wire side exercises the real `ws` package.
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { existsSync } from "node:fs";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { once, type once as onceFn } from "node:events";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { RawData } from "ws";
 import { WebSocket } from "ws";
 
@@ -47,6 +51,65 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
   }
 }
 
+// Build a WebSocket client and capture every observable lifecycle event
+// synchronously, so a test that observes a refusal can never lose the
+// close race against the error-and-close pair the `ws` library emits
+// back to back for a refused handshake.
+//
+// The `ws` library surfaces an upgrade refusal both as an `error`
+// event and as the rejection of any `events.once(ws, "open")` listener;
+// both fire from the same `process.nextTick`. `error` is attached
+// unconditionally so the EventEmitter contract does not throw, but
+// `once(ws, "error")` is *not* taken: the rejection arrives via the
+// upgrade promise so callers can branch on its message. `close` is
+// taken up-front because the library emits it on the same tick as
+// `error`; attaching it after the rejection has already landed loses
+// the event and the test hangs.
+function openClient(url: string, headers: Record<string, string> = {}): {
+  ws: WebSocket;
+  upgrade: OncePromise<unknown>;
+  closed: Promise<{ code: number; reason: string }>;
+} {
+  const ws = new WebSocket(url, { headers });
+  ws.on("error", () => undefined);
+  const upgrade = once(ws, "open"); // rejects with the refusal; must be awaited
+  const closed = new Promise<{ code: number; reason: string }>((resolve) => {
+    ws.once("close", (code, reason) =>
+      resolve({ code, reason: reason.toString("utf8") }),
+    );
+  });
+  return { ws, upgrade, closed };
+}
+
+function requestOnce(ws: WebSocket, request: unknown): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const onMessage = (raw: RawData) => {
+      ws.off("message", onMessage);
+      ws.off("error", onError);
+      try {
+        resolve(JSON.parse(raw.toString("utf8")));
+      } catch (error) {
+        reject(error);
+      }
+    };
+    const onError = (error: Error) => {
+      ws.off("message", onMessage);
+      reject(error);
+    };
+    ws.on("message", onMessage);
+    ws.once("error", onError);
+    ws.send(JSON.stringify(request));
+  });
+}
+
+function awaitClose(ws: WebSocket): Promise<{ code: number; reason: string }> {
+  return new Promise((resolve) => {
+    ws.once("close", (code, reason) => {
+      resolve({ code, reason: reason.toString("utf8") });
+    });
+  });
+}
+
 describe("WebUI service", () => {
   let port: ScriptedHarnessPort;
   let service: WebuiService;
@@ -79,65 +142,6 @@ describe("WebUI service", () => {
       url: `${info.boundUrl}/?token=${encodeURIComponent(info.credential.token)}`,
       credential: info.credential,
     };
-  }
-
-  // Build a WebSocket client and capture every observable lifecycle event
-  // synchronously, so a test that observes a refusal can never lose the
-  // close race against the error-and-close pair the `ws` library emits
-  // back to back for a refused handshake.
-  //
-  // The `ws` library surfaces an upgrade refusal both as an `error`
-  // event and as the rejection of any `events.once(ws, "open")` listener;
-  // both fire from the same `process.nextTick`. `error` is attached
-  // unconditionally so the EventEmitter contract does not throw, but
-  // `once(ws, "error")` is *not* taken: the rejection arrives via the
-  // upgrade promise so callers can branch on its message. `close` is
-  // taken up-front because the library emits it on the same tick as
-  // `error`; attaching it after the rejection has already landed loses
-  // the event and the test hangs.
-  function openClient(url: string, headers: Record<string, string> = {}): {
-    ws: WebSocket;
-    upgrade: OncePromise<unknown>;
-    closed: Promise<{ code: number; reason: string }>;
-  } {
-    const ws = new WebSocket(url, { headers });
-    ws.on("error", () => undefined);
-    const upgrade = once(ws, "open"); // rejects with the refusal; must be awaited
-    const closed = new Promise<{ code: number; reason: string }>((resolve) => {
-      ws.once("close", (code, reason) =>
-        resolve({ code, reason: reason.toString("utf8") }),
-      );
-    });
-    return { ws, upgrade, closed };
-  }
-
-  function requestOnce(ws: WebSocket, request: unknown): Promise<unknown> {
-    return new Promise((resolve, reject) => {
-      const onMessage = (raw: RawData) => {
-        ws.off("message", onMessage);
-        ws.off("error", onError);
-        try {
-          resolve(JSON.parse(raw.toString("utf8")));
-        } catch (error) {
-          reject(error);
-        }
-      };
-      const onError = (error: Error) => {
-        ws.off("message", onMessage);
-        reject(error);
-      };
-      ws.on("message", onMessage);
-      ws.once("error", onError);
-      ws.send(JSON.stringify(request));
-    });
-  }
-
-  function awaitClose(ws: WebSocket): Promise<{ code: number; reason: string }> {
-    return new Promise((resolve) => {
-      ws.once("close", (code, reason) => {
-        resolve({ code, reason: reason.toString("utf8") });
-      });
-    });
   }
 
   // Awaits the upgrade promise and asserts the rejection carries the
@@ -390,6 +394,433 @@ describe("WebUI host factory", () => {
     // Idempotent close: a second call does not re-close the host.
     await harness.close();
     expect(apiHost.closeCalls).toBe(1);
+  });
+});
+
+describe("WebUI runtime host assembly", () => {
+  it("creates exactly one host per process with the assembly step 6 owner combination", async () => {
+    const { createWebuiRuntimeHost } = await import(
+      "../../src/server/index.js"
+    );
+    const dataDir = await mkdtemp(
+      path.join(os.tmpdir(), "webui-assembly-c1-"),
+    );
+    let calls = 0;
+    let lastOptions: Record<string, unknown> | undefined;
+    try {
+      const assembled = await createWebuiRuntimeHost({
+        dataDir,
+        appVersion: "0.4.2-assembly-test",
+        factory: async (options) => {
+          calls += 1;
+          lastOptions = { ...options };
+          return {
+            apiHost: { close: async () => undefined },
+            dataDir: options.dataDir,
+            appVersion: "0.4.2-assembly-test",
+          };
+        },
+      });
+      await assembled.harnessPort.close();
+      expect(calls).toBe(1);
+      expect(lastOptions?.runtimeOwnerKind).toBe("cli");
+      expect(lastOptions?.capabilityProfile).toBe("cli");
+      expect(lastOptions?.runtimeMode).toBe("clean");
+      expect(lastOptions?.startupExecutionPolicy).toBe("quarantined");
+      expect(lastOptions?.dataDir).toBe(dataDir);
+      expect(lastOptions?.appVersion).toBe("0.4.2-assembly-test");
+      const capabilities = lastOptions?.capabilities as Record<string, unknown>;
+      expect(capabilities.cliEmbedded).toBe(true);
+    } finally {
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it("declares the three interaction capabilities explicitly (criterion 2)", async () => {
+    const { createWebuiRuntimeHost } = await import(
+      "../../src/server/index.js"
+    );
+    const dataDir = await mkdtemp(
+      path.join(os.tmpdir(), "webui-assembly-c2-"),
+    );
+    let lastOptions: Record<string, unknown> | undefined;
+    try {
+      const assembled = await createWebuiRuntimeHost({
+        dataDir,
+        factory: async (options) => {
+          lastOptions = { ...options };
+          return {
+            apiHost: { close: async () => undefined },
+            dataDir: options.dataDir,
+          };
+        },
+      });
+      await assembled.harnessPort.close();
+      const capabilities = lastOptions?.capabilities as Record<string, unknown>;
+      // Mirror `packages/tui/src/runtime/lifecycle.ts:451-455`: the WebUI
+      // is the surface that answers questionnaire, permission and
+      // elicitation, so all three are true here.
+      expect(capabilities.questionnaireReply).toBe(true);
+      expect(capabilities.permissionPrompt).toBe(true);
+      expect(capabilities.elicitation).toBe(true);
+    } finally {
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not add a 'webui' value to surface (ADR 0004)", async () => {
+    const { createWebuiRuntimeHost } = await import(
+      "../../src/server/index.js"
+    );
+    const dataDir = await mkdtemp(
+      path.join(os.tmpdir(), "webui-assembly-surface-"),
+    );
+    let lastOptions: Record<string, unknown> | undefined;
+    try {
+      const assembled = await createWebuiRuntimeHost({
+        dataDir,
+        factory: async (options) => {
+          lastOptions = { ...options };
+          return {
+            apiHost: { close: async () => undefined },
+            dataDir: options.dataDir,
+          };
+        },
+      });
+      await assembled.harnessPort.close();
+      // The assembly intentionally omits `surface`; ADR 0004 forbids
+      // extending the `surface` enum, and assembly step 4 says the WebUI
+      // does not need a new value because `runtimeOwnerKind: 'cli'` plus
+      // the capabilities already identify the surface.
+      expect("surface" in (lastOptions ?? {})).toBe(false);
+    } finally {
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it("wires the assembled host through the harness port that WebuiService tears down last", async () => {
+    const { createWebuiRuntimeHost } = await import(
+      "../../src/server/index.js"
+    );
+    const dataDir = await mkdtemp(
+      path.join(os.tmpdir(), "webui-assembly-port-"),
+    );
+    let apiHostClosed = false;
+    try {
+      const assembled = await createWebuiRuntimeHost({
+        dataDir,
+        factory: async (options) => ({
+          apiHost: {
+            async close(): Promise<void> {
+              apiHostClosed = true;
+            },
+          },
+          dataDir: options.dataDir,
+        }),
+      });
+      expect(assembled.harnessPort.close).toBeTypeOf("function");
+      expect(assembled.harnessPort.version).toBeTypeOf("function");
+      await assembled.harnessPort.close();
+      expect(apiHostClosed).toBe(true);
+    } finally {
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("WebUI loopback binding invariant", () => {
+  it("refuses to construct the service when the host is a LAN address", async () => {
+    const harness = new ScriptedHarnessPort();
+    expect(() => new WebuiService({ port: harness, host: "0.0.0.0" })).toThrow(
+      /loopback/i,
+    );
+    expect(
+      () => new WebuiService({ port: harness, host: "10.0.0.5" }),
+    ).toThrow(/loopback/i);
+    expect(
+      () => new WebuiService({ port: harness, host: "evil.example" }),
+    ).toThrow(/loopback/i);
+  });
+
+  it("accepts the documented loopback addresses", async () => {
+    const harness = new ScriptedHarnessPort();
+    for (const host of ["127.0.0.1", "localhost", "::1", "[::1]"]) {
+      const candidate = new WebuiService({ port: harness, host });
+      await candidate.close();
+    }
+  });
+});
+
+describe("WebUI operation body validation", () => {
+  it("rejects null and array bodies on the version operation (criterion 5)", async () => {
+    const { versionOperation } = await import("../../src/server/index.js");
+    const nullResult = versionOperation.validate(null);
+    expect(nullResult.ok).toBe(false);
+    if (nullResult.ok) throw new Error("null should not be accepted");
+    expect(nullResult.code).toBe(WebuiErrorCode.invalidBody);
+
+    const arrayResult = versionOperation.validate([]);
+    expect(arrayResult.ok).toBe(false);
+    if (arrayResult.ok) throw new Error("[] should not be accepted");
+    expect(arrayResult.code).toBe(WebuiErrorCode.invalidBody);
+
+    const objectResult = versionOperation.validate({});
+    expect(objectResult.ok).toBe(false);
+    if (objectResult.ok) throw new Error("{} should not be accepted");
+    expect(objectResult.code).toBe(WebuiErrorCode.invalidBody);
+
+    const stringResult = versionOperation.validate("not-a-body");
+    expect(stringResult.ok).toBe(false);
+    if (stringResult.ok) throw new Error("string should not be accepted");
+    expect(stringResult.code).toBe(WebuiErrorCode.invalidBody);
+
+    const undefinedResult = versionOperation.validate(undefined);
+    expect(undefinedResult.ok).toBe(true);
+    if (!undefinedResult.ok) throw new Error("undefined should be accepted");
+    expect(undefinedResult.body).toBeUndefined();
+  });
+
+  it("refuses to register an operation without a body validator", async () => {
+    const { registerOperation, versionOperation } = await import(
+      "../../src/server/index.js"
+    );
+    const registry = new Map();
+    const validatorlessOperation = {
+      name: "noValidator",
+      // no validate function — registration must fail closed
+    } as unknown as { name: string; validate: unknown };
+    expect(() =>
+      registerOperation(registry, {
+        operation: validatorlessOperation,
+        handle: () => ({ body: undefined }),
+      }),
+    ).toThrow(/validator/i);
+    expect(registry.size).toBe(0);
+
+    // Sanity check: the real version operation still registers.
+    registerOperation(registry, {
+      operation: versionOperation,
+      handle: () => ({ body: { version: "1", protocolVersion: 1 } }),
+    });
+    expect(registry.has("version")).toBe(true);
+  });
+});
+
+describe("WebUI shutdown order (criterion 7)", () => {
+  it("refuses new operations before closing connections, and closes connections before the harness port", async () => {
+    // A recording port that logs the order in which the service calls
+    // its lifecycle hooks. This is the assertion surface for step 13 of
+    // the assembly checklist.
+    const events: string[] = [];
+    let resolveConnectionClosed!: () => void;
+    const connectionClosedGate = new Promise<void>((resolve) => {
+      resolveConnectionClosed = resolve;
+    });
+    const recordingPort: WebuiHarnessPort = {
+      version() {
+        return { version: "0.4.2-shutdown-test", protocolVersion: 1 };
+      },
+      async close() {
+        // The service awaits wsServer.close() and httpServer.close()
+        // before calling port.close(), so by the time we land here the
+        // transport is fully drained. Wait for the connection close
+        // event to be observed before recording port.close so the
+        // ordering assertion is deterministic.
+        await connectionClosedGate;
+        events.push("port.close");
+      },
+    };
+    const localService = new WebuiService({ port: recordingPort });
+    const localInfo = await localService.start();
+    const url = `${localInfo.boundUrl}/?token=${encodeURIComponent(
+      localInfo.credential.token,
+    )}`;
+    const { ws, upgrade } = openClient(url);
+    await upgrade;
+    // Send a successful request first so we know the registry was
+    // accepting before shutdown started.
+    const request = {
+      protocolVersion: WEBUI_PROTOCOL_VERSION,
+      kind: "request",
+      requestId: "req-pre-shutdown",
+      operation: "version",
+      body: undefined,
+    };
+    const preShutdown = await requestOnce(ws, request);
+    if (!isWebuiFrame(preShutdown) || preShutdown.kind !== "response")
+      throw new Error("version query should have answered before shutdown");
+
+    // The service's `close()` calls `terminate()` synchronously on
+    // every connection, then awaits wsServer.close() (which itself
+    // waits for the connections to be torn down), then httpServer.close(),
+    // and finally `port.close()`. The connection's `close` event fires
+    // before wsServer.close() resolves; capture it and unblock the
+    // recording port.
+    const connectionClosed = awaitClose(ws).then((closeEvent) => {
+      events.push(`connection.terminate:${closeEvent.code}`);
+      resolveConnectionClosed();
+    });
+    await localService.close();
+    await connectionClosed;
+    // `connection.terminate:*` must precede `port.close`: the service
+    // refuses new work, drops connections, then tears down the host.
+    const terminateIndex = events.findIndex((event) =>
+      event.startsWith("connection.terminate:"),
+    );
+    const portIndex = events.indexOf("port.close");
+    expect(terminateIndex).toBeGreaterThanOrEqual(0);
+    expect(portIndex).toBeGreaterThan(terminateIndex);
+  });
+
+  it("does not execute any handler after `close()` flips `accepting`", async () => {
+    // A port whose `close()` blocks on a gate. The recording version
+    // method observes whether `version()` is called from the registry
+    // after `close()` has flipped `accepting`; the registry only calls
+    // `port.version()` from the `version` operation handler. The test
+    // counts `version()` calls: baseline + zero post-shutdown.
+    let releaseCloseGate!: () => void;
+    const closeGate = new Promise<void>((resolve) => {
+      releaseCloseGate = resolve;
+    });
+    let versionCalls = 0;
+    const recordingPort: WebuiHarnessPort = {
+      version() {
+        versionCalls += 1;
+        return { version: "0.4.2-shutdown-gate", protocolVersion: 1 };
+      },
+      async close() {
+        await closeGate;
+      },
+    };
+    const localService = new WebuiService({ port: recordingPort });
+    const localInfo = await localService.start();
+    const url = `${localInfo.boundUrl}/?token=${encodeURIComponent(
+      localInfo.credential.token,
+    )}`;
+    const { ws, upgrade } = openClient(url);
+    await upgrade;
+    // Baseline: registry answers one request, calls `port.version()`
+    // exactly once.
+    const baseline = await requestOnce(ws, {
+      protocolVersion: WEBUI_PROTOCOL_VERSION,
+      kind: "request",
+      requestId: "req-baseline",
+      operation: "version",
+      body: undefined,
+    });
+    if (!isWebuiFrame(baseline) || baseline.kind !== "response")
+      throw new Error("baseline request should have answered");
+    const baselineCalls = versionCalls;
+
+    // Flip `accepting` synchronously without awaiting the rest of
+    // shutdown. The service's `close()` does this immediately so any
+    // handler invocation after this point short-circuits with the
+    // `shuttingDown` error frame.
+    const closePromise = localService.close();
+    // Yield a microtask so the synchronous parts of `close()` land.
+    await Promise.resolve();
+
+    // Capture the next frame the service writes. The service will
+    // either refuse the in-flight request with `shuttingDown` (handler
+    // ran with `accepting === false`) or the connection will be torn
+    // down (handler did not run, the connection is gone). Either path
+    // proves no further `port.version()` call.
+    const nextFrame = new Promise<unknown>((resolve) => {
+      const onMessage = (raw: RawData) => {
+        ws.off("message", onMessage);
+        resolve(JSON.parse(raw.toString("utf8")));
+      };
+      ws.on("message", onMessage);
+    });
+    const closed = awaitClose(ws);
+    ws.send(
+      JSON.stringify({
+        protocolVersion: WEBUI_PROTOCOL_VERSION,
+        kind: "request",
+        requestId: "req-after-shutdown",
+        operation: "version",
+        body: undefined,
+      }),
+    );
+    const result = await Promise.race([nextFrame, closed]);
+    releaseCloseGate();
+    await closePromise;
+    // The crucial assertion: no operation handler ran after
+    // `accepting === false`. Whether the service replied with a
+    // `shuttingDown` error frame (handler short-circuited) or the
+    // connection was torn down before the reply arrived (handler did
+    // not even start), the version counter must not have advanced.
+    expect(versionCalls).toBe(baselineCalls);
+    // Distinguish between the frame outcome (the second request was
+    // answered) and the close outcome (the connection died first). The
+    // close event carries a numeric `code`; a frame carries a string
+    // `code` in the WebUI envelope.
+    if (typeof result === "object" && result && "kind" in result) {
+      expect(isWebuiFrame(result)).toBe(true);
+      if (!isWebuiFrame(result)) throw new Error("expected frame");
+      expect(result.kind).toBe("error");
+      expect(result.code).toBe(WebuiErrorCode.shuttingDown);
+    } else {
+      // Close event outcome: handler was prevented from running.
+      expect(result).toMatchObject({ code: expect.any(Number) });
+    }
+  });
+});
+
+describe("WebUI restart-with-persisted-jobs (criterion 8)", () => {
+  it("does not execute a persisted job on the second boot, observable as the quarantined policy", async () => {
+    const { createWebuiRuntimeHost } = await import(
+      "../../src/server/index.js"
+    );
+    const dataDir = await mkdtemp(
+      path.join(os.tmpdir(), "webui-c8-fixture-"),
+    );
+    const fixturePath = path.join(dataDir, "persisted-job");
+    let executionCount = 0;
+    let lastOptions: Record<string, unknown> | undefined;
+    type FactoryOptions = {
+      dataDir: string;
+      startupExecutionPolicy?: string;
+    };
+    try {
+      const stubFactory = async (options: FactoryOptions) => {
+        lastOptions = { ...options };
+        // The "persisted job" is observed on disk only; the assembly's
+        // quarantined policy means this branch never executes it.
+        if (existsSync(fixturePath)) {
+          if (options.startupExecutionPolicy !== "quarantined") {
+            executionCount += 1;
+          }
+        }
+        return {
+          apiHost: { close: async () => undefined },
+          dataDir: options.dataDir,
+        };
+      };
+      // First boot: no fixture on disk yet.
+      const first = await createWebuiRuntimeHost({
+        dataDir,
+        factory: stubFactory,
+      });
+      expect(lastOptions?.startupExecutionPolicy).toBe("quarantined");
+      expect(existsSync(fixturePath)).toBe(false);
+      await first.harnessPort.close();
+      // Drop a fixture on disk to simulate a previously running session
+      // that survived the first boot.
+      await writeFile(fixturePath, "persisted-job", "utf8");
+      expect(existsSync(fixturePath)).toBe(true);
+      // Second boot: the fixture is restored, the policy is still
+      // quarantined, so the persisted job is NOT executed.
+      const second = await createWebuiRuntimeHost({
+        dataDir,
+        factory: stubFactory,
+      });
+      expect(lastOptions?.startupExecutionPolicy).toBe("quarantined");
+      expect(executionCount).toBe(0);
+      await second.harnessPort.close();
+    } finally {
+      await rm(dataDir, { recursive: true, force: true });
+    }
   });
 });
 

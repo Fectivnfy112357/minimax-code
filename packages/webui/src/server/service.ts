@@ -41,7 +41,12 @@ export interface WebuiServiceOptions {
   readonly port: WebuiHarnessPort;
   /** Defaults to the protocol version the wire envelope ships. */
   readonly protocolVersion?: number;
-  /** Loopback host the service binds to. Defaults to `127.0.0.1`. */
+  /**
+   * Loopback host the service binds to. The service refuses to start
+   * when this is anything other than `127.0.0.1`, `localhost`, `::1` or
+   * `[::1]`; remote or LAN access requires a separate decision (ADR
+   * 0004), not a different bind address. Defaults to `127.0.0.1`.
+   */
   readonly host?: string;
   /** TCP port; `0` asks the OS for a free port. Defaults to `0`. */
   readonly tcpPort?: number;
@@ -79,6 +84,10 @@ export class WebuiService {
   constructor(options: WebuiServiceOptions) {
     this.port = options.port;
     this.host = options.host ?? "127.0.0.1";
+    if (!isLoopbackBindAddress(this.host))
+      throw new Error(
+        `WebUI service may only bind to a loopback address; received ${JSON.stringify(this.host)}`,
+      );
     this.tcpPort = options.tcpPort ?? 0;
     this.maxMessageBytes = options.maxMessageBytes ?? WEBUI_MAX_MESSAGE_BYTES;
     this.credential = options.credential ?? createWebuiCredential();
@@ -366,6 +375,17 @@ function isLoopbackHost(host: string): boolean {
     host === "::1" ||
     host === "[::1]"
   );
+}
+
+function isLoopbackBindAddress(host: string): boolean {
+  // The service binds loopback only. `0.0.0.0` and any LAN address are
+  // rejected before the HTTP server is constructed so the misconfiguration
+  // surfaces at boot, not at the first upgrade.
+  if (isLoopbackHost(host)) return true;
+  // IPv6 zone IDs (`fe80::1%lo0`, `::1%1`) are loopback-shaped for the
+  // purpose of the bind; strip the zone before re-checking.
+  const stripped = host.split("%")[0] ?? host;
+  return isLoopbackHost(stripped);
 }
 
 function isAllowedOrigin(origin: string, host: string, port?: number): boolean {

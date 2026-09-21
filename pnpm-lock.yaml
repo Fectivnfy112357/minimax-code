@@ -876,6 +876,9 @@ importers:
 
   packages/webui:
     dependencies:
+      '@mavis/local-runtime-v2':
+        specifier: workspace:*
+        version: link:../local-runtime-v2
       '@mavis/protocol':
         specifier: workspace:*
         version: link:../protocol

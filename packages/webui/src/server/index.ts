@@ -29,9 +29,12 @@ export {
 } from "./service.js";
 export {
   createOperationRegistry,
+  registerOperation,
+  versionOperation,
   type WebuiOperation,
   type WebuiOperationHandler,
   type WebuiOperationRegistryEntry,
+  type WebuiOperationRegistration,
   type WebuiOperationResult,
 } from "./operations.js";
 export {
@@ -57,3 +60,10 @@ export {
   createHarnessPortFromHost,
   type WebuiRuntimeHostHandle,
 } from "./host.js";
+export {
+  createWebuiRuntimeHost,
+  type CreateWebuiRuntimeHostOptions,
+  type WebuiAssembledHost,
+  type WebuiRuntimeHost,
+  type WebuiRuntimeHostFactory,
+} from "./assembly.js";

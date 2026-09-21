@@ -28,12 +28,18 @@ import path from "node:path";
  *   absolute path.
  * @param {string} repositoryRoot
  *   Absolute path to the repository root containing the workspace packages.
+ * @param {string[]} [skip]
+ *   Specifiers this plugin leaves alone so the bundler resolves them
+ *   through its normal mechanism (typically because the caller marked
+ *   them `external`). Empty by default.
  */
-export function createWorkspaceSourcesPlugin(packages, repositoryRoot) {
+export function createWorkspaceSourcesPlugin(packages, repositoryRoot, skip = []) {
+  const skipSet = new Set(skip);
   return {
     name: "standalone-workspace-sources",
     setup(bundler) {
       bundler.onResolve({ filter: /^[^./]/ }, ({ path: specifier }) => {
+        if (skipSet.has(specifier)) return undefined;
         const parts = specifier.split("/");
         const name = specifier.startsWith("@")
           ? parts.slice(0, 2).join("/")
