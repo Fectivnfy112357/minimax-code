@@ -3119,6 +3119,10 @@ describe("runtime Browser services lifecycle", () => {
 
   it("clears V2 Browser receipts only for committed context-reset rewinds", async () => {
     const compatibility = defaultCompatibility();
+    const browserExecute = vi.fn(async () => ({
+      success: true,
+      transcript: "browser result",
+    }));
     Object.assign(compatibility.agentHost.preparation.configBuilder, {
       config: () => ({
         provider: {},
@@ -3133,7 +3137,7 @@ describe("runtime Browser services lifecycle", () => {
       scheduler: {} as SchedulerClient,
       eventBus: new EventBus<GlobalEvent>(),
       compatibility,
-      browserUse: { adapter: { execute: vi.fn() } },
+      browserUse: { adapter: { execute: browserExecute } },
       agentService: localAgentService,
       runtimeOwnerKind: "cli",
     });
@@ -3210,15 +3214,23 @@ describe("runtime Browser services lifecycle", () => {
       isError: true,
       details: { code: "SKILL_REQUIRED" },
     });
-    await expect(
-      browser.impl.execute(
-        { sessionId: "session-ui-only", turnId: "turn-a" },
-        {
-          action: "inspect",
-          input: {},
-        },
-      ),
-    ).resolves.toMatchObject({ details: { action: "inspect" } });
+    const browserResult = await browser.impl.execute(
+      { sessionId: "session-ui-only", turnId: "turn-a" },
+      {
+        action: "inspect",
+        input: {},
+      },
+    );
+    expect(browserResult).toMatchObject({
+      details: { action: "inspect", result: { transcript: "browser result" } },
+      text: expect.stringContaining("browser result"),
+    });
+    expect(browserExecute).toHaveBeenCalledWith(
+      { sessionId: "session-ui-only", turnId: "turn-a" },
+      "inspect",
+      {},
+      expect.any(AbortSignal),
+    );
     expect(
       services.browserUse.turnContext.read("session-reset", "turn-reset"),
     ).toEqual({

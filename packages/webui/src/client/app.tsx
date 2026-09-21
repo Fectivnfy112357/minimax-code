@@ -142,6 +142,16 @@ export type WebuiClientEventWatcher = (
   onReconnect?: () => void,
 ) => () => void;
 
+/**
+ * A provider/model pair is not always a unique picker identity: one catalog
+ * entry can expose multiple variants. Keep the variant in the native select
+ * value so the lookup that follows a change selects the same catalog entry
+ * that the user actually chose.
+ */
+export function webuiModelOptionValue(model: WebuiModelEntry): string {
+  return `${model.providerId}/${model.modelId}/${model.variant ?? ""}`;
+}
+
 export function readSessionIdFromHash(hash: string): string | undefined {
   const params = new URLSearchParams(
     hash.startsWith("#") ? hash.slice(1) : hash,
@@ -1412,10 +1422,8 @@ function WebuiComposer({
 
   const handleSelectModel = async (value: string) => {
     if (!sessionId || !selectModel) return;
-    const separator = value.indexOf("/");
-    if (separator <= 0) return;
     const model = models.find(
-      (candidate) => `${candidate.providerId}/${candidate.modelId}` === value,
+      (candidate) => webuiModelOptionValue(candidate) === value,
     );
     if (!model) return;
     setInteractionError(undefined);
@@ -1658,7 +1666,7 @@ function WebuiComposer({
                     <select
                       value={
                         selectedModel
-                          ? `${selectedModel.providerId}/${selectedModel.modelId}`
+                          ? webuiModelOptionValue(selectedModel)
                           : ""
                       }
                       onChange={(event) =>
@@ -1676,8 +1684,8 @@ function WebuiComposer({
                         .filter((model) => model.enabled !== false)
                         .map((model) => (
                           <option
-                            key={`${model.providerId}/${model.modelId}/${model.variant ?? ""}`}
-                            value={`${model.providerId}/${model.modelId}`}
+                            key={webuiModelOptionValue(model)}
+                            value={webuiModelOptionValue(model)}
                           >
                             {model.displayName ??
                               `${model.providerId}/${model.modelId}`}

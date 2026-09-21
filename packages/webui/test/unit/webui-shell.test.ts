@@ -33,6 +33,7 @@ import {
   sessionHash,
   submitWebuiComposerTurn,
   subscribeToSessionHash,
+  webuiModelOptionValue,
 } from "../../src/client/app.js";
 import {
   buildWebuiStreamLoopSink,
@@ -65,6 +66,17 @@ function renderShell(label = "webui-foundation"): string {
 const INERT_NAV_LABELS = ["插件", "定时", "网站", "远程"];
 
 describe("WebUI shell", () => {
+  it("keeps model variants distinct when selecting the next-turn model", () => {
+    const fast = {
+      providerId: "provider",
+      modelId: "model",
+      variant: "fast",
+    };
+    const deep = { ...fast, variant: "deep" };
+    expect(webuiModelOptionValue(fast)).not.toBe(webuiModelOptionValue(deep));
+    expect(webuiModelOptionValue(fast)).toBe("provider/model/fast");
+  });
+
   it("reads a created session id from either supported response shape", () => {
     expect(createdSessionId({ sessionId: "a" })).toBe("a");
     expect(createdSessionId({ session: { sessionId: "b" } })).toBe("b");

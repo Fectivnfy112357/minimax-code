@@ -1388,6 +1388,76 @@ describe("WebUI service", () => {
     expect(frame.body).toMatchObject({ type: "session.start", source: "test" });
     ws.close();
   });
+
+  it("keeps two tab subscriptions independent when one tab closes", async () => {
+    const { url } = await bootService();
+    const first = openClient(url);
+    const second = openClient(url);
+    await Promise.all([first.upgrade, second.upgrade]);
+
+    const watch = (ws: WebSocket, requestId: string) => {
+      const event = new Promise<Record<string, unknown>>((resolve, reject) => {
+        const onMessage = (raw: RawData) => {
+          try {
+            const frame = JSON.parse(raw.toString("utf8")) as Record<
+              string,
+              unknown
+            >;
+            if (frame.requestId === requestId && frame.kind === "event") {
+              ws.off("error", onError);
+              resolve(frame);
+            }
+          } catch (error) {
+            reject(error);
+          }
+        };
+        const onError = (error: Error) => {
+          ws.off("message", onMessage);
+          reject(error);
+        };
+        ws.on("message", onMessage);
+        ws.once("error", onError);
+      });
+      ws.send(
+        JSON.stringify({
+          protocolVersion: WEBUI_PROTOCOL_VERSION,
+          kind: "request",
+          requestId,
+          operation: "watchEvents",
+          body: {},
+        }),
+      );
+      return event;
+    };
+
+    const [firstEvent, secondEvent] = await Promise.all([
+      watch(first.ws, "watch-first"),
+      watch(second.ws, "watch-second"),
+    ]);
+    expect(firstEvent).toMatchObject({
+      requestId: "watch-first",
+      body: { type: "session.start", payload: { sessionId: "fixture-session" } },
+    });
+    expect(secondEvent).toMatchObject({
+      requestId: "watch-second",
+      body: { type: "session.start", payload: { sessionId: "fixture-session" } },
+    });
+
+    first.ws.close();
+    await first.closed;
+    const response = await requestOnce(second.ws, {
+      protocolVersion: WEBUI_PROTOCOL_VERSION,
+      kind: "request",
+      requestId: "version-after-first-tab-close",
+      operation: "version",
+      body: undefined,
+    });
+    expect(response).toMatchObject({
+      kind: "response",
+      requestId: "version-after-first-tab-close",
+    });
+    second.ws.close();
+  });
 });
 
 describe("WebUI operation allowlist", () => {
