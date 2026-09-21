@@ -23,6 +23,7 @@ import {
   type WebuiHarnessPort,
   type WebuiMessagesRequest,
   type WebuiMessagesResult,
+  type WebuiCreateSessionRequest,
   type WebuiSessionLookupRequest,
   type WebuiSessionListRequest,
   type WebuiVersionInfo,
@@ -51,6 +52,10 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
 
   async listSessions(_request: WebuiSessionListRequest) {
     return { sessions: [], hasMore: false };
+  }
+
+  async createSession(_request: WebuiCreateSessionRequest) {
+    return { sessionId: "created-session" };
   }
 
   async getSession(_request: WebuiSessionLookupRequest) {
@@ -282,6 +287,37 @@ describe("WebUI service", () => {
       { name: "main", limit: 1, cursor: "cursor-2" },
     ]);
     ws.close();
+  });
+
+  it("creates a session only with an existing absolute directory and forwards the narrow request", async () => {
+    const workspaceDir = await mkdtemp(path.join(os.tmpdir(), "webui-create-"));
+    const calls: WebuiCreateSessionRequest[] = [];
+    port.createSession = async (request) => {
+      calls.push(request);
+      return { session: { sessionId: "created-session", workspaceDir: request.workspaceDir } };
+    };
+    try {
+      const { url } = await bootService();
+      const { ws, upgrade } = openClient(url);
+      await upgrade;
+      const request = (requestId: string, body: unknown) => requestOnce(ws, {
+        protocolVersion: WEBUI_PROTOCOL_VERSION, kind: "request", requestId,
+        operation: "createSession", body,
+      });
+      const created = await request("req-create", { name: " main ", workspaceDir: ` ${workspaceDir} `, ignored: true });
+      expect((created as { body: { session: { sessionId: string } } }).body.session.sessionId).toBe("created-session");
+      expect(calls).toEqual([{ name: "main", workspaceDir }]);
+      const relative = await request("req-create-relative", { name: "main", workspaceDir: "relative" });
+      expect((relative as { code: string }).code).toBe(WebuiErrorCode.invalidBody);
+      const missing = await request("req-create-missing", { name: "main", workspaceDir: path.join(workspaceDir, "missing") });
+      expect((missing as { code: string }).code).toBe(WebuiErrorCode.invalidBody);
+      const absent = await request("req-create-absent", { name: "", workspaceDir });
+      expect((absent as { code: string }).code).toBe(WebuiErrorCode.invalidBody);
+      expect(calls).toHaveLength(1);
+      ws.close();
+    } finally {
+      await rm(workspaceDir, { recursive: true, force: true });
+    }
   });
 
   it("rejects a session-list body without the required harness name", async () => {
@@ -742,6 +778,9 @@ describe("WebUI shutdown order (criterion 7)", () => {
       async listSessions() {
         return { sessions: [], hasMore: false };
       },
+      async createSession() {
+        return { sessionId: "shutdown" };
+      },
       async getSession() {
         return { session: { sessionId: "shutdown" } };
       },
@@ -818,6 +857,9 @@ describe("WebUI shutdown order (criterion 7)", () => {
       },
       async listSessions() {
         return { sessions: [], hasMore: false };
+      },
+      async createSession() {
+        return { sessionId: "shutdown" };
       },
       async getSession() {
         return { session: { sessionId: "shutdown" } };

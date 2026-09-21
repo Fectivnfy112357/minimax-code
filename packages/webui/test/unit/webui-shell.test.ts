@@ -17,6 +17,7 @@ import {
   projectWebuiMessage,
   readSessionIdFromHash,
   sessionHash,
+  subscribeToSessionHash,
 } from "../../src/client/app.js";
 
 function renderShell(label = "webui-foundation"): string {
@@ -82,6 +83,44 @@ describe("WebUI shell", () => {
     expect(html).toContain("older-agent");
     expect(html).toContain(new Date(2000).toLocaleString());
     expect(html).toContain('data-webui-session-list="true"');
+  });
+
+  it("reacts to hashchange so navigation selects a different transcript without reload", () => {
+    const originalWindow = globalThis.window;
+    let hash = "#session=first";
+    const listeners = new Set<(event: Event) => void>();
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: {
+        get location() { return { hash }; },
+        addEventListener(type: string, listener: (event: Event) => void) {
+          if (type === "hashchange") listeners.add(listener);
+        },
+        removeEventListener(type: string, listener: (event: Event) => void) {
+          if (type === "hashchange") listeners.delete(listener);
+        },
+      },
+    });
+    try {
+      let selected = readSessionIdFromHash(hash);
+      const unsubscribe = subscribeToSessionHash((id) => { selected = id; });
+      hash = "#session=second";
+      for (const listener of listeners) listener(new Event("hashchange"));
+      expect(selected).toBe("second");
+      unsubscribe();
+      expect(listeners).toHaveLength(0);
+    } finally {
+      Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow });
+    }
+  });
+
+  it("shows the bound working directory without offering a directory edit control", () => {
+    const html = renderToStaticMarkup(createElement(WebuiSessionList, {
+      page: { sessions: [{ sessionId: "session-1", agentName: "agent", createdAt: 1, updatedAt: 2, workspaceDir: "/tmp/project" }], hasMore: false },
+      loading: false,
+    }));
+    expect(html).toContain("/tmp/project");
+    expect(html).not.toMatch(/edit.*directory|change.*directory/iu);
   });
 
   it("renders a legitimate empty shared-history state", () => {

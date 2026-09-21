@@ -9,6 +9,8 @@
 // missing or `undefined` body; `null`, arrays and primitives all reject
 // with `invalid_body`.
 
+import { statSync } from "node:fs";
+import { isAbsolute } from "node:path";
 import { WebuiErrorCode, type WebuiErrorCodeValue } from "./envelope.js";
 import type {
   WebuiHarnessPort,
@@ -17,6 +19,8 @@ import type {
   WebuiSessionLookupRequest,
   WebuiSessionLookupResult,
   WebuiSessionListRequest,
+  WebuiCreateSessionRequest,
+  WebuiCreateSessionResult,
 } from "./port.js";
 
 export interface WebuiOperationContext {
@@ -43,6 +47,7 @@ export type WebuiOperationValidation<Body> =
 
 const VERSION_OPERATION_NAME = "version" as const;
 const LIST_SESSIONS_OPERATION_NAME = "listSessions" as const;
+const CREATE_SESSION_OPERATION_NAME = "createSession" as const;
 const GET_SESSION_OPERATION_NAME = "getSession" as const;
 const GET_MESSAGES_OPERATION_NAME = "getMessages" as const;
 
@@ -96,6 +101,37 @@ export const listSessionsOperation: WebuiOperation<
 > = {
   name: LIST_SESSIONS_OPERATION_NAME,
   validate: validateListSessionsRequestBody,
+};
+
+function validateCreateSessionRequestBody(
+  body: unknown,
+): WebuiOperationValidation<WebuiCreateSessionRequest> {
+  if (body === null || typeof body !== "object" || Array.isArray(body))
+    return { ok: false, code: WebuiErrorCode.invalidBody, message: "createSession body must be an object" };
+  const candidate = body as Record<string, unknown>;
+  const name = typeof candidate.name === "string" ? candidate.name.trim() : "";
+  if (!name)
+    return { ok: false, code: WebuiErrorCode.invalidBody, message: "createSession body requires a non-empty name" };
+  const workspaceDir = typeof candidate.workspaceDir === "string" ? candidate.workspaceDir.trim() : "";
+  if (!workspaceDir)
+    return { ok: false, code: WebuiErrorCode.invalidBody, message: "createSession body requires a working directory" };
+  if (!isAbsolute(workspaceDir))
+    return { ok: false, code: WebuiErrorCode.invalidBody, message: "workspaceDir must be an absolute path" };
+  try {
+    if (!statSync(workspaceDir).isDirectory())
+      return { ok: false, code: WebuiErrorCode.invalidBody, message: "workspaceDir must be an existing directory" };
+  } catch {
+    return { ok: false, code: WebuiErrorCode.invalidBody, message: "workspaceDir must be an existing directory" };
+  }
+  return { ok: true, body: { name, workspaceDir } };
+}
+
+export const createSessionOperation: WebuiOperation<
+  WebuiCreateSessionRequest,
+  WebuiCreateSessionResult
+> = {
+  name: CREATE_SESSION_OPERATION_NAME,
+  validate: validateCreateSessionRequestBody,
 };
 
 function validateSessionIdBody(
@@ -163,9 +199,13 @@ export interface WebuiOperationRegistration<Body = unknown, ResultBody = Body> {
 }
 
 export function createOperationRegistry(
-  port: Pick<WebuiHarnessPort, "version" | "listSessions" | "getSession" | "getMessages">,
+  port: Pick<WebuiHarnessPort, "version" | "listSessions" | "createSession" | "getSession" | "getMessages">,
 ): ReadonlyMap<string, WebuiOperationRegistryEntry> {
   const registry = new Map<string, WebuiOperationRegistryEntry>();
+  registerOperation(registry, {
+    operation: createSessionOperation,
+    handle: async (_context, body) => ({ body: await port.createSession(body) }),
+  });
   registerOperation(registry, {
     operation: versionOperation,
     handle: () => ({

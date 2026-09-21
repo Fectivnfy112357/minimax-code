@@ -63,6 +63,15 @@ export interface WebuiSessionInfo {
   readonly [key: string]: unknown;
 }
 export interface WebuiSessionLookupResult { readonly session?: WebuiSessionInfo; }
+export interface WebuiCreateSessionRequest {
+  readonly name: string;
+  readonly workspaceDir: string;
+}
+export interface WebuiCreateSessionResult {
+  readonly agentName?: string;
+  readonly sessionId?: string;
+  readonly session?: WebuiSessionInfo;
+}
 export interface WebuiMessage {
   readonly msgId: string;
   readonly parentMsgId?: string;
@@ -98,6 +107,7 @@ export interface WebuiMessagesResult {
 export interface WebuiHarnessPort {
   version(): WebuiVersionInfo;
   listSessions(request: WebuiSessionListRequest): Promise<WebuiSessionPage>;
+  createSession(request: WebuiCreateSessionRequest): Promise<WebuiCreateSessionResult>;
   getSession(request: WebuiSessionLookupRequest): Promise<WebuiSessionLookupResult>;
   getMessages(request: WebuiMessagesRequest): Promise<WebuiMessagesResult>;
   /**

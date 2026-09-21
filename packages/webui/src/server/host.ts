@@ -17,6 +17,8 @@ import type {
   WebuiHarnessPort,
   WebuiSessionListRequest,
   WebuiSessionPage,
+  WebuiCreateSessionRequest,
+  WebuiCreateSessionResult,
   WebuiVersionInfo,
 } from "./port.js";
 
@@ -29,6 +31,10 @@ export interface WebuiRuntimeHostHandle {
       request: WebuiSessionListRequest,
       context?: Record<string, never>,
     ): Promise<WebuiSessionPage>;
+    createSession(
+      request: WebuiCreateSessionRequest,
+      context?: Record<string, never>,
+    ): Promise<WebuiCreateSessionResult>;
     getSession(
       request: import("./port.js").WebuiSessionLookupRequest,
       context?: Record<string, never>,
@@ -62,6 +68,11 @@ export function createHarnessPortFromHost(
       if (!host.cliService)
         throw new Error("runtime host does not expose the CLI service");
       return host.cliService.listSessions(request, {});
+    },
+    async createSession(request) {
+      if (!host.cliService)
+        throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.createSession(request, {});
     },
     async getSession(request) {
       if (!host.cliService)

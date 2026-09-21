@@ -43,6 +43,10 @@ export interface WebuiAssembledHost {
       request: import("./port.js").WebuiSessionListRequest,
       context?: Record<string, never>,
     ): Promise<import("./port.js").WebuiSessionPage>;
+    createSession(
+      request: import("./port.js").WebuiCreateSessionRequest,
+      context?: Record<string, never>,
+    ): Promise<import("./port.js").WebuiCreateSessionResult>;
     getSession(
       request: import("./port.js").WebuiSessionLookupRequest,
       context?: Record<string, never>,

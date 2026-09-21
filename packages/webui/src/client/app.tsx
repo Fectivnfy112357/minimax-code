@@ -9,7 +9,7 @@
 // lines up with the desktop application even when the harness is not
 // running.
 
-import { useEffect, useMemo, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type ReactElement } from "react";
 
 export interface WebuiClientMessage {
   readonly msgId: string;
@@ -26,6 +26,7 @@ export interface WebuiClientSession {
   readonly title?: string;
   readonly createdAt: number;
   readonly updatedAt: number;
+  readonly workspaceDir?: string;
 }
 
 export interface WebuiClientSessionPage {
@@ -46,6 +47,16 @@ export type WebuiClientMessageLoader = (request: {
   readonly id: string;
   readonly before?: string;
 }) => Promise<WebuiClientMessagePage>;
+
+export interface WebuiClientCreateSessionRequest {
+  readonly name: string;
+  readonly workspaceDir: string;
+}
+export interface WebuiClientCreateSessionResult {
+  readonly sessionId?: string;
+  readonly session?: { readonly sessionId?: string; readonly workspaceDir?: string };
+}
+export type WebuiClientSessionCreator = (request: WebuiClientCreateSessionRequest) => Promise<WebuiClientCreateSessionResult>;
 
 export function readSessionIdFromHash(hash: string): string | undefined {
   const params = new URLSearchParams(hash.startsWith("#") ? hash.slice(1) : hash);
@@ -80,6 +91,28 @@ export interface WebuiClientFoundationAppProps {
   readonly loadSessions?: WebuiClientSessionLoader;
   readonly loadMessages?: WebuiClientMessageLoader;
   readonly locationHash?: string;
+  readonly createSession?: WebuiClientSessionCreator;
+}
+
+function useSelectedSessionId(locationHash?: string): [string | undefined, (id: string) => void] {
+  const read = () => readSessionIdFromHash(locationHash ?? (typeof window === "undefined" ? "" : window.location.hash));
+  const [selected, setSelected] = useState(read);
+  useEffect(() => {
+    if (locationHash !== undefined || typeof window === "undefined") return;
+    return subscribeToSessionHash((id) => setSelected(id));
+  }, [locationHash]);
+  return [selected, setSelected];
+}
+
+export function subscribeToSessionHash(onChange: (sessionId: string | undefined) => void): () => void {
+  if (typeof window === "undefined") return () => undefined;
+  const onHashChange = () => onChange(readSessionIdFromHash(window.location.hash));
+  window.addEventListener("hashchange", onHashChange);
+  return () => window.removeEventListener("hashchange", onHashChange);
+}
+
+function createdSessionId(result: WebuiClientCreateSessionResult): string | undefined {
+  return result.sessionId?.trim() || result.session?.sessionId?.trim() || undefined;
 }
 
 function sessionLabel(session: WebuiClientSession): string {
@@ -114,6 +147,7 @@ export function WebuiSessionList({
             <li key={session.sessionId} className="rounded-radius_8 bg-bg_grouped_secondary p-spacing_8">
               <a href={sessionHash(session.sessionId)} data-webui-session-link={session.sessionId}>
                 <div className="text-text_default_primary text-size_14 leading-line_height_20">{sessionLabel(session)}</div>
+                {session.workspaceDir ? <div data-webui-workspace-dir={session.workspaceDir} className="text-text_default_secondary text-size_12 leading-line_height_16">{session.workspaceDir}</div> : null}
               </a>
               <time
                 className="text-text_default_secondary text-size_12 leading-line_height_16"
@@ -189,12 +223,13 @@ export function WebuiClientFoundationApp({
   loadSessions,
   locationHash,
   loadMessages,
+  createSession,
 }: WebuiClientFoundationAppProps): ReactElement {
   const [page, setPage] = useState<WebuiClientSessionPage>(sessionPage ?? { sessions: [], hasMore: false });
   const [loading, setLoading] = useState(false);
-  const [selectedSessionId] = useState(() =>
-    readSessionIdFromHash(locationHash ?? (typeof window === "undefined" ? "" : window.location.hash)),
-  );
+  const [selectedSessionId, setSelectedSessionId] = useSelectedSessionId(locationHash);
+  const [createError, setCreateError] = useState<string | undefined>();
+  const [creating, setCreating] = useState(false);
   useEffect(() => {
     if (!loadSessions || sessionPage) return;
     let cancelled = false;
@@ -215,6 +250,26 @@ export function WebuiClientFoundationApp({
         nextCursor: nextPage.nextCursor,
       }));
     }).finally(() => setLoading(false));
+  } : undefined;
+  const submitCreate = createSession ? async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setCreating(true);
+    setCreateError(undefined);
+    try {
+      const result = await createSession({
+        name: String(form.get("name") ?? "").trim(),
+        workspaceDir: String(form.get("workspaceDir") ?? "").trim(),
+      });
+      const id = createdSessionId(result);
+      if (!id) throw new Error("createSession response did not include a session id");
+      setSelectedSessionId(id);
+      if (typeof window !== "undefined") window.location.hash = sessionHash(id);
+    } catch (error) {
+      setCreateError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setCreating(false);
+    }
   } : undefined;
   return (
     <div
@@ -260,6 +315,12 @@ export function WebuiClientFoundationApp({
             </h1>
           </header>
           <WebuiSessionList page={page} loading={loading} onLoadMore={loadMore} />
+          {submitCreate ? <form aria-label="Create session" onSubmit={submitCreate} className="flex flex-col gap-spacing_4">
+            <label>Agent name<input name="name" defaultValue="main" required /></label>
+            <label>Working directory<input name="workspaceDir" required /></label>
+            <button type="submit" disabled={creating}>{creating ? "Creating…" : "Create session"}</button>
+            {createError ? <p role="alert">Unable to create session: {createError}</p> : null}
+          </form> : null}
           {selectedSessionId && loadMessages ? (
             <WebuiSessionTranscript sessionId={selectedSessionId} loadMessages={loadMessages} />
           ) : null}
