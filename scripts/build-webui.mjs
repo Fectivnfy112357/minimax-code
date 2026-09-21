@@ -10,9 +10,14 @@
 // without a transport, so the client bundle is a single JS file plus the
 // HTML wrapper, and adding a second tool with its own metafile format
 // would defeat the boundary check.
+//
+// ADR 0010: only the esbuild artifact is verified and shipped. The
+// development server is not a verification surface, and a check that only
+// passes there proves nothing.
 
 import { build } from "esbuild";
 import {
+  readFileSync,
   rmSync,
   mkdirSync,
   cpSync,
@@ -21,10 +26,22 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { readExtraction } from "./lib/release-metadata.mjs";
+import { createWorkspaceSourcesPlugin } from "./lib/workspace-sources-plugin.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const packageDir = path.join(root, "packages/webui");
 const outdir = path.join(root, "dist-webui");
+const metadata = readExtraction(root);
+const packages = new Map(
+  metadata.packageRoots.map((directory) => {
+    const manifest = JSON.parse(
+      readFileSync(path.join(root, directory, "package.json"), "utf8"),
+    );
+    return [manifest.name, { directory, manifest }];
+  }),
+);
+const sourcePlugin = createWorkspaceSourcesPlugin(packages, root);
 
 rmSync(outdir, { recursive: true, force: true });
 mkdirSync(outdir, { recursive: true });
@@ -41,6 +58,7 @@ const server = await build({
   target: "node22",
   outdir: path.join(outdir, "server"),
   metafile: true,
+  plugins: [sourcePlugin],
   logLevel: "info",
 });
 

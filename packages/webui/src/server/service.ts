@@ -1,0 +1,392 @@
+// WebUI service: owns a runtime host, binds loopback, runs the wire
+// envelope with access control, and shuts down in order.
+//
+// This is the seam ticket 03 ships. It composes:
+//   * a harness port (real: script of the host's `CliService` facade;
+//     test: scripted stand-in),
+//   * a per-start credential,
+//   * the operation registry built from the port,
+//   * the access control rules described in ADR 0004.
+//
+// Shutdown order matches step 13 of the assembly checklist: stop accepting
+// new operations, then close every connection, then close the harness.
+
+import { createServer, type IncomingMessage, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import type { Duplex } from "node:stream";
+import { WebSocketServer, type WebSocket } from "ws";
+
+import {
+  createOperationRegistry,
+  type WebuiOperationRegistryEntry,
+} from "./operations.js";
+import {
+  createWebuiCredential,
+  credentialMatches,
+  type WebuiCredential,
+} from "./credentials.js";
+import {
+  isWebuiFrame,
+  WebuiErrorCode,
+  WEBUI_PROTOCOL_VERSION,
+  type WebuiErrorFrame,
+  type WebuiResponseFrame,
+} from "./envelope.js";
+import type { WebuiHarnessPort } from "./port.js";
+
+export const WEBUI_MAX_MESSAGE_BYTES = 256 * 1024;
+const WEBUI_CLOSE_GRACE_MS = 1000;
+
+export interface WebuiServiceOptions {
+  readonly port: WebuiHarnessPort;
+  /** Defaults to the protocol version the wire envelope ships. */
+  readonly protocolVersion?: number;
+  /** Loopback host the service binds to. Defaults to `127.0.0.1`. */
+  readonly host?: string;
+  /** TCP port; `0` asks the OS for a free port. Defaults to `0`. */
+  readonly tcpPort?: number;
+  /** Maximum WebSocket message size in bytes. */
+  readonly maxMessageBytes?: number;
+  /** Optional credential override; tests supply one to assert its shape. */
+  readonly credential?: WebuiCredential;
+  /** Optional server factory; tests inject an HTTP server without listening. */
+  readonly httpServerFactory?: () => Server;
+}
+
+export interface WebuiServiceInfo {
+  readonly host: string;
+  readonly tcpPort: number;
+  readonly protocolVersion: typeof WEBUI_PROTOCOL_VERSION;
+  readonly credential: WebuiCredential;
+  readonly boundUrl: string;
+}
+
+export class WebuiService {
+  private readonly port: WebuiHarnessPort;
+  private readonly host: string;
+  private readonly tcpPort: number;
+  private readonly maxMessageBytes: number;
+  private readonly credential: WebuiCredential;
+  private readonly protocolVersion: number;
+  private readonly operations: ReadonlyMap<string, WebuiOperationRegistryEntry>;
+  private readonly httpServer: Server;
+  private readonly wsServer: WebSocketServer;
+  private readonly connections = new Set<WebSocket>();
+  private accepting = true;
+  private startedPromise: Promise<WebuiServiceInfo> | undefined;
+  private bound: { info: WebuiServiceInfo } | undefined;
+
+  constructor(options: WebuiServiceOptions) {
+    this.port = options.port;
+    this.host = options.host ?? "127.0.0.1";
+    this.tcpPort = options.tcpPort ?? 0;
+    this.maxMessageBytes = options.maxMessageBytes ?? WEBUI_MAX_MESSAGE_BYTES;
+    this.credential = options.credential ?? createWebuiCredential();
+    this.protocolVersion = options.protocolVersion ?? WEBUI_PROTOCOL_VERSION;
+    this.operations = createOperationRegistry({
+      version: () => ({
+        version: this.port.version().version,
+        protocolVersion: this.port.version().protocolVersion,
+      }),
+    });
+    const factory = options.httpServerFactory ?? (() => createServer());
+    this.httpServer = factory();
+    this.wsServer = new WebSocketServer({
+      noServer: true,
+      maxPayload: this.maxMessageBytes,
+    });
+    this.httpServer.on("upgrade", this.#onUpgrade);
+    this.wsServer.on("connection", this.#onConnection);
+  }
+
+  /**
+   * Bind the server and resolve once it is listening. Resolves with the
+   * address the kernel actually allocated so tests can reach it.
+   */
+  start(): Promise<WebuiServiceInfo> {
+    if (this.startedPromise) return this.startedPromise;
+    this.startedPromise = new Promise<WebuiServiceInfo>((resolve, reject) => {
+      const onError = (error: Error) => {
+        this.httpServer.off("listening", onListening);
+        reject(error);
+      };
+      const onListening = () => {
+        this.httpServer.off("error", onError);
+        try {
+          const address = this.httpServer.address();
+          if (!address || typeof address === "string")
+            throw new Error("WebUI service bound to a non-TCP socket");
+          const tcpPort = (address as AddressInfo).port;
+          const info: WebuiServiceInfo = {
+            host: this.host,
+            tcpPort,
+            protocolVersion: WEBUI_PROTOCOL_VERSION,
+            credential: this.credential,
+            boundUrl: `ws://${this.host}:${tcpPort}`,
+          };
+          this.bound = { info };
+          resolve(info);
+        } catch (error) {
+          reject(error);
+        }
+      };
+      this.httpServer.once("error", onError);
+      this.httpServer.once("listening", onListening);
+      this.httpServer.listen(this.tcpPort, this.host);
+    });
+    return this.startedPromise;
+  }
+
+  info(): WebuiServiceInfo {
+    if (!this.bound) throw new Error("WebUI service is not started");
+    return this.bound.info;
+  }
+
+  /**
+   * Stop accepting new operations, drain every connection, then close
+   * the harness port. The order is the one step 13 of the assembly
+   * checklist requires: refuse new work first, then release resources,
+   * then tear down the host.
+   */
+  async close(): Promise<void> {
+    if (!this.accepting && !this.bound) return;
+    this.accepting = false;
+    // Force-terminate every connection before the server closes; otherwise
+    // `wsServer.close()` waits for the client to ack the close handshake
+    // and can hang for the duration of the platform TCP timeout.
+    for (const connection of this.connections) {
+      try {
+        connection.terminate();
+      } catch {
+        // ignore: the connection is already torn down.
+      }
+    }
+    this.connections.clear();
+    await new Promise<void>((resolve) => {
+      this.wsServer.close(() => resolve());
+    });
+    await new Promise<void>((resolve) => {
+      this.httpServer.close(() => resolve());
+    });
+    await this.port.close();
+  }
+
+  #onUpgrade = (
+    request: IncomingMessage,
+    socket: Duplex,
+    head: Buffer,
+  ): void => {
+    if (!this.accepting) {
+      socket.write(
+        "HTTP/1.1 503 Service Unavailable\r\n" +
+          "Connection: close\r\n" +
+          "\r\n",
+      );
+      socket.destroy();
+      return;
+    }
+    const url = parseWebSocketUrl(request.url);
+    if (!url) {
+      rejectUpgrade(socket, 400, "Bad Request");
+      return;
+    }
+    const urlHost = url.hostname.toLowerCase();
+    const requestHost = (request.headers.host ?? "").toLowerCase();
+    const requestOrigin = (request.headers.origin ?? "").toLowerCase();
+    if (!requestHost || !isLoopbackHost(requestHost.split(":")[0] ?? "")) {
+      rejectUpgrade(socket, 403, "Forbidden Host");
+      return;
+    }
+    if (urlHost !== "127.0.0.1" && urlHost !== "localhost") {
+      rejectUpgrade(socket, 403, "Forbidden Host");
+      return;
+    }
+    if (
+      requestOrigin &&
+      !isAllowedOrigin(requestOrigin, this.host, this.bound?.info.tcpPort)
+    ) {
+      rejectUpgrade(socket, 403, "Forbidden Origin");
+      return;
+    }
+    const presented = url.searchParams.get("token");
+    if (!credentialMatches(this.credential, presented)) {
+      rejectUpgrade(socket, 401, "Unauthorized");
+      return;
+    }
+    this.wsServer.handleUpgrade(request, socket, head, (ws) => {
+      this.wsServer.emit("connection", ws, request);
+    });
+  };
+
+  #onConnection = (ws: WebSocket): void => {
+    if (!this.accepting) {
+      ws.close(1001, "service shutting down");
+      return;
+    }
+    this.connections.add(ws);
+    ws.on("close", () => {
+      this.connections.delete(ws);
+    });
+    ws.on("error", () => {
+      this.connections.delete(ws);
+    });
+    ws.on("message", (raw, isBinary) => {
+      void this.#handleMessage(ws, raw, isBinary);
+    });
+  };
+
+  async #handleMessage(
+    ws: WebSocket,
+    raw: import("ws").RawData,
+    isBinary: boolean,
+  ): Promise<void> {
+    if (isBinary) {
+      sendFrame(ws, errorFrame("anonymous", WebuiErrorCode.invalidEnvelope, "binary frames are not accepted"));
+      return;
+    }
+    const text = raw.toString("utf8");
+    if (Buffer.byteLength(text, "utf8") > this.maxMessageBytes) {
+      sendFrame(
+        ws,
+        errorFrame("anonymous", WebuiErrorCode.payloadTooLarge, "frame exceeds the message size limit"),
+      );
+      return;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      sendFrame(
+        ws,
+        errorFrame("anonymous", WebuiErrorCode.invalidEnvelope, "frame is not valid JSON"),
+      );
+      return;
+    }
+    if (!isWebuiFrame(parsed)) {
+      sendFrame(
+        ws,
+        errorFrame("anonymous", WebuiErrorCode.protocolMismatch, "frame does not match the WebUI envelope"),
+      );
+      return;
+    }
+    if (parsed.kind !== "request") {
+      sendFrame(
+        ws,
+        errorFrame(parsed.requestId, WebuiErrorCode.invalidEnvelope, "servers do not accept client non-request frames"),
+      );
+      return;
+    }
+    if (!this.accepting) {
+      sendFrame(
+        ws,
+        errorFrame(parsed.requestId, WebuiErrorCode.shuttingDown, "service is shutting down"),
+      );
+      return;
+    }
+    const entry = this.operations.get(parsed.operation);
+    if (!entry) {
+      sendFrame(
+        ws,
+        errorFrame(parsed.requestId, WebuiErrorCode.unknownOperation, `unknown operation: ${parsed.operation}`),
+      );
+      return;
+    }
+    const validated = entry.operation.validate(parsed.body);
+    if (!validated.ok) {
+      sendFrame(ws, errorFrame(parsed.requestId, validated.code, validated.message));
+      return;
+    }
+    try {
+      const result = await entry.handle({ requestId: parsed.requestId }, validated.body);
+      sendFrame(ws, responseFrame(parsed.requestId, result.body));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      sendFrame(
+        ws,
+        errorFrame(parsed.requestId, WebuiErrorCode.harnessError, message),
+      );
+    }
+  }
+}
+
+function sendFrame(ws: WebSocket, frame: WebuiResponseFrame | WebuiErrorFrame) {
+  if (ws.readyState !== ws.OPEN) return;
+  ws.send(JSON.stringify(frame));
+}
+
+function responseFrame(requestId: string, body: unknown): WebuiResponseFrame {
+  return {
+    protocolVersion: WEBUI_PROTOCOL_VERSION,
+    kind: "response",
+    requestId,
+    body,
+  };
+}
+
+function errorFrame(
+  requestId: string,
+  code: string,
+  message: string,
+): WebuiErrorFrame {
+  return {
+    protocolVersion: WEBUI_PROTOCOL_VERSION,
+    kind: "error",
+    requestId,
+    code,
+    message,
+  };
+}
+
+function rejectUpgrade(
+  socket: Duplex,
+  status: number,
+  reason: string,
+): void {
+  const reasonLine = reason.replace(/[\r\n]/gu, " ");
+  socket.write(
+    `HTTP/1.1 ${status} ${reasonLine}\r\nConnection: close\r\n\r\n`,
+  );
+  socket.destroy();
+}
+
+function parseWebSocketUrl(rawUrl: string | undefined): URL | undefined {
+  if (!rawUrl) return undefined;
+  try {
+    const base = "ws://127.0.0.1";
+    return new URL(rawUrl, base);
+  } catch {
+    return undefined;
+  }
+}
+
+function isLoopbackHost(host: string): boolean {
+  return (
+    host === "127.0.0.1" ||
+    host === "localhost" ||
+    host === "::1" ||
+    host === "[::1]"
+  );
+}
+
+function isAllowedOrigin(origin: string, host: string, port?: number): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(origin);
+  } catch {
+    return false;
+  }
+  const protocol = parsed.protocol.toLowerCase();
+  if (protocol !== "http:" && protocol !== "https:") return false;
+  const hostname = parsed.hostname.toLowerCase();
+  if (hostname !== "127.0.0.1" && hostname !== "localhost") return false;
+  if (port === undefined) return true;
+  const portNumber = parsed.port ? Number(parsed.port) : defaultPortForProtocol(protocol);
+  return portNumber === port && parsed.hostname === host;
+}
+
+function defaultPortForProtocol(protocol: string): number {
+  return protocol === "https:" ? 443 : 80;
+}
+
+// Used by integration tests; not part of the public API.
+export const __testingCloseGraceMs = WEBUI_CLOSE_GRACE_MS;
