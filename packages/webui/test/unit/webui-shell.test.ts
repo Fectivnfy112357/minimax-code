@@ -178,6 +178,25 @@ describe("WebUI shell", () => {
     expect(html).toMatch(/border-border_default/u);
   });
 
+  it("uses the shell-level component classes for nav items, sessions, and the empty state", () => {
+    // The rendered result is the contract; the markup is the proxy.
+    // `webui-design-tokens.test.ts` then asserts every token the
+    // component classes resolve to has a definition in tokens.css.
+    const html = renderShell();
+
+    // Navigation rail items ride on `.webui-nav-item` and carry the
+    // active-state hook so a selected item reads differently from a
+    // hover-only item.
+    expect(html).toMatch(/webui-nav-item/u);
+    expect(html).toMatch(/data-webui-nav-active="true"/u);
+
+    // The empty-state surface for the session list gets the dedicated
+    // card treatment so it breathes the same way as a populated card
+    // rather than reading as an unstyled placeholder.
+    expect(html).toMatch(/webui-empty-state/u);
+    expect(html).toMatch(/No sessions yet\./u);
+  });
+
   it("falls back to the desktop mono stack for code blocks", () => {
     const html = renderShell();
 

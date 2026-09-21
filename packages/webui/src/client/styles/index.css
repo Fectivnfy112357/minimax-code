@@ -15,6 +15,7 @@
  */
 
 @import "./tokens.css";
+@import "./shell.css";
 
 @tailwind base;
 @tailwind components;

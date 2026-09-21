@@ -207,7 +207,7 @@ export function WebuiSessionList({
         Sessions
       </h2>
       {sessions.length === 0 ? (
-        <p className="text-text_default_secondary text-size_14 leading-line_height_20">
+        <p className="webui-empty-state text-text_default_secondary text-size_14 leading-line_height_20">
           No sessions yet.
         </p>
       ) : (
@@ -218,13 +218,14 @@ export function WebuiSessionList({
           {sessions.map((session) => (
             <li
               key={session.sessionId}
-              className="rounded-radius_8 bg-bg_grouped_secondary p-spacing_8"
+              className="webui-session-card"
+              data-webui-session-card="true"
             >
               <a
                 href={sessionHash(session.sessionId)}
                 data-webui-session-link={session.sessionId}
               >
-                <div className="text-text_default_primary text-size_14 leading-line_height_20">
+                <div className="text-text_default_primary text-size_14 leading-line_height_20 font-weight_medium">
                   {sessionLabel(session)}
                 </div>
                 {session.workspaceDir ? (
@@ -237,7 +238,7 @@ export function WebuiSessionList({
                 ) : null}
               </a>
               <time
-                className="text-text_default_secondary text-size_12 leading-line_height_16"
+                className="text-text_default_tertiary text-size_12 leading-line_height_16"
                 dateTime={new Date(session.updatedAt).toISOString()}
               >
                 {sessionTime(session.updatedAt)}
@@ -247,7 +248,12 @@ export function WebuiSessionList({
         </ul>
       )}
       {page.hasMore && onLoadMore ? (
-        <button type="button" onClick={onLoadMore} disabled={loading}>
+        <button
+          type="button"
+          onClick={onLoadMore}
+          disabled={loading}
+          className="webui-button-secondary text-text_default_primary text-size_14 leading-line_height_20"
+        >
           {loading ? "Loading…" : "Load more"}
         </button>
       ) : null}
@@ -326,7 +332,12 @@ export function WebuiSessionTranscript({
         ))}
       </ol>
       {loadOlder ? (
-        <button type="button" onClick={loadOlder} disabled={loading}>
+        <button
+          type="button"
+          onClick={loadOlder}
+          disabled={loading}
+          className="webui-button-secondary text-text_default_primary text-size_14 leading-line_height_20"
+        >
           Load older
         </button>
       ) : null}
@@ -383,19 +394,33 @@ function WebuiComposer({
       {stream.refusal ? (
         <p role="alert">Unable to send message: {stream.refusal}</p>
       ) : null}
-      <form onSubmit={submit}>
-        <label>
+      <form
+        onSubmit={submit}
+        className="flex flex-col gap-spacing_8"
+        data-webui-composer="true"
+      >
+        <label className="flex flex-col gap-spacing_4 text-text_default_primary text-size_14 leading-line_height_20 font-weight_medium">
           Message
           <textarea
             name="content"
             value={content}
             onChange={(event) => setContent(event.target.value)}
             disabled={sending}
+            placeholder="Send a message…"
+            className="webui-textarea"
+            data-webui-composer-input="true"
           />
         </label>
-        <button type="submit" disabled={sending || !content.trim()}>
-          {sending ? "Sending…" : "Send"}
-        </button>
+        <div className="flex justify-end">
+          <button
+            type="submit"
+            disabled={sending || !content.trim()}
+            className="webui-button-primary text-size_14"
+            data-webui-composer-submit="true"
+          >
+            {sending ? "Sending…" : "Send"}
+          </button>
+        </div>
       </form>
     </section>
   );
@@ -486,21 +511,31 @@ export function WebuiClientFoundationApp({
         data-webui-shell-region="rail"
         className="bg-bg_grouped_secondary border-r border-border_default"
       >
-        <div className="flex flex-col gap-spacing_4 p-spacing_8">
+        <div className="flex flex-col gap-spacing_8 p-spacing_8">
           <span
-            className="text-text_default_secondary text-size_12 leading-line_height_16"
+            className="text-text_default_secondary text-size_12 leading-line_height_16 font-weight_medium"
             data-webui-shell-placeholder="rail-header"
           >
             {label}
           </span>
           <ul className="flex flex-col gap-spacing_2">
-            <li className="rounded-radius_8 p-spacing_6 text-text_default_primary text-size_14 leading-line_height_20">
+            <li
+              className="webui-nav-item text-text_default_primary text-size_14 leading-line_height_20"
+              data-webui-nav-item="sessions"
+              data-webui-nav-active="true"
+            >
               Sessions
             </li>
-            <li className="rounded-radius_8 p-spacing_6 text-text_default_secondary text-size_14 leading-line_height_20">
+            <li
+              className="webui-nav-item text-text_default_secondary text-size_14 leading-line_height_20"
+              data-webui-nav-item="new-session"
+            >
               New session
             </li>
-            <li className="rounded-radius_8 p-spacing_6 text-text_default_secondary text-size_14 leading-line_height_20">
+            <li
+              className="webui-nav-item text-text_default_secondary text-size_14 leading-line_height_20"
+              data-webui-nav-item="settings"
+            >
               Settings
             </li>
           </ul>
@@ -525,21 +560,45 @@ export function WebuiClientFoundationApp({
             <form
               aria-label="Create session"
               onSubmit={submitCreate}
-              className="flex flex-col gap-spacing_4"
+              className="flex flex-col gap-spacing_8"
+              data-webui-create-form="true"
             >
-              <label>
+              <label className="flex flex-col gap-spacing_4 text-text_default_primary text-size_14 leading-line_height_20 font-weight_medium">
                 Agent name
-                <input name="name" defaultValue="main" required />
+                <input
+                  name="name"
+                  defaultValue="main"
+                  required
+                  className="webui-input"
+                  data-webui-create-name="true"
+                />
               </label>
-              <label>
+              <label className="flex flex-col gap-spacing_4 text-text_default_primary text-size_14 leading-line_height_20 font-weight_medium">
                 Working directory
-                <input name="workspaceDir" required />
+                <input
+                  name="workspaceDir"
+                  required
+                  className="webui-input"
+                  data-webui-create-workspace="true"
+                />
               </label>
-              <button type="submit" disabled={creating}>
-                {creating ? "Creating…" : "Create session"}
-              </button>
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  disabled={creating}
+                  className="webui-button-primary text-size_14"
+                  data-webui-create-submit="true"
+                >
+                  {creating ? "Creating…" : "Create session"}
+                </button>
+              </div>
               {createError ? (
-                <p role="alert">Unable to create session: {createError}</p>
+                <p
+                  role="alert"
+                  className="text-text_default_secondary text-size_12 leading-line_height_16"
+                >
+                  Unable to create session: {createError}
+                </p>
               ) : null}
             </form>
           ) : null}

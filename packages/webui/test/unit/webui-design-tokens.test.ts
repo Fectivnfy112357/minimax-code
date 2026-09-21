@@ -257,4 +257,31 @@ describe("WebUI compiled stylesheet", () => {
     expect(codeRule![1]).toMatch(/Hack/u);
     expect(codeRule![1]).toMatch(/PingFang SC/u);
   });
+
+  it("emits every component class the new shell references", () => {
+    // Ticket 08 (B3) added `.webui-button-primary`, `.webui-button-secondary`,
+    // `.webui-textarea`, `.webui-input`, `.webui-nav-item`,
+    // `.webui-session-card`, and `.webui-empty-state` to the markup, and
+    // the @layer components block in `shell.css` emits the matching
+    // styles. The component classes only carry meaning if Tailwind
+    // actually compiles them — assert each one lands in the output
+    // rather than silently degrading to a no-op.
+    const required = [
+      /\.webui-button-primary\s*\{/u,
+      /\.webui-button-secondary\s*\{/u,
+      /\.webui-input,\s*\n?\s*\.webui-textarea\s*\{/u,
+      /\.webui-textarea\s*\{/u,
+      /\.webui-nav-item\s*\{/u,
+      /\.webui-nav-item\[data-webui-nav-active="true"\]\s*\{/u,
+      /\.webui-session-card\s*\{/u,
+      /\.webui-empty-state\s*\{/u,
+      /\.webui-input:focus-visible/u,
+      /\.webui-textarea:focus-visible/u,
+      /\.webui-button-primary:focus-visible/u,
+      /\.webui-button-secondary:focus-visible/u,
+    ];
+    for (const re of required) {
+      expect(re.test(compiled), `compiled CSS missing ${re}`).toBe(true);
+    }
+  });
 });

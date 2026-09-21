@@ -1,0 +1,133 @@
+/*
+ * Shell-level component styles.
+ *
+ * Tailwind's @layer components slot sits between preflight (base) and the
+ * generated utilities (utilities). Rules here ride on the class of the
+ * component (or its data-attribute hook) so the markup can stay short
+ * while the rendered shell keeps the desktop's visual conventions.
+ *
+ * Every token referenced below must resolve to a definition in
+ * tokens.css — the compiled-stylesheet closure check in
+ * webui-design-tokens.test.ts enforces that contract.
+ */
+
+@layer components {
+  /* Primary action button: the accent fill the desktop uses for one
+   * restrained call to action on the page (Create session, Send). The
+   * hover/selected/focus states ride on the same token family. */
+  .webui-button-primary {
+    background-color: var(--bg_interaction_primary_default);
+    color: var(--text_default_inverted);
+    border-radius: var(--radius_12);
+    padding: var(--spacing_8) var(--spacing_16);
+    font-weight: var(--weight_medium);
+    line-height: var(--line_height_20);
+    border: 1px solid transparent;
+    transition: background-color 120ms ease, border-color 120ms ease;
+  }
+  .webui-button-primary:hover:not(:disabled) {
+    background-color: var(--bg_interaction_primary_hover);
+  }
+  .webui-button-primary:disabled {
+    background-color: var(--bg_interaction_primary_inactive);
+    color: var(--text_label_secondary_inactive);
+    cursor: not-allowed;
+  }
+  .webui-button-primary:focus-visible {
+    outline: 2px solid var(--border_accent);
+    outline-offset: 2px;
+  }
+
+  /* Secondary action button: the muted "Load more" / "Load older"
+   * control. Uses the grouped-secondary surface so it sits in the
+   * layout without competing for the eye. */
+  .webui-button-secondary {
+    background-color: var(--bg_grouped_secondary);
+    color: var(--text_default_primary);
+    border-radius: var(--radius_8);
+    padding: var(--spacing_6) var(--spacing_12);
+    line-height: var(--line_height_20);
+    border: 1px solid var(--border_default);
+    transition: background-color 120ms ease, border-color 120ms ease;
+  }
+  .webui-button-secondary:hover:not(:disabled) {
+    background-color: var(--bg_grouped_primary);
+    border-color: var(--border_heavy);
+  }
+  .webui-button-secondary:disabled {
+    color: var(--text_default_tertiary);
+    cursor: not-allowed;
+  }
+  .webui-button-secondary:focus-visible {
+    outline: 2px solid var(--border_accent);
+    outline-offset: 2px;
+  }
+
+  /* Inputs and textareas share the same shape: border, radius, padding,
+   * a background that contrasts the rail behind it, and an accent
+   * outline when the field is focused by the keyboard. */
+  .webui-input,
+  .webui-textarea {
+    background-color: var(--bg_default_primary);
+    color: var(--text_default_primary);
+    border-radius: var(--radius_8);
+    border: 1px solid var(--border_default);
+    padding: var(--spacing_8) var(--spacing_12);
+    line-height: var(--line_height_20);
+    transition: border-color 120ms ease, box-shadow 120ms ease;
+  }
+  .webui-textarea {
+    border-radius: var(--radius_20);
+    padding: var(--spacing_12) var(--spacing_16);
+    line-height: var(--line_height_22);
+  }
+  .webui-input:focus-visible,
+  .webui-textarea:focus-visible {
+    border-color: var(--border_accent);
+    outline: none;
+    box-shadow: 0 0 0 3px var(--bg_interaction_accent_focus_highlight);
+  }
+  .webui-input::placeholder,
+  .webui-textarea::placeholder {
+    color: var(--text_default_tertiary);
+  }
+
+  /* Navigation rail items: a pill that fills the selected one with the
+   * primary accent surface and uses a soft surface for the rest. */
+  .webui-nav-item {
+    border-radius: var(--radius_8);
+    padding: var(--spacing_6) var(--spacing_12);
+    line-height: var(--line_height_20);
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+  .webui-nav-item:hover {
+    background-color: var(--bg_grouped_primary);
+  }
+  .webui-nav-item[data-webui-nav-active="true"] {
+    background-color: var(--bg_interaction_primary_selected);
+    color: var(--text_default_primary);
+  }
+
+  /* Session list items: a card that sits flush with the surface, with a
+   * soft border so the surrounding whitespace reads. */
+  .webui-session-card {
+    border-radius: var(--radius_12);
+    background-color: var(--bg_default_primary);
+    border: 1px solid var(--border_default);
+    padding: var(--spacing_8) var(--spacing_12);
+    transition: border-color 120ms ease, box-shadow 120ms ease;
+  }
+  .webui-session-card:hover {
+    border-color: var(--border_heavy);
+    box-shadow: var(--shadow_default);
+  }
+
+  /* The empty state gets the same surface as a card so it breathes the
+   * same way without competing for visual weight. */
+  .webui-empty-state {
+    border-radius: var(--radius_12);
+    background-color: var(--bg_grouped_secondary);
+    padding: var(--spacing_12) var(--spacing_16);
+    line-height: var(--line_height_20);
+  }
+}
