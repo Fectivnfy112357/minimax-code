@@ -490,12 +490,27 @@ import {
   rankWebuiSlashPalette,
   sectionWebuiSlashPalette,
   WEBUI_BUILTIN_COMMANDS,
+  WEBUI_PLUGIN_REGISTRY,
   type SlashCommandEntry,
 } from "./slash-palette.js";
 
+// WebUI's static palette: built-ins + the plugin registry treated as
+// `paletteSection: "special"` skills. The async resolver
+// (`resolveWebuiSlashSkills`) is reserved for the future case where the
+// harness port adds a real `listSkills` RPC; today both calls converge on
+// the same static slice.
+const WEBUI_SLASH_PLUGIN_SKILLS: SlashCommandEntry[] = Object.values(
+  WEBUI_PLUGIN_REGISTRY,
+).map((entry) => ({
+  ...entry,
+  display_name: entry.label,
+  display_description: entry.description,
+  source_kind: "plugin",
+}));
+
 const WEBUI_SLASH_SECTIONED = sectionWebuiSlashPalette(
   WEBUI_BUILTIN_COMMANDS,
-  [],
+  WEBUI_SLASH_PLUGIN_SKILLS,
 );
 type WebuiCommandName = SlashCommandEntry["name"];
 
