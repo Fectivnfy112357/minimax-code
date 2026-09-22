@@ -338,12 +338,12 @@
      but show as unavailable: muted icon, dimmer label/description, no hover
      tint, and a not-allowed cursor so the user can tell the row exists for
      visual parity only. The harness port still wires the supported commands
-     (compact, new); unsupported entries wait for the matching feature. */
+     (compact, new); unsupported entries wait for the matching feature. The
+     selected highlight stays so keyboard navigation is still legible. */
   .webui-command-option[data-webui-command-option-inert="true"] {
     cursor: not-allowed;
   }
-  .webui-command-option[data-webui-command-option-inert="true"]:hover,
-  .webui-command-option[data-webui-command-option-inert="true"][aria-selected="true"] {
+  .webui-command-option[data-webui-command-option-inert="true"]:hover {
     background-color: transparent;
   }
   .webui-command-option[data-webui-command-option-inert="true"]
