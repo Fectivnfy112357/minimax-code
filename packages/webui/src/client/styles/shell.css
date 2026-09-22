@@ -55,6 +55,19 @@
   .webui-settings-empty-panel { max-width: 760px; min-height: 220px; margin: 0 auto; }
   .webui-settings-data-dir { max-width: 760px; margin: var(--spacing_32) auto 0; color: var(--text_default_tertiary); font-size: var(--size_12); word-break: break-all; }
   .webui-settings-empty { height: var(--spacing_128); }
+  .webui-settings-theme-options { display: flex; gap: var(--spacing_12); }
+  .mavis-settings-theme-option { display: flex; width: 100px; flex: 0 0 100px; flex-direction: column; align-items: center; gap: var(--spacing_8); border: 0; background: transparent; color: var(--text_default_secondary); font-size: var(--size_12); }
+  .mavis-settings-theme-preview { display: block; width: 100px; height: 64px; overflow: hidden; padding: 4px; border-radius: var(--radius_8); outline: 2px solid var(--border_light); outline-offset: -2px; }
+  .mavis-settings-theme-preview.is-selected { outline-color: var(--border_accent); }
+  .mavis-settings-theme-preview img { display: block; width: 100%; height: 100%; border-radius: var(--radius_8); object-fit: cover; }
+  .webui-settings-mode-options { display: flex; gap: var(--spacing_12); padding: var(--spacing_12); }
+  .webui-settings-mode-card { display: flex; min-height: 118px; flex: 1; flex-direction: column; align-items: flex-start; gap: var(--spacing_4); padding: var(--spacing_12) var(--spacing_16); border: 0; border-radius: var(--radius_12); background: var(--bg_interaction_secondary_default); color: var(--text_default_primary); text-align: left; }
+  .webui-settings-mode-card:disabled { cursor: not-allowed; opacity: .6; }
+  .webui-settings-disabled-row { cursor: default; opacity: .6; }
+  .webui-settings-disabled-row:hover { background: transparent; }
+  .webui-settings-mode-card strong { font-size: var(--size_14); font-weight: var(--weight_regular); }
+  .webui-settings-mode-card span { color: var(--text_default_secondary); font-size: var(--size_12); }
+  .webui-settings-no-results { padding: var(--spacing_16); color: var(--text_default_secondary); font-size: var(--size_12); }
   .mavis-settings-search-highlight { animation: webui-settings-search-highlight 1400ms ease both; }
   @keyframes webui-settings-search-highlight { 0% { background: var(--bg_interaction_tertiary_selected); } 100% { background: transparent; } }
   @keyframes webui-settings-content-in { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: translateX(0); } }

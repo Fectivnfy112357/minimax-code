@@ -1,4 +1,7 @@
 # Desktop source: ../minimax-webui/app/out/assets/img/ (27 files)
+../minimax-webui/app/out/_next/static/media/light.d3fbb1aa.svg -> img/light.d3fbb1aa.svg
+../minimax-webui/app/out/_next/static/media/dark.14c569ba.svg -> img/dark.14c569ba.svg
+../minimax-webui/app/out/_next/static/media/system.aba90841.svg -> img/system.aba90841.svg
 img/beian.png
 img/breakDown.png
 img/computer_use.png
