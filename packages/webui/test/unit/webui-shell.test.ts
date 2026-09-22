@@ -500,12 +500,13 @@ describe("WebUI shell — desktop anatomy", () => {
 
     // Row and control geometry the desktop states as utilities rather than as
     // tokens: 32px nav rows on an 8px radius, 48px identity row on 10px,
-    // 14px body type.
+    // 14px body type and the user-menu identity row's desktop radius.
     expect(html).toMatch(/h-8/u);
     expect(html).toMatch(/rounded-lg/u);
     expect(html).toMatch(/text-sm/u);
     expect(html).toMatch(/h-12/u);
-    expect(html).toMatch(/rounded-\[10px\]/u);
+    expect(html).toMatch(/webui-user-menu-trigger/u);
+    expect(html).toMatch(/webui-user-menu-anchor/u);
   });
 
   it("never leaves a control operable but unbound", () => {
@@ -530,7 +531,7 @@ describe("WebUI shell — desktop anatomy", () => {
         !/(?:^|\s)disabled(?:=|\s|>)/u.test(tag) &&
         !/aria-disabled="true"/u.test(tag),
     );
-    expect(operable).toHaveLength(4);
+    expect(operable).toHaveLength(5);
     expect(html).toMatch(/data-webui-sidebar-toggle="true"/u);
     expect(html).toMatch(/data-webui-nav-item="新建任务"/u);
     expect(html).toMatch(/data-webui-team-mode-toggle="true"/u);

@@ -8,7 +8,6 @@ interface SettingsModalProps {
   readonly sessionId?: string;
   readonly listModels?: (request?: { readonly sessionId?: string }) => Promise<readonly WebuiModelEntry[]>;
   readonly selectModel?: (request: { readonly providerId: string; readonly modelId: string; readonly variant?: string; readonly sessionId?: string }) => Promise<{ readonly success?: boolean }>;
-  readonly getSessionUsage?: (request: { readonly id: string }) => Promise<Record<string, unknown>>;
   readonly getAccountStatus?: (request?: { readonly sessionId?: string }) => Promise<Record<string, unknown>>;
   readonly signOut?: () => Promise<{ readonly success?: boolean }>;
 }
@@ -24,7 +23,6 @@ export function SettingsModal({
   sessionId,
   listModels,
   selectModel,
-  getSessionUsage,
   getAccountStatus,
   signOut,
 }: SettingsModalProps) {
@@ -34,7 +32,6 @@ export function SettingsModal({
   const [fontSize, setFontSize] = useState(() => stored("webui-font-size", "14px"));
   const [models, setModels] = useState<readonly WebuiModelEntry[]>([]);
   const [account, setAccount] = useState<Record<string, unknown>>();
-  const [usage, setUsage] = useState<Record<string, unknown>>();
   const [signOutError, setSignOutError] = useState<string>();
 
   useEffect(() => {
@@ -59,17 +56,15 @@ export function SettingsModal({
     void Promise.all([
       listModels?.({ sessionId }),
       getAccountStatus?.({ sessionId }),
-      sessionId && getSessionUsage ? getSessionUsage({ id: sessionId }) : undefined,
-    ]).then(([nextModels, nextAccount, nextUsage]) => {
+    ]).then(([nextModels, nextAccount]) => {
       if (cancelled) return;
       if (nextModels) setModels(nextModels);
       if (nextAccount) setAccount(nextAccount);
-      if (nextUsage) setUsage(nextUsage);
     });
     return () => {
       cancelled = true;
     };
-  }, [getAccountStatus, getSessionUsage, listModels, open, sessionId]);
+  }, [getAccountStatus, listModels, open, sessionId]);
 
   if (!open) return null;
   const selected = models.find((model) => model.selected);
@@ -104,7 +99,7 @@ export function SettingsModal({
         <section><h3>Appearance</h3><label>Font size <select value={fontSize} onChange={(event) => setFontSize(event.target.value)}><option value="12px">12</option><option value="14px">14</option><option value="16px">16</option></select></label><label className="ml-spacing_12">Density <select value={density} onChange={(event) => setDensity(event.target.value)}><option value="comfortable">Comfortable</option><option value="compact">Compact</option></select></label></section>
         <section><h3>Account</h3><p>{typeof account?.email === "string" ? account.email : "Managed MiniMax account"}</p><button className="webui-button-secondary" onClick={() => void handleSignOut()} disabled={!signOut}>Sign out</button>{signOutError ? <p role="alert">{signOutError}</p> : null}</section>
         <section><h3>Account onboarding</h3><a href="/onboarding">Review onboarding</a></section>
-        <section><h3>Model</h3>{models.length ? <select aria-label="Settings model" value={selectedValue} onChange={(event) => void onModelChange(event.target.value)}>{models.map((model) => <option key={`${model.providerId}/${model.modelId}/${model.variant ?? ""}`} value={`${model.providerId}/${model.modelId}/${model.variant ?? ""}`}>{model.displayName ?? `${model.providerId}/${model.modelId}`}</option>)}</select> : <p>Model selection is available when a session is active.</p>}<p>Usage: {usage ? String(usage.totalTokens ?? usage.total_tokens ?? "available") : "not loaded"}</p></section>
+        <section><h3>Model</h3>{models.length ? <select aria-label="Settings model" value={selectedValue} onChange={(event) => void onModelChange(event.target.value)}>{models.map((model) => <option key={`${model.providerId}/${model.modelId}/${model.variant ?? ""}`} value={`${model.providerId}/${model.modelId}/${model.variant ?? ""}`}>{model.displayName ?? `${model.providerId}/${model.modelId}`}</option>)}</select> : <p>Model selection is available when a session is active.</p>}</section>
         <section><h3>Persona</h3><p className="text-text_default_secondary">Coming soon — desktop only.</p></section>
         <section><h3>Providers</h3><p className="text-text_default_secondary">Coming soon — desktop only.</p></section>
         <section><h3>Memory</h3><p className="text-text_default_secondary">Coming soon — desktop only.</p></section>

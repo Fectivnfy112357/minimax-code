@@ -57,6 +57,7 @@ import {
   type TeamModeSessionChoices,
 } from "./team-mode.js";
 import { LeftRail } from "./components/LeftRail.js";
+import { UserMenu } from "./components/UserMenu.js";
 import { Transcript } from "./components/Transcript.js";
 import { initialWebuiStreamState, type WebuiStreamState } from "./stream.js";
 import {
@@ -464,6 +465,8 @@ export interface WebuiClientFoundationAppProps {
   readonly getAccountStatus?: (request?: {
     readonly sessionId?: string;
   }) => Promise<Record<string, unknown>>;
+  readonly signOut?: () => Promise<{ readonly success?: boolean }>;
+  readonly dataDir?: string;
   readonly runCommand?: (request: {
     readonly command: "help" | "new" | "compact" | "status" | "usage" | "model";
     readonly input?: string;
@@ -2592,7 +2595,10 @@ export function WebuiClientFoundationApp({
   deleteQueueItem,
   listModels,
   selectModel,
+  getSessionUsage,
   getAccountStatus,
+  signOut,
+  dataDir,
   runCommand,
   hostLabel,
 }: WebuiClientFoundationAppProps): ReactElement {
@@ -2743,7 +2749,7 @@ export function WebuiClientFoundationApp({
               aria-label="Primary navigation"
               data-webui-shell-region="rail"
               data-webui-rail-width={railCollapsed ? "64" : "274"}
-              className={`webui-rail relative z-50 flex h-full select-none flex-col overflow-hidden bg-bg_default_scrim ${railCollapsed ? "w-[64px]" : "w-[274px]"}`}
+              className={`webui-rail relative z-50 flex h-full select-none flex-col overflow-visible bg-bg_default_scrim ${railCollapsed ? "w-[64px]" : "w-[274px]"}`}
             >
               {/* The desktop keeps the rail controls above the first navigation row. */}
               <div className="flex w-full flex-shrink-0 flex-col pb-3">
@@ -2814,35 +2820,21 @@ export function WebuiClientFoundationApp({
                     />
                   </div>
 
-                  {/* The desktop puts the signed-in account here; the WebUI reports the
-                      scope it actually runs in instead. */}
-                  <div className="relative flex-shrink-0 border-t-[0.5px] border-border_default">
-                    <div
-                      className="m-1 flex h-12 w-[calc(100%-8px)] items-center overflow-hidden rounded-[10px] px-2"
-                      data-webui-rail-identity="true"
-                    >
-                      <div className="flex size-7 flex-shrink-0 items-center justify-center overflow-hidden rounded-full border border-border_light">
-                        <WebuiIconBrand className="h-full w-full" />
-                      </div>
-                      <div className="ml-2 flex min-w-0 max-w-[135px] flex-1 flex-col gap-[2px]">
-                        <span className="max-w-[135px] truncate text-[14px] font-[400] leading-[20px] text-text_default_primary">
-                          MiniMax Code
-                        </span>
-                        <span className="max-w-[135px] truncate text-[12px] font-[400] leading-[16px] text-text_default_tertiary">
-                          {hostLabel ? `本地 · ${hostLabel}` : "本地"}
-                        </span>
-                      </div>
-                      <span
-                        aria-hidden="true"
-                        data-webui-placeholder-chrome="identity-bell"
-                        className="ml-auto flex size-8 flex-shrink-0 items-center justify-center rounded-[8px] text-icon_default_primary opacity-40"
-                      >
-                        <WebuiIconBell />
-                      </span>
-                    </div>
-                  </div>
                 </>
               ) : null}
+              <div className="relative flex-shrink-0 border-t-[0.5px] border-border_default">
+                <UserMenu
+                  collapsed={railCollapsed}
+                  hostLabel={hostLabel}
+                  dataDir={dataDir}
+                  sessionId={selectedSessionId}
+                  listModels={listModels}
+                  selectModel={selectModel}
+                  getSessionUsage={getSessionUsage}
+                  getAccountStatus={getAccountStatus}
+                  signOut={signOut}
+                />
+              </div>
             </aside>
             </LeftRail>
           </div>

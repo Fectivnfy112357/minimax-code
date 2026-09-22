@@ -50,13 +50,15 @@ const app = <WebuiClientFoundationApp
     selectModel={transport.selectModel}
     getSessionUsage={transport.getSessionUsage}
     getAccountStatus={transport.getAccountStatus}
+    signOut={transport.signOut}
+    dataDir={runtimeConfig.dataDir}
     runCommand={transport.runCommand}
   />;
 const currentRoute = route(location.pathname);
 root.render(
   currentRoute === "login" ? <LoginCard onContinue={() => { location.href = "/onboarding"; }} /> :
   currentRoute === "onboarding" ? <OnboardingSteps onComplete={() => { location.href = "/archon"; }} /> :
-  currentRoute === "404" ? <NotFound /> : <ArchonPage dataDir={runtimeConfig.dataDir} sessionId={sessionId} listModels={transport.listModels} selectModel={transport.selectModel} getSessionUsage={transport.getSessionUsage} getAccountStatus={transport.getAccountStatus} signOut={transport.signOut}>{app}</ArchonPage>,
+  currentRoute === "404" ? <NotFound /> : <ArchonPage>{app}</ArchonPage>,
 );
 
 export {

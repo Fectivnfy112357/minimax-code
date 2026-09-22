@@ -27,12 +27,11 @@ export function toggleSessionOverlay(kind: WebuiSessionOverlay, sessionId: strin
 
 const DESKTOP_ONLY_ENTRIES = ["Schedules", "Plugins / Skill marketplace", "Websites", "Remote control", "Maxclaw", "Maxhermes"];
 
-export function LeftRail({ sessions, activeSessionId, onSelect, onNew, onSettings, children }: {
+export function LeftRail({ sessions, activeSessionId, onSelect, onNew, children }: {
   readonly sessions: readonly WebuiClientSession[];
   readonly activeSessionId?: string;
   readonly onSelect?: (id: string) => void;
   readonly onNew?: () => void;
-  readonly onSettings?: () => void;
   readonly children?: ReactNode;
 }) {
   if (children)
@@ -46,6 +45,5 @@ export function LeftRail({ sessions, activeSessionId, onSelect, onNew, onSetting
     <div className="min-h-0 flex-1 overflow-auto">
       {sessions.map((session) => <button key={session.sessionId} className="webui-session-card" data-webui-session-active={session.sessionId === activeSessionId} onClick={() => onSelect?.(session.sessionId)}>{session.title ?? session.agentName}</button>)}
     </div>
-    <button className="webui-button-secondary" onClick={onSettings}>Settings</button>
   </div>;
 }
