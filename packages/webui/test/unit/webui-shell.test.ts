@@ -56,7 +56,7 @@ import {
   reduceWebuiStreamFrame,
   type WebuiStreamState,
 } from "../../src/client/stream.js";
-import { projectWebuiTodos, WebuiWorkspacePanel } from "../../src/client/components/WorkspacePanels.js";
+import { projectWebuiTodos, WebuiProgressPanel, WebuiWorkspacePanel } from "../../src/client/components/WorkspacePanels.js";
 import type {
   WebuiClientMessageLoader,
   WebuiClientMessageSender,
@@ -112,6 +112,25 @@ describe("WebUI shell", () => {
     expect(markup).toContain("终端");
     expect(markup).not.toContain("浏览器");
     expect(markup).not.toContain("Mini App");
+  });
+
+  it("renders completed, in-progress, and pending progress rows in SSR", () => {
+    const markup = renderToStaticMarkup(createElement(WebuiProgressPanel, {
+      todos: [
+        { content: "已完成步骤", status: "completed" },
+        { content: "当前步骤", status: "in_progress" },
+        { content: "待处理步骤", status: "pending" },
+      ],
+    }));
+
+    expect(markup).toContain("已完成步骤");
+    expect(markup).toContain("当前步骤");
+    expect(markup).toContain("待处理步骤");
+    expect(markup).toContain("webui-progress-row--completed");
+    expect(markup).toContain("webui-progress-row--in_progress");
+    expect(markup).toContain("webui-progress-row--pending");
+    expect(markup).toContain("line-through");
+    expect(markup).toContain('class="webui-progress-marker"><svg');
   });
   it("preserves an explicit empty thinking variant in model selection requests", () => {
     expect(

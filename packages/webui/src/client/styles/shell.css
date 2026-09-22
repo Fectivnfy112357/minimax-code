@@ -20,6 +20,7 @@
 
 @layer components {
   .webui-workspace-panel { width: 288px; flex: 0 0 288px; min-height: 0; overflow: hidden; border-left: 1px solid var(--border_default); background: var(--bg_default_primary); color: var(--text_default_primary); }
+  .webui-workspace-panel > [data-workspace-section="true"]:first-child > [data-testid="workspace-section-divider"] { display: none; }
   .webui-workspace-section-title { display: flex; height: 28px; width: 100%; align-items: center; justify-content: space-between; border: 0; background: transparent; padding: 0 var(--spacing_12); color: var(--text_default_secondary); font-size: var(--size_12); text-align: left; }
   .webui-progress-panel { padding: var(--spacing_8) var(--spacing_8) var(--spacing_4); border-bottom: 1px solid var(--border_default); }
   .webui-progress-row { display: flex; min-height: 30px; align-items: center; gap: var(--spacing_8); border-radius: 10px; padding: 0 var(--spacing_4); font-size: var(--size_12); }
