@@ -10,8 +10,8 @@
 //   * Shell chrome reproduced from the desktop (rail rows, section header, headline,
 //     composer hint, chips, identity row) carries the desktop's own wording, because the
 //     element is a replica of the desktop's element.
-//   * Surfaces that exist only in the WebUI (the create-session card, the transcript,
-//     stream refusals) keep this client's existing English copy. Changing the product's
+//   * Surfaces that exist only in the WebUI (the transcript, stream refusals) keep this
+//     client's existing English copy. Changing the product's
 //     interface language is not a styling decision.
 //
 // Elements marked `data-webui-placeholder-chrome` reproduce the desktop's shape with the
@@ -23,7 +23,6 @@ import {
   useEffect,
   useId,
   useMemo,
-  useRef,
   useState,
   type FormEvent,
   type ReactElement,
@@ -498,12 +497,16 @@ export function WebuiProjectList({
   loading,
   onLoadMore,
   selectedSessionId,
+  activeWorkspaceDir,
+  onProjectSelect,
   error,
 }: {
   readonly page: WebuiClientSessionPage;
   readonly loading: boolean;
   readonly onLoadMore?: () => void;
   readonly selectedSessionId?: string;
+  readonly activeWorkspaceDir?: string;
+  readonly onProjectSelect?: (workspaceDir?: string) => void;
   readonly error?: string;
 }): ReactElement {
   const projects = useMemo(
@@ -553,21 +556,24 @@ export function WebuiProjectList({
       ) : (
         <ul className="space-y-px" data-webui-project-list-items="true">
           {projects.map((project) => {
-            const active = project.sessionIds.includes(selectedSessionId ?? "");
+            const active =
+              project.workspaceDir === activeWorkspaceDir ||
+              project.sessionIds.includes(selectedSessionId ?? "");
             const expanded = expandedProjects.has(project.key);
             return (
               <li key={project.key}>
                 <button
                   type="button"
                   aria-expanded={expanded}
-                  onClick={() =>
+                  onClick={() => {
+                    onProjectSelect?.(project.workspaceDir);
                     setExpandedProjects((current) => {
                       const next = new Set(current);
                       if (next.has(project.key)) next.delete(project.key);
                       else next.add(project.key);
                       return next;
-                    })
-                  }
+                    });
+                  }}
                   data-webui-project-link={project.key}
                   data-webui-project-active={active ? "true" : "false"}
                   title={project.workspaceDir}
@@ -1027,6 +1033,10 @@ export interface WebuiComposerSubmitArgs {
   readonly sending: boolean;
   readonly deps: WebuiStreamLoopDeps;
   readonly enqueueMessage?: WebuiClientMessageEnqueuer;
+  /** Create the first session silently when New Task has no selected session. */
+  readonly createSession?: WebuiClientSessionCreator;
+  readonly createSessionWorkspaceDir?: string;
+  readonly teamModeOff?: boolean;
 }
 
 export interface WebuiComposerSubmitHandlers {
@@ -1036,6 +1046,7 @@ export interface WebuiComposerSubmitHandlers {
   readonly setSending: (sending: boolean) => void;
   readonly onDraftChange: (next: string) => void;
   readonly onNeedsSession?: (draft: string) => void;
+  readonly onSessionCreated?: (sessionId: string) => void;
   readonly onQueued?: () => void;
 }
 
@@ -1064,6 +1075,7 @@ export function buildWebuiComposerHandlers(args: {
   readonly setSending: WebuiComposerSubmitHandlers["setSending"];
   readonly onDraftChange: WebuiComposerSubmitHandlers["onDraftChange"];
   readonly onNeedsSession?: WebuiComposerSubmitHandlers["onNeedsSession"];
+  readonly onSessionCreated?: WebuiComposerSubmitHandlers["onSessionCreated"];
   readonly onQueued?: WebuiComposerSubmitHandlers["onQueued"];
 }): WebuiComposerSubmitHandlers {
   return {
@@ -1071,6 +1083,7 @@ export function buildWebuiComposerHandlers(args: {
     setSending: args.setSending,
     onDraftChange: args.onDraftChange,
     onNeedsSession: args.onNeedsSession,
+    onSessionCreated: args.onSessionCreated,
     onQueued: args.onQueued,
   };
 }
@@ -1081,14 +1094,35 @@ export async function submitWebuiComposerTurn(
 ): Promise<void> {
   const message = args.draft.trim();
   if (!message || (!args.deps.sendMessage && !args.enqueueMessage)) return;
-  if (!args.sessionId) {
-    handlers.onNeedsSession?.(args.draft);
-    return;
+  let sessionId = args.sessionId;
+  let createdSessionIdForTurn: string | undefined;
+  if (!sessionId) {
+    if (!args.createSession || !args.createSessionWorkspaceDir) {
+      handlers.onNeedsSession?.(args.draft);
+      return;
+    }
+    try {
+      const result = await args.createSession({
+        name: "main",
+        workspaceDir: args.createSessionWorkspaceDir,
+        teamModeOff: args.teamModeOff,
+      });
+      sessionId = createdSessionId(result);
+      if (!sessionId)
+        throw new Error("createSession response did not include a session id");
+      createdSessionIdForTurn = sessionId;
+    } catch (error) {
+      handlers.setStream((current) => ({
+        ...current,
+        refusal: error instanceof Error ? error.message : String(error),
+      }));
+      return;
+    }
   }
   if (args.sending) {
     if (!args.enqueueMessage) return;
     try {
-      await args.enqueueMessage({ id: args.sessionId, content: message });
+      await args.enqueueMessage({ id: sessionId, content: message });
       handlers.onDraftChange("");
       handlers.onQueued?.();
     } catch (error) {
@@ -1097,6 +1131,7 @@ export async function submitWebuiComposerTurn(
         refusal: error instanceof Error ? error.message : String(error),
       }));
     }
+    if (createdSessionIdForTurn) handlers.onSessionCreated?.(createdSessionIdForTurn);
     return;
   }
   if (!args.deps.sendMessage) return;
@@ -1114,11 +1149,13 @@ export async function submitWebuiComposerTurn(
   try {
     await runWebuiStreamLoop(
       args.deps,
-      { sessionId: args.sessionId, message },
+      { sessionId, message },
       buildWebuiStreamLoopSink(handlers.setStream),
     );
   } finally {
     handlers.setSending(false);
+    if (createdSessionIdForTurn)
+      handlers.onSessionCreated?.(createdSessionIdForTurn);
   }
 }
 
@@ -1480,6 +1517,8 @@ function WebuiInteractionPanel({
 function WebuiComposer({
   sessionId,
   agentName,
+  createSession,
+  createSessionWorkspaceDir,
   sendMessage,
   resumeSession,
   loadMessages,
@@ -1499,6 +1538,7 @@ function WebuiComposer({
   draft,
   onDraftChange,
   onNeedsSession,
+  onSessionCreated,
   enqueueMessage,
   teamModeOff,
   onTeamModeOffChange,
@@ -1506,6 +1546,8 @@ function WebuiComposer({
 }: {
   readonly sessionId?: string;
   readonly agentName: string;
+  readonly createSession?: WebuiClientSessionCreator;
+  readonly createSessionWorkspaceDir?: string;
   readonly sendMessage?: WebuiClientMessageSender;
   readonly enqueueMessage?: WebuiClientMessageEnqueuer;
   readonly resumeSession?: WebuiClientSessionResumer;
@@ -1523,10 +1565,11 @@ function WebuiComposer({
   readonly selectModel?: WebuiClientFoundationAppProps["selectModel"];
   readonly getSessionUsage?: WebuiClientFoundationAppProps["getSessionUsage"];
   readonly getAccountStatus?: WebuiClientFoundationAppProps["getAccountStatus"];
-  /** The draft lives on the shell so it survives the session-creation detour. */
+  /** The draft lives on the shell so it survives silent first-session creation. */
   readonly draft: string;
   readonly onDraftChange: (next: string) => void;
   readonly onNeedsSession?: (draft: string) => void;
+  readonly onSessionCreated?: (sessionId: string) => void;
   readonly teamModeOff: boolean;
   readonly onTeamModeOffChange: (teamModeOff: boolean) => void;
   readonly teamModeLocked: boolean;
@@ -1554,7 +1597,14 @@ function WebuiComposer({
   );
 
   useEffect(() => {
-    if (!sessionId) return undefined;
+    if (!sessionId) {
+      // Inspection data belongs to a session. Clear it when New Task returns to
+      // home so the previous session's usage cannot bleed into the new composer.
+      setModels([]);
+      setUsage(undefined);
+      setAccountStatus(undefined);
+      return undefined;
+    }
     let cancelled = false;
     const refreshPending = async () => {
       const [permissionResult, questionnaireResult] = await Promise.all([
@@ -1828,20 +1878,20 @@ function WebuiComposer({
 
   const selectedModel = models.find((model) => model.selected);
   const summary =
+    sessionId &&
     usage?.summary &&
     typeof usage.summary === "object" &&
     !Array.isArray(usage.summary)
       ? (usage.summary as Record<string, unknown>)
       : undefined;
   const credentialMessage =
-    typeof selectedModel?.status?.lastErrorMessage === "string"
+    sessionId && typeof selectedModel?.status?.lastErrorMessage === "string"
       ? selectedModel.status.lastErrorMessage
-      : accountStatus && accountStatus.available === false
+      : sessionId && accountStatus && accountStatus.available === false
         ? "No usable credentials are available for the selected model."
         : undefined;
   // Typing is always available: composing a message does not need a target yet.
-  // Only the send path does, and it asks for the one missing thing instead of
-  // leaving the field disabled with no explanation.
+  // The first send creates the target session silently, using the selected project.
   const canCompose = Boolean(sendMessage);
   const canQueue = Boolean(enqueueMessage && sessionId);
   const sendable = (canCompose || canQueue) && Boolean(draft.trim());
@@ -1859,6 +1909,7 @@ function WebuiComposer({
     setSending,
     onDraftChange,
     onNeedsSession,
+    onSessionCreated,
     onQueued: () => {
       if (!sessionId || !listQueueMessages) return;
       void listQueueMessages({ id: sessionId })
@@ -1882,6 +1933,9 @@ function WebuiComposer({
         sending,
         deps: { sendMessage, resumeSession, loadMessages },
         enqueueMessage,
+        createSession,
+        createSessionWorkspaceDir,
+        teamModeOff,
       },
       handlers,
     );
@@ -2141,7 +2195,7 @@ function WebuiComposer({
             <span className="whitespace-nowrap">本地</span>
           </button>
         </div>
-        {summary ? (
+        {sessionId && summary ? (
           <p
             className="mt-2 text-text_default_secondary text-size_12"
             data-webui-session-usage="true"
@@ -2242,25 +2296,14 @@ export function WebuiClientFoundationApp({
   const selectedAgentName =
     page.sessions.find((session) => session.sessionId === selectedSessionId)
       ?.agentName ?? "main";
-  const [createError, setCreateError] = useState<string | undefined>();
-  const [creating, setCreating] = useState(false);
-  const [createOpen, setCreateOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [teamModeOff, setTeamModeOff] = useState(readTeamModeOff);
   const [teamModeChoices, setTeamModeChoices] =
     useState<TeamModeSessionChoices>(readTeamModeSessionChoices);
   const [pageError, setPageError] = useState<string | undefined>();
-  const createHintId = useId();
-  const createFormRef = useRef<HTMLFormElement | null>(null);
   useEffect(() => {
     writeTeamModeOff(teamModeOff);
   }, [teamModeOff]);
-  // The create form is a fallback for sending with no target session. The New Task
-  // rail action below is deliberately separate: it returns to the clean home state.
-  useEffect(() => {
-    if (!createOpen) return;
-    createFormRef.current?.scrollIntoView({ block: "center" });
-  }, [createOpen]);
   useEffect(() => {
     if (!loadSessions || sessionPage) return;
     let cancelled = false;
@@ -2302,55 +2345,47 @@ export function WebuiClientFoundationApp({
             .finally(() => setLoading(false));
         }
       : undefined;
-  const submitCreate = createSession
-    ? async (event: FormEvent<HTMLFormElement>) => {
-        event.preventDefault();
-        const form = new FormData(event.currentTarget);
-        setCreating(true);
-        setCreateError(undefined);
-        try {
-          const result = await createSession({
-            name: String(form.get("name") ?? "").trim(),
-            workspaceDir: String(form.get("workspaceDir") ?? "").trim(),
-            teamModeOff,
-          });
-          const id = createdSessionId(result);
-          if (!id)
-            throw new Error(
-              "createSession response did not include a session id",
-            );
-          setSelectedSessionId(id);
-          setCreateOpen(false);
-          writeTeamModeSessionChoice(id, teamModeOff);
-          setTeamModeChoices((current) => ({ ...current, [id]: teamModeOff }));
-          // The rail lists the shared history as it was at page load, so a session
-          // created here would not show up until a reload.
-          if (loadSessions)
-            void loadSessions()
-              .then((nextPage) => {
-                setPage(nextPage);
-                setPageError(undefined);
-              })
-              .catch((reason: unknown) =>
-                setPageError(
-                  reason instanceof Error ? reason.message : String(reason),
-                ),
-              );
-          if (typeof window !== "undefined")
-            window.location.hash = sessionHash(id);
-        } catch (error) {
-          setCreateError(
-            error instanceof Error ? error.message : String(error),
-          );
-        } finally {
-          setCreating(false);
-        }
-      }
-    : undefined;
-
+  const homeMode = !selectedSessionId;
+  const selectedSession = page.sessions.find(
+    (session) => session.sessionId === selectedSessionId,
+  );
+  const [newTaskWorkspaceDir, setNewTaskWorkspaceDir] = useState<string | undefined>(
+    () => selectedSession?.workspaceDir ?? page.sessions.find((session) => session.workspaceDir)?.workspaceDir,
+  );
+  useEffect(() => {
+    if (selectedSession?.workspaceDir)
+      setNewTaskWorkspaceDir(selectedSession.workspaceDir);
+    else if (!newTaskWorkspaceDir) {
+      const workspaceDir = page.sessions.find(
+        (session) => session.workspaceDir,
+      )?.workspaceDir;
+      if (workspaceDir) setNewTaskWorkspaceDir(workspaceDir);
+    }
+  }, [newTaskWorkspaceDir, page.sessions, selectedSession?.workspaceDir]);
+  const handleSessionCreated = (id: string) => {
+    setSelectedSessionId(id);
+    writeTeamModeSessionChoice(id, teamModeOff);
+    setTeamModeChoices((current) => ({ ...current, [id]: teamModeOff }));
+    // Refresh the project projection after the first message creates a session.
+    if (loadSessions)
+      void loadSessions()
+        .then((nextPage) => {
+          setPage(nextPage);
+          setPageError(undefined);
+        })
+        .catch((reason: unknown) =>
+          setPageError(reason instanceof Error ? reason.message : String(reason)),
+        );
+    if (typeof window !== "undefined")
+      window.history.replaceState(
+        null,
+        "",
+        `${window.location.pathname}${window.location.search}${sessionHash(id)}`,
+      );
+  };
   const startNewTask = () => {
-    setCreateOpen(false);
-    setCreateError(undefined);
+    if (selectedSession?.workspaceDir)
+      setNewTaskWorkspaceDir(selectedSession.workspaceDir);
     setDraft("");
     setSelectedSessionId(undefined);
     if (typeof window !== "undefined") {
@@ -2361,11 +2396,6 @@ export function WebuiClientFoundationApp({
       );
     }
   };
-
-  const homeMode = !selectedSessionId;
-  const selectedSession = page.sessions.find(
-    (session) => session.sessionId === selectedSessionId,
-  );
   const childSessions = selectedSessionId
     ? page.sessions.filter(
         (session) => session.parentSessionId === selectedSessionId,
@@ -2495,6 +2525,8 @@ export function WebuiClientFoundationApp({
                         loading={loading}
                         onLoadMore={loadMore}
                         selectedSessionId={selectedSessionId}
+                        activeWorkspaceDir={newTaskWorkspaceDir}
+                        onProjectSelect={setNewTaskWorkspaceDir}
                         error={pageError}
                       />
                     </div>
@@ -2593,6 +2625,8 @@ export function WebuiClientFoundationApp({
                   <WebuiComposer
                     sessionId={selectedSessionId}
                     agentName={selectedAgentName}
+                    createSession={createSession}
+                    createSessionWorkspaceDir={newTaskWorkspaceDir}
                     sendMessage={sendMessage}
                     enqueueMessage={enqueueMessage}
                     resumeSession={resumeSession}
@@ -2612,9 +2646,9 @@ export function WebuiClientFoundationApp({
                     getAccountStatus={getAccountStatus}
                     draft={draft}
                     onDraftChange={setDraft}
-                    onNeedsSession={() => setCreateOpen(true)}
                     teamModeOff={composerTeamModeOff}
                     teamModeLocked={composerTeamModeLocked}
+                    onSessionCreated={handleSessionCreated}
                     onTeamModeOffChange={(nextTeamModeOff) => {
                       setTeamModeOff(nextTeamModeOff);
                       if (selectedSessionId) {
@@ -2630,62 +2664,6 @@ export function WebuiClientFoundationApp({
                     }}
                   />
                   </Composer>
-
-                  {createOpen && submitCreate ? (
-                    <form
-                      ref={createFormRef}
-                      aria-label="Create session"
-                      onSubmit={submitCreate}
-                      className="webui-card mt-spacing_16 flex w-full flex-col gap-spacing_8 p-spacing_16"
-                      data-webui-create-form="true"
-                    >
-                      <label className="flex flex-col gap-spacing_4 text-text_default_primary text-size_14 leading-line_height_20 font-weight_medium">
-                        Agent name
-                        <input
-                          name="name"
-                          defaultValue="main"
-                          required
-                          className="webui-input"
-                          data-webui-create-name="true"
-                        />
-                      </label>
-                      <label className="flex flex-col gap-spacing_4 text-text_default_primary text-size_14 leading-line_height_20 font-weight_medium">
-                        Working directory
-                        <input
-                          name="workspaceDir"
-                          required
-                          aria-describedby={createHintId}
-                          className="webui-input"
-                          data-webui-create-workspace="true"
-                        />
-                      </label>
-                      <p
-                        id={createHintId}
-                        className="text-text_default_secondary text-size_12 leading-line_height_16"
-                      >
-                        A session's working directory is chosen at creation and
-                        cannot be changed afterwards.
-                      </p>
-                      <div className="flex justify-end">
-                        <button
-                          type="submit"
-                          disabled={creating}
-                          className="webui-button-primary text-size_14"
-                          data-webui-create-submit="true"
-                        >
-                          {creating ? "Creating…" : "Create session"}
-                        </button>
-                      </div>
-                      {createError ? (
-                        <p
-                          role="alert"
-                          className="text-text_default_secondary text-size_12 leading-line_height_16"
-                        >
-                          Unable to create session: {createError}
-                        </p>
-                      ) : null}
-                    </form>
-                  ) : null}
 
                   {homeMode ? <WebuiRecommendationChips /> : null}
 

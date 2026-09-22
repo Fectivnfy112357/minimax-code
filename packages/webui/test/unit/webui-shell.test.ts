@@ -1087,6 +1087,45 @@ describe("WebUI composer app-to-helper seam", () => {
     expect(final.phase).toBe("done");
   });
 
+  it("creates the first task silently and sends the original draft", async () => {
+    const { setStream, getState } = makeRecording();
+    const createSession = vi.fn(async (request) => ({
+      sessionId: request.workspaceDir === "/work/minimax-code" ? "created" : undefined,
+    }));
+    const sendMessage: WebuiClientMessageSender = vi.fn(
+      async (request, onFrame) => {
+        expect(request).toEqual({ id: "created", content: "start working" });
+        onFrame({ dataJson: "[DONE]" });
+      },
+    );
+    const onSessionCreated = vi.fn();
+
+    await submitWebuiComposerTurn(
+      {
+        draft: "start working",
+        sending: false,
+        deps: { sendMessage },
+        createSession,
+        createSessionWorkspaceDir: "/work/minimax-code",
+        teamModeOff: true,
+      },
+      buildWebuiComposerHandlers({
+        setStream,
+        setSending: () => undefined,
+        onDraftChange: () => undefined,
+        onSessionCreated,
+      }),
+    );
+
+    expect(createSession).toHaveBeenCalledWith({
+      name: "main",
+      workspaceDir: "/work/minimax-code",
+      teamModeOff: true,
+    });
+    expect(onSessionCreated).toHaveBeenCalledWith("created");
+    expect(getState().phase).toBe("done");
+  });
+
   it("queues a second composer submission while the current turn is running", async () => {
     const { setStream, getState } = makeRecording();
     const enqueueMessage: WebuiClientMessageEnqueuer = vi.fn(async () => ({

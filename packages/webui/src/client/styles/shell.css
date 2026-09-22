@@ -308,7 +308,7 @@
   /* ---------------------------------------------------------------- actions */
 
   /* Primary action button: the accent fill the desktop uses for one
-   * restrained call to action on the page (Create session, Send). The
+   * restrained call to action on the page (Send). The
    * hover/selected/focus states ride on the same token family. */
   .webui-button-primary {
     background-color: var(--bg_interaction_primary_default);
