@@ -519,6 +519,7 @@ export async function createWebuiRuntimeHost(
   // "runtime host does not expose the usage quota client".
   const hostHandle = {
     ...host,
+    appVersion: options.appVersion ?? host.appVersion ?? "webui",
     invalidateAuth: authContext.invalidator,
     getUsageQuota: (request?: { readonly forceRefresh?: boolean }) =>
       usageQuota.getUsageQuota(request),
