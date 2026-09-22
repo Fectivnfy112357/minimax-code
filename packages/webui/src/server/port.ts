@@ -115,6 +115,28 @@ export interface WebuiMessagesResult {
   readonly usage?: Record<string, unknown>;
 }
 
+export interface WebuiWorkspaceFile {
+  readonly path: string;
+  readonly name: string;
+  readonly kind?: string;
+  readonly children?: readonly WebuiWorkspaceFile[];
+}
+
+export interface WebuiWorkspaceFileContent {
+  readonly type: "text" | "binary";
+  readonly content: string;
+  readonly error?: string;
+}
+
+export interface WebuiCanvasDocument {
+  readonly schemaVersion: number;
+  readonly canvasId: string;
+  readonly sessionId: string;
+  readonly changeSeq: number;
+  readonly nodes: readonly Record<string, unknown>[];
+  readonly updatedAtMs: number;
+}
+
 /** Deliberately small WebUI-owned shape; the browser does not import the harness contract. */
 export interface WebuiSendMessageRequest {
   readonly id: string;
@@ -347,6 +369,10 @@ export interface WebuiHarnessPort {
     request: WebuiSessionLookupRequest,
   ): Promise<WebuiSessionLookupResult>;
   getMessages(request: WebuiMessagesRequest): Promise<WebuiMessagesResult>;
+  listWorkspaceFileTree?(request: { readonly workspaceDir: string; readonly path?: string }): Promise<readonly WebuiWorkspaceFile[]>;
+  readWorkspaceFile?(request: { readonly workspaceDir: string; readonly path: string }): Promise<WebuiWorkspaceFileContent>;
+  readCanvas?(request: { readonly sessionId: string }): Promise<WebuiCanvasDocument>;
+  applyCanvas?(request: { readonly sessionId: string; readonly operation: Record<string, unknown> }): Promise<{ readonly operationId: string; readonly document: WebuiCanvasDocument }>;
   sendMessage(
     request: WebuiSendMessageRequest,
     signal?: AbortSignal,

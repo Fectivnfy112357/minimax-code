@@ -38,6 +38,7 @@ import {
   type WebuiResponseFrame,
 } from "./envelope.js";
 import type { WebuiHarnessPort } from "./port.js";
+import { WebuiTerminalManager } from "./terminal.js";
 
 export const WEBUI_MAX_MESSAGE_BYTES = 256 * 1024;
 const WEBUI_CLOSE_GRACE_MS = 1000;
@@ -124,6 +125,7 @@ export class WebuiService {
   private readonly operations: ReadonlyMap<string, WebuiOperationRegistryEntry>;
   private readonly httpServer: Server;
   private readonly wsServer: WebSocketServer;
+  private readonly terminalManager = new WebuiTerminalManager();
   private readonly connections = new Set<WebSocket>();
   private readonly connectionSignals = new Map<WebSocket, AbortController>();
   private accepting = true;
@@ -158,6 +160,10 @@ export class WebuiService {
       createSession: (request) => this.port.createSession(request),
       getSession: (request) => this.port.getSession(request),
       getMessages: (request) => this.port.getMessages(request),
+      listWorkspaceFileTree: (request) => this.port.listWorkspaceFileTree?.(request) ?? Promise.reject(new Error("workspace file tree is unavailable")),
+      readWorkspaceFile: (request) => this.port.readWorkspaceFile?.(request) ?? Promise.reject(new Error("workspace file reads are unavailable")),
+      readCanvas: (request) => this.port.readCanvas?.(request) ?? Promise.reject(new Error("canvas is unavailable")),
+      applyCanvas: (request) => this.port.applyCanvas?.(request) ?? Promise.reject(new Error("canvas is unavailable")),
       sendMessage: (request, signal) => this.port.sendMessage(request, signal),
       enqueueMessage: (request) => this.port.enqueueMessage(request),
       resumeSession: (request, signal) =>
@@ -195,7 +201,7 @@ export class WebuiService {
       getCodexOAuthStatus: () => this.port.getCodexOAuthStatus(),
       requestCompaction: (request) => this.port.requestCompaction(request),
       invalidateAuth: this.port.invalidateAuth,
-    });
+    }, this.terminalManager);
     const factory = options.httpServerFactory ?? (() => createServer());
     this.httpServer = factory();
     this.wsServer = new WebSocketServer({
@@ -338,6 +344,7 @@ export class WebuiService {
    * then tear down the host.
    */
   async close(): Promise<void> {
+    this.terminalManager.disposeBySession();
     if (!this.accepting && !this.bound) return;
     this.accepting = false;
     // Force-terminate every connection before the server closes; otherwise

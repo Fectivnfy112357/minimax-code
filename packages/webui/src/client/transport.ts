@@ -65,6 +65,14 @@ export function createWebuiTransport({
   archiveSession: (request: { readonly id: string }) => Promise<{ readonly success?: boolean }>;
   deleteSession: (request: { readonly id: string }) => Promise<{ readonly success?: boolean }>;
   loadMessages: WebuiClientMessageLoader;
+  listWorkspaceFileTree: (request: { readonly workspaceDir: string; readonly path?: string }) => Promise<readonly import("../server/port.js").WebuiWorkspaceFile[]>;
+  readWorkspaceFile: (request: { readonly workspaceDir: string; readonly path: string }) => Promise<import("../server/port.js").WebuiWorkspaceFileContent>;
+  readCanvas: (request: { readonly sessionId: string }) => Promise<import("../server/port.js").WebuiCanvasDocument>;
+  applyCanvas: (request: { readonly sessionId: string; readonly operation: Record<string, unknown> }) => Promise<{ readonly operationId: string; readonly document: import("../server/port.js").WebuiCanvasDocument }>;
+  createTerminal: (request: { readonly workspaceDir: string }) => Promise<{ readonly terminalId: string; readonly status: string }>;
+  listTerminals: () => Promise<readonly Record<string, unknown>[]>;
+  writeTerminal: (request: { readonly terminalId: string; readonly data: string }) => Promise<{ readonly success: boolean }>;
+  disposeTerminal: (request: { readonly terminalId: string }) => Promise<{ readonly success: boolean }>;
   createSession: (
     request: WebuiClientCreateSessionRequest,
   ) => Promise<WebuiClientCreateSessionResult>;
@@ -340,6 +348,14 @@ export function createWebuiTransport({
         id,
         ...(before ? { before } : {}),
       }),
+    listWorkspaceFileTree: (body) => request("listWorkspaceFileTree", body),
+    readWorkspaceFile: (body) => request("readWorkspaceFile", body),
+    readCanvas: (body) => request("readCanvas", body),
+    applyCanvas: (body) => request("applyCanvas", body),
+    createTerminal: (body) => request("createTerminal", body),
+    listTerminals: () => request("listTerminals", {}),
+    writeTerminal: (body) => request("writeTerminal", body),
+    disposeTerminal: (body) => request("disposeTerminal", body),
     createSession: (body) => request("createSession", body),
     sendMessage: (body, onFrame) => stream("sendMessage", body, onFrame),
     enqueueMessage: (body) => request("enqueueMessage", body),

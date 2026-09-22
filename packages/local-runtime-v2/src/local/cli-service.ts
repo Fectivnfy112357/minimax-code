@@ -93,11 +93,14 @@ import type {
 } from "../application/conversation/conversation-application.js";
 import type { RuntimeApplications } from "../application/initialize.js";
 import type { LocalRuntimeApplication } from "../application/session/process-local-application-contract.js";
+import type { CanvasService } from "../service/canvas/contracts.js";
+import { readWorkspaceFile } from "../service/workspace/operations/workspace-path.js";
 
 export interface CliServiceOptions {
   readonly applications: RuntimeApplications;
   readonly application: LocalRuntimeApplication;
   readonly conversation: ConversationApplication;
+  readonly canvas: CanvasService;
 }
 
 export type CliSendMessageReq = ConversationSendMessageRequest;
@@ -560,6 +563,18 @@ export class CliService {
     if (!searchFiles)
       throw new Error("Runtime does not expose Workspace file search.");
     return searchFiles(input);
+  }
+
+  readWorkspaceFile(input: { workspaceDir: string; path: string }) {
+    return readWorkspaceFile(input.workspaceDir, input.path);
+  }
+
+  readCanvas(input: { sessionId: string }) {
+    return this.options.canvas.read(input);
+  }
+
+  applyCanvas(input: Parameters<CanvasService["apply"]>[0]) {
+    return this.options.canvas.apply(input);
   }
 
   getAccountStatus(

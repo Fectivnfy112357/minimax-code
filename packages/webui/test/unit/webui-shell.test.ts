@@ -56,6 +56,7 @@ import {
   reduceWebuiStreamFrame,
   type WebuiStreamState,
 } from "../../src/client/stream.js";
+import { projectWebuiTodos, WebuiWorkspacePanel } from "../../src/client/components/WorkspacePanels.js";
 import type {
   WebuiClientMessageLoader,
   WebuiClientMessageSender,
@@ -102,6 +103,16 @@ function renderSessionShell(): string {
 const INERT_NAV_LABELS = ["插件", "定时", "网站", "远程"];
 
 describe("WebUI shell", () => {
+  it("projects the latest desktop todowrite state and exposes only the three workspace tabs", () => {
+    expect(projectWebuiTodos([{ toolCalls: [{ name: "todowrite", input: { todos: [{ content: "完成面板", status: "in_progress" }] } }] }])).toEqual([{ content: "完成面板", status: "in_progress" }]);
+    const markup = renderToStaticMarkup(createElement(WebuiWorkspacePanel, { workspaceDir: "/tmp", todos: [] }));
+    expect(markup).toContain('data-testid="workspace-panel"');
+    expect(markup).toContain("查看文件");
+    expect(markup).toContain("画布");
+    expect(markup).toContain("终端");
+    expect(markup).not.toContain("浏览器");
+    expect(markup).not.toContain("Mini App");
+  });
   it("preserves an explicit empty thinking variant in model selection requests", () => {
     expect(
       buildWebuiModelSelectionRequest(

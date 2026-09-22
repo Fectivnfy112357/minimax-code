@@ -24,6 +24,7 @@
     "@mavis/shared": "workspace:^",
     "katex": "0.18.7",
     "marked": "18.0.12",
+    "node-pty": "1.1.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "ws": "8.21.3"

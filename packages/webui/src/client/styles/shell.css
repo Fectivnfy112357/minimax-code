@@ -19,6 +19,35 @@
  */
 
 @layer components {
+  .webui-workspace-panel { width: 288px; flex: 0 0 288px; min-height: 0; overflow: hidden; border-left: 1px solid var(--border_default); background: var(--bg_default_primary); color: var(--text_default_primary); }
+  .webui-workspace-section-title { display: flex; height: 28px; width: 100%; align-items: center; justify-content: space-between; border: 0; background: transparent; padding: 0 var(--spacing_12); color: var(--text_default_secondary); font-size: var(--size_12); text-align: left; }
+  .webui-progress-panel { padding: var(--spacing_8) var(--spacing_8) var(--spacing_4); border-bottom: 1px solid var(--border_default); }
+  .webui-progress-row { display: flex; min-height: 30px; align-items: center; gap: var(--spacing_8); border-radius: 10px; padding: 0 var(--spacing_4); font-size: var(--size_12); }
+  .webui-progress-marker { display: inline-flex; width: 18px; height: 18px; flex: 0 0 18px; align-items: center; justify-content: center; border-radius: 50%; font-size: 11px; }
+  .webui-progress-row--completed .webui-progress-marker { background: var(--icon_default_secondary); color: var(--text_default_inverted); }
+  .webui-progress-row--in_progress .webui-progress-marker { background: var(--bg_grouped_tertiary); color: var(--text_default_primary); }
+  .webui-progress-row--pending .webui-progress-marker { background: var(--bg_default_secondary); color: var(--text_default_tertiary); }
+  .webui-progress-empty { margin: 0; padding: var(--spacing_8) var(--spacing_4); color: var(--text_default_tertiary); font-size: var(--size_12); }
+  .webui-workspace-tabs { display: flex; gap: 2px; padding: var(--spacing_8); border-bottom: 1px solid var(--border_default); }
+  .webui-workspace-tabs button { flex: 1; border: 0; border-radius: var(--radius_8); background: transparent; padding: var(--spacing_8) var(--spacing_4); color: var(--text_default_secondary); font-size: var(--size_12); }
+  .webui-workspace-tabs button.is-active { background: var(--bg_interaction_tertiary_selected); color: var(--text_default_primary); }
+  .webui-workspace-content { min-height: 0; height: calc(100% - 196px); overflow: auto; padding: var(--spacing_8); }
+  .webui-file-tree-row { width: 100%; border: 0; background: transparent; padding: 4px; color: var(--text_default_secondary); text-align: left; font-size: var(--size_12); }
+  .webui-file-tree-row:hover { background: var(--bg_interaction_tertiary_hover); color: var(--text_default_primary); }
+  .webui-file-viewer { margin-top: var(--spacing_8); }
+  .file-tab { display: flex; align-items: center; gap: var(--spacing_4); overflow: hidden; padding: 0 var(--spacing_8); font-size: var(--size_12); white-space: nowrap; }
+  .file-tab button { margin-left: auto; border: 0; background: transparent; color: inherit; }
+  .webui-file-viewer pre { max-height: 48vh; overflow: auto; margin-top: var(--spacing_8); white-space: pre-wrap; font-family: Hack, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; }
+  .webui-canvas-content, .webui-terminal-empty { position: relative; display: flex; min-height: 300px; height: calc(100% - 180px); flex-direction: column; align-items: center; justify-content: center; gap: var(--spacing_8); padding: var(--spacing_16); color: var(--text_default_secondary); text-align: center; }
+  .webui-canvas-content p, .webui-terminal-empty p { margin: 0; color: var(--text_default_tertiary); font-size: var(--size_12); }
+  .webui-canvas-stage { display: flex; min-width: 160px; min-height: 100px; align-items: center; justify-content: center; gap: var(--spacing_8); transform-origin: center; }
+  .webui-canvas-node { border: 1px solid var(--border_default); border-radius: var(--radius_8); background: var(--bg_grouped_secondary); padding: var(--spacing_8); font-size: var(--size_12); }
+  .webui-canvas-zoom { position: absolute; right: var(--spacing_8); bottom: var(--spacing_8); font-size: var(--size_12); }
+  .webui-terminal-empty button { border: 1px solid var(--border_default); border-radius: var(--radius_8); background: transparent; padding: var(--spacing_8) var(--spacing_12); color: var(--text_default_primary); }
+  .webui-terminal-instance { width: 100%; text-align: left; }
+  .webui-terminal-instance pre { min-height: 160px; max-height: 320px; overflow: auto; background: var(--bg_default_secondary); padding: var(--spacing_8); font-family: Hack, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; white-space: pre-wrap; }
+  .webui-terminal-instance form { display: flex; gap: var(--spacing_4); }
+  .webui-terminal-instance input { min-width: 0; flex: 1; border: 1px solid var(--border_default); border-radius: var(--radius_8); background: var(--bg_default_secondary); color: var(--text_default_primary); padding: var(--spacing_4); }
   .webui-settings-mask { position: fixed; inset: 0; z-index: 100; display: flex; background: var(--utility_scrim); }
   .webui-settings-modal { display: flex; width: 100vw; height: 100vh; overflow: hidden; background: var(--bg_default_primary); color: var(--text_default_primary); }
   .webui-settings-sidebar { width: 260px; flex: 0 0 260px; overflow-y: auto; padding: var(--spacing_20) var(--spacing_12); background: var(--bg_grouped_secondary); border-right: 1px solid var(--border_default); }

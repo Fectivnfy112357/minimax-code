@@ -66,6 +66,7 @@ import {
 import { readNoProjectFlag, writeNoProjectFlag } from "./no-project.js";
 import { LeftRail } from "./components/LeftRail.js";
 import { UserMenu } from "./components/UserMenu.js";
+import { WebuiWorkspacePanel, projectWebuiTodos, type WebuiTodo } from "./components/WorkspacePanels.js";
 import { Transcript } from "./components/Transcript.js";
 import { initialWebuiStreamState, type WebuiStreamState } from "./stream.js";
 import {
@@ -620,6 +621,14 @@ export interface WebuiClientFoundationAppProps {
   readonly sessionPage?: WebuiClientSessionPage;
   readonly loadSessions?: WebuiClientSessionLoader;
   readonly loadMessages?: WebuiClientMessageLoader;
+  readonly listWorkspaceFileTree?: (request: { readonly workspaceDir: string; readonly path?: string }) => Promise<readonly import("../server/port.js").WebuiWorkspaceFile[]>;
+  readonly readWorkspaceFile?: (request: { readonly workspaceDir: string; readonly path: string }) => Promise<import("../server/port.js").WebuiWorkspaceFileContent>;
+  readonly readCanvas?: (request: { readonly sessionId: string }) => Promise<import("../server/port.js").WebuiCanvasDocument>;
+  readonly applyCanvas?: (request: { readonly sessionId: string; readonly operation: Record<string, unknown> }) => Promise<unknown>;
+  readonly createTerminal?: (request: { readonly workspaceDir: string }) => Promise<{ readonly terminalId: string; readonly status: string }>;
+  readonly listTerminals?: () => Promise<readonly Record<string, unknown>[]>;
+  readonly writeTerminal?: (request: { readonly terminalId: string; readonly data: string }) => Promise<unknown>;
+  readonly disposeTerminal?: (request: { readonly terminalId: string }) => Promise<unknown>;
   readonly locationHash?: string;
   readonly createSession?: WebuiClientSessionCreator;
   readonly sendMessage?: WebuiClientMessageSender;
@@ -3186,6 +3195,14 @@ export function WebuiClientFoundationApp({
   dataDir,
   runCommand,
   hostLabel,
+  listWorkspaceFileTree,
+  readWorkspaceFile,
+  readCanvas,
+  applyCanvas,
+  createTerminal,
+  listTerminals,
+  writeTerminal,
+  disposeTerminal,
 }: WebuiClientFoundationAppProps): ReactElement {
   const [runtimeVersion, setRuntimeVersion] = useState(version);
   useEffect(() => { if (!runtimeVersion && getVersion) void getVersion().then(setRuntimeVersion); }, [getVersion, runtimeVersion]);
@@ -3203,6 +3220,15 @@ export function WebuiClientFoundationApp({
   const [teamModeChoices, setTeamModeChoices] =
     useState<TeamModeSessionChoices>(readTeamModeSessionChoices);
   const [pageError, setPageError] = useState<string | undefined>();
+  const [progressTodos, setProgressTodos] = useState<readonly WebuiTodo[]>([]);
+  useEffect(() => {
+    if (!selectedSessionId || !loadMessages) { setProgressTodos([]); return; }
+    let cancelled = false;
+    void loadMessages({ id: selectedSessionId }).then((result) => {
+      if (!cancelled) setProgressTodos(projectWebuiTodos((result.messages ?? []) as unknown as readonly Record<string, unknown>[]));
+    }).catch(() => { if (!cancelled) setProgressTodos([]); });
+    return () => { cancelled = true; };
+  }, [loadMessages, selectedSessionId]);
   useEffect(() => {
     writeTeamModeOff(teamModeOff);
   }, [teamModeOff]);
@@ -3491,7 +3517,7 @@ export function WebuiClientFoundationApp({
           {/* -------------------------------------------------------------- main */}
           <main
             data-webui-shell-region="surface"
-            className="relative flex min-h-0 min-w-0 flex-1 flex-col"
+            className="relative flex min-h-0 min-w-0 flex-1 flex-row"
           >
             <div className="relative flex h-full min-w-0 flex-1 flex-col">
               <div
@@ -3593,6 +3619,7 @@ export function WebuiClientFoundationApp({
                 </div>
               </div>
             </div>
+            {!homeMode ? <WebuiWorkspacePanel sessionId={selectedSessionId} workspaceDir={selectedSession?.workspaceDir} listWorkspaceFileTree={listWorkspaceFileTree} readWorkspaceFile={readWorkspaceFile} readCanvas={readCanvas} applyCanvas={applyCanvas} createTerminal={createTerminal} listTerminals={listTerminals} writeTerminal={writeTerminal} disposeTerminal={disposeTerminal} todos={progressTodos} /> : null}
           </main>
         </div>
       </div>

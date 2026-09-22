@@ -32,6 +32,9 @@ import type {
   WebuiInteractionReplyResult,
   WebuiPermissionDecision,
   WebuiQueueItem,
+  WebuiWorkspaceFile,
+  WebuiWorkspaceFileContent,
+  WebuiCanvasDocument,
   WebuiModelEntry,
 } from "./port.js";
 
@@ -78,6 +81,10 @@ export interface WebuiRuntimeHostHandle {
       request: import("./port.js").WebuiMessagesRequest,
       context?: Record<string, never>,
     ): Promise<import("./port.js").WebuiMessagesResult>;
+    listWorkspaceFileTree?(request: { readonly workspaceDir: string; readonly path?: string }): Promise<readonly WebuiWorkspaceFile[]>;
+    readWorkspaceFile?(request: { readonly workspaceDir: string; readonly path: string }): Promise<WebuiWorkspaceFileContent>;
+    readCanvas?(request: { readonly sessionId: string }): Promise<WebuiCanvasDocument>;
+    applyCanvas?(request: { readonly sessionId: string; readonly operation: Record<string, unknown> }): Promise<{ readonly operationId: string; readonly document: WebuiCanvasDocument }>;
     sendMessage(
       request: WebuiSendMessageRequest,
       context?: { readonly signal?: AbortSignal },
@@ -229,6 +236,22 @@ export function createHarnessPortFromHost(
       if (!host.cliService)
         throw new Error("runtime host does not expose the CLI service");
       return host.cliService.getMessages(request, {});
+    },
+    async listWorkspaceFileTree(request) {
+      if (!host.cliService) throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.listWorkspaceFileTree?.(request) as Promise<readonly WebuiWorkspaceFile[]>;
+    },
+    async readWorkspaceFile(request) {
+      if (!host.cliService) throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.readWorkspaceFile?.(request) as Promise<WebuiWorkspaceFileContent>;
+    },
+    async readCanvas(request) {
+      if (!host.cliService) throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.readCanvas?.(request) as Promise<WebuiCanvasDocument>;
+    },
+    async applyCanvas(request) {
+      if (!host.cliService) throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.applyCanvas?.(request as never) as Promise<{ readonly operationId: string; readonly document: WebuiCanvasDocument }>;
     },
     async sendMessage(request, signal) {
       if (!host.cliService)

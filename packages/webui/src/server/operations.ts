@@ -33,6 +33,7 @@ import {
   projectSessionStream,
   projectUsage,
 } from "./projections/index.js";
+import type { WebuiTerminalManager } from "./terminal.js";
 
 export interface WebuiOperationContext {
   readonly requestId: string;
@@ -75,6 +76,16 @@ const LIST_SESSIONS_OPERATION_NAME = "listSessions" as const;
 const CREATE_SESSION_OPERATION_NAME = "createSession" as const;
 const GET_SESSION_OPERATION_NAME = "getSession" as const;
 const GET_MESSAGES_OPERATION_NAME = "getMessages" as const;
+const LIST_WORKSPACE_FILE_TREE_OPERATION_NAME = "listWorkspaceFileTree" as const;
+const READ_WORKSPACE_FILE_OPERATION_NAME = "readWorkspaceFile" as const;
+const READ_CANVAS_OPERATION_NAME = "readCanvas" as const;
+const APPLY_CANVAS_OPERATION_NAME = "applyCanvas" as const;
+const CREATE_TERMINAL_OPERATION_NAME = "createTerminal" as const;
+const LIST_TERMINALS_OPERATION_NAME = "listTerminals" as const;
+const WRITE_TERMINAL_OPERATION_NAME = "writeTerminal" as const;
+const RESIZE_TERMINAL_OPERATION_NAME = "resizeTerminal" as const;
+const DISPOSE_TERMINAL_OPERATION_NAME = "disposeTerminal" as const;
+const WATCH_TERMINAL_OPERATION_NAME = "watchTerminal" as const;
 const SEND_MESSAGE_OPERATION_NAME = "sendMessage" as const;
 const ENQUEUE_MESSAGE_OPERATION_NAME = "enqueueMessage" as const;
 const RESUME_SESSION_OPERATION_NAME = "resumeSession" as const;
@@ -294,6 +305,61 @@ export const getSessionOperation: WebuiOperation<
   name: GET_SESSION_OPERATION_NAME,
   validate: (body) => validateSessionIdBody(GET_SESSION_OPERATION_NAME, body),
 };
+
+function validateObjectBody(operation: string, body: unknown): WebuiOperationValidation<Record<string, unknown>> {
+  if (body === null || typeof body !== "object" || Array.isArray(body))
+    return { ok: false, code: WebuiErrorCode.invalidBody, message: `${operation} body must be an object` };
+  return { ok: true, body: body as Record<string, unknown> };
+}
+
+export const listWorkspaceFileTreeOperation: WebuiOperation<Record<string, unknown>> = {
+  name: LIST_WORKSPACE_FILE_TREE_OPERATION_NAME,
+  validate: (body) => {
+    const result = validateObjectBody(LIST_WORKSPACE_FILE_TREE_OPERATION_NAME, body);
+    if (!result.ok) return result;
+    if (typeof result.body.workspaceDir !== "string" || !result.body.workspaceDir.trim())
+      return { ok: false, code: WebuiErrorCode.invalidBody, message: "workspaceDir is required" };
+    if (result.body.path !== undefined && typeof result.body.path !== "string")
+      return { ok: false, code: WebuiErrorCode.invalidBody, message: "path must be a string" };
+    return result;
+  },
+};
+export const readWorkspaceFileOperation: WebuiOperation<Record<string, unknown>> = {
+  name: READ_WORKSPACE_FILE_OPERATION_NAME,
+  validate: (body) => {
+    const result = validateObjectBody(READ_WORKSPACE_FILE_OPERATION_NAME, body);
+    if (!result.ok) return result;
+    if (typeof result.body.workspaceDir !== "string" || typeof result.body.path !== "string")
+      return { ok: false, code: WebuiErrorCode.invalidBody, message: "workspaceDir and path are required" };
+    return result;
+  },
+};
+export const readCanvasOperation: WebuiOperation<Record<string, unknown>> = {
+  name: READ_CANVAS_OPERATION_NAME,
+  validate: (body) => {
+    const result = validateObjectBody(READ_CANVAS_OPERATION_NAME, body);
+    if (!result.ok) return result;
+    return typeof result.body.sessionId === "string" && result.body.sessionId.trim()
+      ? result
+      : { ok: false, code: WebuiErrorCode.invalidBody, message: "sessionId is required" };
+  },
+};
+export const applyCanvasOperation: WebuiOperation<Record<string, unknown>> = {
+  name: APPLY_CANVAS_OPERATION_NAME,
+  validate: (body) => {
+    const result = validateObjectBody(APPLY_CANVAS_OPERATION_NAME, body);
+    if (!result.ok) return result;
+    return typeof result.body.sessionId === "string" && result.body.operation !== undefined
+      ? result
+      : { ok: false, code: WebuiErrorCode.invalidBody, message: "sessionId and operation are required" };
+  },
+};
+export const createTerminalOperation: WebuiOperation<Record<string, unknown>> = { name: CREATE_TERMINAL_OPERATION_NAME, validate: (body) => validateObjectBody(CREATE_TERMINAL_OPERATION_NAME, body) };
+export const listTerminalsOperation: WebuiOperation<Record<string, never>> = { name: LIST_TERMINALS_OPERATION_NAME, validate: (body) => body && typeof body === "object" && !Array.isArray(body) && Object.keys(body).length === 0 ? { ok: true, body: {} } : { ok: false, code: WebuiErrorCode.invalidBody, message: "listTerminals body must be an empty object" } };
+export const writeTerminalOperation: WebuiOperation<Record<string, unknown>> = { name: WRITE_TERMINAL_OPERATION_NAME, validate: (body) => validateObjectBody(WRITE_TERMINAL_OPERATION_NAME, body) };
+export const resizeTerminalOperation: WebuiOperation<Record<string, unknown>> = { name: RESIZE_TERMINAL_OPERATION_NAME, validate: (body) => validateObjectBody(RESIZE_TERMINAL_OPERATION_NAME, body) };
+export const disposeTerminalOperation: WebuiOperation<Record<string, unknown>> = { name: DISPOSE_TERMINAL_OPERATION_NAME, validate: (body) => validateObjectBody(DISPOSE_TERMINAL_OPERATION_NAME, body) };
+export const watchTerminalOperation: WebuiOperation<Record<string, unknown>> = { name: WATCH_TERMINAL_OPERATION_NAME, validate: (body) => validateObjectBody(WATCH_TERMINAL_OPERATION_NAME, body) };
 
 function validateGetMessagesBody(
   body: unknown,
@@ -1096,6 +1162,10 @@ export function createOperationRegistry(
     | "createSession"
     | "getSession"
     | "getMessages"
+    | "listWorkspaceFileTree"
+    | "readWorkspaceFile"
+    | "readCanvas"
+    | "applyCanvas"
     | "sendMessage"
     | "enqueueMessage"
     | "resumeSession"
@@ -1131,6 +1201,7 @@ export function createOperationRegistry(
     | "requestCompaction"
     | "invalidateAuth"
   >,
+  terminal?: WebuiTerminalManager,
 ): ReadonlyMap<string, WebuiOperationRegistryEntry> {
   const registry = new Map<string, WebuiOperationRegistryEntry>();
   registerOperation(registry, {
@@ -1139,6 +1210,20 @@ export function createOperationRegistry(
       body: await port.createSession(body),
     }),
   });
+  if (port.listWorkspaceFileTree && port.readWorkspaceFile && port.readCanvas && port.applyCanvas) {
+    registerOperation(registry, { operation: listWorkspaceFileTreeOperation, handle: async (_context, body) => ({ body: await port.listWorkspaceFileTree!(body as never) as unknown as Record<string, unknown> }) });
+    registerOperation(registry, { operation: readWorkspaceFileOperation, handle: async (_context, body) => ({ body: await port.readWorkspaceFile!(body as never) as unknown as Record<string, unknown> }) });
+    registerOperation(registry, { operation: readCanvasOperation, handle: async (_context, body) => ({ body: await port.readCanvas!(body as never) as unknown as Record<string, unknown> }) });
+    registerOperation(registry, { operation: applyCanvasOperation, handle: async (_context, body) => ({ body: await port.applyCanvas!(body as never) as unknown as Record<string, unknown> }) });
+  }
+  if (terminal) {
+    registerOperation(registry, { operation: createTerminalOperation, handle: async (_context, body) => ({ body: terminal.create(String(body.workspaceDir ?? process.cwd())) }) });
+    registerOperation(registry, { operation: listTerminalsOperation, handle: async () => ({ body: terminal.list() as unknown as Record<string, unknown> }) });
+    registerOperation(registry, { operation: writeTerminalOperation, handle: async (_context, body) => ({ body: terminal.write(String(body.terminalId), String(body.data ?? "")) }) });
+    registerOperation(registry, { operation: resizeTerminalOperation, handle: async (_context, body) => ({ body: terminal.resize(String(body.terminalId), Number(body.cols), Number(body.rows)) }) });
+    registerOperation(registry, { operation: disposeTerminalOperation, handle: async (_context, body) => ({ body: terminal.dispose(String(body.terminalId)) }) });
+    registerOperation(registry, { operation: watchTerminalOperation, handle: (_context, body) => ({ stream: { ok: true, source: terminal.watch(String(body.terminalId), _context.signal) as unknown as AsyncIterable<Record<string, unknown>> } }) });
+  }
   registerOperation(registry, { operation: archiveSessionOperation, handle: async (_context, body) => ({ body: await port.archiveSession(body) }) });
   registerOperation(registry, { operation: deleteSessionOperation, handle: async (_context, body) => ({ body: await port.deleteSession(body) }) });
   registerOperation(registry, {
