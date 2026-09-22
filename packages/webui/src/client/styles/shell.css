@@ -325,6 +325,27 @@
   .webui-command-option[aria-selected="true"] {
     background-color: var(--bg_interaction_tertiary_hover);
   }
+  /* Inert palette rows render with the same shape as live rows (desktop 1:1)
+     but show as unavailable: muted icon, dimmer label/suffix, no hover tint,
+     and a not-allowed cursor so the user can tell the row exists for visual
+     parity only. The harness port still wires the supported commands
+     (compact, new); unsupported entries wait for the matching feature. */
+  .webui-command-option[data-webui-command-option-inert="true"] {
+    cursor: not-allowed;
+  }
+  .webui-command-option[data-webui-command-option-inert="true"]:hover,
+  .webui-command-option[data-webui-command-option-inert="true"][aria-selected="true"] {
+    background-color: transparent;
+  }
+  .webui-command-option[data-webui-command-option-inert="true"]
+    .webui-command-option-icon,
+  .webui-command-option[data-webui-command-option-inert="true"]
+    .webui-command-option-label,
+  .webui-command-option[data-webui-command-option-inert="true"]
+    .webui-command-option-suffix {
+    color: var(--text_default_tertiary);
+    opacity: 0.55;
+  }
   .webui-workspace-menu {
     right: auto;
     left: 0;
