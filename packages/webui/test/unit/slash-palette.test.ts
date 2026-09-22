@@ -4,10 +4,12 @@ import {
   buildWebuiSlashPalette,
   isWebuiRunnableCommand,
   rankWebuiSlashPalette,
+  resolveWebuiSlashSkills,
   sectionWebuiSlashPalette,
   WEBUI_BUILTIN_COMMANDS,
   WEBUI_PLUGIN_REGISTRY,
   WEBUI_RUN_COMMAND_NAMES,
+  WEBUI_SKILL_FIXTURES,
 } from "../../src/client/slash-palette.js";
 
 // The desktop's slash palette (`chunks/10118-*`) is the source of truth for
@@ -128,5 +130,43 @@ describe("WebUI slash palette — runtime narrowing", () => {
     expect([...WEBUI_RUN_COMMAND_NAMES].sort()).toEqual(
       ["compact", "help", "model", "new", "status", "usage"],
     );
+  });
+});
+
+describe("WebUI slash palette — skill fixtures", () => {
+  it("places skill entries after the default section with paletteSection: \"skills\"", async () => {
+    const skills = await resolveWebuiSlashSkills();
+    const palette = buildWebuiSlashPalette({ skills });
+    const skillRows = palette.filter(
+      (entry) => entry.paletteSection === "skills",
+    );
+    const names = skillRows.map((entry) => entry.name);
+    expect(names).toEqual([
+      "ask-matt",
+      "code-review",
+      "codebase-design",
+      "diagnosing-bugs",
+    ]);
+  });
+
+  it("keeps skill entries inert until the harness port wires a skill RPC", async () => {
+    const skills = await resolveWebuiSlashSkills();
+    const palette = buildWebuiSlashPalette({ skills });
+    const skillRows = palette.filter(
+      (entry) => entry.paletteSection === "skills",
+    );
+    expect(skillRows.every((entry) => entry.supported === false)).toBe(true);
+    expect(skillRows.some((entry) => isWebuiRunnableCommand(entry))).toBe(
+      false,
+    );
+  });
+
+  it("WEBUI_SKILL_FIXTURES lists the four desktop skills", () => {
+    expect(WEBUI_SKILL_FIXTURES.map((entry) => entry.name).sort()).toEqual([
+      "ask-matt",
+      "code-review",
+      "codebase-design",
+      "diagnosing-bugs",
+    ]);
   });
 });

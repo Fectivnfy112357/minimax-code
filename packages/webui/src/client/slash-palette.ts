@@ -23,6 +23,10 @@ import {
   WebuiIconCommandPlan,
   WebuiIconNewTask,
   WebuiIconSites,
+  WebuiIconSkillAskMatt,
+  WebuiIconSkillCodebaseDesign,
+  WebuiIconSkillCodeReview,
+  WebuiIconSkillDiagnosingBugs,
 } from "./icons.js";
 
 /** Behaviour an entry can declare. Mirrors the desktop's three special fields. */
@@ -31,7 +35,7 @@ export type SlashSendIntent = "cloud-handoff" | "review";
 export type SlashDirectAction = "memory" | "fork";
 
 /** Where an entry lives in the popover. The desktop uses "special" only. */
-export type SlashPaletteSection = "special";
+export type SlashPaletteSection = "special" | "skills";
 
 /**
  * One row in the slash palette. Mirrors the desktop record shape so a future
@@ -169,20 +173,88 @@ export const WEBUI_PLUGIN_REGISTRY: Record<
 };
 
 /**
+ * Static skill catalogue. The desktop surfaces skills in the slash palette
+ * via `listSkills(agentName, ...)`; the WebUI's harness port has no skill
+ * RPC yet, so we ship a fixture set that mirrors what the desktop shows
+ * today (the four `mavis-*` skills whose descriptions are quoted verbatim
+ * from the local `~/.hermes/skills` registry). When the harness port adds
+ * `listSkills`, replace `resolveWebuiSlashSkills` with a real fetch — the
+ * fixture entries map onto the same `SlashCommandEntry` shape.
+ *
+ * Each row is inert (`supported: false`) because clicking a skill today
+ * does nothing in WebUI. The icons follow the desktop's "lamp / paper /
+ * blueprint / bug" vocabulary; in lieu of an extracted path, use generic
+ * but consistent monoline glyphs sized to the desktop's 18×18.
+ */
+export const WEBUI_SKILL_FIXTURES: readonly SlashCommandEntry[] = [
+  {
+    name: "ask-matt",
+    displayName: "ask-matt",
+    label: "ask-matt",
+    description: "Ask which skill or flow fits your situation.",
+    source_type: 1,
+    source_kind: "plugin",
+    icon: WebuiIconSkillAskMatt,
+    paletteSection: "skills",
+    supported: false,
+  },
+  {
+    name: "code-review",
+    displayName: "code-review",
+    label: "code-review",
+    description:
+      "Review the changes since a fixed point (commit, branch, tag, or merge-base) along two axes: Standards and Spec.",
+    source_type: 1,
+    source_kind: "plugin",
+    icon: WebuiIconSkillCodeReview,
+    paletteSection: "skills",
+    supported: false,
+  },
+  {
+    name: "codebase-design",
+    displayName: "codebase-design",
+    label: "codebase-design",
+    description:
+      "Shared vocabulary for designing deep modules. Use when the user wants to introduce, redesign, or reshape a module's interface.",
+    source_type: 1,
+    source_kind: "plugin",
+    icon: WebuiIconSkillCodebaseDesign,
+    paletteSection: "skills",
+    supported: false,
+  },
+  {
+    name: "diagnosing-bugs",
+    displayName: "diagnosing-bugs",
+    label: "diagnosing-bugs",
+    description:
+      "Diagnosis loop for hard bugs and performance regressions. Use when the user reports something broken, throwing, or slow.",
+    source_type: 1,
+    source_kind: "plugin",
+    icon: WebuiIconSkillDiagnosingBugs,
+    paletteSection: "skills",
+    supported: false,
+  },
+];
+
+/**
  * Skills resolver. Mirrors the desktop's `listSkillHub` (signed-out web) /
- * `listSkills(agentName, ...)` (signed-in) split. The WebUI today does not
- * expose a slash-palette skill RPC, so the resolver returns the registry
- * merged into the default section. When the harness port adds skill
- * fetching, replace this body with the equivalent of the desktop's calls
- * and the sectioning will pick them up.
+ * `listSkills(agentName, ...)` split. The WebUI today does not expose a
+ * slash-palette skill RPC, so the resolver returns the fixture set above
+ * (plus the plugin registry, which the sectioning pass routes to the
+ * default section via `paletteSection: "special"`). When the harness port
+ * adds skill fetching, replace this body with the equivalent of the
+ * desktop's calls and the sectioning will pick them up unchanged.
  */
 export async function resolveWebuiSlashSkills(): Promise<SlashCommandEntry[]> {
-  return Object.values(WEBUI_PLUGIN_REGISTRY).map((entry) => ({
-    ...entry,
-    display_name: entry.label,
-    display_description: entry.description,
-    source_kind: "plugin",
-  }));
+  return [
+    ...Object.values(WEBUI_PLUGIN_REGISTRY).map((entry) => ({
+      ...entry,
+      display_name: entry.label,
+      display_description: entry.description,
+      source_kind: "plugin",
+    })),
+    ...WEBUI_SKILL_FIXTURES,
+  ];
 }
 
 /**
@@ -221,7 +293,15 @@ export function sectionWebuiSlashPalette(
     );
   }
 
-  return [...others, ...inDefault, ...inSkills];
+  // Tag every skills-section entry so the popover can render the `技能`
+  // header before them. Mirrors the desktop's static `技能` divider that
+  // appears between the default section and the skill rows.
+  const taggedSkills = inSkills.map((entry) => ({
+    ...entry,
+    paletteSection: entry.paletteSection ?? "skills",
+  }));
+
+  return [...others, ...inDefault, ...taggedSkills];
 }
 
 /**

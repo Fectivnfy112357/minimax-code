@@ -334,6 +334,17 @@
   .webui-command-option[aria-selected="true"] {
     background-color: var(--bg_interaction_tertiary_hover);
   }
+  /* Section header inside the popover. The desktop inserts a small dim
+     divider between the default section and the skills section; this rule
+     gives it a fixed slot above the first skill row, with the same
+     type-size + line-height the rest of the popover has. */
+  .webui-command-section-header {
+    padding: var(--spacing_8) var(--spacing_12) var(--spacing_4);
+    color: var(--text_default_tertiary);
+    font-size: var(--size_12);
+    line-height: var(--line_height_16);
+    font-weight: var(--weight_regular);
+  }
   /* Inert palette rows render with the same shape as live rows (desktop 1:1)
      but show as unavailable: muted icon, dimmer label/description, no hover
      tint, and a not-allowed cursor so the user can tell the row exists for
