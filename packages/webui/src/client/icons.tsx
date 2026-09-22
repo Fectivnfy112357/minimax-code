@@ -327,3 +327,67 @@ export function WebuiIconCommandMemory({ className }: WebuiIconProps): ReactElem
     </svg>
   );
 }
+
+// Skills section row leading glyphs. The WebUI ships these as fixtures that
+// mirror the desktop's slash-palette skill rows (mavis/ask-matt,
+// code-review, codebase-design, diagnosing-bugs). Each is inert today.
+
+/** slash palette — skill row glyph (the desktop uses an N-style mark). */
+export function WebuiIconSkillAskMatt({ className }: WebuiIconProps): ReactElement {
+  return (
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}>
+      <rect x="3" y="2.5" width="14" height="15" rx="2" stroke="currentColor" strokeWidth="1.5" />
+      <path
+        d="M7 6.5L13 13.5M13 6.5L7 13.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+/** slash palette — skill row glyph for code-review. */
+export function WebuiIconSkillCodeReview({ className }: WebuiIconProps): ReactElement {
+  return (
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}>
+      <rect x="3" y="3.5" width="14" height="13" rx="2" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M6 7.5H14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M6 10.5H11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M6 13.5H9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <circle cx="14" cy="13.5" r="1.25" fill="currentColor" />
+    </svg>
+  );
+}
+
+/** slash palette — skill row glyph for codebase-design. */
+export function WebuiIconSkillCodebaseDesign({ className }: WebuiIconProps): ReactElement {
+  return (
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}>
+      <path d="M3.5 16.5H16.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <rect x="4.5" y="4.5" width="11" height="3.5" rx="1" stroke="currentColor" strokeWidth="1.5" />
+      <rect x="4.5" y="9.5" width="11" height="3.5" rx="1" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M6.5 6.25H6.51" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M6.5 11.25H6.51" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M9 6.25H13.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M9 11.25H13.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** slash palette — skill row glyph for diagnosing-bugs. */
+export function WebuiIconSkillDiagnosingBugs({ className }: WebuiIconProps): ReactElement {
+  return (
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}>
+      <path
+        d="M8 4.5C5.8575 4.5 4.5 6.153 4.5 8.25C4.5 9.25 4.5 11 4.5 11.25C3.5 11.5 3 12.5 3 13.5C3 15.1569 4.3431 16.5 6 16.5H10C11.6569 16.5 13 15.1569 13 13.5C13 12.5 12.5 11.5 11.5 11.25C11.5 11 11.5 9.25 11.5 8.25C11.5 6.153 10.1425 4.5 8 4.5Z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+      <path d="M6 7L5 6M10 7L11 6M6 9L5 10M10 9L11 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M15.5 5L17 3.5M15.5 5L14 3.5M15.5 5V3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M16.5 11L18 9.5M16.5 11L15 9.5M16.5 11V9.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}

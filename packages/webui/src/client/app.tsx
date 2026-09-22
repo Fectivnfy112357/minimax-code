@@ -20,6 +20,7 @@
 // claims to do something it cannot.
 
 import {
+  Fragment,
   useEffect,
   useId,
   useMemo,
@@ -2352,34 +2353,51 @@ function WebuiComposer({
                     {commandSuggestions.map((command, index) => {
                       const Icon = command.icon;
                       const inert = !command.supported;
+                      const isFirstSkill =
+                        command.paletteSection === "skills" &&
+                        (index === 0 ||
+                          commandSuggestions[index - 1]?.paletteSection !==
+                            "skills");
                       return (
-                        <button
-                          key={command.name}
-                          type="button"
-                          role="option"
-                          aria-selected={index === commandIndex}
-                          aria-disabled={inert || undefined}
-                          disabled={inert}
-                          data-webui-command-option-inert={inert ? "true" : undefined}
-                          className="webui-command-option"
-                          onMouseDown={(event) => event.preventDefault()}
-                          onMouseEnter={() => {
-                            if (inert) return;
-                            setCommandIndex(index);
-                          }}
-                          onClick={() => {
-                            if (inert) return;
-                            chooseCommand(command.name);
-                          }}
-                        >
-                          <Icon className="webui-command-option-icon text-icon_default_secondary" />
-                          <span className="webui-command-option-label">
-                            {command.label}
-                          </span>
-                          <span className="webui-command-option-description text-text_default_tertiary">
-                            {command.description}
-                          </span>
-                        </button>
+                        <Fragment key={command.name}>
+                          {isFirstSkill ? (
+                            <div
+                              role="separator"
+                              data-webui-command-section="skills"
+                              className="webui-command-section-header"
+                            >
+                              技能
+                            </div>
+                          ) : null}
+                          <button
+                            type="button"
+                            role="option"
+                            aria-selected={index === commandIndex}
+                            aria-disabled={inert || undefined}
+                            disabled={inert}
+                            data-webui-command-option-inert={
+                              inert ? "true" : undefined
+                            }
+                            className="webui-command-option"
+                            onMouseDown={(event) => event.preventDefault()}
+                            onMouseEnter={() => {
+                              if (inert) return;
+                              setCommandIndex(index);
+                            }}
+                            onClick={() => {
+                              if (inert) return;
+                              chooseCommand(command.name);
+                            }}
+                          >
+                            <Icon className="webui-command-option-icon text-icon_default_secondary" />
+                            <span className="webui-command-option-label">
+                              {command.label}
+                            </span>
+                            <span className="webui-command-option-description text-text_default_tertiary">
+                              {command.description}
+                            </span>
+                          </button>
+                        </Fragment>
                       );
                     })}
                   </div>
