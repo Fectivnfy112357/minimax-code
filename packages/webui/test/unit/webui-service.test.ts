@@ -1615,7 +1615,7 @@ describe("WebUI runtime host assembly", () => {
       });
       await assembled.harnessPort.close();
       expect(calls).toBe(1);
-      expect(lastOptions?.runtimeOwnerKind).toBe("cli");
+      expect(lastOptions?.runtimeOwnerKind).toBe("tui");
       expect(lastOptions?.capabilityProfile).toBe("cli");
       expect(lastOptions?.runtimeMode).toBe("clean");
       expect(lastOptions?.startupExecutionPolicy).toBe("quarantined");
@@ -1732,7 +1732,7 @@ describe("WebUI runtime host assembly", () => {
       await assembled.harnessPort.close();
       // The assembly intentionally omits `surface`; ADR 0004 forbids
       // extending the `surface` enum, and assembly step 4 says the WebUI
-      // does not need a new value because `runtimeOwnerKind: 'cli'` plus
+      // does not need a new value because `runtimeOwnerKind: 'tui'` plus
       // the capabilities already identify the surface.
       expect("surface" in (lastOptions ?? {})).toBe(false);
     } finally {

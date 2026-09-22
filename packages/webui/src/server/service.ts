@@ -175,6 +175,7 @@ export class WebuiService {
       selectModel: (request) => this.port.selectModel(request),
       getSessionUsage: (request) => this.port.getSessionUsage(request),
       getAccountStatus: (request) => this.port.getAccountStatus(request),
+      requestCompaction: (request) => this.port.requestCompaction(request),
     });
     const factory = options.httpServerFactory ?? (() => createServer());
     this.httpServer = factory();

@@ -118,6 +118,13 @@ export function createWebuiTransport({
   getAccountStatus: (request?: {
     readonly sessionId?: string;
   }) => Promise<Record<string, unknown>>;
+  runCommand: (request: {
+    readonly command: "help" | "new" | "compact" | "status" | "usage" | "model";
+    readonly input?: string;
+    readonly sessionId?: string;
+    readonly agentName?: string;
+    readonly workspaceDir?: string;
+  }) => Promise<Record<string, unknown>>;
 } {
   const websocketUrl = () =>
     `${baseWebsocketUrl.replace(/\/$/u, "")}/?token=${encodeURIComponent(token)}`;
@@ -313,5 +320,6 @@ export function createWebuiTransport({
     selectModel: (body) => request("selectModel", body),
     getSessionUsage: (body) => request("getSessionUsage", body),
     getAccountStatus: (body) => request("getAccountStatus", body ?? {}),
+    runCommand: (body) => request("runCommand", body),
   };
 }

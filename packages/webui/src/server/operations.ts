@@ -27,6 +27,8 @@ import type {
   WebuiPermissionDecision,
   WebuiQuestionnaireAnswer,
 } from "./port.js";
+import { runWebuiCommand } from "./commands/runner.js";
+import { projectEventStream } from "./projections/index.js";
 
 export interface WebuiOperationContext {
   readonly requestId: string;
@@ -87,6 +89,7 @@ const LIST_MODELS_OPERATION_NAME = "listModels" as const;
 const SELECT_MODEL_OPERATION_NAME = "selectModel" as const;
 const GET_SESSION_USAGE_OPERATION_NAME = "getSessionUsage" as const;
 const GET_ACCOUNT_STATUS_OPERATION_NAME = "getAccountStatus" as const;
+const RUN_COMMAND_OPERATION_NAME = "runCommand" as const;
 
 type VersionRequestBody = undefined;
 
@@ -878,6 +881,26 @@ export const getAccountStatusOperation: WebuiOperation<
   },
 };
 
+export const runCommandOperation: WebuiOperation<
+  import("./port.js").WebuiRunCommandRequest,
+  import("./port.js").WebuiRunCommandResult
+> = {
+  name: RUN_COMMAND_OPERATION_NAME,
+  validate: (body) => {
+    if (body === null || typeof body !== "object" || Array.isArray(body))
+      return { ok: false, code: WebuiErrorCode.invalidBody, message: "runCommand body must be an object" };
+    const candidate = body as Record<string, unknown>;
+    const commands = ["help", "new", "compact", "status", "usage", "model"] as const;
+    if (!commands.includes(candidate.command as (typeof commands)[number]))
+      return { ok: false, code: WebuiErrorCode.invalidBody, message: "runCommand command is invalid" };
+    for (const field of ["input", "sessionId", "agentName", "workspaceDir"] as const) {
+      if (candidate[field] !== undefined && typeof candidate[field] !== "string")
+        return { ok: false, code: WebuiErrorCode.invalidBody, message: `${field} must be a string` };
+    }
+    return { ok: true, body: candidate as unknown as import("./port.js").WebuiRunCommandRequest };
+  },
+};
+
 export interface WebuiOperationRegistryEntry {
   readonly operation: WebuiOperation;
   readonly handle: WebuiOperationHandler<unknown>;
@@ -918,6 +941,7 @@ export function createOperationRegistry(
     | "selectModel"
     | "getSessionUsage"
     | "getAccountStatus"
+    | "requestCompaction"
   >,
 ): ReadonlyMap<string, WebuiOperationRegistryEntry> {
   const registry = new Map<string, WebuiOperationRegistryEntry>();
@@ -964,11 +988,15 @@ export function createOperationRegistry(
     }),
   });
   registerOperation(registry, {
+    operation: runCommandOperation,
+    handle: async (_context, body) => ({ body: await runWebuiCommand(port, body) }),
+  });
+  registerOperation(registry, {
     operation: watchEventsOperation,
     handle: (context) => ({
       stream: {
         ok: true,
-        source: port.watchEvents(context.signal),
+        source: projectEventStream(port.watchEvents(context.signal)),
       },
     }),
   });

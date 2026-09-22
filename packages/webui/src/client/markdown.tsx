@@ -1,4 +1,5 @@
 import { marked, type Token } from "marked";
+import katex from "katex";
 import {
   createElement,
   Fragment,
@@ -6,6 +7,29 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
+
+marked.use({
+  extensions: [
+    {
+      name: "webuiMath",
+      level: "inline",
+      start(source) {
+        const index = source.search(/\$\$?|\\\(/u);
+        return index >= 0 ? index : undefined;
+      },
+      tokenizer(source) {
+        const match = source.match(/^(\$\$?)([\s\S]+?)\1/u);
+        if (!match) return undefined;
+        return {
+          type: "webuiMath",
+          raw: match[0],
+          text: match[2],
+          display: match[1] === "$$",
+        } as Token & { readonly display: boolean };
+      },
+    },
+  ],
+});
 
 export function isSafeWebuiMarkdownHref(href: string): boolean {
   const value = href.trim();
@@ -22,6 +46,20 @@ function inline(tokens: readonly Token[] | undefined): ReactNode[] {
       return <strong key={key}>{inline(token.tokens)}</strong>;
     if (token.type === "em") return <em key={key}>{inline(token.tokens)}</em>;
     if (token.type === "codespan") return <code key={key}>{token.text}</code>;
+    if (token.type === "webuiMath") {
+      const math = token as Token & { readonly text: string; readonly display: boolean };
+      try {
+        return (
+          <span
+            key={key}
+            className={math.display ? "webui-math webui-math-block" : "webui-math"}
+            dangerouslySetInnerHTML={{ __html: katex.renderToString(math.text, { displayMode: math.display }) }}
+          />
+        );
+      } catch {
+        return <code key={key}>{math.raw}</code>;
+      }
+    }
     if (token.type === "link")
       return isSafeWebuiMarkdownHref(token.href) ? (
         <a key={key} href={token.href} rel="noreferrer">

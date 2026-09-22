@@ -16,6 +16,7 @@
 
 @import "./tokens.css";
 @import "./shell.css";
+@import "katex/dist/katex.min.css";
 
 @tailwind base;
 @tailwind components;

@@ -1,11 +1,16 @@
 import { createRoot, type Root } from "react-dom/client";
 import { WebuiClientFoundationApp } from "./app.js";
 import { createWebuiTransport } from "./transport.js";
+import { route } from "./router.js";
+import { LoginCard } from "./components/LoginCard.js";
+import { OnboardingSteps } from "./components/OnboardingSteps.js";
+import { NotFound } from "./components/NotFound.js";
+import { ArchonPage } from "./components/ArchonPage.js";
 
 declare const document: {
   getElementById(elementId: string): HTMLElement | null;
 };
-declare const location: { readonly host: string };
+declare const location: { readonly host: string; readonly pathname: string; href: string };
 
 const rootElement = document.getElementById("webui-root");
 if (!rootElement) throw new Error("WebUI mount node #webui-root is missing");
@@ -20,8 +25,7 @@ if (!config) throw new Error("WebUI runtime configuration is missing");
 const runtimeConfig = config;
 const transport = createWebuiTransport(runtimeConfig);
 const root: Root = createRoot(rootElement);
-root.render(
-  <WebuiClientFoundationApp
+const app = <WebuiClientFoundationApp
     label="webui-foundation"
     hostLabel={location.host}
     loadSessions={transport.loadSessions}
@@ -43,7 +47,12 @@ root.render(
     selectModel={transport.selectModel}
     getSessionUsage={transport.getSessionUsage}
     getAccountStatus={transport.getAccountStatus}
-  />,
+  />;
+const currentRoute = route(location.pathname);
+root.render(
+  currentRoute === "login" ? <LoginCard onContinue={() => { location.href = "/onboarding"; }} /> :
+  currentRoute === "onboarding" ? <OnboardingSteps onComplete={() => { location.href = "/archon"; }} /> :
+  currentRoute === "404" ? <NotFound /> : <ArchonPage>{app}</ArchonPage>,
 );
 
 export {

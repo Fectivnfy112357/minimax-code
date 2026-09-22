@@ -118,6 +118,12 @@ export interface WebuiRuntimeHostHandle {
     getAccountStatus(request?: {
       readonly sessionId?: string;
     }): Promise<Record<string, unknown>>;
+    requestCompaction?(request: {
+      readonly name: string;
+      readonly id: string;
+      readonly reason: "ui_request";
+      readonly customInstructions?: string;
+    }): Promise<Record<string, unknown>>;
   };
 }
 
@@ -242,6 +248,13 @@ export function createHarnessPortFromHost(
       if (!host.cliService)
         throw new Error("runtime host does not expose the CLI service");
       return host.cliService.getAccountStatus(request);
+    },
+    async requestCompaction(request) {
+      if (!host.cliService)
+        throw new Error("runtime host does not expose the CLI service");
+      if (!host.cliService.requestCompaction)
+        throw new Error("runtime host does not expose requestCompaction");
+      return host.cliService.requestCompaction(request);
     },
     async close() {
       if (closed) return;

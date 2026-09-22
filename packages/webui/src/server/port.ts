@@ -239,6 +239,7 @@ export interface WebuiStreamFrame {
   readonly eventJson?: string;
   readonly dataJson?: string;
   readonly messageActionDeltas?: readonly Record<string, unknown>[];
+  readonly projection?: unknown;
 }
 
 /**
@@ -302,6 +303,18 @@ export interface WebuiModelEntry {
   };
   readonly [key: string]: unknown;
 }
+
+export interface WebuiRunCommandRequest {
+  readonly command: "help" | "new" | "compact" | "status" | "usage" | "model";
+  readonly input?: string;
+  readonly sessionId?: string;
+  readonly agentName?: string;
+  readonly workspaceDir?: string;
+}
+
+export type WebuiRunCommandResult =
+  | { readonly handled: true; readonly output: string; readonly data?: unknown }
+  | { readonly handled: true; readonly output?: undefined; readonly data: unknown };
 
 export interface WebuiHarnessPort {
   version(): WebuiVersionInfo;
@@ -379,6 +392,12 @@ export interface WebuiHarnessPort {
   }): Promise<Record<string, unknown>>;
   getAccountStatus(request?: {
     readonly sessionId?: string;
+  }): Promise<Record<string, unknown>>;
+  requestCompaction(request: {
+    readonly name: string;
+    readonly id: string;
+    readonly reason: "ui_request";
+    readonly customInstructions?: string;
   }): Promise<Record<string, unknown>>;
   /**
    * Release anything the port owns. The service calls this after closing

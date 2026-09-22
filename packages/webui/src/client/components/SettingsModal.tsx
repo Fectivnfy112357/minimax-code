@@ -1,0 +1,12 @@
+import { useEffect, useState } from "react";
+
+// i18n key: persona_section_identity, persona_section_soul, persona_section_user
+// i18n key: provider_create, provider_minimax_key_upsert, provider_minimax_source_set, provider_minimax_test, provider_codex_models_refresh, provider_codex_oauth_connect
+// i18n key: memory_enable_click, memory_manage_click, memory_save_click, memory_delete_click, memory_create_in_session_click
+
+export function SettingsModal({ open, onClose, dataDir }: { readonly open: boolean; readonly onClose: () => void; readonly dataDir?: string }) {
+  const [theme, setTheme] = useState(() => typeof localStorage === "undefined" ? "light" : localStorage.getItem("webui-theme") ?? "light");
+  useEffect(() => { if (typeof document !== "undefined") document.documentElement.className = theme; if (typeof localStorage !== "undefined") localStorage.setItem("webui-theme", theme); }, [theme]);
+  if (!open) return null;
+  return <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-spacing_16"><section className="webui-card max-h-[90vh] w-full max-w-2xl overflow-auto p-spacing_24"><div className="flex items-center justify-between"><h2 className="text-xl font-semibold">Settings</h2><button className="webui-button-secondary" onClick={onClose}>Close</button></div><div className="mt-spacing_16 grid gap-spacing_16"><section><h3>General</h3><label>Theme <select value={theme} onChange={(event) => setTheme(event.target.value)}><option value="light">Light</option><option value="dark">Dark</option></select></label><p>Language: English</p></section><section><h3>Appearance</h3><p>Font size: 14 · Density: comfortable</p></section><section><h3>Account</h3><p>Managed MiniMax account</p><button className="webui-button-secondary">Sign out</button></section><section><h3>Account onboarding</h3><a href="/onboarding">Review onboarding</a></section><section><h3>Model</h3><p>Model selection and thinking level are controlled by the active session.</p></section><section><h3>Persona</h3><p className="text-text_default_secondary">Coming soon — desktop only.</p></section><section><h3>Providers</h3><p className="text-text_default_secondary">Coming soon — desktop only.</p></section><section><h3>Memory</h3><p className="text-text_default_secondary">Coming soon — desktop only.</p></section><section><h3>Data directory</h3><p className="text-text_default_secondary">Read-only current path: {dataDir ?? "managed runtime directory"}</p></section></div></section></div>;
+}

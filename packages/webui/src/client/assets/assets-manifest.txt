@@ -1,0 +1,39 @@
+# Desktop source: ../minimax-webui/app/out/assets/img/ (27 files)
+img/beian.png
+img/breakDown.png
+img/computer_use.png
+img/desktop_im.png
+img/desktop_im_dark.png
+img/discord.jpg
+img/emptypicture.png
+img/feishu-feedback-group.png
+img/feishu.png
+img/onboard_v2_1_cn.png
+img/onboard_v2_1_en.png
+img/onboard_v2_2_cn.png
+img/onboard_v2_2_en.png
+img/onboard_v2_3_cn.png
+img/onboard_v2_3_en.png
+img/onboard_v2_4_cn.png
+img/onboard_v2_4_en.png
+img/pic_1.png
+img/pic_1_cn.png
+img/pic_2.png
+img/pic_2_cn.png
+img/pic_3.png
+img/pic_windows.png
+img/remote_control_phone_en.png
+img/remote_control_phone_zh.png
+img/share_wechat_friends.png
+img/wechat.png
+# KaTeX source: ../minimax-webui/app/out/_next/static/media/ (60 files)
+# Canonical destination naming: KaTeX_<family>-<style>.<ext>
+fonts/katex/KaTeX_AMS-Regular.{ttf,woff,woff2}
+fonts/katex/KaTeX_Caligraphic-{Bold,Regular}.{ttf,woff,woff2}
+fonts/katex/KaTeX_Fraktur-{Bold,Regular}.{ttf,woff,woff2}
+fonts/katex/KaTeX_Main-{Bold,BoldItalic,Italic,Regular}.{ttf,woff,woff2}
+fonts/katex/KaTeX_Math-{BoldItalic,Italic}.{ttf,woff,woff2}
+fonts/katex/KaTeX_SansSerif-{Bold,Italic,Regular}.{ttf,woff,woff2}
+fonts/katex/KaTeX_Script-Regular.{ttf,woff,woff2}
+fonts/katex/KaTeX_Size{1,2,3,4}-Regular.{ttf,woff,woff2}
+fonts/katex/KaTeX_Typewriter-Regular.{ttf,woff,woff2}

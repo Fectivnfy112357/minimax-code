@@ -8,7 +8,7 @@
 //   * `packages/tui/src/runtime/embedded-host.ts` — the surface owner, mode
 //     and capability projection (lines 85–93).
 //   * `packages/local-runtime-v2/src/services.test.ts:1998` — the
-//     `runtimeOwnerKind: 'cli'` / `capabilityProfile: 'cli'` pair.
+//     `runtimeOwnerKind: 'tui'` / `capabilityProfile: 'cli'` pair.
 //   * `packages/tui/src/runtime/lifecycle.ts:456-460` — the conditional
 //     `startupExecutionPolicy: 'quarantined'`. The CLI applies it per
 //     surface; ADR 0002 and assembly step 6 of `docs/webui-v1-scope.md`
@@ -130,6 +130,12 @@ export interface WebuiAssembledHost {
     getAccountStatus(request?: {
       readonly sessionId?: string;
     }): Promise<Record<string, unknown>>;
+    requestCompaction?(request: {
+      readonly name: string;
+      readonly id: string;
+      readonly reason: "ui_request";
+      readonly customInstructions?: string;
+    }): Promise<Record<string, unknown>>;
   };
 }
 
@@ -167,7 +173,7 @@ export interface WebuiBrowserProvider {
 export interface WebuiForwardedRuntimeHostOptions {
   readonly dataDir: string;
   readonly appVersion?: string;
-  readonly runtimeOwnerKind: "cli";
+  readonly runtimeOwnerKind: "cli" | "tui";
   readonly capabilityProfile: "cli";
   readonly runtimeMode: "clean";
   readonly startupExecutionPolicy: "quarantined";
@@ -289,7 +295,7 @@ export async function createWebuiRuntimeHost(
     ...(options.appVersion !== undefined
       ? { appVersion: options.appVersion }
       : {}),
-    runtimeOwnerKind: "cli",
+    runtimeOwnerKind: "tui",
     capabilityProfile: "cli",
     runtimeMode: "clean",
     startupExecutionPolicy: "quarantined",

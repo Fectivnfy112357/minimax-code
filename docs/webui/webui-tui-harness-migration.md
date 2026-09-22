@@ -29,7 +29,7 @@ client behaviour we mirror, **which** visual assets we lift from the desktop
 build, and **in what order**.
 
 ## How this plan was reviewed
-
+[webui-tui-harness-migration.md]()
 This document is the result of a two-reviewer cross-audit:
 
 - **codex luna** (`codex/gpt-5.6-luna`): review captured in
@@ -101,6 +101,112 @@ single largest file, the former is the directory total. Both are reported as
 - Resumption of the desktop build's OAuth callback via `minimax://` deeplink:
   inherited limitation; the WebUI continues to read the credential file
   directly via `packages/webui/src/server/auth-context.ts`.
+- **IM / chat-app connector onboarding and configuration** (discord,
+  feishu, lark, dingtalk, wecom, wxwork, weixin, slack, telegram): the
+  desktop archon exposes these in `/connectors/oauth` and in onboarding
+  step 3, but they all rely on the desktop's `minimax://` deeplink
+  OAuth callback that v1 explicitly does not implement. WebUI shows
+  the connector entry points as **disabled** in the sidebar with a
+  tooltip "Desktop only", and onboarding step 3 is skipped.
+- **Maxclaw and Maxhermes** routes (`/max-claw`, `/max-hermes`): desktop
+  product features with their own status state machines
+  (`maxclaw_status_*`); v1 shows the sidebar entry as **disabled** with
+  tooltip "Desktop only".
+- **Websites** route (`/websites`), **Remote control** route
+  (`/remote-control`, `/connect-mobile`), **Plugin / Skill
+  marketplace** routes (`/plugins`, `/plugins/manage`): desktop-only
+  surfaces. v1 shows the sidebar entries as **disabled** with tooltip
+  "Desktop only".
+- **Cron / schedules** route (`/schedules`, `/schedules/:cronId`):
+  desktop-only. v1 shows the sidebar entry as **disabled** with
+  tooltip "Desktop only". The `cronEnabled` capability is also
+  disabled at runtime for `runtimeOwnerKind: 'cli' | 'tui'`
+  (`profile-source.ts:53`); v1 does not surface it.
+- **Goal / plan review** views in archon (`goal`, `plan_review`,
+  `plan_review_recovery`): desktop-only. v1 does not project them.
+- **Worktree / git workspace switching** (`worktree`,
+  `worktreeMode`, `local_changes`): desktop-only. v1's workspace
+  picker shows the simple list view, not the worktree mode toggle.
+- **Pricing / upgrade / subscribe** flows (`home_subscribe`,
+  `pricing`): desktop-only. v1 does not surface them.
+- **Operation banners** (`agent_desktop_operation_banners`,
+  `operation_banner_*`): desktop-only. v1 does not show them.
+- **CS widget / share / like / dislike feedback** in the transcript
+  footer: desktop-only. v1 omits the footer feedback widgets.
+- **Page-tracking / Sensors telemetry** in the WebUI bundle: the WebUI
+  does not currently include the sensors SDK; v1 does not add it.
+- **Token-plan / budget-limited / usage-limited** indicators in the
+  archon topbar: desktop-only. v1's `/archon` topbar shows session
+  usage from `getSessionUsage` but not the token-plan badge or the
+  budget-limited banner.
+- **`max_output_tokens` / thinking-effort controls** in the model
+  selector: desktop-only. v1's model selector lists models and shows
+  the currently configured thinking level but does not expose
+  per-session `max_output_tokens` or thinking-effort toggles.
+
+## v1 feature parity matrix
+
+A single read of the desktop archon chunk at
+`../minimax-webui/app/out/_next/static/chunks/app/(pages)/(mavis)/archon/page-b80d2a3aab9be6d2.js`
+(681 string identifiers) versus the plan's locked scope, summarised
+below. **In v1** lands in the implementation; **In v1 (Desktop only
+UI)** lands visually but is rendered disabled; **Deferred** is
+explicitly out of scope. The table is the source of truth for what a
+reviewer expects to see in the resulting WebUI.
+
+| Module | Desktop identifier(s) | v1 status |
+| --- | --- | --- |
+| Session list (read + sidebar entry) | `sessions`, `sidebar_primary`, `navigate_to_session` | **In v1** — read-only list, with star / pin / archive row operations |
+| Session row: rename | `rename_click`, `rename_confirm_click` | **In v1** (A3) — goes through the harness session-list mutation port |
+| Session row: delete | `delete_click`, `delete_confirm_click` | **In v1** (A3) — goes through the harness session-list mutation port |
+| Session row: star / pin / archive | `star`, `unstar`, `pin`, `unpin`, `archive`, `archived` | **In v1** (A3) — pure client-side flag overlay on the harness session list |
+| New session action | `sidebar_new`, `add_new_chat_click`, `create_session_from_home` | **In v1** |
+| Sidebar primary entries other than "new" | `sidebar_user_menu`, `sidebar_pinned_order`, `sidebar_cloud_shortcut`, `sidebar_moveto` | **In v1 (Desktop only UI)** — disabled buttons with "Desktop only" tooltip |
+| Composer (chat input, send, model selector) | `composer`, `select_model`, `toggle_model_thinking`, `thinking_effort` | **In v1** for the basic composer + model selector + current thinking level display; max-output-tokens and thinking-effort toggles are deferred; **the agent-team-mode toggle is Deferred** (no harness `teamMode` / `teamModeOff` contract) |
+| Agent Team mode toggle | `teamMode`, `teamModeActive`, `teamModeOff`, `home.agent_team_label`, `home.agent_team_locked_tip`, `mavis-team-mode` | **Deferred — requires `teamMode` / `teamModeOff` contract in `@mavis/local-runtime-v2`'s `SessionCreateInput` + `MessageSendInput`; v1 does not modify the harness** |
+| Composer run location | `composer_run_location` | **In v1** if desktop uses a single "local" value for browser sessions; otherwise deferred |
+| Settings modal: general | `general`, theme, language | **In v1** |
+| Settings modal: appearance | `appearance`, font size, density | **In v1** |
+| Settings modal: account | `account`, sign out | **In v1** |
+| Settings modal: account-onboarding | `account-onboarding` | **In v1** |
+| Settings modal: model | `model`, list / select / thinking level | **In v1** |
+| Settings modal: data directory | `DESKTOP_GET_LOCAL_RUNTIME_DATA_DIR_INFO` | **In v1** (read-only) |
+| Settings modal: persona | `persona_editor_placeholder`, `persona_section_identity`, `persona_section_soul`, `persona_section_user`, `persona_load_failed`, `persona_save_failed_*`, `persona_mode_code`, `persona_mode_preview`, `persona_no_chat`, `persona_empty`, `persona_empty_missing`, `persona_save_success`, `get_persona_file`, `save_persona_file`, `persona` | **Deferred — desktop renderer→cloud API, not exposed via harness; v1's `WebuiHarnessPort` has no `getPersonaFile` / `savePersonaFile` method, and adding one requires harness changes outside this plan's scope. Section is rendered with a "Coming soon — desktop only" placeholder in `SettingsModal.tsx`.** |
+| Settings modal: providers | `provider_create`, `provider_update`, `provider_delete`, `provider_duplicate`, `provider_minimax_key_upsert`, `provider_minimax_source_set`, `provider_minimax_test`, `provider_models_discover`, `provider_model_test`, `provider_codex_models_refresh`, `provider_codex_oauth_connect`, `provider_candidate_*`, `provider_context_update`, `provider_parameters_update`, `provider_id`, `custom_provider` | **Deferred — desktop renderer→cloud API (Thrift IDL), not via harness. Section renders with a "Coming soon — desktop only" placeholder.** |
+| Settings modal: memory | `memory_enable_click`, `memory_manage_click`, `memory_save_click`, `memory_delete_click`, `memory_delete_confirm_click`, `memory_create_in_session_click`, `session_memory_popup_view` | **Deferred — desktop renderer→cloud API, not via harness. Section renders with a "Coming soon — desktop only" placeholder. Note: this is the user-visible opt-in flag, distinct from the always-on harness memory module.** |
+| Onboarding step 1 (Agent Team mode) | `Agent Team mode` / `Agent Team 模式` | **In v1 — onboarding copy only; the actual agent-team toggle itself is Deferred** |
+| Onboarding step 2 (Memory & self-evolution) | `Memory & evolution` / `记忆 & 自进化` | **Deferred** (skipped in v1 because OAuth / connector flows do not back it) |
+| Onboarding step 3 (IM / chat-app connector) | `IM` / `通讯工具接入` | **Deferred** (skipped in v1; the `minimax://` deeplink OAuth callback is not implemented) |
+| Onboarding step 4 (Ready) | `Ready` / `就绪` | **In v1** |
+| Sessions list badge for team mode | `home.session_type_team_*`, `chat_type: agent_team` | **In v1** (paired with the team-mode toggle) |
+| Compaction rows | `session.compaction.*` | **In v1** (B3) |
+| Permission / questionnaire cards | `permission.*`, `questionnaire.*` | **In v1** (B3) |
+| Token usage display | `usage`, `context_window`, `update_model_context` | **In v1** |
+| `/archon-mini-chat` | (own route) | **Deferred** |
+| `/log-viewer` | (own route) | **Deferred** |
+| `/pdf`, `/doc`, `/docx`, `/xlsx`, `/pptx` preview | (own routes) | **Deferred** |
+| `/schedules` | `schedule`, `schedules_*`, `crons_*` | **Deferred** (sidebar entry disabled, tooltip "Desktop only") |
+| `/plugins`, `/plugins/manage` | `plugin_marketplace`, `plugin_*` | **Deferred** (sidebar entry disabled) |
+| `/connectors/oauth` | `discord`, `feishu`, `lark`, `dingtalk`, `wecom`, `wxwork`, `weixin`, `slack`, `telegram`, `connect_recommendation`, `connectors` | **Deferred** (sidebar entry disabled) |
+| `/websites` | `websites`, `website`, `desktop_download_popup_*` | **Deferred** (sidebar entry disabled) |
+| `/remote-control`, `/connect-mobile` | `remote`, `remote_control_*`, `remote_chat_page` | **Deferred** (sidebar entry disabled) |
+| `/max-claw`, `/max-hermes` | `maxclaw`, `maxhermes`, `maxclaw_*` | **Deferred** (sidebar entry disabled) |
+| Goal view, plan review | `goal`, `plan_review`, `plan_review_recovery` | **Deferred** |
+| Worktree mode toggle | `worktree`, `worktreeMode`, `local_changes` | **Deferred** |
+| Token-plan / budget banner | `token_plan`, `budget_limited`, `usage_limited`, `personal_plan_type` | **Deferred** |
+| Operation banners | `agent_desktop_operation_banners`, `operation_banner_*` | **Deferred** |
+| Footer feedback widgets | `feedback`, `like_click`, `dislike_click`, `share_click`, `cs_widget_tooltip` | **Deferred** |
+| Sensors / page-tracking telemetry | `mavis_*_render_started`, `route_modules_loaded`, `surface_committed` | **Deferred** (WebUI does not currently include the sensors SDK) |
+| Pricing / upgrade flows | `home_subscribe`, `pricing`, `subscribe` | **Deferred** |
+| Artifacts preview popup | `artifact_*_click`, `artifact_preview_popup_view` | **Deferred** |
+| Settings modal sections: shortcut / notification / tray / run-on-startup / power-save-blocker / Computer Use toggle | `shortcuts`, `notification`, `tray`, `run-on-startup`, `power-save-blocker` | **Out of v1 scope** (desktop-only settings; documented above) |
+| OAuth `minimax://` deeplink callback | (desktop only) | **Out of v1 scope** (inherited limitation; documented above) |
+
+This matrix is the single place a reviewer should check when asking
+"is this module in v1?". Every entry above is backed by an identifier
+that exists in the desktop archon chunk today; the matrix is generated
+from a manual pass of that chunk on this branch and may drift if the
+desktop is rebuilt against the new archival knowledge.
 
 ## How the WebUI gains built-in tools and skills
 
@@ -419,6 +525,145 @@ The client work is the larger half of the milestone. It does not change
 the server surface contract; it only changes the React components and the
 assets they reference.
 
+### Agent team mode — onboarding copy only
+
+The desktop archon exposes "Agent Team mode" both as:
+
+1. **Onboarding copy** (the explainer slide on the first launch).
+2. **A session-level composer toggle** (a chip / button next to the
+   model selector that flips the team-mode state).
+
+For v1, **only the onboarding copy lands**. The session-level toggle
+is **Deferred** for the same reason as the settings-modal sections
+above: the harness does not expose `teamMode` / `teamModeOff` in
+`SessionCreateInput` or `MessageSendInput`, and adding the fields is
+out of scope for this milestone.
+
+What v1 ships from this design:
+
+- Onboarding step 1 copy and image:
+  `subtitle: "Agent Team 模式" / "Agent Team mode"`,
+  `title: "下达目标，MiniMax 自主组建小队" / "Define the goal. MiniMax builds the team."`,
+  `desc: "启用 Agent Team 模式后..." / "Enable Agent Team mode and..."`,
+  `image: "onboard_v2_1_{cn,en}.png"`.
+- Onboarding step 4 ("Ready" / "就绪") mentions team assembly as one
+  of the things the user can do.
+
+What v1 explicitly does **not** ship:
+
+- The composer team-mode toggle.
+- The `mavis-team-mode` localStorage read/write in `Composer.tsx`.
+- The lock predicate `teamModeOff === false || getChildSessions(session.id).length > 0`.
+- The `home.agent_team_locked_tip` tooltip.
+- The `WebuiCreateSessionRequest` / `WebuiSendMessageRequest` extension for `teamMode` / `teamModeOff`.
+- The "team" badge in the sessions list sidebar (`chat_type: agent_team`).
+
+The desktop identifier constants (`teamMode`, `teamModeActive`,
+`teamModeOff`, `home.agent_team_label`, `home.agent_team_locked_tip`,
+`mavis-team-mode`) are NOT imported into `Composer.tsx` or any other
+file in v1. A future milestone that adds the harness plumbing can wire
+the toggle without changing the rest of the WebUI.
+
+### Visual reference provenance
+
+The desktop-extracted WebUI project at `../minimax-webui/` is the visual
+source of truth for layout, component shape and page composition. The
+plan reuses the desktop design tokens (`tokens.css` is the canonical
+re-authoring) but **does not copy** the desktop's Next.js chunks, compiled
+CSS product or React components. The implementer must therefore consult
+the desktop static export directly when the visual-language document does
+not resolve an ambiguity.
+
+#### Priority order when sources disagree
+
+1. **`packages/webui/src/client/styles/tokens.css`** wins for any token
+   value. If a desktop page references a token that is not in
+   `tokens.css`, the implementer must port the value into `tokens.css`
+   (as a primitive ramp value, not as a literal hex) and reference the
+   new token from the component. The plan does not author a parallel
+   literal somewhere in the component tree.
+2. **`docs/webui/webui-visual-language.md`** wins for any structural or
+   typographic decision (typography stacks, layout proportions, theme
+   switching mechanism, density, spacing scale).
+3. **Desktop static export under `../minimax-webui/app/out/`** wins for
+   page composition, component shape, gesture vocabulary and empty
+   states — things the visual-language doc covers in prose only.
+   Specifically:
+   - page entry HTML: `../minimax-webui/app/out/<route>/index.html` (one
+     per page in v1 scope);
+   - page-level JavaScript chunks: the
+     `_next/static/chunks/app/(pages)/(mavis)/<route>/page-*.js` files
+     (read-only, for visual reference; do not copy code);
+   - the settings modal lives inside the `archon` route, not in its own
+     route — read
+     `_next/static/chunks/app/(pages)/(mavis)/archon/page-*.js` for the
+     modal's section order, control types and copy.
+
+The plan never lifts compiled artefacts from the desktop export; the
+implementer reads them in place. This is the only way to honour
+[`webui-visual-language.md:104-107`](webui-visual-language.md), which
+forbids copying the compiled stylesheet.
+
+#### Per-page reference map
+
+| WebUI route | Desktop static export reference |
+| --- | --- |
+| `/login` | `../minimax-webui/app/out/login/index.html` |
+| `/onboarding` | `../minimax-webui/app/out/onboarding/index.html` |
+| `/archon` | `../minimax-webui/app/out/archon/index.html` + `_next/static/chunks/app/(pages)/(mavis)/archon/page-*.js` (the latter for the settings modal) |
+| `/404` (catch-all) | `../minimax-webui/app/out/404/index.html` |
+| Settings modal (inside `/archon`) | sections enumerated in `_next/static/chunks/app/(pages)/(mavis)/archon/page-*.js`: `general`, `appearance`, `account`, `account-onboarding`, `model` |
+
+Per-component references within `archon`:
+
+- left rail layout (width ~18 %, session list shape, settings entry
+  position): archon chunks, search the rendered JSX shape.
+- composer shape (large radius 16-20 px, attach button, trailing model
+  selector, dark circular send button, suggestion-chip row below,
+  workspace capsule + local tag below that): archon chunks.
+- welcome brand anchor (centred, generous top space): archon HTML.
+- two-column grid with the rail one step darker than the main surface:
+  archon HTML and `tokens.css` `bg_default_*` pairs.
+
+#### Visual acceptance
+
+After phase 5 lands, the implementer takes two screenshots:
+
+1. `packages/webui/screenshots/archon-light.png` — WebUI `/archon`
+   rendered with `data-density="comfortable"` and the light theme.
+2. `packages/webui/screenshots/archon-dark.png` — same view, dark
+   theme.
+
+Comparison is done by opening the screenshots and the corresponding
+desktop archon HTML in a browser side by side (the implementer does not
+need pixel-perfect overlay; the eye check is enough). Acceptance is:
+
+- Two-column layout with the rail narrower than the main, and the rail
+  one step darker.
+- Composer shape matches the prose description above (large-radius
+  field, trailing model selector, dark circular send button).
+- Suggestion-chip row + workspace capsule row visible below the
+  composer.
+- Welcome brand anchor centred with generous top space.
+- No regressions in the light/dark theme mechanism (theme switching
+  rebinds the 211 semantic tokens per
+  [`webui-visual-language.md:47-60`](webui-visual-language.md)).
+
+Pixel-perfect parity is **not** an acceptance criterion. The desktop
+chunks render against Next.js-specific hydration order; the WebUI
+renders against Vite. Layout proportions, not pixel counts, are the
+target.
+
+#### Conflict resolution
+
+When the desktop static export disagrees with the visual-language doc or
+`tokens.css`, the implementer raises the discrepancy in the PR
+description and picks the side that aligns with the priority order
+above. Conflicts that go the other way (for example, a desktop fragment
+that uses a literal hex while `tokens.css` already declares a token for
+that colour) are noted but not blocking — the WebUI follows `tokens.css`
+and the desktop fragment is left untouched because it is read-only.
+
 ### Asset carry
 
 - 27 PNG / JPG files in `packages/webui/src/client/assets/img/` (mirroring
@@ -509,7 +754,9 @@ of truth, per the visual-language doc and ADR 0009.
 ### Step C4 — Settings modal
 
 The settings surface lives in `Archon.tsx` and is opened from
-`LeftRail.tsx`. Sections, in order:
+`LeftRail.tsx`. Sections, in order, matching the desktop modal's
+order in
+`../minimax-webui/app/out/_next/static/chunks/app/(pages)/(mavis)/archon/page-b80d2a3aab9be6d2.js`:
 
 1. **general** — theme (light / dark, written to `localStorage` and
    reflected through `.light` / `.dark` on `<html>` per
@@ -524,19 +771,90 @@ The settings surface lives in `Archon.tsx` and is opened from
    skipped it.
 5. **model** — list from `listModels`, selection via `selectModel`;
    shows the currently configured thinking level and the context-window
-   usage from `getSessionUsage`.
-6. **data directory** — **read-only display of the current dataDir**.
-   The plan explicitly defers relocation: re-implementing
-   `DESKTOP_GET_LOCAL_RUNTIME_DATA_DIR_INFO` /
-   `DESKTOP_RELOCATE_LOCAL_RUNTIME_DATA_DIR` (the desktop settings IPC
-   handlers at
-   `../minimax-webui/app/dist/main/ipc/settings.ipc.js:347-385`) would
-   require a host lifecycle change in
-   `@mavis/local-runtime-v2` and a credential-preservation story for
-   the shared `~/.minimax` directory. Neither fits this milestone.
+   usage from `getSessionUsage`. **Note**: per-session
+   `max_output_tokens` and thinking-effort toggles are deferred (see
+   "v1 feature parity matrix").
+6. **persona** — **Coming soon — desktop only**. The section renders
+   the section heading (so the user sees the same option order as
+   desktop) but every action is a placeholder with copy "Coming soon
+   — desktop only". The desktop persona flow goes through the cloud
+   API (`get_persona_file` / `save_persona_file`); v1's
+   `WebuiHarnessPort` does not expose these methods, and adding them
+   requires harness changes that are out of scope for the WebUI plan.
+   The desktop identifier constants (e.g. `persona_section_identity`)
+   ARE present in the file as `// i18n key:` markers for the eventual
+   future implementation, so a future milestone that adds the harness
+   plumbing knows where the constants live.
+8. **providers** — **Coming soon — desktop only**. Same treatment as
+   persona. The desktop provider flow goes through the cloud Thrift
+   IDL (not via harness), so v1 renders the section heading and
+   identifier constants only. Codex-OAuth-gated entries
+   (`provider_codex_*`) would remain disabled even when the section
+   is wired up, because the OAuth deeplink is out of scope (see
+   "OAuth `minimax://` deeplink limitation").
+9. **memory** — **Coming soon — desktop only**. Same treatment. The
+   desktop memory flow goes through the cloud API; v1 renders the
+   heading and identifier constants only. The user-visible opt-in
+   flag (vs. the always-on harness memory module) is what the desktop
+   UI controls; v1 does not.
+11. **data directory** — **read-only display of the current dataDir**.
+    The plan explicitly defers relocation: re-implementing
+    `DESKTOP_GET_LOCAL_RUNTIME_DATA_DIR_INFO` /
+    `DESKTOP_RELOCATE_LOCAL_RUNTIME_DATA_DIR` (the desktop settings IPC
+    handlers at
+    `../minimax-webui/app/dist/main/ipc/settings.ipc.js:347-385`) would
+    require a host lifecycle change in
+    `@mavis/local-runtime-v2` and a credential-preservation story for
+    the shared `~/.minimax` directory. Neither fits this milestone.
 
-The desktop's shortcut / notification / tray / run-on-startup /
-power-save-blocker / Computer Use entries are intentionally absent.
+**Why persona / providers / memory are deferred rather than implemented.** These three sections are the result of an earlier assumption in the plan that the harness would expose ports for them. After the third implementation round, it was confirmed that:
+
+- The desktop renderer implements them by calling **the cloud backend directly** (Thrift IDL, `agent.minimax.cn`), not through the desktop main process and not through `@mavis/local-runtime-v2`.
+- The WebUI's `WebuiHarnessPort` has no `getPersonaFile`, no `savePersonaFile`, no memory CRUD, no provider CRUD.
+- Adding these to `@mavis/local-runtime-v2` would affect every harness consumer (TUI, desktop, future clients) and is the kind of change that AGENTS.md and `docs/source-sync.md` warn against without a dedicated review path.
+
+So v1 ships the **section headings** (so the modal layout matches the desktop order) with **placeholder copy and i18n-key markers**, and a future milestone that adds the harness plumbing can wire the actions without changes elsewhere in the WebUI.
+
+The desktop's `shortcut` / `notification` / `tray` / `run-on-startup` /
+`power-save-blocker` / `Computer Use toggle` entries are intentionally
+absent.
+
+The `tokens` for the placeholder sections come from `tokens.css`; no
+new tokens are introduced in this milestone.
+
+### Onboarding flow
+
+The desktop onboarding has four steps, defined in
+`../minimax-webui/app/out/_next/static/chunks/60688.b5ccd11e10880be9.js`:
+
+| Step | Subtitle (zh / en) | v1 status |
+| --- | --- | --- |
+| 1 | "Agent Team 模式" / "Agent Team mode" | **In v1** |
+| 2 | "记忆 & 自进化" / "Memory & evolution" | **Deferred** — skipped because OAuth / connector flows do not back it; the Memory settings modal entry is reachable from `/archon` settings instead |
+| 3 | "通讯工具接入" / "IM" | **Deferred** — skipped because the `minimax://` OAuth deeplink is not implemented; the connector sidebar entries are disabled with the "Desktop only" tooltip |
+| 4 | "就绪" / "Ready" | **In v1** |
+
+The onboarding component (`packages/webui/src/client/components/OnboardingSteps.tsx`)
+takes a list of steps. v1 ships a two-step onboarding:
+
+1. Step 1 copy and image from the desktop chunk (zh + en):
+   `subtitle: "Agent Team 模式" / "Agent Team mode"`,
+   `title: "下达目标，MiniMax 自主组建小队" / "Define the goal. MiniMax builds the team."`,
+   `desc: "启用 Agent Team 模式后..." / "Enable Agent Team mode and..."`,
+   `image: "onboard_v2_1_{cn,en}.png"`.
+2. Step 4 copy and image:
+   `subtitle: "就绪" / "Ready"`,
+   `title: "在输入框里下达一切指令" / "Just say the word"`,
+   `desc: "选择一个本地工作目录开始你的任务。无论是创建技能、查看记忆、设置定时任务，还是组建 Agent Team，一切需求，在输入框里下达即可。"`,
+   `image: "onboard_v2_4_{cn,en}.png"`.
+
+The desktop's "Next" / "开始 / Get started" button labels are kept
+verbatim. The desktop's back-arrow control is also kept.
+
+The implementation must **not** skip steps with placeholder copy — v1
+ships a two-step onboarding, not a four-step onboarding with two
+empty steps. A reviewer reading the onboarding component should see
+exactly two slide markers.
 
 ### Step C5 — Streaming transcript
 
@@ -551,6 +869,67 @@ work as a fixture reference. The probe is a reducer-fixture contract,
 **not** an end-to-end smoke test; a real WebSocket round-trip smoke test
 is added in phase 5 below.
 
+### Session list operations
+
+The session list in the WebUI's `LeftRail.tsx` exposes three
+row-level operations (decision A3):
+
+1. **star / unstar** — pure client-side flag overlay on the harness
+   session list. The WebUI keeps a per-session star map in
+   `localStorage` under a new key
+   `mavis-webui-session-stars:v1`. Server-side state is untouched.
+2. **pin / unpin** — same overlay mechanism under
+   `mavis-webui-session-pins:v1`. The desktop's
+   `sidebar_pinned_order` key is **not** reused; the WebUI maintains
+   its own pin order to avoid clashing with the desktop client's
+   state on a shared `~/.minimax` data dir.
+3. **archive / unarchive** — same overlay mechanism under
+   `mavis-webui-session-archives:v1`. Archived sessions are
+   hidden from the default list view; the user toggles visibility
+   via a chip in the rail header.
+4. **rename** — calls the harness session-list mutation port. If the
+   harness does not expose a rename port, the implementer stops and
+   reports (see the "stop and report" rules).
+5. **delete** — calls the harness session-list mutation port. Same
+   stop-and-report rule applies.
+
+The desktop's session list has additional rows actions (`star`,
+`unstar`, `pin`, `unpin`, `archive`, `archived`, `rename`,
+`delete`, `marked_all_read`). The five above are the only ones v1
+implements. The other desktop-only actions (e.g. `navigate_to_session`
+which is purely client-side routing in the desktop) are folded into
+the WebUI's row click handler instead of being separate row actions.
+
+Row-action icons and labels are taken from the desktop chunks
+verbatim. The tooltip strings (`rename_click`, `delete_click`, etc.)
+are the i18n keys; the WebUI resolves them through the same locale
+loader that the desktop uses.
+
+### Sidebar entries
+
+The sidebar's primary entry list in `LeftRail.tsx` matches the
+desktop's order (decision B1):
+
+| Position | Entry | v1 status |
+| --- | --- | --- |
+| 1 | New session (sidebar_new) | **Active** — opens a workspace picker and creates a session |
+| 2 | Schedules (schedules, crons_*) | **Disabled** — tooltip "Desktop only" |
+| 3 | Plugins / Skill marketplace (plugin_marketplace, skill_*) | **Disabled** — tooltip "Desktop only" |
+| 4 | Websites (websites, website) | **Disabled** — tooltip "Desktop only" |
+| 5 | Remote control (remote_control_*) | **Disabled** — tooltip "Desktop only" |
+| 6 | Maxclaw (maxclaw_*) | **Disabled** — tooltip "Desktop only" |
+| 7 | Maxhermes (maxhermes) | **Disabled** — tooltip "Desktop only" |
+| 8 | Local (workspace list, lastSelectedWorkspace) | **Active** — the user's workspaces |
+
+Disabled entries use the desktop's visual treatment for disabled
+controls (the same tokens the desktop uses for its `disabled` state).
+The "Desktop only" tooltip text matches the desktop's
+`sidebar_cloud_shortcut` / `sidebar_primary` copy.
+
+The "User menu" entry (`sidebar_user_menu`) is rendered as the
+avatar / sign-out trigger at the rail footer and is active; clicking
+it opens the settings modal (default tab `account`).
+
 ### Page re-authoring
 
 Four pages are re-authored. They use the existing React + Vite toolchain
@@ -564,8 +943,12 @@ build.
   surface lighter than the rail). Header, footer, model badge, send
   button. Lays out exactly the way
   `webui-visual-language.md` describes the conversation surface.
-- `LeftRail.tsx` — session list, new-session action, settings entry,
-  account entry. Styling tokens from `tokens.css` only.
+- `LeftRail.tsx` — session list (with the row operations in the
+  "Session list operations" section above), new-session action,
+  primary sidebar entries (with the disabled "Desktop only" entries
+  per the "Sidebar entries" section above), settings entry at the
+  rail footer, user menu trigger. Styling tokens from `tokens.css`
+  only.
 - `Composer.tsx` — large-radius field, attach button, trailing model
   selector, solid dark circular send button. Suggestion-chip row
   underneath; workspace capsule and local tag below.
@@ -716,3 +1099,51 @@ most likely to bite during implementation.
 10. **`pnpm check:source` is red on this branch before any work starts.**
     Phase zero fixes it. The PR description must call this out so a
     reviewer who runs `check:source` against `main` is not surprised.
+
+## Plan revision note (post-implementation)
+
+During the third implementation round, the implementer correctly
+stopped rather than invent behaviour. Specifically:
+
+- `WebuiHarnessPort` does **not** expose `getPersonaFile` /
+  `savePersonaFile` / provider CRUD / memory CRUD ports.
+- `@mavis/local-runtime-v2` does **not** have `teamMode` /
+  `teamModeOff` in `SessionCreateInput` or `MessageSendInput`.
+
+These were originally planned as in-scope (this revision of the plan
+predates the correction). The desktop renderer implements them by
+calling the cloud backend directly (Thrift IDL,
+`agent.minimax.cn`), not through the harness. v1 is constrained to
+the harness as its single seam (per
+[ADR 0001](../adr/0001-webui-is-a-peer-client-of-the-harness.md));
+extending the harness to expose these is a separate concern that is
+explicitly out of this plan's scope.
+
+The plan was revised accordingly:
+
+- The persona, providers and memory settings-modal sections are
+  rendered as section headings with placeholder copy and i18n-key
+  markers, so the section order matches desktop without inventing
+  behaviour. A future milestone that adds the harness plumbing can
+  wire the actions without changes elsewhere.
+- The session-level "Agent Team mode" composer toggle is removed
+  entirely from v1. Onboarding step 1 ("Agent Team mode") still
+  appears because it is onboarding copy, not the toggle.
+
+A future milestone that wants these features should:
+
+1. Add the relevant ports / contract fields to
+   `@mavis/local-runtime-v2` and `CliService`. This affects every
+   harness consumer (TUI, desktop, future clients) and is the kind of
+   change AGENTS.md and `docs/source-sync.md` warn against without a
+   dedicated review path.
+2. Expose them through `@mavis/local-runtime-v2` →
+   `@mavis/webui`'s `WebuiHarnessPort`.
+3. Then re-activate the in-scope rows in the v1 feature parity
+   matrix above and implement against the new ports.
+
+The shared event corpus from
+[ADR 0011](../adr/0011-shared-event-corpus-in-local-runtime-v2.md)
+still applies: when the harness protocol changes, both TUI and WebUI
+clients update their consumers independently, validated against the
+same fixtures.
