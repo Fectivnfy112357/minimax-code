@@ -1,3 +1,5 @@
+import type { ClaimSigninData, SigninPanel } from "@mavis/shared/daily-signin";
+
 // Harness seam for the WebUI service.
 //
 // The service uses this port to reach the harness layer; the real
@@ -439,6 +441,9 @@ export interface WebuiHarnessPort {
   getUsageQuota(request?: {
     readonly forceRefresh?: boolean;
   }): Promise<WebuiUsageQuotaResult>;
+  /** Daily check-in panel status (cloud check-in API; see `check-in.ts`). */
+  getSigninPanel(): Promise<WebuiSigninPanelView>;
+  claimSignin(): Promise<WebuiClaimSigninView>;
   close(): Promise<void>;
 }
 
@@ -475,3 +480,9 @@ export type WebuiUsageQuotaResult =
       readonly creditBalance?: string;
       readonly quota?: WebuiUsageQuotaView;
     };
+
+// The check-in wire types are the shared validators' own types — the same
+// `@mavis/shared/daily-signin` module the TUI and the desktop use (the webui
+// panel renders them directly, so there is no second shape to drift).
+export type WebuiSigninPanelView = SigninPanel;
+export type WebuiClaimSigninView = ClaimSigninData;

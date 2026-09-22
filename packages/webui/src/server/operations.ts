@@ -94,6 +94,8 @@ const SELECT_MODEL_OPERATION_NAME = "selectModel" as const;
 const LIST_SKILLS_OPERATION_NAME = "listSkills" as const;
 const GET_SESSION_USAGE_OPERATION_NAME = "getSessionUsage" as const;
 const GET_USAGE_QUOTA_OPERATION_NAME = "getUsageQuota" as const;
+const GET_SIGNIN_PANEL_OPERATION_NAME = "getSigninPanel" as const;
+const CLAIM_SIGNIN_OPERATION_NAME = "claimSignin" as const;
 const GET_ACCOUNT_STATUS_OPERATION_NAME = "getAccountStatus" as const;
 const RUN_COMMAND_OPERATION_NAME = "runCommand" as const;
 const SIGN_OUT_OPERATION_NAME = "signOut" as const;
@@ -989,6 +991,30 @@ export const runCommandOperation: WebuiOperation<
   },
 };
 
+export const getSigninPanelOperation: WebuiOperation<
+  Record<string, never>,
+  unknown
+> = {
+  name: GET_SIGNIN_PANEL_OPERATION_NAME,
+  validate: (body) => {
+    if (body === null || typeof body !== "object" || Array.isArray(body) || Object.keys(body).length !== 0)
+      return { ok: false, code: WebuiErrorCode.invalidBody, message: "getSigninPanel body must be an empty object" };
+    return { ok: true, body: {} };
+  },
+};
+
+export const claimSigninOperation: WebuiOperation<
+  Record<string, never>,
+  unknown
+> = {
+  name: CLAIM_SIGNIN_OPERATION_NAME,
+  validate: (body) => {
+    if (body === null || typeof body !== "object" || Array.isArray(body) || Object.keys(body).length !== 0)
+      return { ok: false, code: WebuiErrorCode.invalidBody, message: "claimSignin body must be an empty object" };
+    return { ok: true, body: {} };
+  },
+};
+
 export const signOutOperation: WebuiOperation<Record<string, never>, { readonly success: true }> = {
   name: SIGN_OUT_OPERATION_NAME,
   validate: (body) => {
@@ -1039,6 +1065,8 @@ export function createOperationRegistry(
     | "listSkills"
     | "getSessionUsage"
     | "getUsageQuota"
+    | "getSigninPanel"
+    | "claimSignin"
     | "getAccountStatus"
     | "requestCompaction"
     | "invalidateAuth"
@@ -1092,6 +1120,14 @@ export function createOperationRegistry(
     handle: async (_context, body) => ({
       body: await port.getUsageQuota(body),
     }),
+  });
+  registerOperation(registry, {
+    operation: getSigninPanelOperation,
+    handle: async () => ({ body: await port.getSigninPanel() }),
+  });
+  registerOperation(registry, {
+    operation: claimSigninOperation,
+    handle: async () => ({ body: await port.claimSignin() }),
   });
   registerOperation(registry, {
     operation: getAccountStatusOperation,

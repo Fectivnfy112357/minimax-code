@@ -176,6 +176,8 @@ export class WebuiService {
       listSkills: (request) => this.port.listSkills(request),
       getSessionUsage: (request) => this.port.getSessionUsage(request),
       getUsageQuota: (request) => this.port.getUsageQuota(request),
+      getSigninPanel: () => this.port.getSigninPanel(),
+      claimSignin: () => this.port.claimSignin(),
       getAccountStatus: (request) => this.port.getAccountStatus(request),
       requestCompaction: (request) => this.port.requestCompaction(request),
       invalidateAuth: this.port.invalidateAuth,

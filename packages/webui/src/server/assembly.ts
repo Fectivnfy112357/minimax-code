@@ -40,6 +40,7 @@ import { createHarnessPortFromHost } from "./host.js";
 import type { WebuiHarnessPort } from "./port.js";
 import { configureWebuiRuntimeEnvironment } from "./runtime-environment.js";
 import { UsageQuotaClient } from "./usage-quota.js";
+import { DailyCheckinClient } from "./check-in.js";
 import {
   createWebuiAuthLeaseSession,
   prepareWebuiMcodeToolsIntegration,
@@ -477,6 +478,26 @@ export async function createWebuiRuntimeHost(
     region: quotaRegion,
     buildEnv: quotaBuildEnv,
   });
+  const dailyCheckin = new DailyCheckinClient({
+    tokenProvider: async () => {
+      try {
+        const lease = await quotaOauthCore.getAccessToken({
+          requiredScopes: MCODE_OAUTH_SCOPES,
+          minValidityMs: 30_000,
+        });
+        const realUserID = authContext.getter()?.realUserID?.trim();
+        // The check-in query and account guard need a real user id; without
+        // one the panel renders its signed-out copy.
+        if (!realUserID) return undefined;
+        return { accessToken: lease.accessToken, realUserID };
+      } catch {
+        return undefined;
+      }
+    },
+    region: quotaRegion,
+    buildEnv: quotaBuildEnv,
+    appVersion: options.appVersion || "webui",
+  });
   // Consumers rebuild the service port from `host` (the dev launcher does:
   // `createHarnessPortFromHost(assembled.host)`), so the assembly-level
   // enrichments must live on `host` itself — otherwise `getUsageQuota`
@@ -487,6 +508,8 @@ export async function createWebuiRuntimeHost(
     invalidateAuth: authContext.invalidator,
     getUsageQuota: (request?: { readonly forceRefresh?: boolean }) =>
       usageQuota.getUsageQuota(request),
+    getSigninPanel: () => dailyCheckin.getSigninPanel(),
+    claimSignin: () => dailyCheckin.claimSignin(),
   };
   const harnessPort = createHarnessPortFromHost(hostHandle);
   return {

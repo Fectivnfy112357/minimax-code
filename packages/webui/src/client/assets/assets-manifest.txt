@@ -26,6 +26,9 @@ img/remote_control_phone_en.png
 img/remote_control_phone_zh.png
 img/share_wechat_friends.png
 img/wechat.png
+# Signin corner artwork source -> canonical destination (2 files)
+../minimax-webui/app/out/_next/static/media/corner-light.908854e4.svg -> img/corner-light.svg
+../minimax-webui/app/out/_next/static/media/corner-dark.fcf516da.svg -> img/corner-dark.svg
 # KaTeX source -> canonical destination (60 files)
 ../minimax-webui/app/out/_next/static/media/KaTeX_AMS-Regular.ttf -> fonts/KaTeX_AMS-Regular.ttf
 ../minimax-webui/app/out/_next/static/media/KaTeX_AMS-Regular.woff -> fonts/KaTeX_AMS-Regular.woff

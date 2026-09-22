@@ -193,6 +193,21 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
     return { signedIn: false as const };
   }
 
+  async getSigninPanel() {
+    return { scene: 0, days: [] };
+  }
+
+  async claimSignin() {
+    return {
+      claim_id: "stub",
+      claim_result: 2,
+      day_no: 1,
+      points: 0,
+      expire_at_ms: 0,
+      panel: { scene: 0, days: [] },
+    };
+  }
+
   async getAccountStatus() {
     return { available: true };
   }
@@ -1660,6 +1675,10 @@ describe("WebUI runtime host assembly", () => {
       });
       expect(assembled.host.getUsageQuota).toBeTypeOf("function");
       expect(assembled.harnessPort.getUsageQuota).toBeTypeOf("function");
+      expect(assembled.host.getSigninPanel).toBeTypeOf("function");
+      expect(assembled.host.claimSignin).toBeTypeOf("function");
+      expect(assembled.harnessPort.getSigninPanel).toBeTypeOf("function");
+      expect(assembled.harnessPort.claimSignin).toBeTypeOf("function");
       await assembled.harnessPort.close();
     } finally {
       await rm(dataDir, { recursive: true, force: true });

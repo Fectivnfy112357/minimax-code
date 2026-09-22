@@ -508,6 +508,12 @@ export interface WebuiClientFoundationAppProps {
   readonly getUsageQuota?: (request?: {
     readonly forceRefresh?: boolean;
   }) => Promise<import("../server/port.js").WebuiUsageQuotaResult>;
+  readonly getSigninPanel?: () => Promise<
+    import("../server/port.js").WebuiSigninPanelView
+  >;
+  readonly claimSignin?: () => Promise<
+    import("../server/port.js").WebuiClaimSigninView
+  >;
   readonly getAccountStatus?: (request?: {
     readonly sessionId?: string;
   }) => Promise<Record<string, unknown>>;
@@ -2778,6 +2784,8 @@ export function WebuiClientFoundationApp({
   selectModel,
   getSessionUsage,
   getUsageQuota,
+  getSigninPanel,
+  claimSignin,
   getAccountStatus,
   signOut,
   dataDir,
@@ -3044,6 +3052,8 @@ export function WebuiClientFoundationApp({
                   selectModel={selectModel}
                   getSessionUsage={getSessionUsage}
                   getUsageQuota={getUsageQuota}
+                  getSigninPanel={getSigninPanel}
+                  claimSignin={claimSignin}
                   getAccountStatus={getAccountStatus}
                   signOut={signOut}
                 />

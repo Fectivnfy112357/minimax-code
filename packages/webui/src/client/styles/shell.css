@@ -1528,4 +1528,238 @@
       opacity: 0.4;
     }
   }
+
+  /* ---- Daily check-in card ----
+   * `.signin-*` rules and the `mavis-button` base are copied from the
+   * desktop stylesheet; the anchor/panel wrapper positions the card the way
+   * desktop's hover popover does (right of the menu, centered on the row).
+   */
+  .webui-user-menu-signin-anchor {
+    position: relative;
+  }
+  .webui-user-menu-signin-panel {
+    position: absolute;
+    top: -84px;
+    left: calc(100% + 11px);
+    z-index: 111;
+  }
+  .signin-card-container {
+    width: 339px;
+    max-width: min(100%, 100vw - 16px);
+  }
+  .signin-card-surface {
+    container-type: inline-size;
+    min-height: 201px;
+    box-shadow: 0 0 20px 0 var(--shadow_default, #0a0a0a14);
+  }
+  .signin-corner-clip {
+    pointer-events: none;
+    position: absolute;
+    right: 0;
+    top: 0;
+    width: 96px;
+    height: 80px;
+    overflow: hidden;
+    border-top-right-radius: 16px;
+  }
+  .signin-corner-default img {
+    position: absolute;
+    right: -18.09px;
+    top: -36px;
+    width: 101.089px;
+    height: 109.646px;
+    max-width: none;
+  }
+  .dark .signin-corner-default {
+    opacity: 0.2;
+  }
+  .signin-progress-scroll {
+    overflow-x: auto;
+  }
+  .signin-progress {
+    display: flex;
+    align-items: flex-start;
+    gap: 4px;
+    min-width: 214px;
+    padding: 0 8px;
+  }
+  .signin-day,
+  .signin-day-dot {
+    display: flex;
+    align-items: center;
+    width: 22px;
+  }
+  .signin-day {
+    flex: 0 0 22px;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .signin-day-dot {
+    position: relative;
+    height: 22px;
+    flex: 0 0 22px;
+    justify-content: center;
+    border-radius: 50%;
+  }
+  .signin-day-ring {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+  .signin-day-check path {
+    vector-effect: non-scaling-stroke;
+  }
+  .signin-day-points {
+    font-size: 11px;
+    line-height: 14px;
+    white-space: nowrap;
+    font-feature-settings: "tnum";
+    font-variant-numeric: tabular-nums;
+  }
+  .signin-connector {
+    width: 0;
+    height: 1.2px;
+    min-width: 0;
+    flex: 1 1 16px;
+    margin-top: 10.4px;
+  }
+  .signin-bonus-tag {
+    pointer-events: none;
+  }
+  .signin-day-claimed-animation {
+    animation: signin-day-claimed 0.36s ease-out;
+  }
+  .signin-card-collapsing {
+    transform-origin: bottom left;
+    pointer-events: none;
+    animation: signin-card-collapse 0.24s ease-in forwards;
+  }
+  .signin-claim-button.mavis-button {
+    min-height: 32px;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+  .signin-claim-button:disabled {
+    cursor: default;
+  }
+  .mavis-button {
+    border-radius: 8px;
+    padding: 8px 24px;
+    font-size: 14px;
+    line-height: 18px;
+    transition: background-color 0.3s;
+  }
+  .mavis-button.black {
+    background-color: var(--bg_interaction_primary_default);
+    color: var(--text_label_primary_default);
+  }
+  .mavis-button.black:hover {
+    background: var(--bg_interaction_primary_hover) !important;
+  }
+  .dark .mavis-button.black {
+    background-color: var(--bg_interaction_primary_default);
+    color: var(--text_label_primary_default);
+  }
+  .dark .mavis-button.black:hover {
+    opacity: 0.8 !important;
+  }
+  @container (max-width: 265px) {
+    .signin-progress {
+      gap: 3px;
+      padding: 0 4px;
+    }
+    .signin-day-points {
+      font-size: 10px;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .signin-card-collapsing,
+    .signin-day-claimed-animation {
+      animation: none;
+    }
+  }
+  @keyframes signin-day-claimed {
+    0% {
+      transform: scale(0.8);
+    }
+    60% {
+      transform: scale(1.15);
+    }
+    to {
+      transform: scale(1);
+    }
+  }
+  @keyframes signin-card-collapse {
+    0% {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+    to {
+      opacity: 0;
+      transform: translateY(8px) scale(0.96);
+    }
+  }
+  /* Credits-info tooltip: antd tooltip stand-in (desktop placement top,
+   * maxWidth 340, dark bubble with arrow). */
+  .webui-signin-credits-anchor {
+    position: relative;
+    display: inline-flex;
+  }
+  .webui-signin-credits-tooltip {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 120;
+    width: max-content;
+    max-width: 340px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.85);
+    color: #fff;
+    font-size: 12px;
+    line-height: 18px;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
+    white-space: normal;
+    text-align: left;
+    pointer-events: auto;
+  }
+  .webui-signin-credits-tooltip::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: rgba(0, 0, 0, 0.85);
+  }
+  .webui-signin-credits-link {
+    display: inline;
+    cursor: pointer;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    font: inherit;
+    color: inherit;
+    text-decoration: underline;
+    text-decoration-color: currentColor;
+    text-underline-offset: 2px;
+  }
+  /* Claiming spinner (desktop uses the antd loading icon). */
+  .webui-signin-claim-spinner {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+    border: 2px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: webui-signin-claim-spin 0.6s linear infinite;
+  }
+  @keyframes webui-signin-claim-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
 }

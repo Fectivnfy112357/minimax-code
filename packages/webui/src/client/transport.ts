@@ -128,6 +128,8 @@ export function createWebuiTransport({
   getUsageQuota: (request?: {
     readonly forceRefresh?: boolean;
   }) => Promise<import("../server/port.js").WebuiUsageQuotaResult>;
+  getSigninPanel: () => Promise<import("../server/port.js").WebuiSigninPanelView>;
+  claimSignin: () => Promise<import("../server/port.js").WebuiClaimSigninView>;
   getAccountStatus: (request?: {
     readonly sessionId?: string;
   }) => Promise<Record<string, unknown>>;
@@ -335,6 +337,8 @@ export function createWebuiTransport({
     selectModel: (body) => request("selectModel", body),
     getSessionUsage: (body) => request("getSessionUsage", body),
     getUsageQuota: (body) => request("getUsageQuota", body ?? {}),
+    getSigninPanel: () => request("getSigninPanel", {}),
+    claimSignin: () => request("claimSignin", {}),
     getAccountStatus: (body) => request("getAccountStatus", body ?? {}),
     signOut: () => request("signOut", {}),
     runCommand: (body) => request("runCommand", body),

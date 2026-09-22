@@ -47,6 +47,12 @@ export interface WebuiRuntimeHostHandle {
   readonly getUsageQuota?: (request?: {
     readonly forceRefresh?: boolean;
   }) => Promise<import("./port.js").WebuiUsageQuotaResult>;
+  /**
+   * Daily check-in status/claim. Backed by `check-in.ts` (cloud), supplied
+   * by the assembly alongside the host.
+   */
+  readonly getSigninPanel?: () => Promise<import("./port.js").WebuiSigninPanelView>;
+  readonly claimSignin?: () => Promise<import("./port.js").WebuiClaimSigninView>;
   readonly cliService?: {
     listSessions(
       request: WebuiSessionListRequest,
@@ -294,6 +300,16 @@ export function createHarnessPortFromHost(
       if (!host.getUsageQuota)
         throw new Error("runtime host does not expose the usage quota client");
       return host.getUsageQuota(request ?? {});
+    },
+    async getSigninPanel() {
+      if (!host.getSigninPanel)
+        throw new Error("runtime host does not expose the daily check-in client");
+      return host.getSigninPanel();
+    },
+    async claimSignin() {
+      if (!host.claimSignin)
+        throw new Error("runtime host does not expose the daily check-in client");
+      return host.claimSignin();
     },
     async getAccountStatus(request) {
       if (!host.cliService)

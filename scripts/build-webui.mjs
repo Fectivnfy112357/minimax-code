@@ -114,6 +114,11 @@ const client = await build({
   metafile: true,
   jsx: "automatic",
   loader: { ".html": "text" },
+  // Same workspace resolution as the server build: the browser bundle
+  // imports `@mavis/shared/daily-signin` (the check-in card shares the
+  // desktop's validators), and a source checkout has no package dist/ to
+  // resolve through package.json exports.
+  plugins: [sourcePlugin],
   logLevel: "info",
 });
 

@@ -8,10 +8,20 @@
 // one naming surface.
 
 const tailwindConfig = {
+  // Desktop utilities carry `dark:` variants and the token themes switch on
+  // the `.dark` class (tokens.css), so the class strategy is required.
+  darkMode: "class",
   content: [
     "./src/client/**/*.{ts,tsx,html}",
   ],
   theme: {
+    // `stroke` is the tailwind v3 theme key for stroke-* colors (there is no
+    // `strokeColor` key — it is silently ignored).
+    stroke: {
+      DEFAULT: "currentColor",
+      "border_default": "var(--border_default)",
+      "border_accent": "var(--border_accent)",
+    },
     backgroundColor: {
       transparent: "transparent",
       current: "currentColor",
