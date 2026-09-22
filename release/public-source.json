@@ -3456,6 +3456,7 @@
     "packages/webui/tailwind.config.cjs",
     "packages/webui/test/unit/commands.test.ts",
     "packages/webui/test/unit/projections.test.ts",
+    "packages/webui/test/unit/settings-modal.test.tsx",
     "packages/webui/test/unit/slash-palette.test.ts",
     "packages/webui/test/unit/team-mode.test.ts",
     "packages/webui/test/unit/transport-frame.test.ts",

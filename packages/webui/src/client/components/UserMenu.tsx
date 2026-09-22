@@ -843,6 +843,6 @@ export function UserMenu({
         </div>
       </div> : null}
     </div>
-    <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} dataDir={dataDir} sessionId={sessionId} listModels={listModels} selectModel={selectModel} getAccountStatus={getAccountStatus} signOut={signOut} />
+    <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} dataDir={dataDir} sessionId={sessionId} listModels={listModels} selectModel={selectModel} getUsageQuota={getUsageQuota} getAccountStatus={getAccountStatus} signOut={signOut} />
   </>;
 }
