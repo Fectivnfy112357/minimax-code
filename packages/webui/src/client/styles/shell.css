@@ -266,6 +266,160 @@
     background: var(--bg_default_primary);
     box-shadow: 0 8px 24px var(--shadow_default);
   }
+  .webui-model-menu--two-column {
+    display: grid;
+    grid-template-columns: minmax(220px, 1fr) minmax(220px, 1.4fr);
+    gap: var(--spacing_12);
+    min-width: 460px;
+    max-width: 560px;
+    max-height: 480px;
+    padding: var(--spacing_8);
+    overflow: visible;
+  }
+  .webui-model-menu-list {
+    display: flex;
+    min-height: 240px;
+    max-height: 440px;
+    flex-direction: column;
+    gap: 2px;
+    overflow-y: auto;
+    padding: var(--spacing_4);
+    border-radius: var(--radius_8);
+    background: var(--bg_grouped_secondary);
+  }
+  .webui-model-menu-detail {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: var(--spacing_16);
+    padding: var(--spacing_4);
+    overflow-y: auto;
+    max-height: 440px;
+  }
+  .webui-model-detail-row {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing_8);
+  }
+  .webui-model-detail-label {
+    color: var(--text_default_secondary);
+    font-size: var(--size_12);
+    line-height: var(--line_height_16);
+  }
+  .webui-model-detail-empty {
+    display: flex;
+    min-height: 120px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing_4);
+    padding: var(--spacing_16);
+    text-align: center;
+    border-radius: var(--radius_8);
+    background: var(--bg_grouped_secondary);
+    color: var(--text_default_tertiary);
+  }
+  .webui-model-detail-empty-title {
+    color: var(--text_default_primary);
+    font-size: var(--size_14);
+    line-height: var(--line_height_20);
+    font-weight: 500;
+  }
+  .webui-model-detail-empty-hint {
+    color: var(--text_default_tertiary);
+    font-size: var(--size_12);
+    line-height: var(--line_height_16);
+  }
+  .webui-model-thinking-toggle {
+    position: relative;
+    display: inline-flex;
+    align-self: flex-start;
+    width: 36px;
+    height: 20px;
+    flex-shrink: 0;
+    cursor: pointer;
+    border-radius: 999px;
+    border: none;
+    padding: 0;
+    transition: background-color 120ms ease;
+  }
+  .webui-model-thinking-toggle.is-on {
+    background-color: var(--bg_interaction_primary_default, #2f80ff);
+  }
+  .webui-model-thinking-toggle.is-off {
+    background-color: var(--bg_interaction_tertiary_default, #d4d4d8);
+  }
+  .webui-model-thinking-toggle-knob {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 999px;
+    background: var(--bg_default_primary, #fff);
+    transition: transform 120ms ease;
+  }
+  .webui-model-thinking-toggle.is-on .webui-model-thinking-toggle-knob {
+    transform: translateX(16px);
+  }
+  .webui-model-effort-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing_4, 4px);
+  }
+  .webui-model-effort-chip {
+    padding: 4px var(--spacing_8, 8px);
+    border-radius: var(--radius_8, 8px);
+    background: var(--bg_default_secondary);
+    color: var(--text_default_primary);
+    font-size: var(--size_12);
+    line-height: var(--line_height_16);
+    cursor: pointer;
+    border: 1px solid transparent;
+  }
+  .webui-model-effort-chip.is-active {
+    background: var(--bg_interaction_primary_default);
+    color: var(--text_default_inverted_primary, #fff);
+    border-color: transparent;
+  }
+  .webui-model-context-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing_4, 4px);
+  }
+  .webui-model-context-option {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing_8, 8px);
+    padding: 6px var(--spacing_8, 8px);
+    border-radius: var(--radius_8, 8px);
+    background: transparent;
+    color: var(--text_default_primary);
+    font-size: var(--size_14);
+    line-height: var(--line_height_20);
+    cursor: pointer;
+    border: 1px solid transparent;
+  }
+  .webui-model-context-option.is-active {
+    background: var(--bg_interaction_tertiary_hover, rgba(0, 0, 0, 0.06));
+  }
+  .webui-model-context-value {
+    font-variant-numeric: tabular-nums;
+  }
+  .webui-model-context-hint {
+    color: var(--text_default_tertiary);
+    font-size: var(--size_12);
+    line-height: var(--line_height_16);
+  }
+  .webui-model-context-tick {
+    margin-left: auto;
+  }
+  .webui-model-option-tick {
+    color: var(--text_default_secondary);
+  }
+  .webui-model-option[data-focused="true"] {
+    background-color: var(--bg_interaction_tertiary_hover, rgba(0, 0, 0, 0.06));
+  }
   .webui-model-option,
   .webui-workspace-option {
     display: flex;

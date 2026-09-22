@@ -7,7 +7,7 @@ interface SettingsModalProps {
   readonly dataDir?: string;
   readonly sessionId?: string;
   readonly listModels?: (request?: { readonly sessionId?: string }) => Promise<readonly WebuiModelEntry[]>;
-  readonly selectModel?: (request: { readonly providerId: string; readonly modelId: string; readonly variant?: string; readonly sessionId?: string }) => Promise<{ readonly success?: boolean }>;
+  readonly selectModel?: (request: { readonly providerId: string; readonly modelId: string; readonly variant?: string; readonly contextLimit?: number; readonly sessionId?: string }) => Promise<{ readonly success?: boolean }>;
   readonly getAccountStatus?: (request?: { readonly sessionId?: string }) => Promise<Record<string, unknown>>;
   readonly signOut?: () => Promise<{ readonly success?: boolean }>;
 }

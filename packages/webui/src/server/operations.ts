@@ -834,6 +834,7 @@ export const selectModelOperation: WebuiOperation<
     readonly providerId: string;
     readonly modelId: string;
     readonly variant?: string;
+    readonly contextLimit?: number;
     readonly sessionId?: string;
   },
   { readonly success?: boolean }
@@ -869,6 +870,17 @@ export const selectModelOperation: WebuiOperation<
         message: "variant must be a string",
       };
     if (
+      candidate.contextLimit !== undefined &&
+      (typeof candidate.contextLimit !== "number" ||
+        !Number.isSafeInteger(candidate.contextLimit) ||
+        candidate.contextLimit <= 0)
+    )
+      return {
+        ok: false,
+        code: WebuiErrorCode.invalidBody,
+        message: "contextLimit must be a positive safe integer",
+      };
+    if (
       candidate.sessionId !== undefined &&
       typeof candidate.sessionId !== "string"
     )
@@ -884,6 +896,9 @@ export const selectModelOperation: WebuiOperation<
         modelId,
         ...(typeof candidate.variant === "string"
           ? { variant: candidate.variant }
+          : {}),
+        ...(typeof candidate.contextLimit === "number"
+          ? { contextLimit: candidate.contextLimit }
           : {}),
         ...(typeof candidate.sessionId === "string"
           ? { sessionId: candidate.sessionId }

@@ -17,7 +17,7 @@ interface UserMenuProps {
     readonly displayName?: string;
     readonly selected?: boolean;
   }[]>;
-  readonly selectModel?: (request: { readonly providerId: string; readonly modelId: string; readonly variant?: string; readonly sessionId?: string }) => Promise<{ readonly success?: boolean }>;
+  readonly selectModel?: (request: { readonly providerId: string; readonly modelId: string; readonly variant?: string; readonly contextLimit?: number; readonly sessionId?: string }) => Promise<{ readonly success?: boolean }>;
   readonly getSessionUsage?: UsageLoader;
   readonly getAccountStatus?: (request?: { readonly sessionId?: string }) => Promise<AccountStatus>;
   readonly signOut?: () => Promise<{ readonly success?: boolean }>;

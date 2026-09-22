@@ -242,6 +242,10 @@ export interface LocalRuntimeApplication {
       providerId: string;
       modelId: string;
       variant?: string;
+      /** Pick a context window size (in tokens) from the model's
+       *  `contextWindowOptions`. Persisted so the next `listModels` call
+       *  reflects the choice on the `contextLimit` field. */
+      contextLimit?: number;
       sessionId?: string;
     }): Promise<boolean>;
   };

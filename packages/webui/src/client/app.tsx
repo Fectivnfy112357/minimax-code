@@ -49,6 +49,10 @@ import {
 import { ArchonShell } from "./components/ArchonShell.js";
 import { Composer } from "./components/Composer.js";
 import {
+  WebuiModelPicker,
+  type WebuiModelPickerDraft,
+} from "./components/ModelPicker.js";
+import {
   isTeamModeLocked,
   readTeamModeOff,
   readTeamModeSessionChoices,
@@ -467,6 +471,7 @@ export interface WebuiClientFoundationAppProps {
     readonly providerId: string;
     readonly modelId: string;
     readonly variant?: string;
+    readonly contextLimit?: number;
     readonly sessionId?: string;
   }) => Promise<{ readonly success?: boolean }>;
   readonly getSessionUsage?: (request: {
@@ -1769,7 +1774,6 @@ function WebuiComposer({
   const [queuePaused, setQueuePaused] = useState(false);
   const [models, setModels] = useState<readonly WebuiModelEntry[]>([]);
   const [accountStatus, setAccountStatus] = useState<Record<string, unknown>>();
-  const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
   const [commandOutput, setCommandOutput] = useState<string>();
   const [commandRunning, setCommandRunning] = useState(false);
@@ -2029,18 +2033,29 @@ function WebuiComposer({
     }
   };
 
-  const handleSelectModel = async (value: string) => {
+  const handleSelectModel = async (
+    model: WebuiModelEntry,
+    draft: WebuiModelPickerDraft,
+  ) => {
     if (!selectModel) return;
-    const model = models.find(
-      (candidate) => webuiModelOptionValue(candidate) === value,
-    );
-    if (!model) return;
     setInteractionError(undefined);
+    const variant = draft.variant !== undefined ? draft.variant : model.variant;
+    // When the picker has a local draft for the context window, fold it into
+    // the request. The runtime accepts `contextLimit` on the v2 contract and
+    // echoes the new value back on the next `listModels` call, so the toggle
+    // survives the periodic refresh without us keeping around a phantom draft.
+    const inheritedContextLimit =
+      typeof model.contextLimit === "number" ? model.contextLimit : undefined;
+    const contextLimit =
+      draft.contextLimit !== undefined
+        ? draft.contextLimit
+        : inheritedContextLimit;
     try {
       const result = await selectModel({
         providerId: model.providerId,
         modelId: model.modelId,
-        ...(model.variant ? { variant: model.variant } : {}),
+        ...(variant ? { variant } : {}),
+        ...(contextLimit !== undefined ? { contextLimit } : {}),
         ...(sessionId ? { sessionId } : {}),
       });
       if (result.success === false)
@@ -2049,7 +2064,6 @@ function WebuiComposer({
         ...(sessionId ? { sessionId } : {}),
       });
       if (refreshed) setModels(refreshed);
-      setModelMenuOpen(false);
     } catch (error) {
       setInteractionError(
         error instanceof Error ? error.message : String(error),
@@ -2531,55 +2545,13 @@ function WebuiComposer({
                   <WebuiIconAttach />
                 </button>
                 <div className="ml-auto flex items-center gap-1">
-                  <div
-                    className="webui-model-selector"
-                    data-webui-model-selector="true"
-                  >
-                    <button
-                      type="button"
-                      className="webui-model-selector-trigger"
-                      aria-label="Model"
-                      aria-haspopup="listbox"
-                      aria-expanded={modelMenuOpen}
-                      disabled={enabledModels.length === 0 || !selectModel}
-                      onClick={() => setModelMenuOpen((open) => !open)}
-                    >
-                      <span className="min-w-0 max-w-[220px] truncate whitespace-nowrap">
-                        {selectedModel?.displayName ?? "MiniMax-M3"}
-                      </span>
-                    <WebuiIconChevronDown className="flex-shrink-0 text-icon_default_tertiary" />
-                    </button>
-                    {modelMenuOpen ? (
-                      <div
-                        role="listbox"
-                        aria-label="Model"
-                        data-webui-model-menu="true"
-                        className="webui-model-menu"
-                      >
-                        {enabledModels.map((model) => {
-                          const value = webuiModelOptionValue(model);
-                          return (
-                            <button
-                              key={value}
-                              type="button"
-                              role="option"
-                              aria-selected={selectedModel === model}
-                              className="webui-model-option"
-                              onClick={() => void handleSelectModel(value)}
-                            >
-                              <span className="min-w-0 flex-1 truncate text-left">
-                                {model.displayName ??
-                                  `${model.providerId}/${model.modelId}`}
-                              </span>
-                              {selectedModel === model ? (
-                                <span aria-hidden="true">✓</span>
-                              ) : null}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    ) : null}
-                  </div>
+                  <WebuiModelPicker
+                    models={enabledModels}
+                    selected={selectedModel}
+                    onSelect={(model, draft) =>
+                      void handleSelectModel(model, draft)
+                    }
+                  />
                   <button
                     type="submit"
                     disabled={!sendable || commandRunning}

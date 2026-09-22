@@ -127,6 +127,7 @@ listSkills(request?: {
       readonly providerId: string;
       readonly modelId: string;
       readonly variant?: string;
+      readonly contextLimit?: number;
       readonly sessionId?: string;
     }): Promise<{ readonly success?: boolean }>;
     getSessionUsage(request: {
