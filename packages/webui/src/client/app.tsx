@@ -35,10 +35,10 @@ import {
   WebuiIconBrand,
   WebuiIconChevronDown,
   WebuiIconCommandCompact,
-  WebuiIconCommandHelp,
-  WebuiIconCommandModel,
-  WebuiIconCommandStatus,
-  WebuiIconCommandUsage,
+  WebuiIconCommandFork,
+  WebuiIconCommandGoal,
+  WebuiIconCommandMemory,
+  WebuiIconCommandPlan,
   WebuiIconFolder,
   WebuiIconNewTask,
   WebuiIconPlugins,
@@ -483,42 +483,64 @@ export interface WebuiClientFoundationAppProps {
   readonly hostLabel?: string;
 }
 
+// Slash palette for the composer hinting model.
+//
+// The list mirrors the desktop's slash-palette (`app/out/_next/static/chunks/10118-*`)
+// so the WebUI shows the same commands, labels and descriptions the user already knows.
+// The harness port only wires `new` and `compact`; the rest stay rendered in their
+// desktop shape and become inert (`aria-disabled`, no click) until the matching
+// harness feature lands. The `supported` flag is the single source of truth for
+// whether a row is activatable; the visual layout, icon, label, description and
+// /name suffix stay identical to the desktop row for visual 1:1.
 const WEBUI_COMMANDS = [
   {
-    name: "help",
-    label: "查看可用命令",
-    description: "查看当前所有可用的斜杠命令",
-    icon: WebuiIconCommandHelp,
-  },
-  {
     name: "new",
-    label: "在当前项目创建新任务",
-    description: "在当前项目下开一个新任务会话",
+    label: "新建会话",
+    description: "新建会话",
     icon: WebuiIconNewTask,
+    supported: true,
   },
   {
     name: "compact",
-    label: "压缩当前对话",
-    description: "压缩当前会话的上下文，腾出更多可用空间",
+    label: "总结",
+    description: "总结上下文，继续当前对话",
     icon: WebuiIconCommandCompact,
+    supported: true,
   },
   {
-    name: "status",
-    label: "查看当前状态",
-    description: "查看当前会话与运行的实时状态",
-    icon: WebuiIconCommandStatus,
+    name: "goal",
+    label: "目标",
+    description: "为当前会话设置或更新目标",
+    icon: WebuiIconCommandGoal,
+    supported: false,
   },
   {
-    name: "usage",
-    label: "查看会话用量",
-    description: "查看当前会话的 token 用量与费用",
-    icon: WebuiIconCommandUsage,
+    name: "plan",
+    label: "计划",
+    description: "执行前先梳理复杂任务",
+    icon: WebuiIconCommandPlan,
+    supported: false,
   },
   {
-    name: "model",
-    label: "选择模型",
-    description: "切换当前会话使用的语言模型",
-    icon: WebuiIconCommandModel,
+    name: "fork",
+    label: "复制为新会话",
+    description: "保留当前上下文，在新会话中继续",
+    icon: WebuiIconCommandFork,
+    supported: false,
+  },
+  {
+    name: "deploy-website",
+    label: "网站部署",
+    description: "支持静态网站部署，适合前端网站分享、作品展示和快速发布。",
+    icon: WebuiIconSites,
+    supported: false,
+  },
+  {
+    name: "memory",
+    label: "记忆",
+    description: "使用记忆 开启；生成记忆 开启",
+    icon: WebuiIconCommandMemory,
+    supported: false,
   },
 ] as const;
 type WebuiCommandName = (typeof WEBUI_COMMANDS)[number]["name"];
@@ -2062,12 +2084,14 @@ function WebuiComposer({
 
   const selectedModel = models.find((model) => model.selected);
   const enabledModels = models.filter((model) => model.enabled !== false);
-  const commandMatch = /^\/([^\s/]*)$/u.exec(draft.trim());
+  // Use the un-trimmed draft so the popover closes the moment the user types a
+  // trailing space (i.e. after choosing a command). Trimming would re-open it
+  // because "/name " trims to "/name" and matches again, leaving the palette
+  // pinned above the composer.
+  const commandMatch = /^\/([^\s/]*)$/u.exec(draft);
   const commandQuery = (commandMatch?.[1] ?? "").toLowerCase();
   const commandSuggestions = commandMatch
-    ? WEBUI_COMMANDS.filter((command) =>
-        command.name.startsWith(commandQuery),
-      )
+    ? WEBUI_COMMANDS.filter((command) => command.name.startsWith(commandQuery))
     : [];
   const [commandIndex, setCommandIndex] = useState(0);
   useEffect(() => {
@@ -2129,7 +2153,7 @@ function WebuiComposer({
     const command = commandInvocation
       ? WEBUI_COMMANDS.find((item) => item.name === commandInvocation[1])
       : undefined;
-    if (runCommand && command) {
+    if (runCommand && command && command.supported) {
       setCommandRunning(true);
       setInteractionError(undefined);
       try {
@@ -2357,16 +2381,26 @@ function WebuiComposer({
                   >
                     {commandSuggestions.map((command, index) => {
                       const Icon = command.icon;
+                      const inert = !command.supported;
                       return (
                         <button
                           key={command.name}
                           type="button"
                           role="option"
                           aria-selected={index === commandIndex}
+                          aria-disabled={inert || undefined}
+                          disabled={inert}
+                          data-webui-command-option-inert={inert ? "true" : undefined}
                           className="webui-command-option"
                           onMouseDown={(event) => event.preventDefault()}
-                          onMouseEnter={() => setCommandIndex(index)}
-                          onClick={() => chooseCommand(command.name)}
+                          onMouseEnter={() => {
+                            if (inert) return;
+                            setCommandIndex(index);
+                          }}
+                          onClick={() => {
+                            if (inert) return;
+                            chooseCommand(command.name);
+                          }}
                         >
                           <Icon className="webui-command-option-icon text-icon_default_secondary" />
                           <span className="webui-command-option-label">
