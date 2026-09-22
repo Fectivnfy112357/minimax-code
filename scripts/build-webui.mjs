@@ -48,6 +48,7 @@ const sourcePlugin = createWorkspaceSourcesPlugin(packages, root, [
   "@mavis/mcode-tools-host",
   "@mavis/agent-tools",
   "@mavis/agent-tools/desktop",
+  "@mavis/oauth-core",
 ]);
 
 rmSync(outdir, { recursive: true, force: true });
@@ -96,6 +97,7 @@ const server = await build({
     "@mavis/mcode-tools-host",
     "@mavis/agent-tools",
     "@mavis/agent-tools/desktop",
+    "@mavis/oauth-core",
   ],
   plugins: [sourcePlugin],
   logLevel: "info",

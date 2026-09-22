@@ -40,6 +40,13 @@ export interface WebuiRuntimeHostHandle {
   readonly appVersion?: string;
   readonly dataDir?: string;
   readonly invalidateAuth?: () => void;
+  /**
+   * Cloud quota for the usage panel. Backed by `usage-quota.ts`, not the
+   * harness — the assembly supplies the client alongside the host.
+   */
+  readonly getUsageQuota?: (request?: {
+    readonly forceRefresh?: boolean;
+  }) => Promise<import("./port.js").WebuiUsageQuotaResult>;
   readonly cliService?: {
     listSessions(
       request: WebuiSessionListRequest,
@@ -282,6 +289,11 @@ export function createHarnessPortFromHost(
       if (!host.cliService)
         throw new Error("runtime host does not expose the CLI service");
       return host.cliService.getSessionUsage(request);
+    },
+    async getUsageQuota(request) {
+      if (!host.getUsageQuota)
+        throw new Error("runtime host does not expose the usage quota client");
+      return host.getUsageQuota(request ?? {});
     },
     async getAccountStatus(request) {
       if (!host.cliService)

@@ -93,6 +93,7 @@ const LIST_MODELS_OPERATION_NAME = "listModels" as const;
 const SELECT_MODEL_OPERATION_NAME = "selectModel" as const;
 const LIST_SKILLS_OPERATION_NAME = "listSkills" as const;
 const GET_SESSION_USAGE_OPERATION_NAME = "getSessionUsage" as const;
+const GET_USAGE_QUOTA_OPERATION_NAME = "getUsageQuota" as const;
 const GET_ACCOUNT_STATUS_OPERATION_NAME = "getAccountStatus" as const;
 const RUN_COMMAND_OPERATION_NAME = "runCommand" as const;
 const SIGN_OUT_OPERATION_NAME = "signOut" as const;
@@ -917,6 +918,30 @@ export const getSessionUsageOperation: WebuiOperation<
     validateSessionIdBody(GET_SESSION_USAGE_OPERATION_NAME, body),
 };
 
+export const getUsageQuotaOperation: WebuiOperation<
+  { readonly forceRefresh?: boolean },
+  unknown
+> = {
+  name: GET_USAGE_QUOTA_OPERATION_NAME,
+  validate: (body) => {
+    const value = validateOptionalObjectBody(GET_USAGE_QUOTA_OPERATION_NAME, body);
+    if (!value.ok) return value;
+    if (
+      value.body.forceRefresh !== undefined &&
+      typeof value.body.forceRefresh !== "boolean"
+    )
+      return {
+        ok: false,
+        code: WebuiErrorCode.invalidBody,
+        message: "forceRefresh must be a boolean",
+      };
+    return {
+      ok: true,
+      body: value.body.forceRefresh === true ? { forceRefresh: true } : {},
+    };
+  },
+};
+
 export const getAccountStatusOperation: WebuiOperation<
   { readonly sessionId?: string },
   Record<string, unknown>
@@ -1013,6 +1038,7 @@ export function createOperationRegistry(
     | "selectModel"
     | "listSkills"
     | "getSessionUsage"
+    | "getUsageQuota"
     | "getAccountStatus"
     | "requestCompaction"
     | "invalidateAuth"
@@ -1059,6 +1085,12 @@ export function createOperationRegistry(
     operation: getSessionUsageOperation,
     handle: async (_context, body) => ({
       body: await port.getSessionUsage(body),
+    }),
+  });
+  registerOperation(registry, {
+    operation: getUsageQuotaOperation,
+    handle: async (_context, body) => ({
+      body: await port.getUsageQuota(body),
     }),
   });
   registerOperation(registry, {

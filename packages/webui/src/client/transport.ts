@@ -125,6 +125,9 @@ export function createWebuiTransport({
   getSessionUsage: (request: {
     readonly id: string;
   }) => Promise<Record<string, unknown>>;
+  getUsageQuota: (request?: {
+    readonly forceRefresh?: boolean;
+  }) => Promise<import("../server/port.js").WebuiUsageQuotaResult>;
   getAccountStatus: (request?: {
     readonly sessionId?: string;
   }) => Promise<Record<string, unknown>>;
@@ -331,6 +334,7 @@ export function createWebuiTransport({
     listSkills: (body) => request("listSkills", body ?? {}),
     selectModel: (body) => request("selectModel", body),
     getSessionUsage: (body) => request("getSessionUsage", body),
+    getUsageQuota: (body) => request("getUsageQuota", body ?? {}),
     getAccountStatus: (body) => request("getAccountStatus", body ?? {}),
     signOut: () => request("signOut", {}),
     runCommand: (body) => request("runCommand", body),

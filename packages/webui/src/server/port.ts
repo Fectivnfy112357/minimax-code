@@ -432,5 +432,46 @@ export interface WebuiHarnessPort {
    * every transport-side resource so the harness can tear itself down in
    * the order step 13 of the assembly checklist requires.
    */
+  /**
+   * Cloud account quota for the user-menu usage panel. Not a harness
+   * capability — see `usage-quota.ts`; the assembly supplies the client.
+   */
+  getUsageQuota(request?: {
+    readonly forceRefresh?: boolean;
+  }): Promise<WebuiUsageQuotaResult>;
   close(): Promise<void>;
 }
+
+/** One percentage window (5-hour / weekly) of the token-plan quota. */
+export interface WebuiUsageQuotaWindowView {
+  /** Used percent, 0-100, already rounded; absent when unlimited or unknown. */
+  readonly usedPercent?: number;
+  /** Total percent for the window (the API reports `100%`); drives 总额 X%. */
+  readonly totalPercent?: number;
+  readonly resetAtMs?: number;
+  readonly unlimited: boolean;
+}
+
+/** The video quota is count-based (`used/total`), not percentage-based. */
+export interface WebuiUsageQuotaVideoView {
+  readonly usedCount?: number;
+  readonly totalCount?: number;
+  readonly resetAtMs?: number;
+  readonly unlimited: boolean;
+}
+
+export interface WebuiUsageQuotaView {
+  readonly fiveHour: WebuiUsageQuotaWindowView;
+  readonly weekly: WebuiUsageQuotaWindowView;
+  readonly video?: WebuiUsageQuotaVideoView;
+}
+
+export type WebuiUsageQuotaResult =
+  | { readonly signedIn: false }
+  | {
+      readonly signedIn: true;
+      readonly hasTokenPlan?: boolean;
+      /** Raw credit balance as the account API reports it (string or numeric string). */
+      readonly creditBalance?: string;
+      readonly quota?: WebuiUsageQuotaView;
+    };

@@ -882,6 +882,9 @@ importers:
       '@mavis/mcode-tools-host':
         specifier: workspace:*
         version: link:../mcode-tools-host
+      '@mavis/oauth-core':
+        specifier: workspace:0.2.1-beta.7
+        version: link:../oauth-core
       '@mavis/protocol':
         specifier: workspace:*
         version: link:../protocol

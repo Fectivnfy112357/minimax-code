@@ -11,9 +11,14 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { once, type once as onceFn } from "node:events";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RawData } from "ws";
 import { WebSocket } from "ws";
+
+import { updateLocalModelSelection } from "@mavis/config";
+import {
+  resetDefaultLocalRuntimeConfig,
+} from "@mavis/local-runtime-v2";
 
 import {
   WebuiErrorCode,
@@ -182,6 +187,10 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
 
   async getSessionUsage() {
     return {};
+  }
+
+  async getUsageQuota() {
+    return { signedIn: false as const };
   }
 
   async getAccountStatus() {
@@ -1629,6 +1638,34 @@ describe("WebUI runtime host assembly", () => {
     }
   });
 
+  it("exposes the usage quota client on both the host and the harness port", async () => {
+    // `scripts/run-webui-server.mjs` builds the service port from
+    // `assembled.host`, not from `assembled.harnessPort` — if the quota
+    // client lives only on the harness port, the live panel fails with
+    // "runtime host does not expose the usage quota client".
+    const { createWebuiRuntimeHost } =
+      await import("../../src/server/index.js");
+    const dataDir = await mkdtemp(
+      path.join(os.tmpdir(), "webui-assembly-quota-"),
+    );
+    try {
+      const assembled = await createWebuiRuntimeHost({
+        dataDir,
+        appVersion: "0.4.2-assembly-test",
+        factory: async (options) => ({
+          apiHost: { close: async () => undefined },
+          dataDir: options.dataDir,
+          appVersion: "0.4.2-assembly-test",
+        }),
+      });
+      expect(assembled.host.getUsageQuota).toBeTypeOf("function");
+      expect(assembled.harnessPort.getUsageQuota).toBeTypeOf("function");
+      await assembled.harnessPort.close();
+    } finally {
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  });
+
   it("hands the runtime an auth context getter and invalidator for managed login", async () => {
     // Assembly step 3 of `docs/webui-v1-scope.md`. Managed MiniMax login has no
     // API key, so without this pair the resolver throws "managed OAuth bearer is
@@ -1829,6 +1866,49 @@ describe("WebUI runtime host assembly", () => {
       await assembled.harnessPort.close();
       expect(calls).toEqual(["command-path", "runtime", "broker", "browser"]);
     } finally {
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it("reads a newly persisted default model through the live runtime config getter", async () => {
+    const { createWebuiRuntimeHost } =
+      await import("../../src/server/index.js");
+    const dataDir = await mkdtemp(
+      path.join(os.tmpdir(), "webui-assembly-model-config-") ,
+    );
+    let readConfig: (() => { readonly defaultModel?: string }) | undefined;
+    try {
+      vi.stubEnv("MINIMAX_DATA_DIR", dataDir);
+      vi.stubEnv("DISABLE_GIT_AUTO_CONFIG", "1");
+      await writeFile(
+        path.join(dataDir, "config.yaml"),
+        "defaultModel: minimax/MiniMax-M2.7\n",
+        "utf8",
+      );
+      resetDefaultLocalRuntimeConfig();
+      const assembled = await createWebuiRuntimeHost({
+        dataDir,
+        factory: async (options) => {
+          readConfig = options.configGetter;
+          return {
+            apiHost: { close: async () => undefined },
+            dataDir: options.dataDir,
+          };
+        },
+      });
+
+      expect(readConfig?.().defaultModel).toBe("minimax/MiniMax-M2.7");
+      await updateLocalModelSelection({
+        modelKey: "minimax/MiniMax-M3",
+        variant: "thinking",
+        contextLimit: 512_000,
+      });
+      expect(readConfig?.().defaultModel).toBe("minimax/MiniMax-M3");
+
+      await assembled.harnessPort.close();
+    } finally {
+      resetDefaultLocalRuntimeConfig();
+      vi.unstubAllEnvs();
       await rm(dataDir, { recursive: true, force: true });
     }
   });

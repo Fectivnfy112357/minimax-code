@@ -23,12 +23,23 @@ import { getDefaultLocalRuntimeConfig } from "@mavis/local-runtime-v2";
 import type { CreateLocalRuntimeHostOptions } from "@mavis/local-runtime-v2/process-local";
 
 import {
+  createAuthNamespace,
+  createCredentialStore,
+  HttpOAuthClient,
+  MCodeOAuthCore,
+  MCODE_OAUTH_SCOPES,
+  migrateLegacyAuthNamespace,
+  resolveMCodeOAuthEndpointConfig,
+} from "@mavis/oauth-core";
+
+import {
   createWebuiAuthContextReader,
   type WebuiAuthContext,
 } from "./auth-context.js";
 import { createHarnessPortFromHost } from "./host.js";
 import type { WebuiHarnessPort } from "./port.js";
 import { configureWebuiRuntimeEnvironment } from "./runtime-environment.js";
+import { UsageQuotaClient } from "./usage-quota.js";
 import {
   createWebuiAuthLeaseSession,
   prepareWebuiMcodeToolsIntegration,
@@ -318,14 +329,21 @@ export async function createWebuiRuntimeHost(
       elicitation: true,
     },
     enableLiveMcp: true,
-    configGetter: () => ({
-      ...baseConfig,
-      beta: {
-        ...baseConfig.beta,
-        mcodeTools: mcodeTools.ready,
-        browserUseTooling: options.browserProvider !== undefined,
-      },
-    }),
+    configGetter: () => {
+      // Model selection updates the shared config file while the runtime is
+      // still alive. Re-read the config on every access so listModels and
+      // subsequent turns observe the new default instead of the startup
+      // snapshot captured in `baseConfig`.
+      const currentConfig = getDefaultLocalRuntimeConfig();
+      return {
+        ...currentConfig,
+        beta: {
+          ...currentConfig.beta,
+          mcodeTools: mcodeTools.ready,
+          browserUseTooling: options.browserProvider !== undefined,
+        },
+      };
+    },
     authContextGetter: authContext.getter,
     authContextInvalidator: authContext.invalidator,
     ...(options.browserProvider
@@ -410,13 +428,70 @@ export async function createWebuiRuntimeHost(
     if (failures.length === 1) throw failures[0];
     throw new AggregateError(failures, "WebUI runtime startup failed");
   }
-  const harnessPort = createHarnessPortFromHost({
+  // The usage panel's cloud quota APIs need a fresh oauth-core lease; the
+  // cli-auth projection's harness bearer is rejected there (401 / "cookie is
+  // missing", probe-verified 2026-09-22). This composes oauth-core the way
+  // the terminal launcher does for its account client, directly rather than
+  // through `packages/tui` (ADR 0003).
+  const quotaRegion = (scope?.region ?? process.env.MAVIS_REGION ?? "en") as
+    | "cn"
+    | "en";
+  const quotaBuildEnv = (
+    scope?.buildEnv ?? process.env.MAVIS_BUILD_ENV ?? "dev"
+  ) as "dev" | "test" | "staging" | "prod";
+  const quotaNamespace = createAuthNamespace({
+    dataDir: options.dataDir,
+    buildEnv: quotaBuildEnv,
+    region: quotaRegion,
+  });
+  const quotaOauthCore = new MCodeOAuthCore({
+    namespace: quotaNamespace,
+    credentialStore: createCredentialStore({
+      authHome: quotaNamespace.namespaceHome,
+    }),
+    oauthClient: new HttpOAuthClient(
+      resolveMCodeOAuthEndpointConfig(process.env, {
+        buildEnv: quotaBuildEnv,
+        region: quotaRegion,
+      }),
+    ),
+    initialize: () => migrateLegacyAuthNamespace(quotaNamespace),
+  });
+  const usageQuota = new UsageQuotaClient({
+    tokenProvider: async () => {
+      try {
+        const lease = await quotaOauthCore.getAccessToken({
+          requiredScopes: MCODE_OAUTH_SCOPES,
+          minValidityMs: 30_000,
+        });
+        return {
+          accessToken: lease.accessToken,
+          realUserID: authContext.getter()?.realUserID,
+        };
+      } catch {
+        // Signed out (or the refresh failed): the panel renders its
+        // signed-out copy instead of an error.
+        return undefined;
+      }
+    },
+    region: quotaRegion,
+    buildEnv: quotaBuildEnv,
+  });
+  // Consumers rebuild the service port from `host` (the dev launcher does:
+  // `createHarnessPortFromHost(assembled.host)`), so the assembly-level
+  // enrichments must live on `host` itself — otherwise `getUsageQuota`
+  // only exists on `harnessPort` and the live panel fails with
+  // "runtime host does not expose the usage quota client".
+  const hostHandle = {
     ...host,
     invalidateAuth: authContext.invalidator,
-  });
+    getUsageQuota: (request?: { readonly forceRefresh?: boolean }) =>
+      usageQuota.getUsageQuota(request),
+  };
+  const harnessPort = createHarnessPortFromHost(hostHandle);
   return {
     harnessPort,
-    host,
+    host: hostHandle,
     forwardedOptions,
     mcodeTools,
     invalidateAuth: authContext.invalidator,

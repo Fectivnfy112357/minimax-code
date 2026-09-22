@@ -176,6 +176,36 @@ export function webuiModelOptionValue(model: WebuiModelEntry): string {
   return `${model.providerId}/${model.modelId}/${model.variant ?? ""}`;
 }
 
+export interface WebuiModelSelectionRequest {
+  readonly providerId: string;
+  readonly modelId: string;
+  readonly variant?: string;
+  readonly contextLimit?: number;
+  readonly sessionId?: string;
+}
+
+export function buildWebuiModelSelectionRequest(
+  model: WebuiModelEntry,
+  draft: WebuiModelPickerDraft,
+  sessionId?: string,
+): WebuiModelSelectionRequest {
+  const variant = draft.variant !== undefined ? draft.variant : model.variant;
+  const inheritedContextLimit =
+    typeof model.contextLimit === "number" ? model.contextLimit : undefined;
+  const contextLimit =
+    draft.contextLimit !== undefined
+      ? draft.contextLimit
+      : inheritedContextLimit;
+  return {
+    providerId: model.providerId,
+    modelId: model.modelId,
+    // The empty string is meaningful: it explicitly disables thinking.
+    ...(variant !== undefined ? { variant } : {}),
+    ...(contextLimit !== undefined ? { contextLimit } : {}),
+    ...(sessionId ? { sessionId } : {}),
+  };
+}
+
 export function readSessionIdFromHash(hash: string): string | undefined {
   const params = new URLSearchParams(
     hash.startsWith("#") ? hash.slice(1) : hash,
@@ -469,16 +499,15 @@ export interface WebuiClientFoundationAppProps {
       readonly description?: string;
     }[];
   }>;
-  readonly selectModel?: (request: {
-    readonly providerId: string;
-    readonly modelId: string;
-    readonly variant?: string;
-    readonly contextLimit?: number;
-    readonly sessionId?: string;
-  }) => Promise<{ readonly success?: boolean }>;
+  readonly selectModel?: (
+    request: WebuiModelSelectionRequest,
+  ) => Promise<{ readonly success?: boolean }>;
   readonly getSessionUsage?: (request: {
     readonly id: string;
   }) => Promise<Record<string, unknown>>;
+  readonly getUsageQuota?: (request?: {
+    readonly forceRefresh?: boolean;
+  }) => Promise<import("../server/port.js").WebuiUsageQuotaResult>;
   readonly getAccountStatus?: (request?: {
     readonly sessionId?: string;
   }) => Promise<Record<string, unknown>>;
@@ -2133,25 +2162,10 @@ function WebuiComposer({
   ) => {
     if (!selectModel) return;
     setInteractionError(undefined);
-    const variant = draft.variant !== undefined ? draft.variant : model.variant;
-    // When the picker has a local draft for the context window, fold it into
-    // the request. The runtime accepts `contextLimit` on the v2 contract and
-    // echoes the new value back on the next `listModels` call, so the toggle
-    // survives the periodic refresh without us keeping around a phantom draft.
-    const inheritedContextLimit =
-      typeof model.contextLimit === "number" ? model.contextLimit : undefined;
-    const contextLimit =
-      draft.contextLimit !== undefined
-        ? draft.contextLimit
-        : inheritedContextLimit;
     try {
-      const result = await selectModel({
-        providerId: model.providerId,
-        modelId: model.modelId,
-        ...(variant ? { variant } : {}),
-        ...(contextLimit !== undefined ? { contextLimit } : {}),
-        ...(sessionId ? { sessionId } : {}),
-      });
+      const result = await selectModel(
+        buildWebuiModelSelectionRequest(model, draft, sessionId),
+      );
       if (result.success === false)
         throw new Error("The model could not be selected");
       const refreshed = await listModels?.({
@@ -2763,6 +2777,7 @@ export function WebuiClientFoundationApp({
   listSkills,
   selectModel,
   getSessionUsage,
+  getUsageQuota,
   getAccountStatus,
   signOut,
   dataDir,
@@ -3028,6 +3043,7 @@ export function WebuiClientFoundationApp({
                   listModels={listModels}
                   selectModel={selectModel}
                   getSessionUsage={getSessionUsage}
+                  getUsageQuota={getUsageQuota}
                   getAccountStatus={getAccountStatus}
                   signOut={signOut}
                 />

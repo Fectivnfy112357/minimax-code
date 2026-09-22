@@ -174,7 +174,8 @@
       "packages/webui/test/unit/commands.test.ts",
       "packages/webui/test/unit/team-mode.test.ts",
       "packages/webui/test/unit/transport-frame.test.ts",
-      "packages/webui/test/unit/slash-palette.test.ts"
+      "packages/webui/test/unit/slash-palette.test.ts",
+      "packages/webui/test/unit/webui-usage-quota.test.ts"
     ]
   }
 }

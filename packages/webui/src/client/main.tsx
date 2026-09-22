@@ -50,6 +50,7 @@ const app = <WebuiClientFoundationApp
     listSkills={transport.listSkills}
     selectModel={transport.selectModel}
     getSessionUsage={transport.getSessionUsage}
+    getUsageQuota={transport.getUsageQuota}
     getAccountStatus={transport.getAccountStatus}
     signOut={transport.signOut}
     dataDir={runtimeConfig.dataDir}

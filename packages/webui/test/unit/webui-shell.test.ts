@@ -26,6 +26,7 @@ import {
   WebuiProjectList,
   WebuiSessionList,
   WebuiSessionTranscript,
+  buildWebuiModelSelectionRequest,
   buildWebuiQuestionnaireAnswers,
   buildWebuiComposerHandlers,
   createdSessionId,
@@ -91,6 +92,27 @@ function renderSessionShell(): string {
 const INERT_NAV_LABELS = ["插件", "定时", "网站", "远程"];
 
 describe("WebUI shell", () => {
+  it("preserves an explicit empty thinking variant in model selection requests", () => {
+    expect(
+      buildWebuiModelSelectionRequest(
+        {
+          providerId: "minimax",
+          modelId: "MiniMax-M3",
+          variant: "thinking",
+          contextLimit: 512_000,
+        },
+        { variant: "", contextLimit: 1_000_000 },
+        "session-1",
+      ),
+    ).toEqual({
+      providerId: "minimax",
+      modelId: "MiniMax-M3",
+      variant: "",
+      contextLimit: 1_000_000,
+      sessionId: "session-1",
+    });
+  });
+
   it("keeps model variants distinct when selecting the next-turn model", () => {
     const fast = {
       providerId: "provider",
