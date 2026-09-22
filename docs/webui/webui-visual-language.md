@@ -103,5 +103,5 @@ compiled output, alongside `w-*` / `h-*` sizes and ordinary layout utilities.
   colours.
 - Do not lift the compiled stylesheet into this repository. The values are design
   facts, but the file belongs to the distributed desktop build and this repository
-  carries a license audit (`LICENSE-STATUS.md`,
+  carries a license audit (`../../LICENSE-STATUS.md`,
   `release/dependency-licenses.json`). Re-author the token file from these values.

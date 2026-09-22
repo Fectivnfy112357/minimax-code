@@ -1,7 +1,7 @@
 # WebUI first version scope
 
 What the first version covers, what it deliberately leaves out, and the wiring and
-assembly it needs. The reasoning behind the decisions lives in [`docs/adr/`](adr/).
+assembly it needs. The reasoning behind the decisions lives in [`../adr`](adr/).
 
 ## In scope
 
@@ -18,7 +18,7 @@ assembly it needs. The reasoning behind the decisions lives in [`docs/adr/`](adr
 - Loopback-only access: bind `127.0.0.1`, validate Host and Origin, require a
   per-start credential, expose an operation allowlist with runtime validation
 - The full tool capability set: local tools, mcode-tools and Browser Use
-  ([ADR 0008](adr/0008-first-version-assembles-the-full-tool-capability-set.md))
+  ([ADR 0008](../adr/0008-first-version-assembles-the-full-tool-capability-set.md))
 
 ## Out of scope for the first version
 
@@ -26,11 +26,11 @@ assembly it needs. The reasoning behind the decisions lives in [`docs/adr/`](adr
   reported as messages, not as configuration interfaces.
 - Terminal rendering, terminal image preview, check-in
 - Remote or LAN access — see
-  [ADR 0004](adr/0004-own-websocket-transport-with-minimal-envelope-and-local-access-control.md)
+  [ADR 0004](../adr/0004-own-websocket-transport-with-minimal-envelope-and-local-access-control.md)
 - A queue editing interface
 - Taking over turns owned by another runtime owner
 - Automatic resume of persisted jobs at cold start — see
-  [ADR 0002](adr/0002-in-process-runtime-host-with-quarantined-cold-start.md)
+  [ADR 0002](../adr/0002-in-process-runtime-host-with-quarantined-cold-start.md)
 
 ## Behaviour boundaries
 
@@ -52,23 +52,23 @@ assembly it needs. The reasoning behind the decisions lives in [`docs/adr/`](adr
 The WebUI reuses the desktop application's design tokens, typography and layout
 conventions rather than designing its own. See
 [`webui-visual-language.md`](webui-visual-language.md) and
-[ADR 0009](adr/0009-webui-reuses-the-desktop-visual-language.md).
+[ADR 0009](../adr/0009-webui-reuses-the-desktop-visual-language.md).
 
 ## Wiring: additive edits to existing files
 
 | File | Change |
 | --- | --- |
-| `pnpm-workspace.yaml` | add `packages/webui` |
-| `release/extraction.json` | add `packages/webui` to `packageRoots` |
-| `tsconfig.standalone.json` | regenerate with the existing script; never hand-edit `paths` |
-| `test/vitest-suites.json` | add a `webui` suite listing the real test files |
-| `package.json` | add the WebUI build, type check, boundary and test scripts |
-| `scripts/verify.mjs` | add the WebUI gates in order, in the shared verifier rather than the workflow file |
-| `release/public-source.json` | regenerate with `node scripts/source-inventory.mjs --write` after reviewing the added paths |
-| `release/dependency-licenses.json` and the lockfile | update for the WebUI's new dependencies |
-| `scripts/build-webui.mjs`, `scripts/check-webui-boundary.mjs` | new: separate build and boundary check producing `dist-webui/` with its own metafile ([ADR 0010](adr/0010-webui-ships-an-esbuild-artifact-with-vite-as-a-development-server.md)) |
+| `../../pnpm-workspace.yaml` | add `../../packages/webui` |
+| `../../release/extraction.json` | add `../../packages/webui` to `packageRoots` |
+| `../../tsconfig.standalone.json` | regenerate with the existing script; never hand-edit `paths` |
+| `../../test/vitest-suites.json` | add a `webui` suite listing the real test files |
+| `../../package.json` | add the WebUI build, type check, boundary and test scripts |
+| `../../scripts/verify.mjs` | add the WebUI gates in order, in the shared verifier rather than the workflow file |
+| `../../release/public-source.json` | regenerate with `node scripts/source-inventory.mjs --write` after reviewing the added paths |
+| `../../release/dependency-licenses.json` and the lockfile | update for the WebUI's new dependencies |
+| `../../scripts/build-webui.mjs`, `scripts/check-webui-boundary.mjs` | new: separate build and boundary check producing `../../dist-webui` with its own metafile ([ADR 0010](adr/0010-webui-ships-an-esbuild-artifact-with-vite-as-a-development-server.md)) |
 
-`scripts/build.mjs` keeps its four CLI entry points; the WebUI is not added to them.
+`../../scripts/build.mjs` keeps its four CLI entry points; the WebUI is not added to them.
 The standalone TypeScript config type-checks the CLI entry points only, so the
 WebUI needs its own configuration for browser and server code.
 
@@ -77,7 +77,7 @@ WebUI needs its own configuration for browser and server code.
 - The server and client entry points both appear in the WebUI metafile
 - No retired source paths in the graph (`packages/local-runtime/src/http/`,
   `packages/local-runtime-v2/src/http/`, and the rest of the retired set)
-- No dependency on the terminal renderer (`packages/tui/src/tui/`)
+- No dependency on the terminal renderer (`../../packages/tui/src/tui`)
 - No forbidden internal addresses, credentials or private host implementations
 - No server-side call back into the CLI
 - Only the process-local and `cli-service` entries plus allowed public workspace
