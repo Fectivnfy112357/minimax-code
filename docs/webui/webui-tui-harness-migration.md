@@ -17,7 +17,7 @@ The repository already locks in the boundaries:
   it must write its own narrow adapter.
 - [ADR 0009](../adr/0009-webui-reuses-the-desktop-visual-language.md): the
   WebUI reuses the desktop application's design tokens.
-- [0003-amendment-shared-event-corpus](0003-amendment-shared-event-corpus.md):
+- [ADR 0011 — shared event corpus](../adr/0011-shared-event-corpus-in-local-runtime-v2.md):
   the WebUI re-implements TUI's projection logic independently; both clients
   rely on a shared event-corpus fixture in `@mavis/local-runtime-v2` to stay
   aligned with the harness event protocol rather than copying each other.
@@ -29,7 +29,7 @@ client behaviour we mirror, **which** visual assets we lift from the desktop
 build, and **in what order**.
 
 ## How this plan was reviewed
-[webui-tui-harness-migration.md]()
+
 This document is the result of a two-reviewer cross-audit:
 
 - **codex luna** (`codex/gpt-5.6-luna`): review captured in
@@ -65,14 +65,21 @@ made the phase boundaries self-consistent.
 | Category | Decision |
 | --- | --- |
 | Backend identity | `runtimeOwnerKind: 'tui'` (was `'cli'`). Drives `promptProfile: 'tui'` → `_v2/tui/SYSTEM.md.hbs` and `tuiProductPolicy` at four sites in `@mavis/local-runtime-v2`. |
-| Command system | Mirror the runtime-independent descriptors in `packages/tui/src/application/command-descriptors.ts`. Six commands: `help`, `new`, `compact`, `status`, `usage`, `model`. Skip `doctor`, `context`, `skills`, `mcp`, `export` (TUI-only or session-output-only). |
+| Command system | Six commands — `help`, `new`, `compact`, `status`, `usage`, `model` — the subset of TUI's runtime-independent command set whose backing call exists in the harness. The descriptor **shape** mirrors `{ name, description }` from `packages/tui/src/application/command-descriptors.ts`; the description wording is the WebUI's own copy. Skip `doctor`, `context`, `skills`, `mcp`, `export` (TUI-only or session-output-only). |
 | Compaction | Carry over the `/compact` command and `session.compaction.{started,completed,failed}` projection. Wire to a new `requestCompaction` server operation that calls the harness with the single-object shape `CliService` expects. |
-| Usage / context | Carry over the context-window visualization and the session usage view. |
+| Usage / context | Expose the context-window and session-usage **data** the harness already reports (`getSessionUsage`); presentation follows the WebUI visual language, not the terminal transcript layout. |
 | Questionnaire / permission | Carry over the projection logic from `packages/tui/src/tui/controller/runtime/runtime-state-coordinator.ts:27-50` (`permission.ask` / `permission.resolved` / `questionnaire.ask` event handling) and `packages/tui/src/runtime/event-normalizer.ts:19-30` (event-shape normalisation). Both are re-implemented locally; the **shared event corpus** described in the ADR amendment is the conformance surface. |
 | Visual asset scope | Image assets (27 PNG/JPG) and KaTeX font faces (60 files / 2.2 MB / 20 each of `.ttf` / `.woff` / `.woff2`, content-hashed, in `../minimax-webui/app/out/_next/static/media/KaTeX_*`) are checked in. CSS compiled product (548 KB / 25 minified files in `../minimax-webui/app/out/_next/static/css/`) and Next.js chunks (37 MB in `_next/static/chunks/`) are not. |
 | Pages | Re-author four pages against the visual language: `/login`, `/onboarding`, `/archon`, `/404`. Defer `/archon-mini-chat`, `/log-viewer`, `/pdf`, `/doc`, `/docx`. |
 | Settings | Modal inside `/archon` (route unchanged). Cover: `general` (theme, language), `appearance` (font size, density), `account` (login state, sign out), `account-onboarding`, `model` (model selection, thinking level, context control). **Reduced scope:** data-directory section is **read-only** display of the current path; relocation is deferred. Skip desktop-only items: `shortcut`, `notification`, `tray`, `run-on-startup`, `power-save-blocker`, `Computer Use toggle`. |
 | KaTeX | Wire `katex` into `markdown.tsx` so `$...$` / `$$...$$` render. Fonts come from `../minimax-webui/app/out/_next/static/media/` (verified today: 20 `.ttf`, 20 `.woff`, 20 `.woff2`, total 2.2 MB). `katex` is added as a runtime dependency; `release/dependency-licenses.json` records its MIT license. The CSS is integrated via `postcss-import` against the single ADR-0010 stylesheet, not a second `<link>` in `index.html`. |
+
+**Axis rule.** Where this plan cites `packages/tui`, the reference is
+harness behaviour only — identity, event protocol, call shapes, product
+policy, prompt selection. The terminal client's labels, output layout,
+product copy and input syntax are presentation: they are not conformance
+surfaces. The WebUI's presentation follows the desktop visual language
+(axis two) or is the WebUI's own copy.
 
 The visual asset rules above are consistent with
 [`webui-visual-language.md`](webui-visual-language.md), which already
@@ -162,8 +169,8 @@ reviewer expects to see in the resulting WebUI.
 | Session row: star / pin / archive | `star`, `unstar`, `pin`, `unpin`, `archive`, `archived` | **In v1** (A3) — pure client-side flag overlay on the harness session list |
 | New session action | `sidebar_new`, `add_new_chat_click`, `create_session_from_home` | **In v1** |
 | Sidebar primary entries other than "new" | `sidebar_user_menu`, `sidebar_pinned_order`, `sidebar_cloud_shortcut`, `sidebar_moveto` | **In v1 (Desktop only UI)** — disabled buttons with "Desktop only" tooltip |
-| Composer (chat input, send, model selector) | `composer`, `select_model`, `toggle_model_thinking`, `thinking_effort` | **In v1** for the basic composer + model selector + current thinking level display; max-output-tokens and thinking-effort toggles are deferred; **the agent-team-mode toggle is Deferred** (no harness `teamMode` / `teamModeOff` contract) |
-| Agent Team mode toggle | `teamMode`, `teamModeActive`, `teamModeOff`, `home.agent_team_label`, `home.agent_team_locked_tip`, `mavis-team-mode` | **Deferred — requires `teamMode` / `teamModeOff` contract in `@mavis/local-runtime-v2`'s `SessionCreateInput` + `MessageSendInput`; v1 does not modify the harness** |
+| Composer (chat input, send, model selector) | `composer`, `select_model`, `toggle_model_thinking`, `thinking_effort` | **In v1** for the basic composer + model selector + current thinking level display; max-output-tokens and thinking-effort toggles are deferred; the agent-team-mode toggle is **In v1** on `teamModeOff` alone (decision 2026-09-22, see the Agent team mode section) |
+| Agent Team mode toggle | `teamMode`, `teamModeActive`, `teamModeOff`, `home.agent_team_label`, `home.agent_team_locked_tip`, `mavis-team-mode` | **In v1 — single-field plan (decision 2026-09-22): create-time `teamModeOff` pass-through + client-side state; no harness edit. `teamMode` exists only as an unpopulated view field and is never read. The field has no runtime consumer in `local-runtime-v2` today — see risk 11** |
 | Composer run location | `composer_run_location` | **In v1** if desktop uses a single "local" value for browser sessions; otherwise deferred |
 | Settings modal: general | `general`, theme, language | **In v1** |
 | Settings modal: appearance | `appearance`, font size, density | **In v1** |
@@ -341,13 +348,14 @@ new code path in `@mavis/local-runtime-v2`; the WebUI does not own this.
 
 ### Step B2 — Command catalogue
 
-**Goal.** Expose a WebUI-callable command surface that mirrors the
-runtime-independent descriptors in
-`packages/tui/src/application/command-descriptors.ts`, without importing
-that file. The descriptor shape used by TUI is exactly
-`{ readonly name: string; readonly description: string }` (lines 1-4); the
-WebUI re-declares this shape verbatim with no additional fields. Adding
-argument schemas, help groups or alias maps is out of scope.
+**Goal.** Expose a WebUI-callable command surface covering the same
+harness capabilities TUI's commands cover, without importing
+`packages/tui/src/application/command-descriptors.ts`. The descriptor
+**shape** is re-declared verbatim —
+`{ readonly name: string; readonly description: string }` (lines 1-4), no
+additional fields — but the description **wording** is the WebUI's own
+copy: TUI's terminal text is presentation, not a conformance surface.
+Adding argument schemas, help groups or alias maps is out of scope.
 
 **Locked selection.** Six commands: `help`, `new`, `compact`, `status`,
 `usage`, `model`. Skipped: `doctor`, `context`, `skills`, `mcp`, `export`
@@ -378,26 +386,29 @@ fit a browser tool palette).
     customInstructions }` (see
     `packages/tui/test/unit/tui-runtime-adapter.test.ts:339-344`). The
     runner constructs that object. It surfaces
-    `NOTHING_TO_COMPACT` / `unchanged` as
-    `{ handled: true, output: 'No compaction is needed for this
-    conversation yet.' }` and other failures as `runtimeRejected` with the
+    `NOTHING_TO_COMPACT` / `unchanged` as a handled no-op
+    (`{ handled: true, output: <message> }` — the message wording is the
+    WebUI's own copy) and other failures as `runtimeRejected` with the
     original error code.
-  - `status`: `getSession(request)`; output reuses the labels in
-    `packages/tui/src/tui/transcript/status-visualization.ts:72` for
-    `Model` and `Workspace`. The `context-visualization.ts:20` label map
-    is **not** the source for this command (it is for transcript-context
-    rendering and labels `MEMORY` / `TOOLS` / `SKILLS` / `MESSAGES` /
-    `OTHER`, not `Model` / `Workspace`).
-  - `usage`: `getSessionUsage(request)`; output reuses the token / cost /
-    cache layout from
-    `packages/tui/src/tui/transcript/context-visualization.ts:136,274`.
-  - `model`: `listModels` for completion, `selectModel` for switching.
-    The input parser mirrors `resolveModelSelection` at
-    `packages/tui/src/acp/commands.ts:375-...` (line 193 is the call
-    site, not the definition). ADR 0001 note: the reference is the
-    semantics of `resolveModelSelection`, **not** the ACP adapter as a
-    code dependency. The harness-level `listModels` / `selectModel`
-    calls are the WebUI's seam.
+  - `status`: `getSession(request)` (plus `getAccountStatus` for the
+    account line); the command reports the model and workspace **data**
+    the harness holds. Labels, order and layout are the WebUI's own
+    presentation — the terminal's `status-visualization.ts` label map is
+    not a reference for this command.
+  - `usage`: `getSessionUsage(request)`; the command reports the token,
+    cost and cache **numbers** the harness returns. Grouping and layout
+    are the WebUI's own presentation — the terminal's
+    `context-visualization.ts` layout is not a reference for this
+    command.
+  - `model`: `listModels` for completion, `selectModel` for switching —
+    these two harness calls are the seam; whatever `selectModel` returns,
+    including a rejection, is surfaced to the caller rather than
+    swallowed. Input syntax (`provider/model[#variant]` or a bare id) and
+    error wording are the WebUI's own UX decisions; pre-validating
+    against `listModels` is an optional UX choice, not a conformance
+    requirement — mirroring TUI's `resolveModelSelection` parser
+    (`packages/tui/src/acp/commands.ts:375-404`) is not required, as
+    that parser is terminal command UX, not harness behaviour.
 
 **Wired into the WebUI transport**
 
@@ -525,44 +536,54 @@ The client work is the larger half of the milestone. It does not change
 the server surface contract; it only changes the React components and the
 assets they reference.
 
-### Agent team mode — onboarding copy only
+### Agent team mode
 
-The desktop archon exposes "Agent Team mode" both as:
+Decision (2026-09-22, option a): v1 ships the composer toggle on a
+**single field** — `teamModeOff` — plus client-side state, mirroring
+the desktop's own mechanism. The harness is not modified.
 
-1. **Onboarding copy** (the explainer slide on the first launch).
-2. **A session-level composer toggle** (a chip / button next to the
-   model selector that flips the team-mode state).
+Contract facts (verified against `packages/protocol/src/local.ts`):
 
-For v1, **only the onboarding copy lands**. The session-level toggle
-is **Deferred** for the same reason as the settings-modal sections
-above: the harness does not expose `teamMode` / `teamModeOff` in
-`SessionCreateInput` or `MessageSendInput`, and adding the fields is
-out of scope for this milestone.
+- `CreateSessionInput.teamModeOff?: boolean` (`:831`) is the only
+  create-time team field. `teamMode` does **not** exist on any input.
+  It exists only on `SessionInfoView` (`:725`), and **no package ever
+  populates it** — the WebUI must not read it.
+- `SendMessageInput` (`:571`) and `UpdateSessionInput` (`:846`) carry
+  no team fields: the mode is fixed at session creation, exactly as on
+  desktop (its renderer only passes `teamModeOff` in
+  `createSession({agentId, workspaceDir, teamModeOff, …})` and caches
+  the choice client-side as `createdSessionTeamModeOff`).
+- `local-runtime-v2` consumes `teamModeOff` **nowhere** (zero reads in
+  the package, templates included). The flag is accepted and
+  registered, not yet acted upon. Team assembly in practice happens
+  when the agent spawns child sessions via `parentSessionId`; the
+  toggle does not gate that path today. Recorded as risk 11.
 
-What v1 ships from this design:
+What v1 ships:
 
+- `WebuiCreateSessionRequest.teamModeOff?: boolean`, passed through to
+  `createSession` (absent means unchanged).
+- The composer toggle chip next to the model selector, desktop tokens;
+  the persisted choice lives under the `mavis-team-mode` localStorage
+  key and is read on composer mount.
+- The lock predicate `teamModeOff === false || getChildSessions(session.id).length > 0`,
+  in product code (importable by tests), with the
+  `home.agent_team_locked_tip` tooltip.
+- The sessions-list "team" badge (`chat_type: agent_team`): derived
+  client-side from child-session count plus the locally cached
+  creation-time choice — there is no server-side signal (contract
+  facts above).
 - Onboarding step 1 copy and image:
   `subtitle: "Agent Team 模式" / "Agent Team mode"`,
   `title: "下达目标，MiniMax 自主组建小队" / "Define the goal. MiniMax builds the team."`,
   `desc: "启用 Agent Team 模式后..." / "Enable Agent Team mode and..."`,
-  `image: "onboard_v2_1_{cn,en}.png"`.
-- Onboarding step 4 ("Ready" / "就绪") mentions team assembly as one
-  of the things the user can do.
+  `image: "onboard_v2_1_{cn,en}.png"`, and step 4 ("Ready" / "就绪")
+  mentioning team assembly.
 
-What v1 explicitly does **not** ship:
-
-- The composer team-mode toggle.
-- The `mavis-team-mode` localStorage read/write in `Composer.tsx`.
-- The lock predicate `teamModeOff === false || getChildSessions(session.id).length > 0`.
-- The `home.agent_team_locked_tip` tooltip.
-- The `WebuiCreateSessionRequest` / `WebuiSendMessageRequest` extension for `teamMode` / `teamModeOff`.
-- The "team" badge in the sessions list sidebar (`chat_type: agent_team`).
-
-The desktop identifier constants (`teamMode`, `teamModeActive`,
-`teamModeOff`, `home.agent_team_label`, `home.agent_team_locked_tip`,
-`mavis-team-mode`) are NOT imported into `Composer.tsx` or any other
-file in v1. A future milestone that adds the harness plumbing can wire
-the toggle without changing the rest of the WebUI.
+Verification: the toggle is visible in the phase-5 screenshots next to
+the model selector; `team-mode.test.ts` imports the lock predicate
+from product code and drives it with fixture sessions; the
+`mavis-team-mode` key is written on toggle and read on mount.
 
 ### Visual reference provenance
 
@@ -1099,6 +1120,15 @@ most likely to bite during implementation.
 10. **`pnpm check:source` is red on this branch before any work starts.**
     Phase zero fixes it. The PR description must call this out so a
     reviewer who runs `check:source` against `main` is not surprised.
+11. **The team-mode toggle registers intent but has no harness-side
+    consumer.** `CreateSessionInput.teamModeOff` is accepted by the
+    protocol and forwarded by the WebUI, yet nothing in
+    `@mavis/local-runtime-v2` reads it today and no input carries
+    `teamMode`. The toggle drives client state (choice, lock, badge)
+    and persists the create-time flag, but does not by itself change
+    agent behaviour. If product expects team assembly to key off the
+    toggle, that needs a harness-side consumer — a separate milestone.
+    The PR description must state this.
 
 ## Plan revision note (post-implementation)
 
@@ -1107,8 +1137,12 @@ stopped rather than invent behaviour. Specifically:
 
 - `WebuiHarnessPort` does **not** expose `getPersonaFile` /
   `savePersonaFile` / provider CRUD / memory CRUD ports.
-- `@mavis/local-runtime-v2` does **not** have `teamMode` /
-  `teamModeOff` in `SessionCreateInput` or `MessageSendInput`.
+- `@mavis/local-runtime-v2` reads **neither** field at runtime, and no
+  input type carries `teamMode`; `teamModeOff` does exist on the
+  protocol's `CreateSessionInput` but has zero consumers inside the
+  package, and `MessageSendInput` carries no team fields. (Decision
+  2026-09-22: option a — ship the toggle on `teamModeOff` alone; see
+  the Agent team mode section and risk 11.)
 
 These were originally planned as in-scope (this revision of the plan
 predates the correction). The desktop renderer implements them by

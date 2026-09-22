@@ -132,6 +132,19 @@ const htmlSource = path.join(packageDir, "src/client/index.html");
 if (existsSync(htmlSource))
   cpSync(htmlSource, path.join(outdir, "client/index.html"));
 
+// The client references onboarding images and KaTeX fonts by stable public
+// paths. Keep those paths identical in the packaged artifact and in Vite dev.
+cpSync(
+  path.join(packageDir, "src/client/assets/img"),
+  path.join(outdir, "client/assets/img"),
+  { recursive: true },
+);
+cpSync(
+  path.join(packageDir, "src/client/assets/fonts/katex"),
+  path.join(outdir, "client/fonts"),
+  { recursive: true },
+);
+
 // The WebUI server owns its own mcode-tools process boundary. Keep the
 // embedded entry and the command launcher beside the server bundle so the
 // host's short-lived broker can validate the exact artifact it starts.

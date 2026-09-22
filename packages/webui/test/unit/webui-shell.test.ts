@@ -452,7 +452,7 @@ describe("WebUI shell — desktop anatomy", () => {
         !/(?:^|\s)disabled(?:=|\s|>)/u.test(tag) &&
         !/aria-disabled="true"/u.test(tag),
     );
-    expect(operable).toHaveLength(1);
+    expect(operable).toHaveLength(2);
     // The row hook sits on the row element, not on the control inside it, so
     // attribute the operable control to the nearest preceding row.
     const at = html.indexOf(operable[0]);
@@ -460,6 +460,7 @@ describe("WebUI shell — desktop anatomy", () => {
       ...html.slice(0, at).matchAll(/data-webui-nav-item="([^"]*)"/gu),
     ].pop();
     expect(owner?.[1]).toBe("新建任务");
+    expect(html).toMatch(/data-webui-team-mode-toggle="true"/u);
   });
 
   it("lets the composer take a draft before a session exists", () => {

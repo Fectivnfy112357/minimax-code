@@ -19,6 +19,8 @@ export interface WebuiStreamState {
   readonly messages: readonly WebuiStreamMessage[];
   readonly runtimeEvents: readonly Record<string, unknown>[];
   readonly actionDeltas: readonly Record<string, unknown>[];
+  /** The server-owned projection snapshot carried by the current stream. */
+  readonly projection?: unknown;
   readonly status?: string;
   readonly refusal?: string;
   /**
@@ -196,6 +198,8 @@ export function applyFrameData(
       ...next,
       actionDeltas: [...next.actionDeltas, ...frame.messageActionDeltas],
     };
+  if (frame.projection !== undefined)
+    next = { ...next, projection: frame.projection };
   const recognised = recogniseWebuiStreamPayload(frame.dataJson);
   if (recognised.kind === "empty") return next;
   if (recognised.kind === "done") return { ...next, phase: "done" };

@@ -20,11 +20,22 @@ marked.use({
       tokenizer(source) {
         const match = source.match(/^(\$\$?)([\s\S]+?)\1/u);
         if (!match) return undefined;
+        const delimiter = match[1];
+        const body = match[2];
+        if (delimiter === undefined || body === undefined) return undefined;
+        // A single dollar is inline math only. It cannot cross a line or
+        // attach to a number, so ordinary prose such as "$5 and $10" stays
+        // prose. Display math keeps the existing multiline behaviour.
+        if (
+          delimiter === "$" &&
+          (body.includes("\n") || /^\d/u.test(body))
+        )
+          return undefined;
         return {
           type: "webuiMath",
           raw: match[0],
-          text: match[2],
-          display: match[1] === "$$",
+          text: body,
+          display: delimiter === "$$",
         } as Token & { readonly display: boolean };
       },
     },
@@ -92,6 +103,21 @@ function blocks(tokens: readonly Token[] | undefined): ReactNode[] {
       return <p key={key}>{inline(token.tokens)}</p>;
     if (token.type === "heading")
       return createElement(`h${token.depth}`, { key }, ...inline(token.tokens));
+    if (token.type === "code" && token.lang?.toLowerCase() === "math") {
+      try {
+        return (
+          <span
+            key={key}
+            className="webui-math webui-math-block"
+            dangerouslySetInnerHTML={{
+              __html: katex.renderToString(token.text, { displayMode: true }),
+            }}
+          />
+        );
+      } catch {
+        return <pre key={key}>{token.text}</pre>;
+      }
+    }
     if (token.type === "code")
       return (
         <div key={key} className="webui-code-block">

@@ -176,6 +176,7 @@ export class WebuiService {
       getSessionUsage: (request) => this.port.getSessionUsage(request),
       getAccountStatus: (request) => this.port.getAccountStatus(request),
       requestCompaction: (request) => this.port.requestCompaction(request),
+      invalidateAuth: this.port.invalidateAuth,
     });
     const factory = options.httpServerFactory ?? (() => createServer());
     this.httpServer = factory();
@@ -223,32 +224,44 @@ export class WebuiService {
       return;
     }
     const name =
-      url.pathname === "/" || url.pathname === "/index.html"
+      url.pathname === "/" ||
+      url.pathname === "/index.html" ||
+      url.pathname === "/login" ||
+      url.pathname === "/onboarding" ||
+      url.pathname === "/archon"
         ? "index.html"
         : url.pathname === "/client.js"
           ? "client.js"
           : url.pathname === "/styles.css"
-            ? "styles.css"
-            : undefined;
+          ? "styles.css"
+          : url.pathname.startsWith("/assets/") || url.pathname.startsWith("/fonts/")
+            ? url.pathname.slice(1)
+          : undefined;
     if (!name) {
       rejectHttp(response, 404, "Not Found");
       return;
     }
     try {
       const clientDir = findClientDirectory(this.clientDirOverride);
-      let body = await readFile(path.join(clientDir, name), "utf8");
+      const fileName = resolveClientAsset(clientDir, url.pathname, name);
+      if (!fileName) {
+        rejectHttp(response, 404, "Not Found");
+        return;
+      }
+      let body = await readFile(fileName);
       if (name === "index.html") {
         const config = JSON.stringify({
           websocketUrl: `ws://${this.host}:${this.bound?.info.tcpPort ?? this.tcpPort}`,
           token: this.credential.token,
+          dataDir: this.port.version().dataDir,
         }).replace(/</gu, "\\u003c");
-        body = body.replace(
+        body = Buffer.from(body.toString("utf8").replace(
           "</head>",
           `<script>window.__WEBUI_CONFIG__=${config};</script></head>`,
-        );
+        ));
       }
       response.writeHead(200, {
-        "Content-Type": contentType(name),
+        "Content-Type": contentType(fileName),
         "Cache-Control": "no-store",
       });
       response.end(body);
@@ -537,9 +550,17 @@ export class WebuiService {
       sendFrame(ws, responseFrame(parsed.requestId, result.body));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      const errorCode =
+        error && typeof error === "object" &&
+        typeof (error as { readonly code?: unknown }).code === "string" &&
+        Object.values(WebuiErrorCode).includes(
+          (error as { readonly code: string }).code as (typeof WebuiErrorCode)[keyof typeof WebuiErrorCode],
+        )
+          ? ((error as { readonly code: string }).code as (typeof WebuiErrorCode)[keyof typeof WebuiErrorCode])
+          : WebuiErrorCode.harnessError;
       sendFrame(
         ws,
-        errorFrame(parsed.requestId, WebuiErrorCode.harnessError, message),
+        errorFrame(parsed.requestId, errorCode, message),
       );
     }
   }
@@ -625,11 +646,37 @@ function parseHttpUrl(rawUrl: string | undefined): URL | undefined {
 }
 
 function contentType(name: string): string {
+  if (name.endsWith(".png")) return "image/png";
+  if (name.endsWith(".jpg") || name.endsWith(".jpeg")) return "image/jpeg";
+  if (name.endsWith(".woff2")) return "font/woff2";
+  if (name.endsWith(".woff")) return "font/woff";
+  if (name.endsWith(".ttf")) return "font/ttf";
   return name.endsWith(".css")
     ? "text/css; charset=utf-8"
     : name.endsWith(".js")
       ? "text/javascript; charset=utf-8"
       : "text/html; charset=utf-8";
+}
+
+function resolveClientAsset(
+  clientDir: string,
+  pathname: string,
+  fallbackName: string,
+): string | undefined {
+  if (fallbackName === "index.html" || fallbackName === "client.js" || fallbackName === "styles.css")
+    return path.join(clientDir, fallbackName);
+  const prefix = pathname.startsWith("/assets/")
+    ? "/assets/"
+    : pathname.startsWith("/fonts/")
+      ? "/fonts/"
+      : undefined;
+  if (!prefix) return undefined;
+  const relativeName = pathname.slice(prefix.length);
+  if (!relativeName || relativeName.includes("\\") || relativeName.split("/").includes(".."))
+    return undefined;
+  const candidate = path.resolve(clientDir, prefix.slice(1), relativeName);
+  const root = path.resolve(clientDir) + path.sep;
+  return candidate.startsWith(root) ? candidate : undefined;
 }
 
 function findClientDirectory(override: string | undefined): string {

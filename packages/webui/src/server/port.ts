@@ -13,6 +13,7 @@
 export interface WebuiVersionInfo {
   readonly version: string;
   readonly protocolVersion: number;
+  readonly dataDir?: string;
 }
 
 export interface WebuiSessionListRequest {
@@ -70,6 +71,7 @@ export interface WebuiSessionLookupResult {
 export interface WebuiCreateSessionRequest {
   readonly name: string;
   readonly workspaceDir: string;
+  readonly teamModeOff?: boolean;
 }
 export interface WebuiCreateSessionResult {
   readonly agentName?: string;
@@ -106,6 +108,8 @@ export interface WebuiMessagesResult {
   readonly todosJson?: string;
   readonly queryCollapseViews?: readonly Record<string, unknown>[];
   readonly turnResults?: readonly Record<string, unknown>[];
+  readonly contextSnapshot?: Record<string, unknown>;
+  readonly usage?: Record<string, unknown>;
 }
 
 /** Deliberately small WebUI-owned shape; the browser does not import the harness contract. */
@@ -393,6 +397,7 @@ export interface WebuiHarnessPort {
   getAccountStatus(request?: {
     readonly sessionId?: string;
   }): Promise<Record<string, unknown>>;
+  invalidateAuth?(): Promise<void>;
   requestCompaction(request: {
     readonly name: string;
     readonly id: string;

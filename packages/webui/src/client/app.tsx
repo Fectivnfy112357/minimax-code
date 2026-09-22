@@ -45,6 +45,19 @@ import {
   WebuiIconSidebarToggle,
   WebuiIconSites,
 } from "./icons.js";
+import { ArchonShell } from "./components/ArchonShell.js";
+import { Composer } from "./components/Composer.js";
+import {
+  isTeamModeLocked,
+  readTeamModeOff,
+  readTeamModeSessionChoices,
+  teamModeCopy,
+  writeTeamModeOff,
+  writeTeamModeSessionChoice,
+  type TeamModeSessionChoices,
+} from "./team-mode.js";
+import { LeftRail } from "./components/LeftRail.js";
+import { Transcript } from "./components/Transcript.js";
 import { initialWebuiStreamState, type WebuiStreamState } from "./stream.js";
 import {
   buildWebuiStreamLoopSink,
@@ -81,6 +94,8 @@ export interface WebuiClientSession {
   readonly createdAt: number;
   readonly updatedAt: number;
   readonly workspaceDir?: string;
+  readonly sessionKind?: string;
+  readonly parentSessionId?: string;
 }
 
 export interface WebuiClientSessionPage {
@@ -107,6 +122,7 @@ export type WebuiClientMessageLoader = (request: {
 export interface WebuiClientCreateSessionRequest {
   readonly name: string;
   readonly workspaceDir: string;
+  readonly teamModeOff?: boolean;
 }
 export interface WebuiClientCreateSessionResult {
   readonly sessionId?: string;
@@ -430,12 +446,14 @@ export function WebuiSessionList({
   onLoadMore,
   selectedSessionId,
   error,
+  teamModeChoices,
 }: {
   readonly page: WebuiClientSessionPage;
   readonly loading: boolean;
   readonly onLoadMore?: () => void;
   readonly selectedSessionId?: string;
   readonly error?: string;
+  readonly teamModeChoices?: TeamModeSessionChoices;
 }): ReactElement {
   const sessions = useMemo(
     () =>
@@ -491,6 +509,18 @@ export function WebuiSessionList({
                 <span className="w-0 flex-1 truncate text-sm">
                   {sessionLabel(session)}
                 </span>
+                {teamModeChoices?.[session.sessionId] === false ||
+                sessions.some(
+                  (child) => child.parentSessionId === session.sessionId,
+                ) ? (
+                  <span
+                    className="webui-pill flex-shrink-0 bg-bg_interaction_primary_default text-text_default_primary text-[11px]"
+                    data-webui-team-badge="true"
+                    title={teamModeCopy().label}
+                  >
+                    Agent Team
+                  </span>
+                ) : null}
                 <time
                   className="ml-auto flex-shrink-0 text-xs leading-4 text-text_default_tertiary"
                   dateTime={new Date(session.updatedAt).toISOString()}
@@ -1269,6 +1299,9 @@ function WebuiComposer({
   onDraftChange,
   onNeedsSession,
   enqueueMessage,
+  teamModeOff,
+  onTeamModeOffChange,
+  teamModeLocked,
 }: {
   readonly sessionId?: string;
   readonly agentName: string;
@@ -1293,6 +1326,9 @@ function WebuiComposer({
   readonly draft: string;
   readonly onDraftChange: (next: string) => void;
   readonly onNeedsSession?: (draft: string) => void;
+  readonly teamModeOff: boolean;
+  readonly onTeamModeOffChange: (teamModeOff: boolean) => void;
+  readonly teamModeLocked: boolean;
 }): ReactElement {
   const {
     state: runtimeState,
@@ -1312,6 +1348,9 @@ function WebuiComposer({
   const [usage, setUsage] = useState<Record<string, unknown>>();
   const [accountStatus, setAccountStatus] = useState<Record<string, unknown>>();
   const fieldId = useId();
+  const teamModeText = teamModeCopy(
+    typeof document === "undefined" ? undefined : document.documentElement.lang,
+  );
 
   useEffect(() => {
     if (!sessionId) return undefined;
@@ -1842,6 +1881,19 @@ function WebuiComposer({
                     <WebuiIconChevronDown className="flex-shrink-0 text-icon_default_tertiary" />
                   </label>
                   <button
+                    type="button"
+                    role="switch"
+                    aria-checked={!teamModeOff}
+                    aria-disabled={teamModeLocked}
+                    disabled={teamModeLocked}
+                    title={teamModeLocked ? teamModeText.lockedTip : undefined}
+                    data-webui-team-mode-toggle="true"
+                    className={`webui-pill text-sm text-text_default_primary ${teamModeLocked ? "bg-utility_tootip" : teamModeOff ? "bg-bg_default_secondary" : "bg-bg_interaction_primary_default"}`}
+                    onClick={() => onTeamModeOffChange(!teamModeOff)}
+                  >
+                    {teamModeText.label}
+                  </button>
+                  <button
                     type="submit"
                     disabled={!sendable}
                     aria-label="发送"
@@ -1993,9 +2045,15 @@ export function WebuiClientFoundationApp({
   const [creating, setCreating] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [draft, setDraft] = useState("");
+  const [teamModeOff, setTeamModeOff] = useState(readTeamModeOff);
+  const [teamModeChoices, setTeamModeChoices] =
+    useState<TeamModeSessionChoices>(readTeamModeSessionChoices);
   const [pageError, setPageError] = useState<string | undefined>();
   const createHintId = useId();
   const createFormRef = useRef<HTMLFormElement | null>(null);
+  useEffect(() => {
+    writeTeamModeOff(teamModeOff);
+  }, [teamModeOff]);
   // Opening the form answers "send with nowhere to send". Bring it into view: it
   // renders below the composer, and on a short window it lands under the fold,
   // where it reads as the button having done nothing.
@@ -2054,6 +2112,7 @@ export function WebuiClientFoundationApp({
           const result = await createSession({
             name: String(form.get("name") ?? "").trim(),
             workspaceDir: String(form.get("workspaceDir") ?? "").trim(),
+            teamModeOff,
           });
           const id = createdSessionId(result);
           if (!id)
@@ -2062,6 +2121,8 @@ export function WebuiClientFoundationApp({
             );
           setSelectedSessionId(id);
           setCreateOpen(false);
+          writeTeamModeSessionChoice(id, teamModeOff);
+          setTeamModeChoices((current) => ({ ...current, [id]: teamModeOff }));
           // The rail lists the shared history as it was at page load, so a session
           // created here would not show up until a reload.
           if (loadSessions)
@@ -2088,8 +2149,30 @@ export function WebuiClientFoundationApp({
     : undefined;
 
   const homeMode = !selectedSessionId;
+  const selectedSession = page.sessions.find(
+    (session) => session.sessionId === selectedSessionId,
+  );
+  const childSessions = selectedSessionId
+    ? page.sessions.filter(
+        (session) => session.parentSessionId === selectedSessionId,
+      )
+    : [];
+  const composerTeamModeOff = selectedSessionId
+    ? teamModeChoices[selectedSessionId] ?? teamModeOff
+    : teamModeOff;
+  const composerTeamModeLocked = selectedSession
+    ? isTeamModeLocked(
+        {
+          id: selectedSession.sessionId,
+          teamModeOff: composerTeamModeOff,
+        },
+        (sessionId) =>
+          sessionId === selectedSession.sessionId ? childSessions : [],
+      )
+    : false;
 
   return (
+    <ArchonShell>
     <div data-webui-shell="two-column" className="w-full h-screen relative">
       <div className="relative flex h-screen overflow-hidden bg-bg_grouped_secondary">
         <div className="pointer-events-none absolute inset-x-0 top-0 z-[50] h-[46px]" />
@@ -2097,6 +2180,11 @@ export function WebuiClientFoundationApp({
         <div className="contents">
           {/* -------------------------------------------------------------- rail */}
           <div className="relative h-full min-h-0 flex-shrink-0">
+            <LeftRail
+              sessions={page.sessions}
+              activeSessionId={selectedSessionId}
+              onNew={() => setCreateOpen((open) => !open)}
+            >
             <aside
               aria-label="Primary navigation"
               data-webui-shell-region="rail"
@@ -2188,6 +2276,7 @@ export function WebuiClientFoundationApp({
                     onLoadMore={loadMore}
                     selectedSessionId={selectedSessionId}
                     error={pageError}
+                    teamModeChoices={teamModeChoices}
                   />
                 </div>
                 <div
@@ -2225,6 +2314,7 @@ export function WebuiClientFoundationApp({
                 </div>
               </div>
             </aside>
+            </LeftRail>
           </div>
 
           <div
@@ -2278,6 +2368,7 @@ export function WebuiClientFoundationApp({
                     </div>
                   )}
 
+                  <Composer>
                   <WebuiComposer
                     sessionId={selectedSessionId}
                     agentName={selectedAgentName}
@@ -2301,7 +2392,23 @@ export function WebuiClientFoundationApp({
                     draft={draft}
                     onDraftChange={setDraft}
                     onNeedsSession={() => setCreateOpen(true)}
+                    teamModeOff={composerTeamModeOff}
+                    teamModeLocked={composerTeamModeLocked}
+                    onTeamModeOffChange={(nextTeamModeOff) => {
+                      setTeamModeOff(nextTeamModeOff);
+                      if (selectedSessionId) {
+                        setTeamModeChoices((current) => ({
+                          ...current,
+                          [selectedSessionId]: nextTeamModeOff,
+                        }));
+                        writeTeamModeSessionChoice(
+                          selectedSessionId,
+                          nextTeamModeOff,
+                        );
+                      }
+                    }}
                   />
+                  </Composer>
 
                   {createOpen && submitCreate ? (
                     <form
@@ -2362,10 +2469,12 @@ export function WebuiClientFoundationApp({
                   {homeMode ? <WebuiRecommendationChips /> : null}
 
                   {selectedSessionId && loadMessages ? (
+                    <Transcript>
                     <WebuiSessionTranscript
                       sessionId={selectedSessionId}
                       loadMessages={loadMessages}
                     />
+                    </Transcript>
                   ) : null}
                 </div>
               </div>
@@ -2374,6 +2483,7 @@ export function WebuiClientFoundationApp({
         </div>
       </div>
     </div>
+    </ArchonShell>
   );
 }
 

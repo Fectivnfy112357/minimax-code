@@ -2967,6 +2967,14 @@
       "homepage": "https://github.com/lukeapage/pngjs"
     },
     {
+      "name": "postcss-import",
+      "versions": [
+        "15.1.0"
+      ],
+      "license": "MIT",
+      "homepage": "https://github.com/postcss/postcss-import"
+    },
+    {
       "name": "postcss",
       "versions": [
         "8.5.28"

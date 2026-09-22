@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { WebuiClientSession } from "../app.js";
 
 export const WEBUI_SESSION_OVERLAY_KEYS = {
@@ -26,13 +27,16 @@ export function toggleSessionOverlay(kind: WebuiSessionOverlay, sessionId: strin
 
 const DESKTOP_ONLY_ENTRIES = ["Schedules", "Plugins / Skill marketplace", "Websites", "Remote control", "Maxclaw", "Maxhermes"];
 
-export function LeftRail({ sessions, activeSessionId, onSelect, onNew, onSettings }: {
+export function LeftRail({ sessions, activeSessionId, onSelect, onNew, onSettings, children }: {
   readonly sessions: readonly WebuiClientSession[];
   readonly activeSessionId?: string;
   readonly onSelect?: (id: string) => void;
   readonly onNew?: () => void;
   readonly onSettings?: () => void;
+  readonly children?: ReactNode;
 }) {
+  if (children)
+    return <div data-webui-component="left-rail" className="contents">{children}</div>;
   return <div className="flex min-h-0 flex-1 flex-col gap-spacing_16">
     <button className="webui-button-primary" onClick={onNew}>New session</button>
     <nav className="grid gap-1" aria-label="Desktop navigation">

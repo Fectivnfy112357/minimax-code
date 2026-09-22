@@ -55,10 +55,6 @@ export interface WebuiStreamLoopSink {
   readonly refuse: (reason: string, options?: { transcriptIncomplete?: boolean }) => void;
 }
 
-/** Projected event state is carried alongside stream frames by the server;
- * keeping it on the frame lets the browser reducer consume the same state
- * without importing server-only projection modules. */
-
 /**
  * Snapshot of the first sink callback failure, kept so the loop can
  * commit a refusal (or the fallback diagnostic) and skip the normal

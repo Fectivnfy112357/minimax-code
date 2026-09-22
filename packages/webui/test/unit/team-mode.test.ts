@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { readSessionOverlay, toggleSessionOverlay } from "../../src/client/components/LeftRail.js";
+import {
+  isTeamModeLocked,
+  readTeamModeOff,
+  writeTeamModeOff,
+} from "../../src/client/team-mode.js";
 
 function createMemoryLocalStorage(): Storage {
   const values = new Map<string, string>();
@@ -17,15 +22,28 @@ beforeEach(() => {
   globalThis.localStorage = createMemoryLocalStorage();
 });
 
-function isTeamModeLocked(session: { readonly teamModeOff?: boolean; readonly childSessionCount: number }): boolean {
-  return session.teamModeOff === false || session.childSessionCount > 0;
-}
-
 describe("team mode lock contract", () => {
   it("locks when team mode is explicitly off or child sessions exist", () => {
-    expect(isTeamModeLocked({ teamModeOff: false, childSessionCount: 0 })).toBe(true);
-    expect(isTeamModeLocked({ teamModeOff: true, childSessionCount: 1 })).toBe(true);
-    expect(isTeamModeLocked({ teamModeOff: true, childSessionCount: 0 })).toBe(false);
+    const children = new Map([["with-child", [{ id: "child-1" }]]]);
+    const getChildSessions = (id: string) => children.get(id) ?? [];
+    expect(
+      isTeamModeLocked({ id: "off", teamModeOff: false }, getChildSessions),
+    ).toBe(true);
+    expect(
+      isTeamModeLocked({ id: "with-child", teamModeOff: true }, getChildSessions),
+    ).toBe(true);
+    expect(
+      isTeamModeLocked({ id: "free", teamModeOff: true }, getChildSessions),
+    ).toBe(false);
+  });
+
+  it("round-trips the create-time choice through mavis-team-mode", () => {
+    localStorage.clear();
+    expect(readTeamModeOff()).toBe(true);
+    writeTeamModeOff(false);
+    expect(readTeamModeOff()).toBe(false);
+    writeTeamModeOff(true);
+    expect(readTeamModeOff()).toBe(true);
   });
 
   it("uses isolated v1 localStorage overlays for session row state", () => {

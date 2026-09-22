@@ -118,6 +118,7 @@ export function createWebuiTransport({
   getAccountStatus: (request?: {
     readonly sessionId?: string;
   }) => Promise<Record<string, unknown>>;
+  signOut: () => Promise<{ readonly success?: boolean }>;
   runCommand: (request: {
     readonly command: "help" | "new" | "compact" | "status" | "usage" | "model";
     readonly input?: string;
@@ -320,6 +321,7 @@ export function createWebuiTransport({
     selectModel: (body) => request("selectModel", body),
     getSessionUsage: (body) => request("getSessionUsage", body),
     getAccountStatus: (body) => request("getAccountStatus", body ?? {}),
+    signOut: () => request("signOut", {}),
     runCommand: (body) => request("runCommand", body),
   };
 }

@@ -58,6 +58,7 @@ export const WebuiErrorCode = {
   payloadTooLarge: "payload_too_large",
   unknownOperation: "unknown_operation",
   invalidBody: "invalid_body",
+  runtimeRejected: "runtime_rejected",
   harnessError: "harness_error",
   shuttingDown: "shutting_down",
 } as const;

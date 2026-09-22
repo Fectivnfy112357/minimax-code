@@ -245,6 +245,7 @@ export interface WebuiRuntimeHost {
   /** The exact options the assembly forwarded to the factory. */
   readonly forwardedOptions: WebuiForwardedRuntimeHostOptions;
   readonly mcodeTools: WebuiMcodeToolsReadiness;
+  readonly invalidateAuth: () => void;
 }
 
 /**
@@ -403,8 +404,17 @@ export async function createWebuiRuntimeHost(
     if (failures.length === 1) throw failures[0];
     throw new AggregateError(failures, "WebUI runtime startup failed");
   }
-  const harnessPort = createHarnessPortFromHost(host);
-  return { harnessPort, host, forwardedOptions, mcodeTools };
+  const harnessPort = createHarnessPortFromHost({
+    ...host,
+    invalidateAuth: authContext.invalidator,
+  });
+  return {
+    harnessPort,
+    host,
+    forwardedOptions,
+    mcodeTools,
+    invalidateAuth: authContext.invalidator,
+  };
 }
 
 /**

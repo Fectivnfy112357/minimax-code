@@ -1,9 +1,82 @@
 import { defineConfig } from "vite";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const serverPort = Number(process.env.WEBUI_SERVER_PORT ?? 8787);
+const webuiRoot = path.dirname(fileURLToPath(import.meta.url));
+const clientRoot = path.join(webuiRoot, "src", "client");
+const stylesheetPath = path.resolve(webuiRoot, "..", "..", "dist-webui", "client", "styles.css");
+
+function webuiRuntimePlugin() {
+  return {
+    name: "webui-runtime-config-and-assets",
+    transformIndexHtml(html: string) {
+      return {
+        html,
+        tags: [
+          {
+            tag: "script",
+            children:
+              "window.__WEBUI_CONFIG__={websocketUrl:`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`,token:''};",
+            injectTo: "head-prepend",
+          },
+        ],
+      };
+    },
+    configureServer(server: {
+      middlewares: { use: (handler: (...args: never[]) => void) => void };
+    }) {
+      server.middlewares.use(async (request, response, next) => {
+        const pathname = request.url?.split("?", 1)[0] ?? "";
+        if (pathname === "/styles.css") {
+          try {
+            response.statusCode = 200;
+            response.setHeader("Content-Type", "text/css; charset=utf-8");
+            response.setHeader("Cache-Control", "no-store");
+            response.end(await readFile(stylesheetPath));
+          } catch {
+            next();
+          }
+          return;
+        }
+        const prefix = pathname.startsWith("/assets/")
+          ? "/assets/"
+          : pathname.startsWith("/fonts/")
+            ? "/fonts/"
+            : undefined;
+        if (!prefix) {
+          next();
+          return;
+        }
+        const relative = pathname.slice(prefix.length);
+        if (!relative || relative.includes("\\") || relative.split("/").includes("..")) {
+          next();
+          return;
+        }
+        try {
+          const sourceRoot =
+            prefix === "/fonts/"
+              ? path.join(clientRoot, "assets", "fonts", "katex")
+              : path.join(clientRoot, "assets");
+          const file = await readFile(path.join(sourceRoot, relative));
+          response.statusCode = 200;
+          response.setHeader("Cache-Control", "no-store");
+          response.end(file);
+        } catch {
+          next();
+        }
+      });
+    },
+  };
+}
 
 export default defineConfig({
   root: "src/client",
+  esbuild: {
+    jsx: "automatic",
+  },
+  plugins: [webuiRuntimePlugin()],
   server: {
     port: Number(process.env.WEBUI_VITE_PORT ?? 5173),
     proxy: {

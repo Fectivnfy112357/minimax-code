@@ -1097,13 +1097,14 @@ describe("WebUI service", () => {
       const created = await request("req-create", {
         name: " main ",
         workspaceDir: ` ${workspaceDir} `,
+        teamModeOff: false,
         ignored: true,
       });
       expect(
         (created as { body: { session: { sessionId: string } } }).body.session
           .sessionId,
       ).toBe("created-session");
-      expect(calls).toEqual([{ name: "main", workspaceDir }]);
+      expect(calls).toEqual([{ name: "main", workspaceDir, teamModeOff: false }]);
       const relative = await request("req-create-relative", {
         name: "main",
         workspaceDir: "relative",

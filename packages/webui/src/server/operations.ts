@@ -28,7 +28,11 @@ import type {
   WebuiQuestionnaireAnswer,
 } from "./port.js";
 import { runWebuiCommand } from "./commands/runner.js";
-import { projectEventStream } from "./projections/index.js";
+import {
+  projectContextSnapshot,
+  projectSessionStream,
+  projectUsage,
+} from "./projections/index.js";
 
 export interface WebuiOperationContext {
   readonly requestId: string;
@@ -90,6 +94,7 @@ const SELECT_MODEL_OPERATION_NAME = "selectModel" as const;
 const GET_SESSION_USAGE_OPERATION_NAME = "getSessionUsage" as const;
 const GET_ACCOUNT_STATUS_OPERATION_NAME = "getAccountStatus" as const;
 const RUN_COMMAND_OPERATION_NAME = "runCommand" as const;
+const SIGN_OUT_OPERATION_NAME = "signOut" as const;
 
 type VersionRequestBody = undefined;
 
@@ -209,7 +214,25 @@ function validateCreateSessionRequestBody(
       message: "workspaceDir must be an existing directory",
     };
   }
-  return { ok: true, body: { name, workspaceDir } };
+  if (
+    candidate.teamModeOff !== undefined &&
+    typeof candidate.teamModeOff !== "boolean"
+  )
+    return {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: "teamModeOff must be a boolean",
+    };
+  return {
+    ok: true,
+    body: {
+      name,
+      workspaceDir,
+      ...(candidate.teamModeOff === undefined
+        ? {}
+        : { teamModeOff: candidate.teamModeOff }),
+    },
+  };
 }
 
 export const createSessionOperation: WebuiOperation<
@@ -901,6 +924,15 @@ export const runCommandOperation: WebuiOperation<
   },
 };
 
+export const signOutOperation: WebuiOperation<Record<string, never>, { readonly success: true }> = {
+  name: SIGN_OUT_OPERATION_NAME,
+  validate: (body) => {
+    if (body === null || typeof body !== "object" || Array.isArray(body) || Object.keys(body).length !== 0)
+      return { ok: false, code: WebuiErrorCode.invalidBody, message: "signOut body must be an empty object" };
+    return { ok: true, body: {} };
+  },
+};
+
 export interface WebuiOperationRegistryEntry {
   readonly operation: WebuiOperation;
   readonly handle: WebuiOperationHandler<unknown>;
@@ -942,6 +974,7 @@ export function createOperationRegistry(
     | "getSessionUsage"
     | "getAccountStatus"
     | "requestCompaction"
+    | "invalidateAuth"
   >,
 ): ReadonlyMap<string, WebuiOperationRegistryEntry> {
   const registry = new Map<string, WebuiOperationRegistryEntry>();
@@ -992,11 +1025,19 @@ export function createOperationRegistry(
     handle: async (_context, body) => ({ body: await runWebuiCommand(port, body) }),
   });
   registerOperation(registry, {
+    operation: signOutOperation,
+    handle: async () => {
+      if (!port.invalidateAuth) throw new Error("auth invalidation is unavailable");
+      await port.invalidateAuth();
+      return { body: { success: true as const } };
+    },
+  });
+  registerOperation(registry, {
     operation: watchEventsOperation,
     handle: (context) => ({
       stream: {
         ok: true,
-        source: projectEventStream(port.watchEvents(context.signal)),
+        source: port.watchEvents(context.signal),
       },
     }),
   });
@@ -1040,7 +1081,26 @@ export function createOperationRegistry(
   });
   registerOperation(registry, {
     operation: getMessagesOperation,
-    handle: async (_context, body) => ({ body: await port.getMessages(body) }),
+    handle: async (_context, body) => {
+      const result = await port.getMessages(body);
+      const messages = result.messages ?? [];
+      const turnId =
+        [...messages].reverse().find((message) => message.turnId)?.turnId ?? "";
+      return {
+        body: {
+          ...result,
+          contextSnapshot: projectContextSnapshot({
+            active: false,
+            messages: messages.map((message) => ({
+              kind: message.kind,
+              timestamp: message.timestamp,
+              rawJson: JSON.stringify(message),
+            })),
+          }) as unknown as Record<string, unknown>,
+          usage: projectUsage(messages, turnId),
+        },
+      };
+    },
   });
   registerOperation(registry, {
     operation: listSessionsOperation,
@@ -1048,9 +1108,14 @@ export function createOperationRegistry(
   });
   registerOperation(registry, {
     operation: sendMessageOperation,
-    handle: async (context, body) => ({
-      stream: await port.sendMessage(body, context.signal),
-    }),
+    handle: async (context, body) => {
+      const stream = await port.sendMessage(body, context.signal);
+      return {
+        stream: stream.ok
+          ? { ...stream, source: projectSessionStream(stream.source) }
+          : stream,
+      };
+    },
   });
   registerOperation(registry, {
     operation: enqueueMessageOperation,
@@ -1060,9 +1125,14 @@ export function createOperationRegistry(
   });
   registerOperation(registry, {
     operation: resumeSessionOperation,
-    handle: async (context, body) => ({
-      stream: await port.resumeSession(body, context.signal),
-    }),
+    handle: async (context, body) => {
+      const stream = await port.resumeSession(body, context.signal);
+      return {
+        stream: stream.ok
+          ? { ...stream, source: projectSessionStream(stream.source) }
+          : stream,
+      };
+    },
   });
   return registry;
 }

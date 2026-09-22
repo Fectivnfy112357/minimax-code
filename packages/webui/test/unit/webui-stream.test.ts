@@ -439,4 +439,24 @@ describe("WebUI Markdown", () => {
     expect(html).toContain("const a");
     expect(html).not.toContain("dangerously");
   });
+
+  it("renders math code fences with KaTeX and leaves currency prose alone", () => {
+    const mathHtml = renderToStaticMarkup(
+      createElement(WebuiMarkdown, { source: "```math\nx^2 + 1\n```" }),
+    );
+    expect(mathHtml).toContain("webui-math-block");
+    expect(mathHtml).toContain("katex");
+
+    const currencyHtml = renderToStaticMarkup(
+      createElement(WebuiMarkdown, { source: "Prices are $5 and $10." }),
+    );
+    expect(currencyHtml).not.toContain("webui-math");
+    expect(currencyHtml).toContain("$5 and $10");
+
+    const inlineMathHtml = renderToStaticMarkup(
+      createElement(WebuiMarkdown, { source: "The result is $x^2$." }),
+    );
+    expect(inlineMathHtml).toContain("webui-math");
+    expect(inlineMathHtml).toContain("katex");
+  });
 });

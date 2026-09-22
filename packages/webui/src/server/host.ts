@@ -39,6 +39,7 @@ export interface WebuiRuntimeHostHandle {
   readonly apiHost: { close(): Promise<void> };
   readonly appVersion?: string;
   readonly dataDir?: string;
+  readonly invalidateAuth?: () => void;
   readonly cliService?: {
     listSessions(
       request: WebuiSessionListRequest,
@@ -139,11 +140,15 @@ export function createHarnessPortFromHost(
   const version: WebuiVersionInfo = {
     version: host.appVersion ?? "unknown",
     protocolVersion: WEBUI_PROTOCOL_VERSION,
+    ...(host.dataDir ? { dataDir: host.dataDir } : {}),
   };
   let closed = false;
   return {
     version() {
       return version;
+    },
+    async invalidateAuth() {
+      host.invalidateAuth?.();
     },
     async listSessions(request) {
       if (!host.cliService)

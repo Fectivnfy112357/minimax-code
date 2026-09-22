@@ -1,10 +1,58 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { projectContextSnapshot } from "../../src/server/projections/context-snapshot.js";
+import {
+  projectContextSnapshot,
+  projectUsage,
+} from "../../src/server/projections/index.js";
 import { reduceEvents } from "../../src/server/projections/index.js";
-import { isTurnCompactionMessage, projectUsage } from "../../src/server/projections/usage.js";
+import { isTurnCompactionMessage } from "../../src/server/projections/usage.js";
+
+interface CorpusFixture {
+  readonly frame: { readonly eventJson: string };
+  readonly expected: Record<string, unknown>;
+}
+
+function fixture(name: string): CorpusFixture {
+  return JSON.parse(
+    readFileSync(
+      new URL(
+        `../../../local-runtime-v2/test/fixtures/event-corpus/${name}.json`,
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  ) as CorpusFixture;
+}
+
+function event(fixtureValue: CorpusFixture) {
+  return JSON.parse(fixtureValue.frame.eventJson) as {
+    readonly type: string;
+    readonly timestamp: number;
+    readonly source: string;
+    readonly payload: Record<string, unknown>;
+  };
+}
 
 describe("WebUI event projections", () => {
-  it("projects compaction, permission and questionnaire events", () => {
+  it("consumes the shared corpus for compaction and interactions", () => {
+    const ask = event(fixture("permission.ask"));
+    const questionnaire = event(fixture("questionnaire.ask"));
+    const compaction = event(fixture("compaction.completed"));
+    let state = reduceEvents(undefined, ask);
+    state = reduceEvents(state, questionnaire);
+    state = reduceEvents(state, compaction);
+    expect(state.sessions.s1?.permissions[0]?.requestId).toBe(
+      fixture("permission.ask").expected.permissionRequestId,
+    );
+    expect(state.sessions.s1?.questionnaire?.requestId).toBe(
+      fixture("questionnaire.ask").expected.questionnaireRequestId,
+    );
+    expect(state.compactionBySession.s1).toEqual(
+      fixture("compaction.completed").expected.compaction,
+    );
+  });
+
+  it("buckets interleaved permission and questionnaire state by session", () => {
     let state = reduceEvents(undefined, {
       type: "permission.ask",
       timestamp: 1,
@@ -12,56 +60,106 @@ describe("WebUI event projections", () => {
       payload: { sessionId: "s1", requestId: "p1" },
     });
     state = reduceEvents(state, {
+      type: "permission.ask",
+      timestamp: 2,
+      source: "fixture",
+      payload: { sessionId: "s2", requestId: "p2" },
+    });
+    state = reduceEvents(state, {
+      type: "questionnaire.ask",
+      timestamp: 3,
+      source: "fixture",
+      payload: { sessionId: "s1", requestId: "q1" },
+    });
+    state = reduceEvents(state, {
+      type: "questionnaire.ask",
+      timestamp: 4,
+      source: "fixture",
+      payload: { sessionId: "s2", requestId: "q2" },
+    });
+    state = reduceEvents(state, {
+      type: "questionnaire.dismiss",
+      timestamp: 5,
+      source: "fixture",
+      payload: { sessionId: "s1", requestId: "q1" },
+    });
+    expect(state.sessions.s1?.permissions).toHaveLength(1);
+    expect(state.sessions.s2?.permissions).toHaveLength(1);
+    expect(state.sessions.s1?.questionnaire).toBeUndefined();
+    expect(state.sessions.s2?.questionnaire?.requestId).toBe("q2");
+  });
+
+  it("drops session-less interaction events and ignores mismatched dismissals", () => {
+    let state = reduceEvents(undefined, {
+      type: "permission.ask",
+      timestamp: 1,
+      source: "fixture",
+      payload: { requestId: "orphan" },
+    });
+    state = reduceEvents(state, {
       type: "questionnaire.ask",
       timestamp: 2,
       source: "fixture",
-      payload: { sessionId: "s1", id: "q1" },
+      payload: { sessionId: "s1", requestId: "q1" },
     });
     state = reduceEvents(state, {
-      type: "session.compaction.completed",
+      type: "questionnaire.dismiss",
       timestamp: 3,
       source: "fixture",
-      payload: { sessionId: "s1" },
+      payload: { sessionId: "s1", requestId: "other" },
     });
-    expect(state.permissions).toHaveLength(1);
-    expect(state.questionnaire?.id).toBe("q1");
-    expect(state.compaction?.state).toBe("completed");
+    expect(state.sessions).toEqual({
+      s1: { permissions: [], questionnaire: { sessionId: "s1", requestId: "q1" } },
+    });
   });
 
-  it("resolves permission and questionnaire state", () => {
-    let state = reduceEvents(undefined, {
-      type: "permission.ask", timestamp: 1, source: "fixture", payload: { requestId: "p1" },
-    });
-    state = reduceEvents(state, {
-      type: "permission.resolved", timestamp: 2, source: "fixture", payload: { requestId: "p1" },
-    });
-    expect(state.permissions).toEqual([]);
-    state = reduceEvents(state, {
-      type: "questionnaire.ask", timestamp: 3, source: "fixture", payload: { id: "q1" },
-    });
-    state = reduceEvents(state, {
-      type: "questionnaire.dismiss", timestamp: 4, source: "fixture", payload: { id: "q1" },
-    });
-    expect(state.questionnaire).toBeUndefined();
-  });
-
-  it("does not count compaction messages in usage", () => {
-    expect(isTurnCompactionMessage({ role: "assistant", kind: "compaction", turnId: "t1" }, "t1")).toBe(true);
-    expect(projectUsage([
-      { role: "assistant", turnId: "t1", kind: "compaction", usage: { totalTokens: 100 } },
-      { role: "assistant", turnId: "t1", usage: { totalTokens: 20, inputTokens: 10 } },
-    ], "t1")).toEqual({ totalTokens: 20, inputTokens: 10 });
+  it("projects usage from completed message fixtures, not a wire event", () => {
+    const messages = [
+      {
+        role: "assistant",
+        turnId: "t1",
+        kind: "compaction",
+        usage: { totalTokens: 100 },
+      },
+      {
+        role: "assistant",
+        turnId: "t1",
+        usage: { totalTokens: 20, inputTokens: 10 },
+      },
+    ];
+    expect(
+      isTurnCompactionMessage(
+        { role: "assistant", kind: "compaction", turnId: "t1" },
+        "t1",
+      ),
+    ).toBe(true);
+    expect(
+      projectUsage(
+        messages,
+        "t1",
+      ),
+    ).toEqual({ totalTokens: 20, inputTokens: 10 });
   });
 
   it("projects the latest context usage and compaction state", () => {
-    expect(projectContextSnapshot({
-      active: false,
-      messages: [
-        { kind: "compaction_start", timestamp: 1 },
-        { kind: "compaction", timestamp: 2 },
-        { rawJson: JSON.stringify({ contextUsage: { contextWindowTokens: 100, usedTokens: 40 } }) },
-      ],
-    })).toMatchObject({ status: "live", window: 100, usedTokens: 40, compaction: { state: "completed" } });
+    expect(
+      projectContextSnapshot({
+        active: false,
+        messages: [
+          { kind: "compaction_start", timestamp: 1 },
+          { kind: "compaction", timestamp: 2 },
+          {
+            rawJson: JSON.stringify({
+              contextUsage: { contextWindowTokens: 100, usedTokens: 40 },
+            }),
+          },
+        ],
+      }),
+    ).toMatchObject({
+      status: "live",
+      window: 100,
+      usedTokens: 40,
+      compaction: { state: "completed" },
+    });
   });
 });
-

@@ -9,6 +9,7 @@
   },
   "scripts": {
     "dev": "vite",
+    "predev": "pnpm build:styles",
     "dev:server": "node ../../scripts/run-webui-server.mjs",
     "typecheck:server": "tsc -p tsconfig.server.json --noEmit",
     "typecheck:client": "tsc -p tsconfig.client.json --noEmit",
