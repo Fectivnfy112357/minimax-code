@@ -44,6 +44,7 @@ import {
   WebuiIconSchedule,
   WebuiIconSearch,
   WebuiIconSidebarToggle,
+  WebuiIconFile,
   WebuiIconSend,
   WebuiIconSites,
 } from "./icons.js";
@@ -129,7 +130,8 @@ export type WebuiClientMessageLoader = (request: {
 
 export interface WebuiClientCreateSessionRequest {
   readonly name: string;
-  readonly workspaceDir: string;
+  /** Optional: absent means "use the default workspace" (harness resolves it). */
+  readonly workspaceDir?: string;
   readonly teamModeOff?: boolean;
 }
 export interface WebuiClientCreateSessionResult {
@@ -331,67 +333,208 @@ function toolCallInputText(tool: Record<string, unknown>): string | undefined {
   }
 }
 
-function WebuiToolResults({
+const WEBUI_EDIT_TOOL_LABELS: ReadonlySet<string> = new Set([
+  "写入文件",
+  "编辑文件",
+]);
+
+function isWebuiEditTool(tool: Record<string, unknown>): boolean {
+  return WEBUI_EDIT_TOOL_LABELS.has(toolCallLabel(tool));
+}
+
+/** Best-effort file name + +N/-N stat for an edit tool (desktop diff card). */
+function webuiEditFileStat(tool: Record<string, unknown>): {
+  readonly name?: string;
+  readonly added: number;
+  readonly deleted: number;
+} {
+  const input = toolCallInputText(tool) ?? "";
+  const result = toolCallResultText(tool) ?? "";
+  let path: unknown;
+  try {
+    const parsed: unknown = JSON.parse(input);
+    if (parsed && typeof parsed === "object") {
+      const record = parsed as Record<string, unknown>;
+      path = record.file_path ?? record.filePath ?? record.path ?? record.file;
+    }
+  } catch {
+    if (/^[\w./~-]+\.[\w]+$/u.test(input.trim())) path = input.trim();
+  }
+  const name =
+    typeof path === "string" && path.trim()
+      ? (path.split(/[\\/]/u).pop() ?? path.trim())
+      : undefined;
+  let added = 0;
+  let deleted = 0;
+  for (const line of result.split("\n")) {
+    if (line.startsWith("+++") || line.startsWith("---")) continue;
+    if (line.startsWith("+")) added += 1;
+    else if (line.startsWith("-")) deleted += 1;
+  }
+  return { ...(name ? { name } : {}), added, deleted };
+}
+
+function WebuiToolRow({
+  tool,
+  index,
+}: {
+  readonly tool: Record<string, unknown>;
+  readonly index: number;
+}): ReactElement {
+  const input = toolCallInputText(tool);
+  const result = toolCallResultText(tool);
+  const detail = result ?? input;
+  const status = tool.status ?? tool.tool_call_status ?? tool.toolCallStatus;
+  const statusLabel =
+    typeof status === "string" && status.trim() ? ` · ${status}` : "";
+  return (
+    <details
+      key={`tool-call-${toolCallName(tool)}-${index}`}
+      className="webui-tool-row"
+      data-webui-tool-call={toolCallName(tool)}
+    >
+      <summary className="webui-tool-row-summary">
+        <span className="webui-tool-icon" aria-hidden="true">
+          ↳
+        </span>
+        <span className="webui-tool-label">
+          {toolCallLabel(tool)}
+          {statusLabel}
+        </span>
+        <WebuiIconChevronDown className="webui-tool-chevron" />
+      </summary>
+      {detail ? (
+        <div className="webui-tool-detail" data-webui-tool-result="true">
+          <pre>{detail}</pre>
+        </div>
+      ) : null}
+    </details>
+  );
+}
+
+/** Desktop's `已编辑 N 个文件` card: file rows with +N/-N stats, a collapse
+ * control, then the remaining tool steps in the same card. */
+export function WebuiToolResults({
   tools,
 }: {
   readonly tools: readonly Record<string, unknown>[];
 }): ReactElement | null {
+  const [expanded, setExpanded] = useState(false);
+  const edits = tools.filter(isWebuiEditTool);
+  const others = tools.filter((tool) => !isWebuiEditTool(tool));
+  const renderRows = (rows: readonly Record<string, unknown>[]) =>
+    rows.map((tool, index) => (
+      <WebuiToolRow
+        key={`tool-call-${toolCallName(tool)}-${index}`}
+        tool={tool}
+        index={index}
+      />
+    ));
+  if (edits.length === 0) {
+    return (
+      <div className="webui-tool-list" data-webui-tool-list="true">
+        {renderRows(tools)}
+      </div>
+    );
+  }
+  const stats = edits.map(webuiEditFileStat);
+  const totalAdded = stats.reduce((sum, stat) => sum + stat.added, 0);
+  const totalDeleted = stats.reduce((sum, stat) => sum + stat.deleted, 0);
+  const shown = expanded ? stats : stats.slice(0, 3);
   return (
-    <div className="webui-tool-list" data-webui-tool-list="true">
-      {tools.map((tool, index) => {
-        const input = toolCallInputText(tool);
-        const result = toolCallResultText(tool);
-        const detail = result ?? input;
-        const status = tool.status ?? tool.tool_call_status ?? tool.toolCallStatus;
-        const statusLabel =
-          typeof status === "string" && status.trim() ? ` · ${status}` : "";
-        return (
-          <details
-            key={`tool-call-${toolCallName(tool)}-${index}`}
-            className="webui-tool-row"
-            data-webui-tool-call={toolCallName(tool)}
-          >
-            <summary className="webui-tool-row-summary">
-              <span className="webui-tool-icon" aria-hidden="true">
-                ↳
-              </span>
-              <span className="webui-tool-label">
-                {toolCallLabel(tool)}
-                {statusLabel}
-              </span>
-              <WebuiIconChevronDown className="webui-tool-chevron" />
-            </summary>
-            {detail ? (
-              <div className="webui-tool-detail" data-webui-tool-result="true">
-                <pre>{detail}</pre>
-              </div>
+    <div className="webui-diff-card" data-webui-diff-card="true">
+      <div className="webui-diff-header">
+        <span className="webui-diff-header-title" data-webui-diff-title="true">
+          {`已编辑 ${edits.length} 个文件`}
+        </span>
+        {totalAdded > 0 || totalDeleted > 0 ? (
+          <span className="webui-diff-header-stats">
+            {totalAdded > 0 ? (
+              <span className="webui-diff-add">{`+${totalAdded}`}</span>
             ) : null}
-          </details>
-        );
-      })}
+            {totalDeleted > 0 ? (
+              <span className="webui-diff-del">{`-${totalDeleted}`}</span>
+            ) : null}
+          </span>
+        ) : null}
+      </div>
+      <ul className="webui-diff-files">
+        {shown.map((stat, index) => (
+          <li
+            className="webui-diff-file"
+            key={`${stat.name ?? "file"}-${index}`}
+          >
+            <WebuiIconFile className="webui-diff-file-icon" />
+            <span className="webui-diff-file-name">{stat.name ?? "文件"}</span>
+            {stat.added > 0 || stat.deleted > 0 ? (
+              <span className="webui-diff-file-stats">
+                {stat.added > 0 ? (
+                  <span className="webui-diff-add">{`+${stat.added}`}</span>
+                ) : null}
+                {stat.deleted > 0 ? (
+                  <span className="webui-diff-del">{`-${stat.deleted}`}</span>
+                ) : null}
+              </span>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+      {stats.length > 3 ? (
+        <button
+          type="button"
+          className="webui-diff-expand"
+          data-webui-diff-expand="true"
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded ? "收起" : `展开其余 ${stats.length - 3} 个`}
+        </button>
+      ) : null}
+      {others.length > 0 ? (
+        <div className="webui-tool-list" data-webui-tool-list="true">
+          {renderRows(others)}
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function WebuiThinkingBlock({
+export function WebuiThinkingBlock({
   text,
   durationMs,
   streaming = false,
+  processingStartedAtMs,
 }: {
   readonly text: string;
   readonly durationMs?: number;
   readonly streaming?: boolean;
+  readonly processingStartedAtMs?: number;
 }): ReactElement | null {
+  const [, forceTick] = useState(0);
+  useEffect(() => {
+    if (!streaming) return undefined;
+    const timer = setInterval(() => forceTick((value) => value + 1), 1000);
+    return () => clearInterval(timer);
+  }, [streaming]);
   if (!text.trim()) return null;
-  const duration =
-    typeof durationMs === "number" && durationMs > 0
-      ? ` · ${(durationMs / 1000).toFixed(1)}s`
-      : "";
+  // Desktop `think-container`: a pulse dot + 推理中... with a live-second
+  // counter while streaming, collapsing to 已完成推理 + total seconds.
+  const elapsed = streaming
+    ? typeof processingStartedAtMs === "number"
+      ? Math.max(0, Math.floor((Date.now() - processingStartedAtMs) / 1000))
+      : undefined
+    : typeof durationMs === "number" && durationMs > 0
+      ? Math.max(1, Math.floor(durationMs / 1000))
+      : undefined;
   return (
-    <details className="webui-thinking-block" open={streaming || undefined}>
+    <details className="webui-thinking-block" data-webui-thinking-block="true">
       <summary className="webui-thinking-summary" data-webui-thinking="true">
-        <span>{streaming ? "思考中" : "思考完成"}</span>
-        {duration ? <span>{duration}</span> : null}
+        {streaming ? (
+          <span className="webui-thinking-indicator is-active" aria-hidden="true" />
+        ) : null}
+        <span>{streaming ? "推理中..." : "已完成推理"}</span>
+        {typeof elapsed === "number" && elapsed >= 1 ? (
+          <span className="webui-thinking-elapsed">{elapsed}s</span>
+        ) : null}
         <WebuiIconChevronDown className="webui-thinking-chevron" />
       </summary>
       <div className="webui-thinking-detail">
@@ -401,10 +544,34 @@ function WebuiThinkingBlock({
   );
 }
 
+/** Desktop `turn_process` row: 已执行 N 秒, ticking once per second. */
+export function TurnElapsedRow({
+  startedAtMs,
+  running,
+}: {
+  readonly startedAtMs: number;
+  readonly running: boolean;
+}): ReactElement | null {
+  const [, forceTick] = useState(0);
+  useEffect(() => {
+    if (!running) return undefined;
+    const timer = setInterval(() => forceTick((value) => value + 1), 1000);
+    return () => clearInterval(timer);
+  }, [running]);
+  const seconds = Math.floor((Date.now() - startedAtMs) / 1000);
+  if (seconds < 1) return null;
+  return (
+    <p className="webui-turn-elapsed" data-webui-turn-elapsed="true">
+      {running ? `已执行 ${seconds} 秒` : `共执行 ${seconds} 秒`}
+    </p>
+  );
+}
+
 function WebuiAssistantBody({
   messageId,
   thinking,
   thinkingDurationMs,
+  processingStartedAtMs,
   tools,
   answers,
   streaming = false,
@@ -412,6 +579,7 @@ function WebuiAssistantBody({
   readonly messageId: string;
   readonly thinking?: string;
   readonly thinkingDurationMs?: number;
+  readonly processingStartedAtMs?: number;
   readonly tools?: readonly Record<string, unknown>[];
   readonly answers: readonly string[];
   readonly streaming?: boolean;
@@ -426,6 +594,7 @@ function WebuiAssistantBody({
           text={thinking}
           durationMs={thinkingDurationMs}
           streaming={streaming}
+          processingStartedAtMs={processingStartedAtMs}
         />
       ) : null}
       {tools?.length ? <WebuiToolResults tools={tools} /> : null}
@@ -594,13 +763,17 @@ interface WebuiSessionRuntimeState {
   readonly sending: boolean;
 }
 
+const HOME_SESSION_RUNTIME_KEY = "__webui-home__";
+
 const sessionRuntimeStates = new Map<string, WebuiSessionRuntimeState>();
 const sessionRuntimeListeners = new Map<
   string,
   Set<(state: WebuiSessionRuntimeState) => void>
 >();
 
-function readSessionRuntimeState(sessionKey: string): WebuiSessionRuntimeState {
+export function readSessionRuntimeState(
+  sessionKey: string,
+): WebuiSessionRuntimeState {
   return (
     sessionRuntimeStates.get(sessionKey) ?? {
       stream: initialWebuiStreamState,
@@ -609,7 +782,7 @@ function readSessionRuntimeState(sessionKey: string): WebuiSessionRuntimeState {
   );
 }
 
-function updateSessionRuntimeState(
+export function updateSessionRuntimeState(
   sessionKey: string,
   update: (current: WebuiSessionRuntimeState) => WebuiSessionRuntimeState,
 ): void {
@@ -619,14 +792,40 @@ function updateSessionRuntimeState(
     listener(next);
 }
 
+/**
+ * Carry a session's live runtime state (stream + sending) to a new key and
+ * clear the source. The first turn starts streaming before the session
+ * exists — it writes to the home key — and `onSessionCreated` switches the
+ * view mid-turn; migrating keeps the in-flight stream on screen and leaves
+ * home clean so the next 新建任务 cannot replay the previous turn under the
+ * welcome hero. Listeners are not notified on purpose: the only subscriber
+ * is the view that is about to switch keys (its effect re-reads the target
+ * key), and the target key has no subscriber yet.
+ */
+export function migrateSessionRuntimeState(
+  fromKey: string,
+  toKey: string,
+): void {
+  if (fromKey === toKey) return;
+  const state = sessionRuntimeStates.get(fromKey);
+  sessionRuntimeStates.delete(fromKey);
+  if (state) sessionRuntimeStates.set(toKey, state);
+}
+
 function useSessionRuntimeState(sessionId: string | undefined): {
   readonly state: WebuiSessionRuntimeState;
   readonly setStream: WebuiComposerSubmitHandlers["setStream"];
   readonly setSending: (sending: boolean) => void;
 } {
-  const sessionKey = sessionId ?? "__webui-home__";
+  const sessionKey = sessionId ?? HOME_SESSION_RUNTIME_KEY;
   const [state, setState] = useState(() => readSessionRuntimeState(sessionKey));
+  // Writes follow the key that is currently on screen: the submit path
+  // captures these setters before the first-session switch, so the in-flight
+  // stream and the finish-time `setSending(false)` must land on the key the
+  // state was migrated to, not on the abandoned home key.
+  const sessionKeyRef = useRef(sessionKey);
   useEffect(() => {
+    sessionKeyRef.current = sessionKey;
     setState(readSessionRuntimeState(sessionKey));
     let listeners = sessionRuntimeListeners.get(sessionKey);
     if (!listeners) {
@@ -643,12 +842,12 @@ function useSessionRuntimeState(sessionId: string | undefined): {
   return {
     state,
     setStream: (update) =>
-      updateSessionRuntimeState(sessionKey, (current) => ({
+      updateSessionRuntimeState(sessionKeyRef.current, (current) => ({
         ...current,
         stream: update(current.stream),
       })),
     setSending: (sending) =>
-      updateSessionRuntimeState(sessionKey, (current) => ({
+      updateSessionRuntimeState(sessionKeyRef.current, (current) => ({
         ...current,
         sending,
       })),
@@ -1098,7 +1297,13 @@ export function groupWebuiTranscriptItems(
   const out: { messageId: string; items: WebuiTranscriptItem[] }[] = [];
   for (const item of items) {
     const last = out[out.length - 1];
-    if (last && last.messageId === item.messageId) last.items.push(item);
+    // A user line always opens its own block; everything else that follows
+    // merges into the open assistant block — the server splits one reply
+    // across several msg_ids (one per tool round) and desktop renders the
+    // whole turn as a single disclosure, not one block per msg_id.
+    const lastIsUser = last?.items[0]?.kind === "user";
+    if (last && !lastIsUser && item.kind !== "user") last.items.push(item);
+    else if (last && last.messageId === item.messageId) last.items.push(item);
     else out.push({ messageId: item.messageId, items: [item] });
   }
   return out;
@@ -1114,7 +1319,17 @@ export function WebuiSessionTranscript({
   const [page, setPage] = useState<WebuiClientMessagePage>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | undefined>();
+  const { stream } = useSessionRuntimeState(sessionId).state;
+  const streamPhase = stream.phase;
+  // One live column per turn: while the turn runs the composer renders it
+  // (including the in-flight user bubble), so skip loads; reload when the
+  // turn lands so the transcript takes over with the full history.
+  const turnLive =
+    streamPhase === "streaming" ||
+    streamPhase === "waiting" ||
+    streamPhase === "reconnecting";
   useEffect(() => {
+    if (turnLive) return undefined;
     let cancelled = false;
     setLoading(true);
     setError(undefined);
@@ -1132,7 +1347,10 @@ export function WebuiSessionTranscript({
     return () => {
       cancelled = true;
     };
-  }, [loadMessages, sessionId]);
+  }, [loadMessages, sessionId, streamPhase, turnLive]);
+  // During a live turn the server snapshot may already contain this turn's
+  // user line (first-load race) — hide it here so the composer's pending
+  // bubble is the only renderer while the turn runs.
   const items = useMemo(
     () => (page.messages ?? []).flatMap(projectWebuiMessage),
     [page.messages],
@@ -1228,13 +1446,18 @@ export function WebuiSessionTranscript({
                 </div>
               </div>
             );
-          const thinkingItem = group.items.find(
-            (item) => item.kind === "thinking",
+          const thinkingItems = group.items.filter(
+            (item): item is Extract<WebuiTranscriptItem, { text: string }> =>
+              item.kind === "thinking",
           );
-          const toolItem = group.items.find(
-            (item): item is Extract<WebuiTranscriptItem, { kind: "tool" }> =>
-              item.kind === "tool",
-          );
+          const tools = group.items
+            .filter(
+              (
+                item,
+              ): item is Extract<WebuiTranscriptItem, { kind: "tool" }> =>
+                item.kind === "tool",
+            )
+            .flatMap((item) => item.tools);
           const answers = group.items.filter(
             (item): item is Extract<WebuiTranscriptItem, { text: string }> =>
               item.kind === "assistant",
@@ -1249,16 +1472,12 @@ export function WebuiSessionTranscript({
               <WebuiAssistantBody
                 messageId={group.messageId}
                 thinking={
-                  thinkingItem?.kind === "thinking"
-                    ? thinkingItem.text
+                  thinkingItems.length > 0
+                    ? thinkingItems.map((item) => item.text).join("\n\n")
                     : undefined
                 }
-                thinkingDurationMs={
-                  thinkingItem?.kind === "thinking"
-                    ? thinkingItem.durationMs
-                    : undefined
-                }
-                tools={toolItem?.tools}
+                thinkingDurationMs={thinkingItems[0]?.durationMs}
+                tools={tools.length > 0 ? tools : undefined}
                 answers={answers.map((item) => item.text)}
               />
             </div>
@@ -1395,9 +1614,12 @@ export async function submitWebuiComposerTurn(
   const message = args.draft.trim();
   if (!message || (!args.deps.sendMessage && !args.enqueueMessage)) return;
   let sessionId = args.sessionId;
-  let createdSessionIdForTurn: string | undefined;
   if (!sessionId) {
-    if (!args.createSession || !args.createSessionWorkspaceDir) {
+    // No workspace is fine: the harness falls back to the default workspace
+    // (desktop's 不需要项目 / default-directory flows). Only bail when the
+    // session creator itself is not wired — that used to swallow the send
+    // silently whenever the folder pill was unset.
+    if (!args.createSession) {
       handlers.onNeedsSession?.(args.draft);
       return;
     }
@@ -1410,7 +1632,21 @@ export async function submitWebuiComposerTurn(
       sessionId = createdSessionId(result);
       if (!sessionId)
         throw new Error("createSession response did not include a session id");
-      createdSessionIdForTurn = sessionId;
+      // Seed the live state on the current (home) key first: setSelected
+      // has not flushed yet, so a later write would land on a stale key and
+      // drop the turn clock. onSessionCreated then migrates this state into
+      // the new session key. The user's line comes from the server's
+      // replayed `msg-user-*` frame — no second renderer.
+      handlers.setStream(() => ({
+        ...initialWebuiStreamState,
+        phase: "streaming",
+        processingStartedAtMs: Date.now(),
+      }));
+      // Enter the session view as soon as the session exists. Waiting for
+      // the stream to finish kept the welcome hero on screen while the
+      // first turn rendered underneath it (the first message showed on
+      // the new-task page until the reply completed).
+      handlers.onSessionCreated?.(sessionId);
     } catch (error) {
       handlers.setStream((current) => ({
         ...current,
@@ -1431,7 +1667,6 @@ export async function submitWebuiComposerTurn(
         refusal: error instanceof Error ? error.message : String(error),
       }));
     }
-    if (createdSessionIdForTurn) handlers.onSessionCreated?.(createdSessionIdForTurn);
     return;
   }
   if (!args.deps.sendMessage) return;
@@ -1445,6 +1680,7 @@ export async function submitWebuiComposerTurn(
   handlers.setStream((current) => ({
     ...initialWebuiStreamState,
     phase: "streaming",
+    processingStartedAtMs: Date.now(),
   }));
   try {
     await runWebuiStreamLoop(
@@ -1454,8 +1690,6 @@ export async function submitWebuiComposerTurn(
     );
   } finally {
     handlers.setSending(false);
-    if (createdSessionIdForTurn)
-      handlers.onSessionCreated?.(createdSessionIdForTurn);
   }
 }
 
@@ -1558,7 +1792,7 @@ export function buildWebuiQuestionnaireAnswers(
   });
 }
 
-function WebuiInteractionPanel({
+export function WebuiInteractionPanel({
   sessionId,
   permissions,
   questionnaire,
@@ -1653,12 +1887,42 @@ function WebuiInteractionPanel({
           data-webui-questionnaire-request={questionnaire.id}
           aria-label={questionnaire.title ?? "Questionnaire"}
         >
-          <div>
-            <strong>{questionnaire.title ?? "Questionnaire"}</strong>
-            <p className="text-text_default_secondary text-size_12">
-              The turn is waiting for your answer.
-            </p>
+          <div className="webui-questionnaire-header">
+            <strong
+              className="text-size_16"
+              data-webui-questionnaire-title="true"
+            >
+              {questionnaire.title ??
+                questionnaire.steps[0]?.question ??
+                "Questionnaire"}
+            </strong>
+            <button
+              type="button"
+              aria-label="关闭问卷"
+              data-webui-dismiss-questionnaire="true"
+              className="webui-questionnaire-close"
+              disabled={submitting}
+              onClick={() => {
+                setSubmitting(true);
+                void onDismiss(questionnaire).finally(() =>
+                  setSubmitting(false),
+                );
+              }}
+            >
+              ×
+            </button>
           </div>
+          <p
+            className="webui-questionnaire-sub"
+            data-webui-questionnaire-waiting="true"
+          >
+            智能体需要你的回答
+          </p>
+          {questionnaire.steps.length > 1 ? (
+            <p className="webui-questionnaire-steps-meta">
+              {`共 ${questionnaire.steps.length} 步`}
+            </p>
+          ) : null}
           {questionnaire.steps.map((step) => {
             const selected = optionIdsForStep(selections, step.id);
             const selectedOther = otherSelections[step.id] === true;
@@ -1666,8 +1930,11 @@ function WebuiInteractionPanel({
               step.selectionMode === 1 ||
               (step.selectionMode as unknown) === "multiple";
             return (
-              <fieldset key={step.id} className="flex flex-col gap-1">
-                <legend className="text-size_14 font-weight_medium">
+              <fieldset key={step.id} className="mb-4">
+                <legend
+                  className="text-size_14 font-weight_medium"
+                  data-webui-questionnaire-question="true"
+                >
                   {step.question}
                 </legend>
                 {step.description ? (
@@ -1675,16 +1942,23 @@ function WebuiInteractionPanel({
                     {step.description}
                   </span>
                 ) : null}
-                {(step.options ?? []).map((option) => {
+                <div
+                  className="webui-questionnaire-options"
+                  role={multiple ? "group" : "presentation"}
+                >
+                {(step.options ?? []).map((option, optionIndex) => {
                   const checked = selected.includes(option.id);
                   return (
                     <label
                       key={option.id}
-                      className="flex items-start gap-2 text-size_14"
+                      className="webui-questionnaire-option"
+                      data-selected={checked || undefined}
+                      data-webui-questionnaire-option={option.id}
                     >
                       <input
                         type={multiple ? "checkbox" : "radio"}
                         name={`${questionnaire.id}-${step.id}`}
+                        className="sr-only"
                         checked={checked}
                         onChange={() =>
                           {
@@ -1704,6 +1978,9 @@ function WebuiInteractionPanel({
                           }
                         }
                       />
+                      <span className="webui-questionnaire-letter" aria-hidden="true">
+                        {String.fromCharCode(65 + optionIndex)}
+                      </span>
                       <span>
                         {option.label}
                         {option.description ? (
@@ -1715,14 +1992,17 @@ function WebuiInteractionPanel({
                     </label>
                   );
                 })}
+                </div>
                 {step.allowOther ? (
                   <label
-                    className="flex items-start gap-2 text-size_14"
+                    className="webui-questionnaire-other-row"
+                    data-selected={selectedOther || undefined}
                     data-webui-questionnaire-other={step.id}
                   >
                     <input
                       type={multiple ? "checkbox" : "radio"}
                       name={`${questionnaire.id}-${step.id}`}
+                      className="sr-only"
                       checked={selectedOther}
                       onChange={() => {
                         const next = !selectedOther;
@@ -1737,24 +2017,43 @@ function WebuiInteractionPanel({
                           }));
                       }}
                     />
-                    <span className="flex min-w-0 flex-1 flex-col gap-1">
-                      <span>Other</span>
-                      {selectedOther ? (
-                        <input
-                          type="text"
-                          value={otherTexts[step.id] ?? ""}
-                          placeholder={step.otherPlaceholder || undefined}
-                          aria-label={`${step.question} other answer`}
-                          required={step.required}
-                          onChange={(event) =>
-                            setOtherTexts((current) => ({
-                              ...current,
-                              [step.id]: event.target.value,
-                            }))
-                          }
-                          className="webui-input"
-                        />
-                      ) : null}
+                    <span
+                      className="webui-questionnaire-other-toggle"
+                      aria-hidden="true"
+                    >
+                      +
+                    </span>
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <input
+                        type="text"
+                        value={otherTexts[step.id] ?? ""}
+                        placeholder={
+                          selectedOther
+                            ? step.otherPlaceholder || "在这里输入..."
+                            : "自定义回答..."
+                        }
+                        aria-label={`${step.question} 自定义回答`}
+                        required={step.required && selectedOther}
+                        readOnly={!selectedOther}
+                        onFocus={() => {
+                          if (selectedOther) return;
+                          setOtherSelections((current) => ({
+                            ...current,
+                            [step.id]: true,
+                          }));
+                          setSelections((current) => ({
+                            ...current,
+                            [step.id]: [],
+                          }));
+                        }}
+                        onChange={(event) =>
+                          setOtherTexts((current) => ({
+                            ...current,
+                            [step.id]: event.target.value,
+                          }))
+                        }
+                        className="webui-questionnaire-other-input"
+                      />
                     </span>
                   </label>
                 ) : null}
@@ -1787,7 +2086,7 @@ function WebuiInteractionPanel({
                 ).finally(() => setSubmitting(false));
               }}
             >
-              Submit answer
+              提交
             </button>
             <button
               type="button"
@@ -1800,7 +2099,7 @@ function WebuiInteractionPanel({
                 );
               }}
             >
-              Dismiss
+              跳过
             </button>
           </div>
         </article>
@@ -1916,6 +2215,10 @@ function WebuiComposer({
       // home so the previous session's model/account state cannot bleed into the composer.
       setModels([]);
       setAccountStatus(undefined);
+      // The live turn bleeds the same way: the module-level runtime map kept
+      // the previous turn's stream under the welcome hero on every 新建任务.
+      setStream(() => initialWebuiStreamState);
+      setSending(false);
       return undefined;
     }
     let cancelled = false;
@@ -2317,6 +2620,17 @@ function WebuiComposer({
   // The first send creates the target session silently, using the selected project.
   const canCompose = Boolean(sendMessage);
   const canQueue = Boolean(enqueueMessage && sessionId);
+  // One live column while the turn runs; `done` hands the view back to the
+  // transcript (single renderer per turn — no left/right split of one turn).
+  const turnLive =
+    stream.phase === "streaming" ||
+    stream.phase === "waiting" ||
+    stream.phase === "reconnecting";
+  const showStreamContent =
+    turnLive ||
+    stream.phase === "refused" ||
+    stream.phase === "error" ||
+    stream.transcriptIncomplete;
   const sendable = (canCompose || canQueue) && Boolean(draft.trim());
   // The submit handler is a single call into
   // `submitWebuiComposerTurn` with the assembled handler bundle. The
@@ -2421,31 +2735,16 @@ function WebuiComposer({
           data-webui-turn-waiting="true"
           className="mt-3 text-text_default_secondary text-size_14 leading-line_height_20"
         >
-          Waiting for your answer…
+          等待你的回答…
         </p>
       ) : null}
-      {sessionId &&
-      (sending ||
-        stream.phase === "streaming" ||
-        stream.phase === "waiting") ? (
-        <div className="mt-2 flex items-center gap-2">
-          <button
-            type="button"
-            className="webui-button-secondary text-size_14"
-            onClick={() => void handleStop()}
-            data-webui-stop-turn="true"
-          >
-            Stop turn
-          </button>
-          {queuePaused ? (
-            <span
-              role="status"
-              className="text-text_default_secondary text-size_12"
-            >
-              Queue paused
-            </span>
-          ) : null}
-        </div>
+      {queuePaused && sessionId ? (
+        <span
+          role="status"
+          className="text-text_default_secondary text-size_12"
+        >
+          队列已暂停
+        </span>
       ) : null}
       {queueItems.length > 0 ? (
         <section
@@ -2477,39 +2776,88 @@ function WebuiComposer({
           ))}
         </section>
       ) : null}
-      {stream.phase === "reconnecting" ? (
-        <p
-          role="status"
-          data-webui-reconnecting="true"
-          className="text-text_default_secondary text-size_14 leading-line_height_20"
-        >
-          Reconnecting…
-        </p>
-      ) : null}
-      {stream.messages.map((message) => (
+      {showStreamContent ? (
         <div
-          key={message.id}
-          data-webui-stream-message={message.id}
-          className="webui-message"
-          data-webui-message-root={message.id}
-          data-webui-message-role="assistant"
+          className="webui-stream-column"
+          data-webui-stream-column="true"
         >
-          <WebuiAssistantBody
-            messageId={message.id}
-            thinking={message.thinking}
-            tools={message.toolCalls}
-            answers={message.answer ? [message.answer] : []}
-            streaming={stream.phase === "streaming"}
-          />
+          {stream.messages
+            .filter((message) => message.role === "user")
+            .map((message) => (
+              <div
+                key={message.id}
+                className="flex justify-end"
+                data-webui-stream-message={message.id}
+              >
+                <div
+                  className="webui-user-bubble"
+                  data-webui-message-role="user"
+                >
+                  <p className="webui-user-text">{message.answer}</p>
+                </div>
+              </div>
+            ))}
+          {turnLive && typeof stream.processingStartedAtMs === "number" ? (
+            <TurnElapsedRow
+              startedAtMs={stream.processingStartedAtMs}
+              running={sending || stream.phase === "streaming"}
+            />
+          ) : null}
+          {stream.phase === "reconnecting" ? (
+            <p
+              role="status"
+              data-webui-reconnecting="true"
+              className="text-text_default_secondary text-size_14 leading-line_height_20"
+            >
+              重连中…
+            </p>
+          ) : null}
+          {(() => {
+            const assistant = stream.messages.filter(
+              (message) => message.role !== "user",
+            );
+            if (assistant.length === 0) return null;
+            const thinking = assistant
+              .map((message) => message.thinking)
+              .filter((value) => value.trim())
+              .join("\n\n");
+            const tools = assistant.flatMap(
+              (message) => message.toolCalls ?? [],
+            );
+            const answers = assistant
+              .map((message) => message.answer)
+              .filter((value) => value.trim());
+            // One turn, one block: the server splits a reply across several
+            // `msg_id`s (one per tool round) and each carries its own
+            // thinking — desktop shows a single disclosure for the whole
+            // turn, so merge here instead of rendering N live bodies.
+            return (
+              <div
+                data-webui-stream-message="merged"
+                className="webui-message"
+                data-webui-message-root="merged"
+                data-webui-message-role="assistant"
+              >
+                <WebuiAssistantBody
+                  messageId="stream-live"
+                  thinking={thinking || undefined}
+                  tools={tools.length > 0 ? tools : undefined}
+                  answers={answers}
+                  streaming={stream.phase === "streaming"}
+                  processingStartedAtMs={stream.processingStartedAtMs}
+                />
+              </div>
+            );
+          })()}
+          {stream.refusal ? (
+            <p
+              role="alert"
+              className="text-text_default_secondary text-size_14 leading-line_height_20"
+            >
+              发送消息失败：{stream.refusal}
+            </p>
+          ) : null}
         </div>
-      ))}
-      {stream.refusal ? (
-        <p
-          role="alert"
-          className="text-text_default_secondary text-size_14 leading-line_height_20"
-        >
-          Unable to send message: {stream.refusal}
-        </p>
       ) : null}
       {commandOutput ? (
         <pre
@@ -2666,15 +3014,27 @@ function WebuiComposer({
                       void handleSelectModel(model, draft)
                     }
                   />
-                  <button
-                    type="submit"
-                    disabled={!sendable || commandRunning}
-                    aria-label="发送"
-                    data-webui-composer-submit="true"
-                    className="webui-send-button"
-                  >
-                    <WebuiIconSend />
-                  </button>
+                  {sending ? (
+                    <button
+                      type="button"
+                      aria-label="停止"
+                      data-webui-composer-stop="true"
+                      className="webui-send-button webui-send-button--stop"
+                      onClick={() => void handleStop()}
+                    >
+                      <span className="webui-send-stop-square" aria-hidden="true" />
+                    </button>
+                  ) : (
+                    <button
+                      type="submit"
+                      disabled={!sendable || commandRunning}
+                      aria-label="发送"
+                      data-webui-composer-submit="true"
+                      className="webui-send-button"
+                    >
+                      <WebuiIconSend />
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -2898,6 +3258,10 @@ export function WebuiClientFoundationApp({
     [],
   );
   const handleSessionCreated = (id: string) => {
+    // The first turn streams into the home key before the session exists;
+    // carry it (and the sending flag) across the view switch so the reply
+    // stays on screen, and leave home clean.
+    migrateSessionRuntimeState(HOME_SESSION_RUNTIME_KEY, id);
     setSelectedSessionId(id);
     writeTeamModeSessionChoice(id, teamModeOff);
     setTeamModeChoices((current) => ({ ...current, [id]: teamModeOff }));
@@ -3109,7 +3473,7 @@ export function WebuiClientFoundationApp({
                   ) : (
                     <div className="flex w-full items-center gap-2">
                       <span className="text-text_default_secondary text-size_12 leading-line_height_16">
-                        {label}
+                        {selectedSession?.title ?? ""}
                       </span>
                     </div>
                   )}

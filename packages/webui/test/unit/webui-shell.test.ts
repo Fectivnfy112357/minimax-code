@@ -24,8 +24,12 @@ import { readFileSync } from "node:fs";
 import {
   WebuiClientFoundationApp,
   WebuiProjectList,
+  WebuiInteractionPanel,
   WebuiSessionList,
   WebuiSessionTranscript,
+  WebuiThinkingBlock,
+  WebuiToolResults,
+  TurnElapsedRow,
   buildWebuiModelSelectionRequest,
   buildWebuiQuestionnaireAnswers,
   buildWebuiComposerHandlers,
@@ -33,10 +37,13 @@ import {
   groupWebuiTranscriptItems,
   groupWebuiSessionsByWorkspace,
   projectWebuiMessage,
+  migrateSessionRuntimeState,
+  readSessionRuntimeState,
   readSessionIdFromHash,
   sessionHash,
   submitWebuiComposerTurn,
   subscribeToSessionHash,
+  updateSessionRuntimeState,
   webuiModelOptionValue,
 } from "../../src/client/app.js";
 import {
@@ -44,6 +51,7 @@ import {
   runWebuiStreamLoop,
   type WebuiStreamLoopSink,
 } from "../../src/client/stream-loop.js";
+import { createSessionOperation } from "../../src/server/operations.js";
 import {
   reduceWebuiStreamFrame,
   type WebuiStreamState,
@@ -53,6 +61,8 @@ import type {
   WebuiClientMessageSender,
   WebuiClientMessageEnqueuer,
   WebuiClientSessionResumer,
+  WebuiQuestionnaireRequest,
+  WebuiTranscriptItem,
 } from "../../src/client/app.js";
 import type { WebuiStreamFrame } from "../../src/server/port.js";
 import {
@@ -258,11 +268,12 @@ describe("WebUI shell", () => {
     expect(groups.map((group) => group.messageId)).toEqual([
       "turn-1",
       "turn-2",
-      "turn-3",
     ]);
+    // turn-2 and turn-3 are adjacent assistant messages: one merged block.
     expect(groups[1].items.map((item) => item.kind)).toEqual([
       "thinking",
       "tool",
+      "assistant",
       "assistant",
     ]);
     expect(groupWebuiTranscriptItems([])).toEqual([]);
@@ -1190,6 +1201,131 @@ describe("WebUI composer app-to-helper seam", () => {
     expect(getState().phase).toBe("done");
   });
 
+  it("enters the session view before the first turn streams", async () => {
+    // Reported bug: the first message rendered under the welcome hero on the
+    // new-task page and only switched into the session after the reply
+    // finished. The switch must happen between createSession and sendMessage.
+    const { setStream, getState } = makeRecording();
+    const events: string[] = [];
+    const createSession = vi.fn(async () => {
+      events.push("create");
+      return { sessionId: "created" };
+    });
+    const sendMessage: WebuiClientMessageSender = vi.fn(async (_request, onFrame) => {
+      events.push("send");
+      onFrame({ dataJson: "[DONE]" });
+    });
+    const onSessionCreated = vi.fn(() => {
+      events.push("session-created");
+    });
+
+    await submitWebuiComposerTurn(
+      {
+        draft: "hi",
+        sending: false,
+        deps: { sendMessage },
+        createSession,
+        createSessionWorkspaceDir: "/work/minimax-code",
+        teamModeOff: false,
+      },
+      buildWebuiComposerHandlers({
+        setStream,
+        setSending: () => undefined,
+        onDraftChange: () => undefined,
+        onSessionCreated,
+      }),
+    );
+
+    expect(events).toEqual(["create", "session-created", "send"]);
+    expect(onSessionCreated).toHaveBeenCalledWith("created");
+    expect(getState().phase).toBe("done");
+  });
+
+  it("sends the first message when no workspace folder is selected", async () => {
+    // Reported bug: with the folder pill unset ("选择文件夹") the send was
+    // swallowed silently — no session, no feedback. The harness resolves a
+    // default workspace, so an absent workspaceDir must flow through.
+    const { setStream, getState } = makeRecording();
+    const requests: unknown[] = [];
+    const createSession = vi.fn(async (request) => {
+      requests.push(request);
+      return { sessionId: "created" };
+    });
+    const sendMessage: WebuiClientMessageSender = vi.fn(async (_request, onFrame) => {
+      onFrame({ dataJson: "[DONE]" });
+    });
+    const onSessionCreated = vi.fn();
+
+    await submitWebuiComposerTurn(
+      {
+        draft: "你好",
+        sending: false,
+        deps: { sendMessage },
+        createSession,
+        // No createSessionWorkspaceDir — the folder pill is unset.
+        teamModeOff: false,
+      },
+      buildWebuiComposerHandlers({
+        setStream,
+        setSending: () => undefined,
+        onDraftChange: () => undefined,
+        onSessionCreated,
+      }),
+    );
+
+    expect(createSession).toHaveBeenCalledTimes(1);
+    expect(requests).toEqual([
+      { name: "main", workspaceDir: undefined, teamModeOff: false },
+    ]);
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(onSessionCreated).toHaveBeenCalledWith("created");
+    expect(getState().phase).toBe("done");
+  });
+
+  it("keeps rejecting relative or empty workspaceDir while allowing the field to be absent", () => {
+    expect(createSessionOperation.validate({ name: "main" }).ok).toBe(true);
+    expect(
+      createSessionOperation.validate({ name: "main", workspaceDir: "  " }).ok,
+    ).toBe(false);
+    expect(
+      createSessionOperation.validate({ name: "main", workspaceDir: "relative" })
+        .ok,
+    ).toBe(false);
+    expect(
+      createSessionOperation.validate({ name: "" }).ok,
+    ).toBe(false);
+  });
+
+  it("migrates the in-flight home turn into the created session and leaves home clean", async () => {
+    // Reported bug: after 新建任务 the welcome hero replayed the previous
+    // turn's messages. The turn state must follow the session switch and the
+    // home key must come back initial.
+    const homeKey = "__webui-home__";
+    updateSessionRuntimeState(homeKey, (current) => ({
+      stream: { ...initialWebuiStreamState, phase: "streaming" },
+      sending: true,
+    }));
+
+    migrateSessionRuntimeState(homeKey, "session-1");
+
+    expect(readSessionRuntimeState(homeKey)).toEqual({
+      stream: initialWebuiStreamState,
+      sending: false,
+    });
+    expect(readSessionRuntimeState("session-1")).toEqual({
+      stream: { ...initialWebuiStreamState, phase: "streaming" },
+      sending: true,
+    });
+
+    // Cleanup: never leak runtime state across tests (the store is a
+    // module-level singleton).
+    migrateSessionRuntimeState("session-1", homeKey);
+    updateSessionRuntimeState(homeKey, () => ({
+      stream: initialWebuiStreamState,
+      sending: false,
+    }));
+  });
+
   it("queues a second composer submission while the current turn is running", async () => {
     const { setStream, getState } = makeRecording();
     const enqueueMessage: WebuiClientMessageEnqueuer = vi.fn(async () => ({
@@ -1648,5 +1784,222 @@ describe("WebUI composer transcriptIncomplete", () => {
       }),
     );
     expect(html).not.toContain("data-webui-transcript-incomplete");
+  });
+
+  it("carries the in-flight user line and turn clock in the live state", async () => {
+    let state: WebuiStreamState = initialWebuiStreamState;
+    const setStream = (
+      value:
+        | WebuiStreamState
+        | ((current: WebuiStreamState) => WebuiStreamState),
+    ) => {
+      state = typeof value === "function" ? value(state) : value;
+    };
+    const getState = () => state;
+    const sendMessage: WebuiClientMessageSender = vi.fn(
+      async (_req, onFrame) => {
+        onFrame({ dataJson: "[DONE]" });
+      },
+    );
+    await submitWebuiComposerTurn(
+      {
+        sessionId: "s",
+        draft: "你好",
+        sending: false,
+        deps: { sendMessage },
+      },
+      buildWebuiComposerHandlers({
+        setStream,
+        setSending: () => undefined,
+        onDraftChange: () => undefined,
+      }),
+    );
+    const final = getState();
+    // The turn clock drives 已执行 N 秒 / the thinking seconds counter; the
+    // user's line comes from the replayed `msg-user-*` frame instead of a
+    // second pending renderer.
+    expect(typeof final.processingStartedAtMs).toBe("number");
+    expect(final.pendingUser).toBeUndefined();
+  });
+
+  it("tags the server's replayed user frame with role=user", () => {
+    let state = reduceWebuiStreamFrame(initialWebuiStreamState, {
+      dataJson:
+        '{"type":2,"agent_message":{"msg_id":"msg-user-v1-abc","msg_content":"帮我画一只鹈鹕"}}',
+    });
+    expect(state.messages).toHaveLength(1);
+    expect(state.messages[0]?.role).toBe("user");
+
+    state = reduceWebuiStreamFrame(state, {
+      dataJson:
+        '{"type":2,"agent_message":{"msg_id":"m-assistant","msg_content":"好的"}}',
+    });
+    expect(state.messages[1]?.role).toBeUndefined();
+  });
+
+  it("merges adjacent assistant messages into one transcript block", () => {
+    // The server splits one reply across several msg_ids (one per tool
+    // round), each with its own thinking — desktop renders the turn as a
+    // single disclosure, so adjacent non-user groups collapse into one and
+    // the render aggregates their facets.
+    const groups = groupWebuiTranscriptItems([
+      ...projectWebuiMessage({ msgId: "u1", role: "user", msgContent: "做" }),
+      ...projectWebuiMessage({
+        msgId: "a1",
+        thinkingContent: "第一段",
+        toolCalls: [{ name: "read" }],
+        msgContent: "中间",
+      }),
+      ...projectWebuiMessage({
+        msgId: "a2",
+        thinkingContent: "第二段",
+        toolCalls: [{ name: "write" }],
+        msgContent: "结尾",
+      }),
+    ]);
+    expect(groups).toHaveLength(2);
+    expect(groups[0]?.items[0]?.kind).toBe("user");
+    expect(groups[1]?.items.map((item) => item.kind)).toEqual([
+      "thinking",
+      "tool",
+      "assistant",
+      "thinking",
+      "tool",
+      "assistant",
+    ]);
+
+    const html = renderToStaticMarkup(
+      createElement(WebuiSessionTranscript, {
+        sessionId: "merge-session",
+        loadMessages: async () => ({
+          messages: [
+            { msgId: "u1", role: "user", msgContent: "做" },
+            {
+              msgId: "a1",
+              thinkingContent: "第一段",
+              toolCalls: [{ name: "read" }],
+              msgContent: "中间",
+            },
+            {
+              msgId: "a2",
+              thinkingContent: "第二段",
+              toolCalls: [{ name: "write" }],
+              msgContent: "结尾",
+            },
+          ],
+          hasMore: false,
+        }),
+      }),
+    );
+    // Effect-gated load: SSR never runs effects, so assert the grouping
+    // contract above and the single-block markup via the group renderer.
+    expect(html).toContain('data-webui-transcript="merge-session"');
+  });
+
+  it("renders the desktop thinking block: history and live forms", () => {
+    const history = renderToStaticMarkup(
+      createElement(WebuiThinkingBlock, {
+        text: "推理过程",
+        durationMs: 5000,
+      }),
+    );
+    expect(history).toContain("已完成推理");
+    expect(history).toContain(">5s<");
+    expect(history).not.toContain("webui-thinking-indicator");
+
+    const live = renderToStaticMarkup(
+      createElement(WebuiThinkingBlock, {
+        text: "推理过程",
+        streaming: true,
+        processingStartedAtMs: Date.now() - 5000,
+      }),
+    );
+    expect(live).toContain("推理中...");
+    expect(live).toContain("webui-thinking-indicator is-active");
+    expect(live).toContain(">5s<");
+  });
+
+  it("ticks the turn clock as the desktop 已执行 N 秒 row", () => {
+    const html = renderToStaticMarkup(
+      createElement(TurnElapsedRow, {
+        startedAtMs: Date.now() - 5000,
+        running: true,
+      }),
+    );
+    expect(html).toContain("已执行 5 秒");
+    expect(
+      renderToStaticMarkup(
+        createElement(TurnElapsedRow, {
+          startedAtMs: Date.now(),
+          running: true,
+        }),
+      ),
+    ).toBe("");
+  });
+
+  it("renders desktop's edited-files card for edit tools", () => {
+    const html = renderToStaticMarkup(
+      createElement(WebuiToolResults, {
+        tools: [
+          {
+            tool_call_name: "edit_file",
+            tool_call_args: JSON.stringify({ file_path: "src/app.ts" }),
+            tool_call_result_data:
+              "--- a/src/app.ts\n+++ b/src/app.ts\n+one\n+two\n-zero\n",
+          },
+          { tool_call_name: "read", tool_call_args: "README.md" },
+        ],
+      }),
+    );
+    expect(html).toContain("webui-diff-card");
+    expect(html).toContain("已编辑 1 个文件");
+    expect(html).toContain("+2");
+    expect(html).toContain("-1");
+    expect(html).toContain("app.ts");
+
+    const noEdits = renderToStaticMarkup(
+      createElement(WebuiToolResults, {
+        tools: [{ tool_call_name: "read", tool_call_args: "README.md" }],
+      }),
+    );
+    expect(noEdits).not.toContain("webui-diff-card");
+    expect(noEdits).toContain("webui-tool-list");
+  });
+
+  it("renders the desktop questionnaire card copy and layout", () => {
+    const questionnaire: WebuiQuestionnaireRequest = {
+      id: "q1",
+      steps: [
+        {
+          id: "st1",
+          question: "怎么部署？",
+          selectionMode: 0,
+          required: false,
+          allowOther: true,
+          options: [
+            { id: "a", label: "选项一" },
+            { id: "b", label: "选项二" },
+          ],
+        },
+      ],
+    };
+    const html = renderToStaticMarkup(
+      createElement(WebuiInteractionPanel, {
+        sessionId: "s1",
+        permissions: [],
+        questionnaire,
+        onPermission: vi.fn(async () => undefined),
+        onQuestionnaire: vi.fn(async () => undefined),
+        onDismiss: vi.fn(async () => undefined),
+        interactionError: undefined,
+      }),
+    );
+    expect(html).toContain("智能体需要你的回答");
+    expect(html).toContain("webui-questionnaire-letter");
+    expect(html).toContain("怎么部署？");
+    expect(html).toContain("提交");
+    expect(html).toContain("跳过");
+    expect(html).toContain("自定义回答...");
+    expect(html).toContain("data-webui-dismiss-questionnaire");
   });
 });

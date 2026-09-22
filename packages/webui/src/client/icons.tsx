@@ -118,6 +118,24 @@ export function WebuiIconChevronDown({ className }: WebuiIconProps): ReactElemen
 }
 
 /** composer send — the desktop's `send-button` glyph. */
+export function WebuiIconFile({ className }: WebuiIconProps): ReactElement {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 1.75h5l3 3v9.5H4z" />
+      <path d="M9 1.75V5h3" />
+    </svg>
+  );
+}
+
 export function WebuiIconSend({ className }: WebuiIconProps): ReactElement {
   return (
     <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}>

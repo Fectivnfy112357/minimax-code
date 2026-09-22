@@ -5,9 +5,14 @@ export interface WebuiStreamMessage {
   readonly answer: string;
   readonly thinking: string;
   readonly toolCalls?: readonly Record<string, unknown>[];
+  /** The server replays the user's own line as a `msg-user-*` frame; it
+   * renders as the right-aligned bubble instead of an assistant body. */
+  readonly role?: "user";
 }
 
 export interface WebuiStreamState {
+  /** Turn start for the live 已执行 N 秒 row and the thinking counter. */
+  readonly processingStartedAtMs?: number;
   readonly phase:
     | "idle"
     | "streaming"
@@ -105,6 +110,7 @@ function upsertMessage(
         answer,
         thinking,
         ...(calls ? { toolCalls: calls } : {}),
+        ...(id.startsWith("msg-user-") ? ({ role: "user" } as const) : {}),
       },
     ];
   if (
@@ -126,6 +132,7 @@ function upsertMessage(
     ...(calls || messages[index]!.toolCalls
       ? { toolCalls: calls ?? messages[index]!.toolCalls }
       : {}),
+    ...(messages[index]!.role ? { role: messages[index]!.role } : {}),
   };
   return next;
 }

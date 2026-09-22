@@ -188,24 +188,28 @@ function validateCreateSessionRequestBody(
       code: WebuiErrorCode.invalidBody,
       message: "createSession body requires a non-empty name",
     };
+  // `workspaceDir` is optional: the harness resolves a default workspace
+  // when it is absent (desktop's 不需要项目 / default-directory flows).
+  // When present it must be a real absolute path — relative and missing
+  // directories are still rejected.
   const workspaceDir =
     typeof candidate.workspaceDir === "string"
       ? candidate.workspaceDir.trim()
       : "";
-  if (!workspaceDir)
+  if (candidate.workspaceDir !== undefined && !workspaceDir)
     return {
       ok: false,
       code: WebuiErrorCode.invalidBody,
-      message: "createSession body requires a working directory",
+      message: "createSession workspaceDir must not be empty",
     };
-  if (!isAbsolute(workspaceDir))
+  if (workspaceDir && !isAbsolute(workspaceDir))
     return {
       ok: false,
       code: WebuiErrorCode.invalidBody,
       message: "workspaceDir must be an absolute path",
     };
   try {
-    if (!statSync(workspaceDir).isDirectory())
+    if (workspaceDir && !statSync(workspaceDir).isDirectory())
       return {
         ok: false,
         code: WebuiErrorCode.invalidBody,
@@ -231,7 +235,9 @@ function validateCreateSessionRequestBody(
     ok: true,
     body: {
       name,
-      workspaceDir,
+      // Absent stays absent (do not coerce to ""): the harness treats an
+      // undefined workspaceDir as "use the default workspace".
+      ...(workspaceDir ? { workspaceDir } : {}),
       ...(candidate.teamModeOff === undefined
         ? {}
         : { teamModeOff: candidate.teamModeOff }),

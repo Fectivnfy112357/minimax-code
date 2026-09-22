@@ -72,7 +72,8 @@ export interface WebuiSessionLookupResult {
 }
 export interface WebuiCreateSessionRequest {
   readonly name: string;
-  readonly workspaceDir: string;
+  /** Optional: absent means "use the default workspace" (harness resolves it). */
+  readonly workspaceDir?: string;
   readonly teamModeOff?: boolean;
 }
 export interface WebuiCreateSessionResult {
