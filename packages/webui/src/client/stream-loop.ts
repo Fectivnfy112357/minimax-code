@@ -285,6 +285,9 @@ export async function runWebuiStreamLoop(
                   id: item.messageId,
                   answer: "text" in item ? item.text : "",
                   thinking: item.kind === "thinking" ? item.text : "",
+                  // The rebuild must keep the user tag, or a resync turns
+                  // the right-aligned bubble into assistant text.
+                  ...(item.kind === "user" ? ({ role: "user" } as const) : {}),
                 }),
               ),
             );
