@@ -84,9 +84,13 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
     return this.versionInfo;
   }
 
-  async listSessions(_request: WebuiSessionListRequest) {
+  async listSessions(request: WebuiSessionListRequest) {
+    if (request.onlyArchived) return { sessions: [{ sessionId: "archived-fixture", agentName: "main", createdAt: 1, updatedAt: 2, archived: true, title: "Archived fixture" }], hasMore: false };
     return { sessions: [], hasMore: false };
   }
+
+  async archiveSession() { return { success: true }; }
+  async deleteSession() { return { success: true }; }
 
   async createSession(_request: WebuiCreateSessionRequest) {
     return { sessionId: "created-session" };
@@ -211,6 +215,19 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
   async getAccountStatus() {
     return { available: true };
   }
+
+  async listUserModelProviders() { return [{ providerId: "fixture-provider", name: "Fixture" }]; }
+  async createUserModelProvider(request: Record<string, unknown>) { return { success: true, providerId: request.providerId }; }
+  async updateUserModelProvider() { return { success: true }; }
+  async deleteUserModelProvider() { return { success: true }; }
+  async testUserModelProvider() { return { success: true, status: { state: "ok" } }; }
+  async testUserModel() { return { success: true, status: { state: "ok" } }; }
+  async discoverUserModelsCandidate() { return []; }
+  async saveUserModelProviderCandidate() { return { success: true }; }
+  async listProviderPresets() { return []; }
+  async getMiniMaxApiKeyStatus() { return { hasApiKey: false }; }
+  async upsertMiniMaxApiKey() { return { success: true }; }
+  async getCodexOAuthStatus() { return { connected: false }; }
 
   async close(): Promise<void> {
     this.closed = true;
@@ -1586,9 +1603,33 @@ describe("WebUI operation allowlist", () => {
       expect(registry.has("abortSession")).toBe(true);
       expect(registry.has("listModels")).toBe(true);
       expect(registry.has("getAccountStatus")).toBe(true);
+      for (const operation of [
+        "archiveSession", "deleteSession", "listUserModelProviders", "createUserModelProvider",
+        "updateUserModelProvider", "deleteUserModelProvider", "testUserModelProvider", "testUserModel",
+        "discoverUserModelsCandidate", "saveUserModelProviderCandidate", "listProviderPresets",
+        "getMiniMaxApiKeyStatus", "upsertMiniMaxApiKey", "getCodexOAuthStatus",
+      ]) expect(registry.has(operation)).toBe(true);
     } finally {
       await service.close();
     }
+  });
+
+  it("routes provider reads and writes through the registry without exposing secrets", async () => {
+    const { createOperationRegistry } = await import("../../src/server/index.js");
+    const port = new ScriptedHarnessPort();
+    const registry = createOperationRegistry(port);
+    const result = async (name: string, body: unknown) => (await registry.get(name)?.handle({ requestId: name }, body)) as { readonly body: unknown };
+    expect(await result("listUserModelProviders", undefined)).toMatchObject({ body: [{ providerId: "fixture-provider" }] });
+    expect(await result("createUserModelProvider", { providerId: "synthetic-provider" })).toMatchObject({ body: { success: true } });
+    expect(await result("updateUserModelProvider", { providerId: "synthetic-provider" })).toMatchObject({ body: { success: true } });
+    expect(await result("deleteUserModelProvider", { providerId: "synthetic-provider" })).toMatchObject({ body: { success: true } });
+    expect(await result("testUserModelProvider", { providerId: "fixture-provider" })).toMatchObject({ body: { success: true } });
+    expect(await result("testUserModel", { providerId: "fixture-provider", modelId: "fixture-model" })).toMatchObject({ body: { success: true } });
+    expect(await result("discoverUserModelsCandidate", { providerId: "fixture-provider" })).toMatchObject({ body: [] });
+    expect(await result("saveUserModelProviderCandidate", { providerId: "synthetic-provider" })).toMatchObject({ body: { success: true } });
+    expect(await result("listProviderPresets", undefined)).toMatchObject({ body: [] });
+    expect(await result("getMiniMaxApiKeyStatus", undefined)).toMatchObject({ body: { hasApiKey: false } });
+    expect(await result("getCodexOAuthStatus", undefined)).toMatchObject({ body: { connected: false } });
   });
 });
 

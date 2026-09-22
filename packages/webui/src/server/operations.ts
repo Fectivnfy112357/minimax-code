@@ -99,6 +99,20 @@ const CLAIM_SIGNIN_OPERATION_NAME = "claimSignin" as const;
 const GET_ACCOUNT_STATUS_OPERATION_NAME = "getAccountStatus" as const;
 const RUN_COMMAND_OPERATION_NAME = "runCommand" as const;
 const SIGN_OUT_OPERATION_NAME = "signOut" as const;
+const ARCHIVE_SESSION_OPERATION_NAME = "archiveSession" as const;
+const DELETE_SESSION_OPERATION_NAME = "deleteSession" as const;
+const LIST_USER_MODEL_PROVIDERS_OPERATION_NAME = "listUserModelProviders" as const;
+const CREATE_USER_MODEL_PROVIDER_OPERATION_NAME = "createUserModelProvider" as const;
+const UPDATE_USER_MODEL_PROVIDER_OPERATION_NAME = "updateUserModelProvider" as const;
+const DELETE_USER_MODEL_PROVIDER_OPERATION_NAME = "deleteUserModelProvider" as const;
+const TEST_USER_MODEL_PROVIDER_OPERATION_NAME = "testUserModelProvider" as const;
+const TEST_USER_MODEL_OPERATION_NAME = "testUserModel" as const;
+const DISCOVER_USER_MODELS_CANDIDATE_OPERATION_NAME = "discoverUserModelsCandidate" as const;
+const SAVE_USER_MODEL_PROVIDER_CANDIDATE_OPERATION_NAME = "saveUserModelProviderCandidate" as const;
+const LIST_PROVIDER_PRESETS_OPERATION_NAME = "listProviderPresets" as const;
+const GET_MINIMAX_API_KEY_STATUS_OPERATION_NAME = "getMiniMaxApiKeyStatus" as const;
+const UPSERT_MINIMAX_API_KEY_OPERATION_NAME = "upsertMiniMaxApiKey" as const;
+const GET_CODEX_OAUTH_STATUS_OPERATION_NAME = "getCodexOAuthStatus" as const;
 
 type VersionRequestBody = undefined;
 
@@ -977,6 +991,32 @@ export const getAccountStatusOperation: WebuiOperation<
   },
 };
 
+function validateProviderRecord(name: string, body: unknown): WebuiOperationValidation<Record<string, unknown>> {
+  if (body === null || typeof body !== "object" || Array.isArray(body)) return { ok: false, code: WebuiErrorCode.invalidBody, message: `${name} body must be an object` };
+  return { ok: true, body: body as Record<string, unknown> };
+}
+function validateProviderId(name: string, body: unknown): WebuiOperationValidation<{ readonly providerId: string }> {
+  const value = validateProviderRecord(name, body); if (!value.ok) return value;
+  const providerId = typeof value.body.providerId === "string" ? value.body.providerId.trim() : "";
+  return providerId ? { ok: true, body: { providerId } } : { ok: false, code: WebuiErrorCode.invalidBody, message: `${name} body requires providerId` };
+}
+function providerRecordOperation(name: string): WebuiOperation<Record<string, unknown>, unknown> { return { name, validate: (body) => validateProviderRecord(name, body) }; }
+
+export const archiveSessionOperation: WebuiOperation<{ readonly id: string }, { readonly success?: boolean }> = { name: ARCHIVE_SESSION_OPERATION_NAME, validate: (body) => validateSessionIdBody(ARCHIVE_SESSION_OPERATION_NAME, body) };
+export const deleteSessionOperation: WebuiOperation<{ readonly id: string }, { readonly success?: boolean }> = { name: DELETE_SESSION_OPERATION_NAME, validate: (body) => validateSessionIdBody(DELETE_SESSION_OPERATION_NAME, body) };
+export const listUserModelProvidersOperation: WebuiOperation<undefined, readonly Record<string, unknown>[]> = { name: LIST_USER_MODEL_PROVIDERS_OPERATION_NAME, validate: (body) => body === undefined ? { ok: true, body: undefined } : { ok: false, code: WebuiErrorCode.invalidBody, message: `${LIST_USER_MODEL_PROVIDERS_OPERATION_NAME} does not accept a body` } };
+export const createUserModelProviderOperation = providerRecordOperation(CREATE_USER_MODEL_PROVIDER_OPERATION_NAME);
+export const updateUserModelProviderOperation = providerRecordOperation(UPDATE_USER_MODEL_PROVIDER_OPERATION_NAME);
+export const deleteUserModelProviderOperation: WebuiOperation<{ readonly providerId: string }, unknown> = { name: DELETE_USER_MODEL_PROVIDER_OPERATION_NAME, validate: (body) => validateProviderId(DELETE_USER_MODEL_PROVIDER_OPERATION_NAME, body) };
+export const testUserModelProviderOperation: WebuiOperation<{ readonly providerId: string }, unknown> = { name: TEST_USER_MODEL_PROVIDER_OPERATION_NAME, validate: (body) => validateProviderId(TEST_USER_MODEL_PROVIDER_OPERATION_NAME, body) };
+export const testUserModelOperation: WebuiOperation<{ readonly providerId: string; readonly modelId: string }, unknown> = { name: TEST_USER_MODEL_OPERATION_NAME, validate: (body) => { const value = validateProviderRecord(TEST_USER_MODEL_OPERATION_NAME, body); if (!value.ok) return value; const providerId = typeof value.body.providerId === "string" ? value.body.providerId.trim() : ""; const modelId = typeof value.body.modelId === "string" ? value.body.modelId.trim() : ""; return providerId && modelId ? { ok: true, body: { providerId, modelId } } : { ok: false, code: WebuiErrorCode.invalidBody, message: `${TEST_USER_MODEL_OPERATION_NAME} body requires providerId and modelId` }; } };
+export const discoverUserModelsCandidateOperation = providerRecordOperation(DISCOVER_USER_MODELS_CANDIDATE_OPERATION_NAME);
+export const saveUserModelProviderCandidateOperation = providerRecordOperation(SAVE_USER_MODEL_PROVIDER_CANDIDATE_OPERATION_NAME);
+export const listProviderPresetsOperation: WebuiOperation<undefined, readonly Record<string, unknown>[]> = { name: LIST_PROVIDER_PRESETS_OPERATION_NAME, validate: (body) => body === undefined ? { ok: true, body: undefined } : { ok: false, code: WebuiErrorCode.invalidBody, message: `${LIST_PROVIDER_PRESETS_OPERATION_NAME} does not accept a body` } };
+export const getMiniMaxApiKeyStatusOperation: WebuiOperation<undefined, Record<string, unknown>> = { name: GET_MINIMAX_API_KEY_STATUS_OPERATION_NAME, validate: (body) => body === undefined ? { ok: true, body: undefined } : { ok: false, code: WebuiErrorCode.invalidBody, message: `${GET_MINIMAX_API_KEY_STATUS_OPERATION_NAME} does not accept a body` } };
+export const upsertMiniMaxApiKeyOperation: WebuiOperation<{ readonly apiKey: string; readonly saveAndUse?: boolean }, unknown> = { name: UPSERT_MINIMAX_API_KEY_OPERATION_NAME, validate: (body) => { const value = validateProviderRecord(UPSERT_MINIMAX_API_KEY_OPERATION_NAME, body); if (!value.ok) return value; const apiKey = typeof value.body.apiKey === "string" ? value.body.apiKey : ""; if (!apiKey) return { ok: false, code: WebuiErrorCode.invalidBody, message: "apiKey is required" }; return { ok: true, body: { apiKey, ...(typeof value.body.saveAndUse === "boolean" ? { saveAndUse: value.body.saveAndUse } : {}) } }; } };
+export const getCodexOAuthStatusOperation: WebuiOperation<undefined, Record<string, unknown>> = { name: GET_CODEX_OAUTH_STATUS_OPERATION_NAME, validate: (body) => body === undefined ? { ok: true, body: undefined } : { ok: false, code: WebuiErrorCode.invalidBody, message: `${GET_CODEX_OAUTH_STATUS_OPERATION_NAME} does not accept a body` } };
+
 export const runCommandOperation: WebuiOperation<
   import("./port.js").WebuiRunCommandRequest,
   import("./port.js").WebuiRunCommandResult
@@ -1051,6 +1091,8 @@ export function createOperationRegistry(
     WebuiHarnessPort,
     | "version"
     | "listSessions"
+    | "archiveSession"
+    | "deleteSession"
     | "createSession"
     | "getSession"
     | "getMessages"
@@ -1074,6 +1116,18 @@ export function createOperationRegistry(
     | "getSigninPanel"
     | "claimSignin"
     | "getAccountStatus"
+    | "listUserModelProviders"
+    | "createUserModelProvider"
+    | "updateUserModelProvider"
+    | "deleteUserModelProvider"
+    | "testUserModelProvider"
+    | "testUserModel"
+    | "discoverUserModelsCandidate"
+    | "saveUserModelProviderCandidate"
+    | "listProviderPresets"
+    | "getMiniMaxApiKeyStatus"
+    | "upsertMiniMaxApiKey"
+    | "getCodexOAuthStatus"
     | "requestCompaction"
     | "invalidateAuth"
   >,
@@ -1085,6 +1139,8 @@ export function createOperationRegistry(
       body: await port.createSession(body),
     }),
   });
+  registerOperation(registry, { operation: archiveSessionOperation, handle: async (_context, body) => ({ body: await port.archiveSession(body) }) });
+  registerOperation(registry, { operation: deleteSessionOperation, handle: async (_context, body) => ({ body: await port.deleteSession(body) }) });
   registerOperation(registry, {
     operation: abortSessionOperation,
     handle: async (_context, body) => ({ body: await port.abortSession(body) }),
@@ -1141,6 +1197,18 @@ export function createOperationRegistry(
       body: await port.getAccountStatus(body),
     }),
   });
+  registerOperation(registry, { operation: listUserModelProvidersOperation, handle: async () => ({ body: await port.listUserModelProviders() }) });
+  registerOperation(registry, { operation: createUserModelProviderOperation, handle: async (_context, body) => ({ body: await port.createUserModelProvider(body) }) });
+  registerOperation(registry, { operation: updateUserModelProviderOperation, handle: async (_context, body) => ({ body: await port.updateUserModelProvider(body) }) });
+  registerOperation(registry, { operation: deleteUserModelProviderOperation, handle: async (_context, body) => ({ body: await port.deleteUserModelProvider(body.providerId) }) });
+  registerOperation(registry, { operation: testUserModelProviderOperation, handle: async (_context, body) => ({ body: await port.testUserModelProvider(body.providerId) }) });
+  registerOperation(registry, { operation: testUserModelOperation, handle: async (_context, body) => ({ body: await port.testUserModel(body) }) });
+  registerOperation(registry, { operation: discoverUserModelsCandidateOperation, handle: async (_context, body) => ({ body: await port.discoverUserModelsCandidate(body) }) });
+  registerOperation(registry, { operation: saveUserModelProviderCandidateOperation, handle: async (_context, body) => ({ body: await port.saveUserModelProviderCandidate(body) }) });
+  registerOperation(registry, { operation: listProviderPresetsOperation, handle: async () => ({ body: await port.listProviderPresets() }) });
+  registerOperation(registry, { operation: getMiniMaxApiKeyStatusOperation, handle: async () => ({ body: await port.getMiniMaxApiKeyStatus() }) });
+  registerOperation(registry, { operation: upsertMiniMaxApiKeyOperation, handle: async (_context, body) => ({ body: await port.upsertMiniMaxApiKey(body) }) });
+  registerOperation(registry, { operation: getCodexOAuthStatusOperation, handle: async () => ({ body: await port.getCodexOAuthStatus() }) });
   registerOperation(registry, {
     operation: runCommandOperation,
     handle: async (_context, body) => ({ body: await runWebuiCommand(port, body) }),

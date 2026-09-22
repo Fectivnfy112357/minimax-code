@@ -64,6 +64,20 @@ export interface WebuiAssembledHost {
       request: import("./port.js").WebuiSessionListRequest,
       context?: Record<string, never>,
     ): Promise<import("./port.js").WebuiSessionPage>;
+    archiveSession(request: { readonly id: string }, context?: Record<string, never>): Promise<{ readonly success?: boolean }>;
+    deleteSession(request: { readonly id: string }, context?: Record<string, never>): Promise<{ readonly success?: boolean }>;
+    listUserModelProviders(): Promise<readonly Record<string, unknown>[]>;
+    createUserModelProvider(request: Record<string, unknown>): Promise<unknown>;
+    updateUserModelProvider(request: Record<string, unknown>): Promise<unknown>;
+    deleteUserModelProvider(request: { readonly providerId: string }): Promise<unknown>;
+    testUserModelProvider(request: { readonly providerId: string }): Promise<unknown>;
+    testUserModel(request: { readonly providerId: string; readonly modelId: string }): Promise<unknown>;
+    discoverUserModelsCandidate(request: Record<string, unknown>): Promise<unknown>;
+    saveUserModelProviderCandidate(request: Record<string, unknown>): Promise<unknown>;
+    listProviderPresets(): Promise<readonly Record<string, unknown>[]>;
+    getMiniMaxApiKeyStatus(): Promise<Record<string, unknown>>;
+    upsertMiniMaxApiKey(request: { readonly apiKey: string; readonly saveAndUse?: boolean }): Promise<unknown>;
+    getCodexOAuthStatus(): Promise<Record<string, unknown>>;
     createSession(
       request: import("./port.js").WebuiCreateSessionRequest,
       context?: Record<string, never>,

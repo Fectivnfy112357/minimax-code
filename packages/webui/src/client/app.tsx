@@ -85,6 +85,7 @@ import type {
   WebuiModelEntry,
   WebuiRuntimeEvent,
   WebuiStreamFrame,
+  WebuiVersionInfo,
 } from "../server/port.js";
 
 export interface WebuiClientMessage {
@@ -613,6 +614,9 @@ function WebuiAssistantBody({
 
 export interface WebuiClientFoundationAppProps {
   readonly label: string;
+  readonly version?: WebuiVersionInfo;
+  readonly getVersion?: () => Promise<WebuiVersionInfo>;
+  readonly listArchivedSessions?: () => Promise<WebuiClientSessionPage>;
   readonly sessionPage?: WebuiClientSessionPage;
   readonly loadSessions?: WebuiClientSessionLoader;
   readonly loadMessages?: WebuiClientMessageLoader;
@@ -687,6 +691,20 @@ export interface WebuiClientFoundationAppProps {
     readonly sessionId?: string;
   }) => Promise<Record<string, unknown>>;
   readonly signOut?: () => Promise<{ readonly success?: boolean }>;
+  readonly archiveSession?: (request: { readonly id: string }) => Promise<{ readonly success?: boolean }>;
+  readonly deleteSession?: (request: { readonly id: string }) => Promise<{ readonly success?: boolean }>;
+  readonly listUserModelProviders?: () => Promise<readonly Record<string, unknown>[]>;
+  readonly createUserModelProvider?: (request: Record<string, unknown>) => Promise<unknown>;
+  readonly updateUserModelProvider?: (request: Record<string, unknown>) => Promise<unknown>;
+  readonly deleteUserModelProvider?: (providerId: string) => Promise<unknown>;
+  readonly testUserModelProvider?: (providerId: string) => Promise<unknown>;
+  readonly testUserModel?: (request: { readonly providerId: string; readonly modelId: string }) => Promise<unknown>;
+  readonly discoverUserModelsCandidate?: (request: Record<string, unknown>) => Promise<unknown>;
+  readonly saveUserModelProviderCandidate?: (request: Record<string, unknown>) => Promise<unknown>;
+  readonly listProviderPresets?: () => Promise<readonly Record<string, unknown>[]>;
+  readonly getMiniMaxApiKeyStatus?: () => Promise<Record<string, unknown>>;
+  readonly upsertMiniMaxApiKey?: (request: { readonly apiKey: string; readonly saveAndUse?: boolean }) => Promise<unknown>;
+  readonly getCodexOAuthStatus?: () => Promise<Record<string, unknown>>;
   readonly dataDir?: string;
   readonly runCommand?: (request: {
     readonly command: "help" | "new" | "compact" | "status" | "usage" | "model";
@@ -3124,6 +3142,7 @@ export function WebuiClientFoundationApp({
   label,
   sessionPage,
   loadSessions,
+  listArchivedSessions,
   locationHash,
   loadMessages,
   createSession,
@@ -3148,10 +3167,28 @@ export function WebuiClientFoundationApp({
   claimSignin,
   getAccountStatus,
   signOut,
+  version,
+  getVersion,
+  archiveSession,
+  deleteSession,
+  listUserModelProviders,
+  createUserModelProvider,
+  updateUserModelProvider,
+  deleteUserModelProvider,
+  testUserModelProvider,
+  testUserModel,
+  discoverUserModelsCandidate,
+  saveUserModelProviderCandidate,
+  listProviderPresets,
+  getMiniMaxApiKeyStatus,
+  upsertMiniMaxApiKey,
+  getCodexOAuthStatus,
   dataDir,
   runCommand,
   hostLabel,
 }: WebuiClientFoundationAppProps): ReactElement {
+  const [runtimeVersion, setRuntimeVersion] = useState(version);
+  useEffect(() => { if (!runtimeVersion && getVersion) void getVersion().then(setRuntimeVersion); }, [getVersion, runtimeVersion]);
   const [page, setPage] = useState<WebuiClientSessionPage>(
     sessionPage ?? { sessions: [], hasMore: false },
   );
@@ -3411,6 +3448,8 @@ export function WebuiClientFoundationApp({
                   collapsed={railCollapsed}
                   hostLabel={hostLabel}
                   dataDir={dataDir}
+                  version={runtimeVersion}
+                  listArchivedSessions={listArchivedSessions}
                   sessionId={selectedSessionId}
                   listModels={listModels}
                   selectModel={selectModel}
@@ -3420,6 +3459,20 @@ export function WebuiClientFoundationApp({
                   claimSignin={claimSignin}
                   getAccountStatus={getAccountStatus}
                   signOut={signOut}
+                  archiveSession={archiveSession}
+                  deleteSession={deleteSession}
+                  listUserModelProviders={listUserModelProviders}
+                  createUserModelProvider={createUserModelProvider}
+                  updateUserModelProvider={updateUserModelProvider}
+                  deleteUserModelProvider={deleteUserModelProvider}
+                  testUserModelProvider={testUserModelProvider}
+                  testUserModel={testUserModel}
+                  discoverUserModelsCandidate={discoverUserModelsCandidate}
+                  saveUserModelProviderCandidate={saveUserModelProviderCandidate}
+                  listProviderPresets={listProviderPresets}
+                  getMiniMaxApiKeyStatus={getMiniMaxApiKeyStatus}
+                  upsertMiniMaxApiKey={upsertMiniMaxApiKey}
+                  getCodexOAuthStatus={getCodexOAuthStatus}
                 />
               </div>
             </aside>

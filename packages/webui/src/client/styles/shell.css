@@ -55,6 +55,8 @@
   .webui-settings-empty-panel { max-width: 760px; min-height: 220px; margin: 0 auto; }
   .webui-settings-data-dir { max-width: 760px; margin: var(--spacing_32) auto 0; color: var(--text_default_tertiary); font-size: var(--size_12); word-break: break-all; }
   .webui-settings-empty { height: var(--spacing_128); }
+  .mavis-settings-search-highlight { animation: webui-settings-search-highlight 1400ms ease both; }
+  @keyframes webui-settings-search-highlight { 0% { background: var(--bg_interaction_tertiary_selected); } 100% { background: transparent; } }
   @keyframes webui-settings-content-in { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: translateX(0); } }
   @media (prefers-reduced-motion: reduce) { .webui-settings-content { animation: none; } .webui-settings-toggle span { transition: none; } }
   /* --------------------------------------------------------------- surfaces */

@@ -19,6 +19,7 @@ import type {
   WebuiModelEntry,
   WebuiRuntimeEvent,
   WebuiStreamFrame,
+  WebuiVersionInfo,
 } from "../server/port.js";
 
 type WireFrame = {
@@ -58,7 +59,11 @@ export function createWebuiTransport({
   token,
   webSocket = defaultWebSocket(),
 }: WebuiTransportOptions): {
+  version: () => Promise<WebuiVersionInfo>;
   loadSessions: WebuiClientSessionLoader;
+  listArchivedSessions: () => Promise<WebuiClientSessionPage>;
+  archiveSession: (request: { readonly id: string }) => Promise<{ readonly success?: boolean }>;
+  deleteSession: (request: { readonly id: string }) => Promise<{ readonly success?: boolean }>;
   loadMessages: WebuiClientMessageLoader;
   createSession: (
     request: WebuiClientCreateSessionRequest,
@@ -133,6 +138,18 @@ export function createWebuiTransport({
   getAccountStatus: (request?: {
     readonly sessionId?: string;
   }) => Promise<Record<string, unknown>>;
+  listUserModelProviders: () => Promise<readonly Record<string, unknown>[]>;
+  createUserModelProvider: (request: Record<string, unknown>) => Promise<unknown>;
+  updateUserModelProvider: (request: Record<string, unknown>) => Promise<unknown>;
+  deleteUserModelProvider: (providerId: string) => Promise<unknown>;
+  testUserModelProvider: (providerId: string) => Promise<unknown>;
+  testUserModel: (request: { readonly providerId: string; readonly modelId: string }) => Promise<unknown>;
+  discoverUserModelsCandidate: (request: Record<string, unknown>) => Promise<unknown>;
+  saveUserModelProviderCandidate: (request: Record<string, unknown>) => Promise<unknown>;
+  listProviderPresets: () => Promise<readonly Record<string, unknown>[]>;
+  getMiniMaxApiKeyStatus: () => Promise<Record<string, unknown>>;
+  upsertMiniMaxApiKey: (request: { readonly apiKey: string; readonly saveAndUse?: boolean }) => Promise<unknown>;
+  getCodexOAuthStatus: () => Promise<Record<string, unknown>>;
   signOut: () => Promise<{ readonly success?: boolean }>;
   runCommand: (request: {
     readonly command: "help" | "new" | "compact" | "status" | "usage" | "model";
@@ -309,11 +326,15 @@ export function createWebuiTransport({
   }
 
   return {
+    version: () => request<WebuiVersionInfo>("version", undefined),
     loadSessions: (cursor) =>
       request<WebuiClientSessionPage>("listSessions", {
         name: "main",
         ...(cursor ? { cursor } : {}),
       }),
+    listArchivedSessions: () => request<WebuiClientSessionPage>("listSessions", { name: "main", includeArchived: true, onlyArchived: true }),
+    archiveSession: (body) => request("archiveSession", body),
+    deleteSession: (body) => request("deleteSession", body),
     loadMessages: ({ id, before }) =>
       request<WebuiClientMessagePage>("getMessages", {
         id,
@@ -340,6 +361,18 @@ export function createWebuiTransport({
     getSigninPanel: () => request("getSigninPanel", {}),
     claimSignin: () => request("claimSignin", {}),
     getAccountStatus: (body) => request("getAccountStatus", body ?? {}),
+    listUserModelProviders: () => request("listUserModelProviders", undefined),
+    createUserModelProvider: (body) => request("createUserModelProvider", body),
+    updateUserModelProvider: (body) => request("updateUserModelProvider", body),
+    deleteUserModelProvider: (providerId) => request("deleteUserModelProvider", { providerId }),
+    testUserModelProvider: (providerId) => request("testUserModelProvider", { providerId }),
+    testUserModel: (body) => request("testUserModel", body),
+    discoverUserModelsCandidate: (body) => request("discoverUserModelsCandidate", body),
+    saveUserModelProviderCandidate: (body) => request("saveUserModelProviderCandidate", body),
+    listProviderPresets: () => request("listProviderPresets", undefined),
+    getMiniMaxApiKeyStatus: () => request("getMiniMaxApiKeyStatus", undefined),
+    upsertMiniMaxApiKey: (body) => request("upsertMiniMaxApiKey", body),
+    getCodexOAuthStatus: () => request("getCodexOAuthStatus", undefined),
     signOut: () => request("signOut", {}),
     runCommand: (body) => request("runCommand", body),
   };

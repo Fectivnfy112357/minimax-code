@@ -58,6 +58,14 @@ export interface WebuiRuntimeHostHandle {
       request: WebuiSessionListRequest,
       context?: Record<string, never>,
     ): Promise<WebuiSessionPage>;
+    archiveSession(
+      request: { readonly id: string },
+      context?: Record<string, never>,
+    ): Promise<{ readonly success?: boolean }>;
+    deleteSession(
+      request: { readonly id: string },
+      context?: Record<string, never>,
+    ): Promise<{ readonly success?: boolean }>;
     createSession(
       request: WebuiCreateSessionRequest,
       context?: Record<string, never>,
@@ -149,6 +157,18 @@ listSkills(request?: {
     getAccountStatus(request?: {
       readonly sessionId?: string;
     }): Promise<Record<string, unknown>>;
+    listUserModelProviders(): Promise<readonly Record<string, unknown>[]>;
+    createUserModelProvider(request: Record<string, unknown>): Promise<unknown>;
+    updateUserModelProvider(request: Record<string, unknown>): Promise<unknown>;
+    deleteUserModelProvider(request: { readonly providerId: string }): Promise<unknown>;
+    testUserModelProvider(request: { readonly providerId: string }): Promise<unknown>;
+    testUserModel(request: { readonly providerId: string; readonly modelId: string }): Promise<unknown>;
+    discoverUserModelsCandidate(request: Record<string, unknown>): Promise<unknown>;
+    saveUserModelProviderCandidate(request: Record<string, unknown>): Promise<unknown>;
+    listProviderPresets(): Promise<readonly Record<string, unknown>[]>;
+    getMiniMaxApiKeyStatus(): Promise<Record<string, unknown>>;
+    upsertMiniMaxApiKey(request: { readonly apiKey: string; readonly saveAndUse?: boolean }): Promise<unknown>;
+    getCodexOAuthStatus(): Promise<Record<string, unknown>>;
     requestCompaction?(request: {
       readonly name: string;
       readonly id: string;
@@ -184,6 +204,16 @@ export function createHarnessPortFromHost(
       if (!host.cliService)
         throw new Error("runtime host does not expose the CLI service");
       return host.cliService.listSessions(request, {});
+    },
+    async archiveSession(request) {
+      if (!host.cliService)
+        throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.archiveSession(request, {});
+    },
+    async deleteSession(request) {
+      if (!host.cliService)
+        throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.deleteSession(request, {});
     },
     async createSession(request) {
       if (!host.cliService)
@@ -315,6 +345,54 @@ export function createHarnessPortFromHost(
       if (!host.cliService)
         throw new Error("runtime host does not expose the CLI service");
       return host.cliService.getAccountStatus(request);
+    },
+    async listUserModelProviders() {
+      if (!host.cliService) throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.listUserModelProviders();
+    },
+    async createUserModelProvider(request) {
+      if (!host.cliService) throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.createUserModelProvider(request);
+    },
+    async updateUserModelProvider(request) {
+      if (!host.cliService) throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.updateUserModelProvider(request);
+    },
+    async deleteUserModelProvider(providerId) {
+      if (!host.cliService) throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.deleteUserModelProvider({ providerId });
+    },
+    async testUserModelProvider(providerId) {
+      if (!host.cliService) throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.testUserModelProvider({ providerId });
+    },
+    async testUserModel(request) {
+      if (!host.cliService) throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.testUserModel({ providerId: request.providerId, modelId: request.modelId });
+    },
+    async discoverUserModelsCandidate(request) {
+      if (!host.cliService) throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.discoverUserModelsCandidate(request);
+    },
+    async saveUserModelProviderCandidate(request) {
+      if (!host.cliService) throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.saveUserModelProviderCandidate(request);
+    },
+    async listProviderPresets() {
+      if (!host.cliService) throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.listProviderPresets();
+    },
+    async getMiniMaxApiKeyStatus() {
+      if (!host.cliService) throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.getMiniMaxApiKeyStatus();
+    },
+    async upsertMiniMaxApiKey(request) {
+      if (!host.cliService) throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.upsertMiniMaxApiKey(request);
+    },
+    async getCodexOAuthStatus() {
+      if (!host.cliService) throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.getCodexOAuthStatus();
     },
     async requestCompaction(request) {
       if (!host.cliService)

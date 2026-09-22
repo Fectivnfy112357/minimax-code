@@ -338,6 +338,8 @@ export type WebuiRunCommandResult =
 export interface WebuiHarnessPort {
   version(): WebuiVersionInfo;
   listSessions(request: WebuiSessionListRequest): Promise<WebuiSessionPage>;
+  archiveSession(request: { readonly id: string }): Promise<{ readonly success?: boolean }>;
+  deleteSession(request: { readonly id: string }): Promise<{ readonly success?: boolean }>;
   createSession(
     request: WebuiCreateSessionRequest,
   ): Promise<WebuiCreateSessionResult>;
@@ -423,6 +425,18 @@ export interface WebuiHarnessPort {
   getAccountStatus(request?: {
     readonly sessionId?: string;
   }): Promise<Record<string, unknown>>;
+  listUserModelProviders(): Promise<readonly Record<string, unknown>[]>;
+  createUserModelProvider(request: Record<string, unknown>): Promise<unknown>;
+  updateUserModelProvider(request: Record<string, unknown>): Promise<unknown>;
+  deleteUserModelProvider(providerId: string): Promise<unknown>;
+  testUserModelProvider(providerId: string): Promise<unknown>;
+  testUserModel(request: { readonly providerId: string; readonly modelId: string }): Promise<unknown>;
+  discoverUserModelsCandidate(request: Record<string, unknown>): Promise<unknown>;
+  saveUserModelProviderCandidate(request: Record<string, unknown>): Promise<unknown>;
+  listProviderPresets(): Promise<readonly Record<string, unknown>[]>;
+  getMiniMaxApiKeyStatus(): Promise<Record<string, unknown>>;
+  upsertMiniMaxApiKey(request: { readonly apiKey: string; readonly saveAndUse?: boolean }): Promise<unknown>;
+  getCodexOAuthStatus(): Promise<Record<string, unknown>>;
   invalidateAuth?(): Promise<void>;
   requestCompaction(request: {
     readonly name: string;

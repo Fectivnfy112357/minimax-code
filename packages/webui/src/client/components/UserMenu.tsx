@@ -13,6 +13,8 @@ import type {
   WebuiUsageQuotaResult,
   WebuiUsageQuotaVideoView,
   WebuiUsageQuotaWindowView,
+  WebuiVersionInfo,
+  WebuiSessionListItem,
 } from "../../server/port.js";
 import { SettingsModal } from "./SettingsModal.js";
 
@@ -23,6 +25,8 @@ interface UserMenuProps {
   readonly collapsed: boolean;
   readonly hostLabel?: string;
   readonly dataDir?: string;
+  readonly version?: WebuiVersionInfo;
+  readonly listArchivedSessions?: () => Promise<{ readonly sessions: readonly WebuiSessionListItem[] }>;
   readonly sessionId?: string;
   readonly listModels?: (request?: { readonly sessionId?: string }) => Promise<readonly {
     readonly providerId: string;
@@ -40,6 +44,20 @@ interface UserMenuProps {
   readonly claimSignin?: () => Promise<WebuiClaimSigninView>;
   readonly getAccountStatus?: (request?: { readonly sessionId?: string }) => Promise<AccountStatus>;
   readonly signOut?: () => Promise<{ readonly success?: boolean }>;
+  readonly archiveSession?: (request: { readonly id: string }) => Promise<{ readonly success?: boolean }>;
+  readonly deleteSession?: (request: { readonly id: string }) => Promise<{ readonly success?: boolean }>;
+  readonly listUserModelProviders?: () => Promise<readonly Record<string, unknown>[]>;
+  readonly createUserModelProvider?: (request: Record<string, unknown>) => Promise<unknown>;
+  readonly updateUserModelProvider?: (request: Record<string, unknown>) => Promise<unknown>;
+  readonly deleteUserModelProvider?: (providerId: string) => Promise<unknown>;
+  readonly testUserModelProvider?: (providerId: string) => Promise<unknown>;
+  readonly testUserModel?: (request: { readonly providerId: string; readonly modelId: string }) => Promise<unknown>;
+  readonly discoverUserModelsCandidate?: (request: Record<string, unknown>) => Promise<unknown>;
+  readonly saveUserModelProviderCandidate?: (request: Record<string, unknown>) => Promise<unknown>;
+  readonly listProviderPresets?: () => Promise<readonly Record<string, unknown>[]>;
+  readonly getMiniMaxApiKeyStatus?: () => Promise<Record<string, unknown>>;
+  readonly upsertMiniMaxApiKey?: (request: { readonly apiKey: string; readonly saveAndUse?: boolean }) => Promise<unknown>;
+  readonly getCodexOAuthStatus?: () => Promise<Record<string, unknown>>;
 }
 
 interface UsageState {
@@ -694,6 +712,22 @@ export function UserMenu({
   claimSignin,
   getAccountStatus,
   signOut,
+  version,
+  listArchivedSessions,
+  archiveSession,
+  deleteSession,
+  listUserModelProviders,
+  createUserModelProvider,
+  updateUserModelProvider,
+  deleteUserModelProvider,
+  testUserModelProvider,
+  testUserModel,
+  discoverUserModelsCandidate,
+  saveUserModelProviderCandidate,
+  listProviderPresets,
+  getMiniMaxApiKeyStatus,
+  upsertMiniMaxApiKey,
+  getCodexOAuthStatus,
 }: UserMenuProps): ReactElement {
   const anchorRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -843,6 +877,6 @@ export function UserMenu({
         </div>
       </div> : null}
     </div>
-    <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} dataDir={dataDir} sessionId={sessionId} listModels={listModels} selectModel={selectModel} getUsageQuota={getUsageQuota} getAccountStatus={getAccountStatus} signOut={signOut} />
+    <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} dataDir={dataDir} version={version} listArchivedSessions={listArchivedSessions} sessionId={sessionId} listModels={listModels} selectModel={selectModel} getUsageQuota={getUsageQuota} getAccountStatus={getAccountStatus} signOut={signOut} archiveSession={archiveSession} deleteSession={deleteSession} listUserModelProviders={listUserModelProviders} createUserModelProvider={createUserModelProvider} updateUserModelProvider={updateUserModelProvider} deleteUserModelProvider={deleteUserModelProvider} testUserModelProvider={testUserModelProvider} testUserModel={testUserModel} discoverUserModelsCandidate={discoverUserModelsCandidate} saveUserModelProviderCandidate={saveUserModelProviderCandidate} listProviderPresets={listProviderPresets} getMiniMaxApiKeyStatus={getMiniMaxApiKeyStatus} upsertMiniMaxApiKey={upsertMiniMaxApiKey} getCodexOAuthStatus={getCodexOAuthStatus} />
   </>;
 }
