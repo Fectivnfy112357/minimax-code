@@ -8,7 +8,7 @@
 //
 // Two kinds of copy live on this screen and they do not mix:
 //   * Shell chrome reproduced from the desktop (rail rows, section header, headline,
-//     composer hint, chips, identity row) carries the desktop's own wording, because the
+//     composer hint, identity row) carries the desktop's own wording, because the
 //     element is a replica of the desktop's element.
 //   * Surfaces that exist only in the WebUI (the transcript, stream refusals) keep this
 //     client's existing English copy. Changing the product's
@@ -23,6 +23,7 @@ import {
   useEffect,
   useId,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
   type ReactElement,
@@ -33,12 +34,10 @@ import {
   WebuiIconBell,
   WebuiIconBrand,
   WebuiIconChevronDown,
-  WebuiIconCloud,
   WebuiIconFolder,
   WebuiIconNewTask,
   WebuiIconPlugins,
   WebuiIconRemote,
-  WebuiIconRunLocation,
   WebuiIconSchedule,
   WebuiIconSearch,
   WebuiIconSidebarToggle,
@@ -319,6 +318,13 @@ export interface WebuiClientFoundationAppProps {
   readonly getAccountStatus?: (request?: {
     readonly sessionId?: string;
   }) => Promise<Record<string, unknown>>;
+  readonly runCommand?: (request: {
+    readonly command: "help" | "new" | "compact" | "status" | "usage" | "model";
+    readonly input?: string;
+    readonly sessionId?: string;
+    readonly agentName?: string;
+    readonly workspaceDir?: string;
+  }) => Promise<Record<string, unknown>>;
   /**
    * What the identity row shows under the product name. The desktop puts the signed-in
    * account's plan there; the WebUI is loopback-only and has no account, so it reports
@@ -326,6 +332,16 @@ export interface WebuiClientFoundationAppProps {
    */
   readonly hostLabel?: string;
 }
+
+const WEBUI_COMMANDS = [
+  { name: "help", description: "查看可用命令" },
+  { name: "new", description: "在当前项目创建新任务" },
+  { name: "compact", description: "压缩当前对话" },
+  { name: "status", description: "查看当前状态" },
+  { name: "usage", description: "查看会话用量" },
+  { name: "model", description: "选择模型" },
+] as const;
+type WebuiCommandName = (typeof WEBUI_COMMANDS)[number]["name"];
 
 function useSelectedSessionId(
   locationHash?: string,
@@ -1519,6 +1535,9 @@ function WebuiComposer({
   agentName,
   createSession,
   createSessionWorkspaceDir,
+  availableWorkspaces,
+  onWorkspaceChange,
+  runCommand,
   sendMessage,
   resumeSession,
   loadMessages,
@@ -1548,6 +1567,9 @@ function WebuiComposer({
   readonly agentName: string;
   readonly createSession?: WebuiClientSessionCreator;
   readonly createSessionWorkspaceDir?: string;
+  readonly availableWorkspaces: readonly WebuiProjectGroup[];
+  readonly onWorkspaceChange: (workspaceDir?: string) => void;
+  readonly runCommand?: WebuiClientFoundationAppProps["runCommand"];
   readonly sendMessage?: WebuiClientMessageSender;
   readonly enqueueMessage?: WebuiClientMessageEnqueuer;
   readonly resumeSession?: WebuiClientSessionResumer;
@@ -1591,6 +1613,11 @@ function WebuiComposer({
   const [models, setModels] = useState<readonly WebuiModelEntry[]>([]);
   const [usage, setUsage] = useState<Record<string, unknown>>();
   const [accountStatus, setAccountStatus] = useState<Record<string, unknown>>();
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
+  const [commandOutput, setCommandOutput] = useState<string>();
+  const [commandRunning, setCommandRunning] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const fieldId = useId();
   const teamModeText = teamModeCopy(
     typeof document === "undefined" ? undefined : document.documentElement.lang,
@@ -1720,18 +1747,18 @@ function WebuiComposer({
   ]);
 
   useEffect(() => {
-    if (!sessionId) return undefined;
+    if (!listModels && !getSessionUsage && !getAccountStatus) return undefined;
     let cancelled = false;
     const refreshInspection = async () => {
       const [nextModels, nextUsage, nextAccount] = await Promise.all([
         listModels?.({ sessionId }),
-        getSessionUsage?.({ id: sessionId }),
+        sessionId ? getSessionUsage?.({ id: sessionId }) : undefined,
         getAccountStatus?.({ sessionId }),
       ]);
       if (cancelled) return;
-      if (nextModels) setModels(nextModels);
-      if (nextUsage) setUsage(nextUsage);
-      if (nextAccount) setAccountStatus(nextAccount);
+      setModels(nextModels ?? []);
+      setUsage(nextUsage);
+      setAccountStatus(nextAccount);
     };
     void refreshInspection().catch((error: unknown) => {
       if (!cancelled)
@@ -1852,7 +1879,7 @@ function WebuiComposer({
   };
 
   const handleSelectModel = async (value: string) => {
-    if (!sessionId || !selectModel) return;
+    if (!selectModel) return;
     const model = models.find(
       (candidate) => webuiModelOptionValue(candidate) === value,
     );
@@ -1863,12 +1890,15 @@ function WebuiComposer({
         providerId: model.providerId,
         modelId: model.modelId,
         ...(model.variant ? { variant: model.variant } : {}),
-        sessionId,
+        ...(sessionId ? { sessionId } : {}),
       });
       if (result.success === false)
         throw new Error("The model could not be selected");
-      const refreshed = await listModels?.({ sessionId });
+      const refreshed = await listModels?.({
+        ...(sessionId ? { sessionId } : {}),
+      });
       if (refreshed) setModels(refreshed);
+      setModelMenuOpen(false);
     } catch (error) {
       setInteractionError(
         error instanceof Error ? error.message : String(error),
@@ -1877,6 +1907,29 @@ function WebuiComposer({
   };
 
   const selectedModel = models.find((model) => model.selected);
+  const enabledModels = models.filter((model) => model.enabled !== false);
+  const commandMatch = /^\/([^\s/]*)$/u.exec(draft.trim());
+  const commandQuery = (commandMatch?.[1] ?? "").toLowerCase();
+  const commandSuggestions = commandMatch
+    ? WEBUI_COMMANDS.filter((command) =>
+        command.name.startsWith(commandQuery),
+      )
+    : [];
+  const [commandIndex, setCommandIndex] = useState(0);
+  useEffect(() => {
+    setCommandIndex((current) =>
+      commandSuggestions.length === 0
+        ? 0
+        : Math.min(current, commandSuggestions.length - 1),
+    );
+  }, [commandMatch?.[1], commandSuggestions.length]);
+  const chooseCommand = (command: WebuiCommandName) => {
+    onDraftChange(`/${command} `);
+    textareaRef.current?.focus();
+  };
+  const commandInvocation = /^\/([^\s/]+)(?:\s+([\s\S]*))?$/u.exec(
+    draft.trim(),
+  );
   const summary =
     sessionId &&
     usage?.summary &&
@@ -1926,6 +1979,39 @@ function WebuiComposer({
   });
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const command = commandInvocation
+      ? WEBUI_COMMANDS.find((item) => item.name === commandInvocation[1])
+      : undefined;
+    if (runCommand && command) {
+      setCommandRunning(true);
+      setInteractionError(undefined);
+      try {
+        const result = await runCommand({
+          command: command.name,
+          ...(commandInvocation?.[2]
+            ? { input: commandInvocation[2].trim() }
+            : {}),
+          ...(sessionId ? { sessionId } : {}),
+          agentName,
+          ...(createSessionWorkspaceDir
+            ? { workspaceDir: createSessionWorkspaceDir }
+            : {}),
+        });
+        const output =
+          typeof result.output === "string"
+            ? result.output
+            : JSON.stringify(result.data ?? result, null, 2);
+        setCommandOutput(output);
+        onDraftChange("");
+      } catch (error) {
+        setInteractionError(
+          error instanceof Error ? error.message : String(error),
+        );
+      } finally {
+        setCommandRunning(false);
+      }
+      return;
+    }
     await submitWebuiComposerTurn(
       {
         sessionId,
@@ -2053,6 +2139,14 @@ function WebuiComposer({
           Unable to send message: {stream.refusal}
         </p>
       ) : null}
+      {commandOutput ? (
+        <pre
+          className="mt-3 w-full whitespace-pre-wrap text-text_default_secondary text-size_12 leading-line_height_16"
+          data-webui-command-output="true"
+        >
+          {commandOutput}
+        </pre>
+      ) : null}
       {stream.transcriptIncomplete ? (
         <p
           data-webui-transcript-incomplete="true"
@@ -2072,16 +2166,63 @@ function WebuiComposer({
                   Message
                 </label>
                 <textarea
+                  ref={textareaRef}
                   id={`${fieldId}-content`}
                   name="content"
                   rows={2}
                   value={draft}
                   onChange={(event) => onDraftChange(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (commandSuggestions.length === 0) return;
+                    if (event.key === "ArrowDown") {
+                      event.preventDefault();
+                      setCommandIndex(
+                        (current) =>
+                          (current + 1) % commandSuggestions.length,
+                      );
+                    } else if (event.key === "ArrowUp") {
+                      event.preventDefault();
+                      setCommandIndex(
+                        (current) =>
+                          (current - 1 + commandSuggestions.length) %
+                          commandSuggestions.length,
+                      );
+                    } else if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      const command = commandSuggestions[commandIndex];
+                      if (command) chooseCommand(command.name);
+                    }
+                  }}
                   disabled={!canCompose && !canQueue}
                   placeholder="输入消息…（输入 / 唤起命令）"
                   className="webui-textarea webui-composer-input text-text_default_primary"
                   data-webui-composer-input="true"
                 />
+                {commandSuggestions.length > 0 ? (
+                  <div
+                    role="listbox"
+                    aria-label="命令"
+                    data-webui-command-menu="true"
+                    className="webui-command-menu"
+                  >
+                    {commandSuggestions.map((command, index) => (
+                      <button
+                        key={command.name}
+                        type="button"
+                        role="option"
+                        aria-selected={index === commandIndex}
+                        className="webui-command-option"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => chooseCommand(command.name)}
+                      >
+                        <span className="font-medium">/{command.name}</span>
+                        <span className="text-text_default_tertiary">
+                          {command.description}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
               </div>
               <div
                 className="flex w-full items-center gap-3 px-3 pt-1"
@@ -2099,42 +2240,55 @@ function WebuiComposer({
                   <WebuiIconAttach />
                 </button>
                 <div className="ml-auto flex items-center gap-1">
-                  <label
-                    className="webui-pill text-sm text-text_default_primary"
+                  <div
+                    className="webui-model-selector"
                     data-webui-model-selector="true"
                   >
-                    <span className="sr-only">Model</span>
-                    <select
-                      value={
-                        selectedModel
-                          ? webuiModelOptionValue(selectedModel)
-                          : ""
-                      }
-                      onChange={(event) =>
-                        void handleSelectModel(event.target.value)
-                      }
-                      disabled={
-                        !sessionId || models.length === 0 || !selectModel
-                      }
+                    <button
+                      type="button"
+                      className="webui-model-selector-trigger"
                       aria-label="Model"
+                      aria-haspopup="listbox"
+                      aria-expanded={modelMenuOpen}
+                      disabled={enabledModels.length === 0 || !selectModel}
+                      onClick={() => setModelMenuOpen((open) => !open)}
                     >
-                      <option value="">
-                        {selectedModel?.displayName ?? "选择模型"}
-                      </option>
-                      {models
-                        .filter((model) => model.enabled !== false)
-                        .map((model) => (
-                          <option
-                            key={webuiModelOptionValue(model)}
-                            value={webuiModelOptionValue(model)}
-                          >
-                            {model.displayName ??
-                              `${model.providerId}/${model.modelId}`}
-                          </option>
-                        ))}
-                    </select>
+                      <span className="min-w-0 max-w-[220px] truncate whitespace-nowrap">
+                        {selectedModel?.displayName ?? "MiniMax-M3"}
+                      </span>
                     <WebuiIconChevronDown className="flex-shrink-0 text-icon_default_tertiary" />
-                  </label>
+                    </button>
+                    {modelMenuOpen ? (
+                      <div
+                        role="listbox"
+                        aria-label="Model"
+                        data-webui-model-menu="true"
+                        className="webui-model-menu"
+                      >
+                        {enabledModels.map((model) => {
+                          const value = webuiModelOptionValue(model);
+                          return (
+                            <button
+                              key={value}
+                              type="button"
+                              role="option"
+                              aria-selected={selectedModel === model}
+                              className="webui-model-option"
+                              onClick={() => void handleSelectModel(value)}
+                            >
+                              <span className="min-w-0 flex-1 truncate text-left">
+                                {model.displayName ??
+                                  `${model.providerId}/${model.modelId}`}
+                              </span>
+                              {selectedModel === model ? (
+                                <span aria-hidden="true">✓</span>
+                              ) : null}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
                   <button
                     type="button"
                     role="switch"
@@ -2150,7 +2304,7 @@ function WebuiComposer({
                   </button>
                   <button
                     type="submit"
-                    disabled={!sendable}
+                    disabled={!sendable || commandRunning}
                     aria-label="发送"
                     data-webui-composer-submit="true"
                     className="webui-send-button"
@@ -2168,32 +2322,58 @@ function WebuiComposer({
           className="flex w-full items-center gap-3 px-3"
           data-webui-workspace-toolbar="true"
         >
-          <button
-            type="button"
-            disabled
-            aria-disabled="true"
-            tabIndex={-1}
-            data-webui-placeholder-chrome="workspace-pill"
-            className="webui-pill max-w-[220px] min-w-0 text-text_default_primary"
-          >
+          <div className="relative">
+            <button
+              type="button"
+              aria-haspopup="listbox"
+              aria-expanded={workspaceMenuOpen}
+              data-webui-workspace-picker="true"
+              className="webui-pill max-w-[220px] min-w-0 text-text_default_primary"
+              onClick={() => setWorkspaceMenuOpen((open) => !open)}
+            >
             <span className="flex size-5 shrink-0 items-center justify-center text-icon_default_primary">
               <WebuiIconFolder />
             </span>
             <span className="min-w-0 flex-1 truncate whitespace-nowrap leading-5">
-              选择文件夹
+              {createSessionWorkspaceDir
+                ? workspaceProjectName(createSessionWorkspaceDir)
+                : "选择文件夹"}
             </span>
-          </button>
-          <button
-            type="button"
-            disabled
-            aria-disabled="true"
-            tabIndex={-1}
-            data-webui-placeholder-chrome="run-location-pill"
-            className="webui-pill text-sm text-text_default_primary"
-          >
-            <WebuiIconRunLocation className="flex-shrink-0 text-icon_default_primary" />
+            </button>
+            {workspaceMenuOpen ? (
+              <div
+                role="listbox"
+                aria-label="工作目录"
+                data-webui-workspace-menu="true"
+                className="webui-workspace-menu"
+              >
+                {availableWorkspaces.filter((project) => project.workspaceDir)
+                  .map((project) => (
+                    <button
+                      key={project.key}
+                      type="button"
+                      role="option"
+                      aria-selected={
+                        project.workspaceDir === createSessionWorkspaceDir
+                      }
+                      className="webui-workspace-option"
+                      onClick={() => {
+                        onWorkspaceChange(project.workspaceDir);
+                        setWorkspaceMenuOpen(false);
+                      }}
+                    >
+                      <WebuiIconFolder className="flex-shrink-0" />
+                      <span className="min-w-0 flex-1 truncate text-left">
+                        {project.name}
+                      </span>
+                    </button>
+                  ))}
+              </div>
+            ) : null}
+          </div>
+          <span className="webui-pill text-sm text-text_default_primary">
             <span className="whitespace-nowrap">本地</span>
-          </button>
+          </span>
         </div>
         {sessionId && summary ? (
           <p
@@ -2214,49 +2394,6 @@ function WebuiComposer({
             Model credentials unavailable: {credentialMessage}
           </p>
         ) : null}
-      </div>
-    </section>
-  );
-}
-
-/** The desktop's quick-action row. Inert here: the WebUI ships no canned suggestions. */
-function WebuiRecommendationChips(): ReactElement {
-  const chips = [
-    "视频生成",
-    "编程开发",
-    "Vibe Coding",
-    "设计视觉",
-    "问问 MCode",
-  ];
-  return (
-    <section className="mt-3 w-full">
-      <div
-        className="flex w-full flex-col gap-3 rounded-2xl px-1.5 pb-1.5 pt-2 bg-transparent"
-        data-webui-recommendations="true"
-        data-webui-placeholder-chrome="recommendation-chips"
-      >
-        <div className="relative flex h-8 w-full items-center px-9">
-          <div className="relative min-w-0 flex-1">
-            <div className="overflow-x-auto" role="tablist">
-              <div className="flex w-max min-w-full items-center justify-center gap-2">
-                {chips.map((chip) => (
-                  <button
-                    key={chip}
-                    type="button"
-                    role="tab"
-                    aria-selected="false"
-                    disabled
-                    aria-disabled="true"
-                    tabIndex={-1}
-                    className="webui-chip text-sm text-text_default_primary"
-                  >
-                    <span>{chip}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
     </section>
   );
@@ -2285,6 +2422,7 @@ export function WebuiClientFoundationApp({
   selectModel,
   getSessionUsage,
   getAccountStatus,
+  runCommand,
   hostLabel,
 }: WebuiClientFoundationAppProps): ReactElement {
   const [page, setPage] = useState<WebuiClientSessionPage>(
@@ -2488,38 +2626,6 @@ export function WebuiClientFoundationApp({
                         <RailRow label="远程" icon={<WebuiIconRemote />} inert />
                       </div>
 
-                  <div
-                    className="conversation-source-segmented sticky top-0 z-20 flex justify-start bg-bg_default_scrim pb-2 pt-3"
-                    data-webui-conversation-source="true"
-                    data-webui-placeholder-chrome="source-segmented"
-                  >
-                    <div
-                      className="pointer-events-none absolute inset-x-0 top-0 flex h-1 items-center"
-                      aria-hidden="true"
-                    >
-                      <div className="h-px w-full bg-border_light" />
-                    </div>
-                    <div className="inline-flex">
-                      <div
-                        className="webui-segmented"
-                        data-webui-segmented-static="true"
-                      >
-                        <span
-                          aria-current="true"
-                          className="webui-segmented-item bg-bg_default_primary"
-                          data-webui-segmented-active="true"
-                        >
-                          <WebuiIconFolder className="h-4 w-4" />
-                          本地
-                        </span>
-                        <span className="webui-segmented-item">
-                          <WebuiIconCloud className="h-4 w-4" />
-                          云端
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
                       <WebuiProjectList
                         page={page}
                         loading={loading}
@@ -2627,6 +2733,9 @@ export function WebuiClientFoundationApp({
                     agentName={selectedAgentName}
                     createSession={createSession}
                     createSessionWorkspaceDir={newTaskWorkspaceDir}
+                    availableWorkspaces={groupWebuiSessionsByWorkspace(page.sessions)}
+                    onWorkspaceChange={setNewTaskWorkspaceDir}
+                    runCommand={runCommand}
                     sendMessage={sendMessage}
                     enqueueMessage={enqueueMessage}
                     resumeSession={resumeSession}
@@ -2665,7 +2774,6 @@ export function WebuiClientFoundationApp({
                   />
                   </Composer>
 
-                  {homeMode ? <WebuiRecommendationChips /> : null}
 
                   {selectedSessionId && loadMessages ? (
                     <Transcript>

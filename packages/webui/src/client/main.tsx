@@ -50,6 +50,7 @@ const app = <WebuiClientFoundationApp
     selectModel={transport.selectModel}
     getSessionUsage={transport.getSessionUsage}
     getAccountStatus={transport.getAccountStatus}
+    runCommand={transport.runCommand}
   />;
 const currentRoute = route(location.pathname);
 root.render(

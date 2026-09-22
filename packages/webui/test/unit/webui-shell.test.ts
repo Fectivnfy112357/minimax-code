@@ -3,8 +3,8 @@
 // The shell renders the desktop application's anatomy: a 240px rail on
 // `bg_default_scrim`, a main surface on `bg_grouped_secondary`, a window strip
 // carrying the rail controls, a fixed "new task" row, the navigation block, the
-// source switcher, the recent-tasks block, the identity row, and on the surface
-// a centred hero with the floating composer and the quick-action chips.
+// project list, the identity row, and on the surface a centred hero with the
+// floating composer.
 //
 // The criterion for a visual change is the rendered result, and a markup
 // assertion cannot establish that on its own: a class name in the output says
@@ -412,8 +412,8 @@ describe("WebUI shell — desktop anatomy", () => {
     expect(html).toMatch(/bg-bg_default_scrim/u);
     // The main surface is the lightest step.
     expect(html).toMatch(/bg-bg_grouped_secondary/u);
-    // The selected segmented item is painted with the primary surface token.
-    expect(html).toMatch(/bg-bg_default_primary/u);
+    // The composer carries the elevated desktop surface token.
+    expect(html).toMatch(/bg-bg_grouped_secondary_elevated/u);
   });
 
   it("stacks the rail in the desktop's order", () => {
@@ -422,7 +422,6 @@ describe("WebUI shell — desktop anatomy", () => {
       'data-webui-sidebar-toggle="true"',
       'data-webui-rail-fixed-row="true"',
       'data-webui-nav-item="插件"',
-      'data-webui-conversation-source="true"',
       'data-webui-rail-section-header="true"',
       'data-webui-rail-identity="true"',
     ];
@@ -509,7 +508,7 @@ describe("WebUI shell — desktop anatomy", () => {
         !/(?:^|\s)disabled(?:=|\s|>)/u.test(tag) &&
         !/aria-disabled="true"/u.test(tag),
     );
-    expect(operable).toHaveLength(3);
+    expect(operable).toHaveLength(4);
     expect(html).toMatch(/data-webui-sidebar-toggle="true"/u);
     expect(html).toMatch(/data-webui-nav-item="新建任务"/u);
     expect(html).toMatch(/data-webui-team-mode-toggle="true"/u);
@@ -539,7 +538,7 @@ describe("WebUI shell — desktop anatomy", () => {
     expect(send).toMatch(/(?:^|\s)disabled(?:=|\s|>)/u);
   });
 
-  it("puts the hero, the composer and the chips on the home surface", () => {
+  it("puts the hero and the desktop composer on the home surface", () => {
     const html = renderShell();
 
     expect(html).toMatch(/data-webui-home-content="true"/u);
@@ -547,10 +546,8 @@ describe("WebUI shell — desktop anatomy", () => {
     // The hero column is the desktop's 743px measure under its 240px top pad.
     expect(html).toMatch(/max-w-\[743px\]/u);
     expect(html).toMatch(/pt-\[240px\]/u);
-    expect(html).toMatch(/data-webui-recommendations="true"/u);
-    expect(html).toMatch(
-      /data-webui-placeholder-chrome="recommendation-chips"/u,
-    );
+    expect(html).not.toMatch(/data-webui-recommendations="true"/u);
+    expect(html).not.toMatch(/data-webui-conversation-source="true"/u);
     // New Task is the desktop's clean home state, not the WebUI-only create-session
     // form and not a previously selected transcript.
     expect(html).not.toMatch(/data-webui-create-form="true"/u);
@@ -571,11 +568,16 @@ describe("WebUI shell — desktop anatomy", () => {
     // webui-design-tokens.test.ts rejects.
     expect(html).toMatch(/webui-composer-card/u);
     expect(html).toMatch(/webui-hero-avatar/u);
+    expect(html).toMatch(/data-webui-model-selector="true"/u);
+    expect(html).toMatch(/webui-model-selector-trigger/u);
+    expect(html).toMatch(/data-webui-workspace-picker="true"/u);
+    expect(html).toMatch(/data-webui-composer-submit="true"/u);
+    expect(html).not.toMatch(/data-webui-placeholder-chrome="recommendation-chips"/u);
   });
 
   it("keeps the token-named spacing and type scale in the blocks that use it", () => {
     // The desktop composes both scales; the WebUI's own surfaces (the transcript,
-    // the create form) are written in the token-named one, so assert it where it
+    // the transcript) are written in the token-named one, so assert it where it
     // is actually rendered rather than in the home shell.
     const transcript = renderToStaticMarkup(
       createElement(WebuiSessionTranscript, {

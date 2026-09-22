@@ -225,6 +225,91 @@
     cursor: default;
   }
 
+  .webui-model-selector,
+  .webui-workspace-menu {
+    position: relative;
+  }
+  .webui-model-selector-trigger {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing_4);
+    height: 32px;
+    max-width: 244px;
+    padding: 0 var(--spacing_8);
+    border-radius: 10px;
+    color: var(--text_default_primary);
+    font-size: var(--size_14);
+    line-height: var(--line_height_20);
+    transition: background-color 120ms ease;
+  }
+  .webui-model-selector-trigger:hover:not(:disabled) {
+    background-color: var(--bg_interaction_tertiary_hover);
+  }
+  .webui-model-selector-trigger:disabled {
+    cursor: default;
+    color: var(--text_default_tertiary);
+  }
+  .webui-model-menu,
+  .webui-workspace-menu {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + var(--spacing_8));
+    z-index: 70;
+    display: flex;
+    min-width: 220px;
+    max-height: 320px;
+    flex-direction: column;
+    overflow-y: auto;
+    padding: var(--spacing_4);
+    border: 1px solid var(--border_default);
+    border-radius: var(--radius_12);
+    background: var(--bg_default_primary);
+    box-shadow: 0 8px 24px var(--shadow_default);
+  }
+  .webui-model-option,
+  .webui-workspace-option,
+  .webui-command-option {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    gap: var(--spacing_8);
+    border-radius: var(--radius_8);
+    padding: var(--spacing_8) var(--spacing_12);
+    color: var(--text_default_primary);
+    text-align: left;
+    font-size: var(--size_14);
+    line-height: var(--line_height_20);
+    transition: background-color 120ms ease;
+  }
+  .webui-model-option:hover,
+  .webui-workspace-option:hover,
+  .webui-command-option:hover,
+  .webui-model-option[aria-selected="true"],
+  .webui-workspace-option[aria-selected="true"],
+  .webui-command-option[aria-selected="true"] {
+    background-color: var(--bg_interaction_tertiary_hover);
+  }
+  .webui-workspace-menu {
+    right: auto;
+    left: 0;
+    min-width: 220px;
+  }
+  .webui-command-menu {
+    position: absolute;
+    right: var(--spacing_12);
+    bottom: calc(100% + var(--spacing_8));
+    left: var(--spacing_12);
+    z-index: 80;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: var(--spacing_4);
+    border: 1px solid var(--border_default);
+    border-radius: var(--radius_12);
+    background: var(--bg_default_primary);
+    box-shadow: 0 8px 24px var(--shadow_default);
+  }
+
   /* A square icon control: 28px, 8px radius. */
   .webui-icon-button {
     display: flex;
@@ -262,7 +347,7 @@
   }
   .webui-send-button:disabled {
     background-color: var(--bg_interaction_primary_inactive);
-    color: var(--text_label_secondary_inactive);
+    color: var(--text_default_inverted);
     cursor: not-allowed;
   }
   .webui-send-button:focus-visible {
