@@ -490,6 +490,28 @@
     margin-bottom: var(--spacing_16);
   }
 
+  /* A session is a two-zone surface: the transcript owns the scroll position,
+   * while the composer stays in the bottom zone. The DOM keeps the composer
+   * close to the home surface markup, so the explicit order here is the seam
+   * that prevents it from reappearing above the conversation. */
+  .webui-session-layout {
+    min-height: 0;
+  }
+  .webui-session-layout .webui-session-transcript-scroll {
+    order: 1;
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding-bottom: var(--spacing_16);
+  }
+  .webui-session-layout .webui-session-composer {
+    order: 2;
+    flex: 0 0 auto;
+    margin-top: 0;
+    padding-bottom: var(--spacing_16);
+    background-color: var(--bg_grouped_secondary);
+  }
+
   /* The user's turn: a 16px-radius bubble on the grouped-tertiary surface,
    * right-aligned, capped at 80% of the reading column, body capped at 240px. */
   .webui-user-bubble {
@@ -501,9 +523,9 @@
   }
   .webui-user-text {
     margin: 0;
-    font-size: 14px;
-    line-height: 22px;
-    letter-spacing: -0.1px;
+    font-size: 15px;
+    line-height: 24px;
+    letter-spacing: 0;
     white-space: pre-wrap;
     overflow-wrap: break-word;
     color: var(--text_default_primary);
@@ -518,6 +540,143 @@
   .webui-turn-process-separator {
     margin-top: var(--spacing_8);
     border-bottom: 0.5px solid var(--border_default);
+  }
+
+  /* Desktop assistant rows are a plain reading flow. Thinking and tool work
+   * sit in that flow as activity rows; the assistant is never rendered as a
+   * generic card. */
+  .webui-assistant-body {
+    display: flex;
+    min-width: 0;
+    width: 100%;
+    flex-direction: column;
+    gap: var(--spacing_16);
+    color: var(--text_default_primary);
+    font-size: 14px;
+    line-height: 20px;
+  }
+  .webui-assistant-answer {
+    min-width: 0;
+  }
+
+  .webui-thinking-block {
+    min-width: 0;
+  }
+  .webui-thinking-block > summary,
+  .webui-tool-row > summary {
+    list-style: none;
+  }
+  .webui-thinking-block > summary::-webkit-details-marker,
+  .webui-tool-row > summary::-webkit-details-marker {
+    display: none;
+  }
+  .webui-thinking-summary {
+    display: flex;
+    min-height: 28px;
+    width: fit-content;
+    cursor: pointer;
+    align-items: center;
+    gap: var(--spacing_8);
+    color: var(--text_default_tertiary);
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 22px;
+  }
+  .webui-thinking-summary:hover,
+  .webui-tool-row-summary:hover {
+    color: var(--text_default_secondary);
+  }
+  .webui-thinking-chevron,
+  .webui-tool-chevron {
+    width: 14px;
+    height: 14px;
+    color: var(--text_default_tertiary);
+    transition: transform 160ms ease;
+  }
+  .webui-thinking-block[open] .webui-thinking-chevron,
+  .webui-tool-row[open] .webui-tool-chevron {
+    transform: rotate(180deg);
+  }
+  .webui-thinking-detail {
+    position: relative;
+    margin-left: 8px;
+    border-left: 0.5px solid var(--border_default);
+    padding: var(--spacing_12) 0 var(--spacing_4) var(--spacing_16);
+    color: var(--text_default_tertiary);
+    font-size: 14px;
+    line-height: 20px;
+  }
+  .webui-thinking-detail .webui-markdown {
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--text_default_tertiary);
+  }
+  .webui-thinking-detail .webui-markdown :is(strong, b) {
+    font-weight: 400;
+  }
+
+  .webui-tool-list {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: var(--spacing_8);
+  }
+  .webui-tool-row {
+    min-width: 0;
+    color: var(--text_default_tertiary);
+    font-size: 14px;
+    line-height: 22px;
+  }
+  .webui-tool-row-summary {
+    display: flex;
+    min-width: 0;
+    width: fit-content;
+    max-width: 80%;
+    cursor: pointer;
+    align-items: center;
+    gap: var(--spacing_8);
+    color: var(--text_default_tertiary);
+    text-align: left;
+  }
+  .webui-tool-icon {
+    display: inline-flex;
+    width: 16px;
+    height: 16px;
+    flex: 0 0 16px;
+    align-items: center;
+    justify-content: center;
+    color: var(--text_default_tertiary);
+    font-size: 16px;
+    line-height: 16px;
+  }
+  .webui-tool-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .webui-tool-detail {
+    max-width: 100%;
+    margin: var(--spacing_8) 0 0 var(--spacing_8);
+    overflow: hidden;
+    border-radius: var(--radius_12);
+    background-color: var(--bg_grouped_tertiary);
+    padding: 4px;
+  }
+  .webui-tool-detail pre {
+    max-height: 200px;
+    overflow: auto;
+    margin: 0;
+    border-radius: 10px;
+    background-color: var(--bg_grouped_secondary);
+    padding: 10px var(--spacing_16);
+    color: var(--text_default_secondary);
+    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas,
+      Liberation Mono, monospace;
+    font-size: 14px;
+    line-height: 20px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
 
   /* A 26px square action under a message. The desktop keeps these and the

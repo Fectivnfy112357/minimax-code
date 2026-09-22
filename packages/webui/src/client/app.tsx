@@ -186,6 +186,7 @@ export type WebuiTranscriptItem =
       readonly kind: "user" | "assistant" | "thinking";
       readonly text: string;
       readonly messageId: string;
+      readonly durationMs?: number;
     }
   | {
       readonly kind: "tool";
@@ -202,6 +203,9 @@ export function projectWebuiMessage(
       kind: "thinking",
       text: message.thinkingContent,
       messageId: message.msgId,
+      ...(typeof message.thinkingDurationMs === "number"
+        ? { durationMs: message.thinkingDurationMs }
+        : {}),
     });
   if (message.toolCalls?.length)
     items.push({
@@ -234,25 +238,166 @@ function toolCallResultText(tool: Record<string, unknown>): string | undefined {
   }
 }
 
+function toolCallName(tool: Record<string, unknown>): string {
+  const value =
+    tool.tool_call_name ??
+    tool.toolCallName ??
+    tool.tool_name ??
+    tool.toolName ??
+    tool.name;
+  return typeof value === "string" && value.trim() ? value.trim() : "tool";
+}
+
+function toolCallLabel(tool: Record<string, unknown>): string {
+  const name = toolCallName(tool);
+  const normalized = name.toLowerCase();
+  const labels: Readonly<Record<string, string>> = {
+    bash: "执行命令",
+    shell: "执行命令",
+    execute: "执行命令",
+    execute_command: "执行命令",
+    read: "读取文件",
+    read_file: "读取文件",
+    write: "写入文件",
+    write_file: "写入文件",
+    edit: "编辑文件",
+    edit_file: "编辑文件",
+    str_replace: "编辑文件",
+    grep: "搜索文件",
+    find: "查找文件",
+    ls: "列出文件",
+    web: "访问网页",
+    web_search: "搜索网页",
+    webfetch: "访问网页",
+    web_fetch: "访问网页",
+    task: "调用子代理",
+  };
+  return labels[normalized] ?? name.replace(/[_-]+/gu, " ");
+}
+
+function toolCallInputText(tool: Record<string, unknown>): string | undefined {
+  const value =
+    tool.tool_call_args ??
+    tool.toolCallArgs ??
+    tool.tool_call_args_json ??
+    tool.toolCallArgsJson ??
+    tool.input ??
+    tool.args;
+  if (typeof value === "string" && value.trim()) return value;
+  if (!value || typeof value !== "object") return undefined;
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return undefined;
+  }
+}
+
 function WebuiToolResults({
   tools,
 }: {
   readonly tools: readonly Record<string, unknown>[];
 }): ReactElement | null {
-  const results = tools
-    .map(toolCallResultText)
-    .filter((result): result is string => result !== undefined);
-  if (results.length === 0) return null;
   return (
-    <div className="mt-1 flex flex-col gap-1">
-      {results.map((result, index) => (
-        <pre
-          key={`tool-result-${index}`}
-          className="overflow-x-auto whitespace-pre-wrap text-size_12"
-          data-webui-tool-result="true"
+    <div className="webui-tool-list" data-webui-tool-list="true">
+      {tools.map((tool, index) => {
+        const input = toolCallInputText(tool);
+        const result = toolCallResultText(tool);
+        const detail = result ?? input;
+        const status = tool.status ?? tool.tool_call_status ?? tool.toolCallStatus;
+        const statusLabel =
+          typeof status === "string" && status.trim() ? ` · ${status}` : "";
+        return (
+          <details
+            key={`tool-call-${toolCallName(tool)}-${index}`}
+            className="webui-tool-row"
+            data-webui-tool-call={toolCallName(tool)}
+          >
+            <summary className="webui-tool-row-summary">
+              <span className="webui-tool-icon" aria-hidden="true">
+                ↳
+              </span>
+              <span className="webui-tool-label">
+                {toolCallLabel(tool)}
+                {statusLabel}
+              </span>
+              <WebuiIconChevronDown className="webui-tool-chevron" />
+            </summary>
+            {detail ? (
+              <div className="webui-tool-detail" data-webui-tool-result="true">
+                <pre>{detail}</pre>
+              </div>
+            ) : null}
+          </details>
+        );
+      })}
+    </div>
+  );
+}
+
+function WebuiThinkingBlock({
+  text,
+  durationMs,
+  streaming = false,
+}: {
+  readonly text: string;
+  readonly durationMs?: number;
+  readonly streaming?: boolean;
+}): ReactElement | null {
+  if (!text.trim()) return null;
+  const duration =
+    typeof durationMs === "number" && durationMs > 0
+      ? ` · ${(durationMs / 1000).toFixed(1)}s`
+      : "";
+  return (
+    <details className="webui-thinking-block" open={streaming || undefined}>
+      <summary className="webui-thinking-summary" data-webui-thinking="true">
+        <span>{streaming ? "思考中" : "思考完成"}</span>
+        {duration ? <span>{duration}</span> : null}
+        <WebuiIconChevronDown className="webui-thinking-chevron" />
+      </summary>
+      <div className="webui-thinking-detail">
+        <WebuiMarkdown source={text} />
+      </div>
+    </details>
+  );
+}
+
+function WebuiAssistantBody({
+  messageId,
+  thinking,
+  thinkingDurationMs,
+  tools,
+  answers,
+  streaming = false,
+}: {
+  readonly messageId: string;
+  readonly thinking?: string;
+  readonly thinkingDurationMs?: number;
+  readonly tools?: readonly Record<string, unknown>[];
+  readonly answers: readonly string[];
+  readonly streaming?: boolean;
+}): ReactElement {
+  return (
+    <div
+      className="webui-assistant-body"
+      data-webui-assistant-body={messageId}
+    >
+      {thinking ? (
+        <WebuiThinkingBlock
+          text={thinking}
+          durationMs={thinkingDurationMs}
+          streaming={streaming}
+        />
+      ) : null}
+      {tools?.length ? <WebuiToolResults tools={tools} /> : null}
+      {answers.map((answer, index) => (
+        <div
+          key={`${messageId}-answer-${index}`}
+          className="webui-assistant-answer"
+          data-webui-message-kind="assistant"
         >
-          {result}
-        </pre>
+          <WebuiMarkdown source={answer} />
+        </div>
       ))}
     </div>
   );
@@ -856,7 +1001,8 @@ export function WebuiSessionTranscript({
     <section
       aria-label="Transcript"
       data-webui-transcript={sessionId}
-      className="flex w-full flex-col"
+      className="webui-session-transcript-scroll flex w-full flex-col"
+      data-webui-session-transcript-scroll="true"
     >
       <div
         className="flex w-full flex-col gap-spacing_8"
@@ -920,8 +1066,12 @@ export function WebuiSessionTranscript({
                 </div>
               </div>
             );
-          const processItems = group.items.filter(
-            (item) => item.kind === "thinking" || item.kind === "tool",
+          const thinkingItem = group.items.find(
+            (item) => item.kind === "thinking",
+          );
+          const toolItem = group.items.find(
+            (item): item is Extract<WebuiTranscriptItem, { kind: "tool" }> =>
+              item.kind === "tool",
           );
           const answers = group.items.filter(
             (item): item is Extract<WebuiTranscriptItem, { text: string }> =>
@@ -934,49 +1084,21 @@ export function WebuiSessionTranscript({
               data-webui-message-root={group.messageId}
               data-webui-message-role="assistant"
             >
-              <div className="flex w-full flex-col">
-                {processItems.length ? (
-                  <section
-                    className="pt-spacing_8"
-                    data-webui-turn-process="true"
-                  >
-                    <details>
-                      <summary className="flex w-fit cursor-pointer list-none items-center gap-spacing_4 py-spacing_4 text-activity-body-small text-text_default_tertiary">
-                        <span>{`共 ${processItems.length} 步`}</span>
-                      </summary>
-                      <div className="webui-turn-process-separator" />
-                      <div className="flex min-w-0 flex-col gap-spacing_8 overflow-hidden pt-spacing_8">
-                        {processItems.map((item, index) => (
-                          <div
-                            key={`${item.messageId}-process-${index}`}
-                            data-webui-message-kind={item.kind}
-                            className="text-text_default_secondary text-size_14 leading-line_height_20"
-                          >
-                            {item.kind === "tool" ? (
-                              <>
-                                {`Tool activity (${item.tools.length})`}
-                                <WebuiToolResults tools={item.tools} />
-                              </>
-                            ) : (
-                              <div className="webui-markdown-thinking">
-                                <WebuiMarkdown source={item.text} />
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </details>
-                  </section>
-                ) : null}
-                {answers.map((item, index) => (
-                  <div
-                    key={`${item.messageId}-answer-${index}`}
-                    data-webui-message-kind="assistant"
-                  >
-                    <WebuiMarkdown source={item.text} />
-                  </div>
-                ))}
-              </div>
+              <WebuiAssistantBody
+                messageId={group.messageId}
+                thinking={
+                  thinkingItem?.kind === "thinking"
+                    ? thinkingItem.text
+                    : undefined
+                }
+                thinkingDurationMs={
+                  thinkingItem?.kind === "thinking"
+                    ? thinkingItem.durationMs
+                    : undefined
+                }
+                tools={toolItem?.tools}
+                answers={answers.map((item) => item.text)}
+              />
             </div>
           );
         })}
@@ -1532,6 +1654,7 @@ function WebuiInteractionPanel({
 
 function WebuiComposer({
   sessionId,
+  sessionLayout = false,
   agentName,
   createSession,
   createSessionWorkspaceDir,
@@ -1564,6 +1687,7 @@ function WebuiComposer({
   teamModeLocked,
 }: {
   readonly sessionId?: string;
+  readonly sessionLayout?: boolean;
   readonly agentName: string;
   readonly createSession?: WebuiClientSessionCreator;
   readonly createSessionWorkspaceDir?: string;
@@ -2027,7 +2151,11 @@ function WebuiComposer({
     );
   };
   return (
-    <section aria-label="Compose message" className="w-full">
+    <section
+      aria-label="Compose message"
+      className={`w-full ${sessionLayout ? "webui-session-composer" : ""}`}
+      data-webui-session-composer={sessionLayout ? "true" : undefined}
+    >
       {sessionId ? (
         <WebuiInteractionPanel
           sessionId={sessionId}
@@ -2111,25 +2239,21 @@ function WebuiComposer({
         </p>
       ) : null}
       {stream.messages.map((message) => (
-        <article
+        <div
           key={message.id}
           data-webui-stream-message={message.id}
-          className="webui-card w-full p-spacing_16 text-text_default_primary text-size_14 leading-line_height_20"
+          className="webui-message"
+          data-webui-message-root={message.id}
+          data-webui-message-role="assistant"
         >
-          {message.thinking ? (
-            <details open>
-              <summary>Thinking</summary>
-              <WebuiMarkdown source={message.thinking} />
-            </details>
-          ) : null}
-          {message.toolCalls?.length ? (
-            <details open>
-              <summary>Tool activity ({message.toolCalls.length})</summary>
-              <WebuiToolResults tools={message.toolCalls} />
-            </details>
-          ) : null}
-          {message.answer ? <WebuiMarkdown source={message.answer} /> : null}
-        </article>
+          <WebuiAssistantBody
+            messageId={message.id}
+            thinking={message.thinking}
+            tools={message.toolCalls}
+            answers={message.answer ? [message.answer] : []}
+            streaming={stream.phase === "streaming"}
+          />
+        </div>
       ))}
       {stream.refusal ? (
         <p
@@ -2157,7 +2281,10 @@ function WebuiComposer({
         </p>
       ) : null}
 
-      <div className="relative mt-8 w-full" data-webui-composer-region="true">
+      <div
+        className={`relative ${sessionLayout ? "mt-0" : "mt-8"} w-full`}
+        data-webui-composer-region="true"
+      >
         <form onSubmit={submit} data-webui-composer="true" className="w-full">
           <div className="message-input-home-container flex flex-col items-center gap-1.5 rounded-[20px] bg-bg_default_scrim pb-2">
             <div className="w-full rounded-[20px] border border-border_default bg-bg_grouped_secondary_elevated p-3 webui-composer-card">
@@ -2699,12 +2826,13 @@ export function WebuiClientFoundationApp({
                 className={
                   homeMode
                     ? "flex h-full w-full flex-col items-center relative overflow-y-auto pt-[240px] pb-spacing_40"
-                    : "flex h-full w-full flex-col items-center relative overflow-y-auto pt-spacing_24 pb-spacing_40"
+                    : "flex h-full min-h-0 w-full flex-col items-center relative overflow-hidden pt-spacing_24"
                 }
                 data-webui-home-content={homeMode ? "true" : "false"}
+                data-webui-session-layout={!homeMode ? "true" : undefined}
               >
                 <div
-                  className={`flex w-full ${homeMode ? "max-w-[743px]" : "max-w-[768px]"} flex-col items-center gap-2 px-4`}
+                  className={`flex w-full ${homeMode ? "max-w-[743px]" : "max-w-[768px]"} flex-col items-center gap-2 px-4 ${homeMode ? "" : "webui-session-layout h-full min-h-0"}`}
                 >
                   {homeMode ? (
                     <div className="flex flex-col items-center gap-2 text-center">
@@ -2730,6 +2858,7 @@ export function WebuiClientFoundationApp({
                   <Composer>
                   <WebuiComposer
                     sessionId={selectedSessionId}
+                    sessionLayout={!homeMode}
                     agentName={selectedAgentName}
                     createSession={createSession}
                     createSessionWorkspaceDir={newTaskWorkspaceDir}

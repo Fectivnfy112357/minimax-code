@@ -65,6 +65,28 @@ function renderShell(label = "webui-foundation"): string {
   );
 }
 
+function renderSessionShell(): string {
+  return renderToStaticMarkup(
+    createElement(WebuiClientFoundationApp, {
+      label: "webui-foundation",
+      locationHash: "#session=session-1",
+      sessionPage: {
+        sessions: [
+          {
+            sessionId: "session-1",
+            agentName: "main",
+            createdAt: 1,
+            updatedAt: 2,
+            workspaceDir: "/tmp/project",
+          },
+        ],
+        hasMore: false,
+      },
+      loadMessages: async () => ({ messages: [], hasMore: false }),
+    }),
+  );
+}
+
 /** The four rail destinations the desktop ships that the WebUI has no feature for. */
 const INERT_NAV_LABELS = ["插件", "定时", "网站", "远程"];
 
@@ -573,6 +595,16 @@ describe("WebUI shell — desktop anatomy", () => {
     expect(html).toMatch(/data-webui-workspace-picker="true"/u);
     expect(html).toMatch(/data-webui-composer-submit="true"/u);
     expect(html).not.toMatch(/data-webui-placeholder-chrome="recommendation-chips"/u);
+  });
+
+  it("keeps the session composer below a separately scrolling transcript", () => {
+    const html = renderSessionShell();
+
+    expect(html).toMatch(/data-webui-session-layout="true"/u);
+    expect(html).toMatch(/data-webui-session-transcript-scroll="true"/u);
+    expect(html).toMatch(/data-webui-session-composer="true"/u);
+    expect(html).toMatch(/webui-session-transcript-scroll/u);
+    expect(html).toMatch(/webui-session-composer/u);
   });
 
   it("keeps the token-named spacing and type scale in the blocks that use it", () => {
