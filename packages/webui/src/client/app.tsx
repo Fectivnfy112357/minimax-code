@@ -34,11 +34,6 @@ import {
   WebuiIconBell,
   WebuiIconBrand,
   WebuiIconChevronDown,
-  WebuiIconCommandCompact,
-  WebuiIconCommandFork,
-  WebuiIconCommandGoal,
-  WebuiIconCommandMemory,
-  WebuiIconCommandPlan,
   WebuiIconFolder,
   WebuiIconNewTask,
   WebuiIconPlugins,
@@ -340,66 +335,24 @@ export interface WebuiClientFoundationAppProps {
 
 // Slash palette for the composer hinting model.
 //
-// The list mirrors the desktop's slash-palette (`app/out/_next/static/chunks/10118-*`)
-// so the WebUI shows the same commands, labels and descriptions the user already knows.
-// The harness port only wires `new` and `compact`; the rest stay rendered in their
-// desktop shape and become inert (`aria-disabled`, no click) until the matching
-// harness feature lands. The `supported` flag is the single source of truth for
-// whether a row is activatable; the visual layout, icon, label, description and
-// /name suffix stay identical to the desktop row for visual 1:1.
-const WEBUI_COMMANDS = [
-  {
-    name: "new",
-    label: "新建会话",
-    description: "新建会话",
-    icon: WebuiIconNewTask,
-    supported: true,
-  },
-  {
-    name: "compact",
-    label: "总结",
-    description: "总结上下文，继续当前对话",
-    icon: WebuiIconCommandCompact,
-    supported: true,
-  },
-  {
-    name: "goal",
-    label: "目标",
-    description: "为当前会话设置或更新目标",
-    icon: WebuiIconCommandGoal,
-    supported: false,
-  },
-  {
-    name: "plan",
-    label: "计划",
-    description: "执行前先梳理复杂任务",
-    icon: WebuiIconCommandPlan,
-    supported: false,
-  },
-  {
-    name: "fork",
-    label: "复制为新会话",
-    description: "保留当前上下文，在新会话中继续",
-    icon: WebuiIconCommandFork,
-    supported: false,
-  },
-  {
-    name: "deploy-website",
-    label: "网站部署",
-    description: "支持静态网站部署，适合前端网站分享、作品展示和快速发布。",
-    icon: WebuiIconSites,
-    supported: false,
-  },
-  {
-    name: "memory",
-    label: "记忆",
-    description: "使用记忆 开启；生成记忆 开启",
-    icon: WebuiIconCommandMemory,
-    supported: false,
-  },
-] as const;
-type WebuiCommandName = (typeof WEBUI_COMMANDS)[number]["name"];
-type WebuiCommandEntry = (typeof WEBUI_COMMANDS)[number];
+// The data layer lives in `slash-palette.ts` and mirrors the desktop's
+// `app/out/_next/static/chunks/10118-*` palette exactly: built-in commands,
+// the `ez`-style plugin registry, the skills resolver, the sectioning pass
+// (`eR` + memory splice), the lite-mode filter, and the four-rank scoring.
+// This file just wires that data into the existing submit / popover flow.
+import {
+  isWebuiRunnableCommand,
+  rankWebuiSlashPalette,
+  sectionWebuiSlashPalette,
+  WEBUI_BUILTIN_COMMANDS,
+  type SlashCommandEntry,
+} from "./slash-palette.js";
+
+const WEBUI_SLASH_SECTIONED = sectionWebuiSlashPalette(
+  WEBUI_BUILTIN_COMMANDS,
+  [],
+);
+type WebuiCommandName = SlashCommandEntry["name"];
 
 function useSelectedSessionId(
   locationHash?: string,
@@ -1971,9 +1924,9 @@ function WebuiComposer({
   // because "/name " trims to "/name" and matches again, leaving the palette
   // pinned above the composer.
   const commandMatch = /^\/([^\s/]*)$/u.exec(draft);
-  const commandQuery = (commandMatch?.[1] ?? "").toLowerCase();
+  const commandQuery = commandMatch?.[1] ?? "";
   const commandSuggestions = commandMatch
-    ? WEBUI_COMMANDS.filter((command) => command.name.startsWith(commandQuery))
+    ? rankWebuiSlashPalette(WEBUI_SLASH_SECTIONED, commandQuery)
     : [];
   const [commandIndex, setCommandIndex] = useState(0);
   useEffect(() => {
@@ -2040,9 +1993,11 @@ function WebuiComposer({
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const command = commandInvocation
-      ? WEBUI_COMMANDS.find((item) => item.name === commandInvocation[1])
+      ? WEBUI_SLASH_SECTIONED.find(
+          (item) => item.name === commandInvocation[1],
+        )
       : undefined;
-    if (runCommand && command && command.supported) {
+    if (runCommand && command && isWebuiRunnableCommand(command)) {
       setCommandRunning(true);
       setInteractionError(undefined);
       try {
@@ -2292,8 +2247,8 @@ function WebuiComposer({
                           <span className="webui-command-option-label">
                             {command.label}
                           </span>
-                          <span className="webui-command-option-suffix text-text_default_tertiary">
-                            /{command.name}
+                          <span className="webui-command-option-description text-text_default_tertiary">
+                            {command.description}
                           </span>
                         </button>
                       );

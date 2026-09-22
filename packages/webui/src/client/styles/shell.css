@@ -305,30 +305,39 @@
   .webui-command-option-icon {
     flex-shrink: 0;
   }
+  /* Label column. Mirrors the desktop's `min-w-0 truncate text-text_default_primary
+     ${primary ? "max-w-[50%]" : "flex-1"}` — the label takes the full row when no
+     description is rendered, otherwise it caps at half so the description gets
+     the rest. */
   .webui-command-option-label {
     flex: 1 1 auto;
     min-width: 0;
+    max-width: 50%;
     font-weight: var(--weight_medium);
     color: var(--text_default_primary);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .webui-command-option-suffix {
-    flex-shrink: 0;
-    font-size: var(--size_12);
-    line-height: var(--line_height_18);
-    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
-      "Liberation Mono", monospace;
+  /* Description column. Mirrors the desktop's `min-w-0 flex-1 truncate text-text_default_tertiary`
+     — takes the remainder of the row, dim text, single line with ellipsis. */
+  .webui-command-option-description {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: var(--text_default_tertiary);
+    font-weight: var(--weight_regular);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .webui-command-option:hover,
   .webui-command-option[aria-selected="true"] {
     background-color: var(--bg_interaction_tertiary_hover);
   }
   /* Inert palette rows render with the same shape as live rows (desktop 1:1)
-     but show as unavailable: muted icon, dimmer label/suffix, no hover tint,
-     and a not-allowed cursor so the user can tell the row exists for visual
-     parity only. The harness port still wires the supported commands
+     but show as unavailable: muted icon, dimmer label/description, no hover
+     tint, and a not-allowed cursor so the user can tell the row exists for
+     visual parity only. The harness port still wires the supported commands
      (compact, new); unsupported entries wait for the matching feature. */
   .webui-command-option[data-webui-command-option-inert="true"] {
     cursor: not-allowed;
@@ -342,7 +351,7 @@
   .webui-command-option[data-webui-command-option-inert="true"]
     .webui-command-option-label,
   .webui-command-option[data-webui-command-option-inert="true"]
-    .webui-command-option-suffix {
+    .webui-command-option-description {
     color: var(--text_default_tertiary);
     opacity: 0.55;
   }
