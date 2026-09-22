@@ -27,6 +27,7 @@ import {
   WebuiIconSkillCodebaseDesign,
   WebuiIconSkillCodeReview,
   WebuiIconSkillDiagnosingBugs,
+  WebuiIconSkillGeneric,
 } from "./icons.js";
 
 /** Behaviour an entry can declare. Mirrors the desktop's three special fields. */
@@ -240,24 +241,95 @@ export const WEBUI_SKILL_FIXTURES: readonly SlashCommandEntry[] = [
 ];
 
 /**
- * Skills resolver. Mirrors the desktop's `listSkillHub` (signed-out web) /
- * `listSkills(agentName, ...)` split. The WebUI today does not expose a
- * slash-palette skill RPC, so the resolver returns the fixture set above
- * (plus the plugin registry, which the sectioning pass routes to the
- * default section via `paletteSection: "special"`). When the harness port
- * adds skill fetching, replace this body with the equivalent of the
- * desktop's calls and the sectioning will pick them up unchanged.
+ * Minimal projection of the harness `SkillInfo` the slash palette needs.
+ * Mirrors `WebuiSkillEntry` from the server side: the harness ships only
+ * these three fields so the popover can render without dragging the full
+ * `SkillInfo` shape across the websocket.
  */
-export async function resolveWebuiSlashSkills(): Promise<SlashCommandEntry[]> {
-  return [
-    ...Object.values(WEBUI_PLUGIN_REGISTRY).map((entry) => ({
-      ...entry,
-      display_name: entry.label,
-      display_description: entry.description,
-      source_kind: "plugin",
-    })),
-    ...WEBUI_SKILL_FIXTURES,
-  ];
+export interface WebuiSlashSkillSummary {
+  readonly name: string;
+  readonly displayName?: string;
+  readonly description?: string;
+}
+
+/**
+ * Skills resolver. Mirrors the desktop's `listSkillHub` (signed-out web) /
+ * `listSkills(agentName, ...)` split.
+ *
+ * The harness port now exposes a `listSkills` RPC, so the preferred path
+ * is `fetcher()` — the returned skills replace the fixture set above. If
+ * the call rejects (port unavailable, RPC error, network drop) we keep the
+ * fixtures so the popover stays usable rather than going empty.
+ *
+ * `WEBUI_PLUGIN_REGISTRY` is always merged in regardless of the fetcher
+ * outcome; its entries sit in the `special` section so the sectioning pass
+ * routes them to the default row, not under the `技能` divider.
+ */
+export async function resolveWebuiSlashSkills(options?: {
+  readonly fetcher?: () => Promise<readonly WebuiSlashSkillSummary[]>;
+}): Promise<SlashCommandEntry[]> {
+  const pluginEntries = Object.values(WEBUI_PLUGIN_REGISTRY).map((entry) => ({
+    ...entry,
+    display_name: entry.label,
+    display_description: entry.description,
+    source_kind: "plugin",
+  }));
+  const skillEntries = await resolveSkillEntries(options?.fetcher);
+  return [...pluginEntries, ...skillEntries];
+}
+
+async function resolveSkillEntries(
+  fetcher?: () => Promise<readonly WebuiSlashSkillSummary[]>,
+): Promise<SlashCommandEntry[]> {
+  if (fetcher) {
+    try {
+      const skills = await fetcher();
+      const fromHarness = skills.map(slashSkillSummaryToEntry);
+      if (fromHarness.length > 0) return fromHarness;
+    } catch {
+      // Swallow and fall through to fixtures so a malformed probe entry stays
+      // a recoverable problem rather than an empty popover.
+    }
+  }
+  return [...WEBUI_SKILL_FIXTURES];
+}
+
+/**
+ * Converts a single harness skill summary into the popover's row shape. The
+ * mapping is intentionally tiny: name → name, displayName → label /
+ * displayName, description → description. Everything else (icon, palette
+ * section, supported) is filled in here so callers don't have to repeat the
+ * wiring. Exported so the composer can re-section the palette from the live
+ * registry without going through the async resolver twice.
+ */
+export function slashSkillSummaryToEntry(
+  skill: WebuiSlashSkillSummary,
+): SlashCommandEntry {
+  const displayName = skill.displayName?.trim() || skill.name;
+  return {
+    name: skill.name,
+    displayName,
+    label: displayName,
+    description: skill.description ?? "",
+    source_type: 1,
+    source_kind: "plugin",
+    icon: iconForSkillName(skill.name),
+    paletteSection: "skills",
+    supported: true,
+  };
+}
+
+const SKILL_ICON_BY_NAME: Record<string, WebuiIconComponent> = {
+  "ask-matt": WebuiIconSkillAskMatt,
+  "code-review": WebuiIconSkillCodeReview,
+  "codebase-design": WebuiIconSkillCodebaseDesign,
+  "diagnosing-bugs": WebuiIconSkillDiagnosingBugs,
+};
+
+type WebuiIconComponent = (props: { className?: string }) => ReactElement;
+
+function iconForSkillName(name: string): WebuiIconComponent {
+  return SKILL_ICON_BY_NAME[name] ?? WebuiIconSkillGeneric;
 }
 
 /**
@@ -396,8 +468,11 @@ export function buildWebuiSlashPalette(options: {
  */
 export async function buildWebuiSlashPaletteAsync(options: {
   readonly lite?: boolean;
+  readonly fetcher?: () => Promise<readonly WebuiSlashSkillSummary[]>;
 } = {}): Promise<SlashCommandEntry[]> {
-  const skills = await resolveWebuiSlashSkills();
+  const skills = await resolveWebuiSlashSkills({
+    fetcher: options.fetcher,
+  });
   return buildWebuiSlashPalette({ skills, lite: options.lite });
 }
 

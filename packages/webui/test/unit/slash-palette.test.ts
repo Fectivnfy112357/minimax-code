@@ -6,6 +6,7 @@ import {
   rankWebuiSlashPalette,
   resolveWebuiSlashSkills,
   sectionWebuiSlashPalette,
+  slashSkillSummaryToEntry,
   WEBUI_BUILTIN_COMMANDS,
   WEBUI_PLUGIN_REGISTRY,
   WEBUI_RUN_COMMAND_NAMES,
@@ -172,5 +173,99 @@ describe("WebUI slash palette — skill fixtures", () => {
       "codebase-design",
       "diagnosing-bugs",
     ]);
+  });
+});
+
+describe("WebUI slash palette — fetched skills", () => {
+  it("uses fetched skills when the fetcher resolves", async () => {
+    const fetched = [
+      { name: "my-local-skill", displayName: "My Local", description: "Local skill" },
+      { name: "another-skill", description: "Another one" },
+    ];
+    const skills = await resolveWebuiSlashSkills({
+      fetcher: async () => fetched,
+    });
+    const skillNames = skills
+      .filter((entry) => entry.paletteSection === "skills")
+      .map((entry) => entry.name)
+      .sort();
+    // The fixture set must NOT leak through when the fetcher returns data.
+    expect(skillNames).toEqual(["another-skill", "my-local-skill"]);
+  });
+
+  it("falls back to fixtures when the fetcher rejects", async () => {
+    const skills = await resolveWebuiSlashSkills({
+      fetcher: async () => {
+        throw new Error("harness down");
+      },
+    });
+    const skillNames = skills
+      .filter((entry) => entry.paletteSection === "skills")
+      .map((entry) => entry.name)
+      .sort();
+    expect(skillNames).toEqual([
+      "ask-matt",
+      "code-review",
+      "codebase-design",
+      "diagnosing-bugs",
+    ]);
+  });
+
+  it("falls back to fixtures when the fetcher returns an empty list", async () => {
+    const skills = await resolveWebuiSlashSkills({
+      fetcher: async () => [],
+    });
+    const skillNames = skills
+      .filter((entry) => entry.paletteSection === "skills")
+      .map((entry) => entry.name);
+    // Empty payload is treated as "no skills yet" rather than "the user has
+    // zero skills"; keep the fixtures visible so the popover stays usable.
+    expect(skillNames).toContain("ask-matt");
+  });
+
+  it("falls back to fixtures when no fetcher is provided", async () => {
+    const skills = await resolveWebuiSlashSkills();
+    const skillNames = skills
+      .filter((entry) => entry.paletteSection === "skills")
+      .map((entry) => entry.name);
+    expect(skillNames).toContain("ask-matt");
+  });
+
+  it("maps a harness skill summary into a popover row", () => {
+    const entry = slashSkillSummaryToEntry({
+      name: "review-pr",
+      displayName: "Review PR",
+      description: "Reviews a pull request",
+    });
+    expect(entry).toMatchObject({
+      name: "review-pr",
+      displayName: "Review PR",
+      label: "Review PR",
+      description: "Reviews a pull request",
+      source_type: 1,
+      source_kind: "plugin",
+      paletteSection: "skills",
+      supported: true,
+    });
+    // icon is a render function
+    expect(typeof entry.icon).toBe("function");
+  });
+
+  it("falls back to the skill name when displayName is missing", () => {
+    const entry = slashSkillSummaryToEntry({
+      name: "bare-bones",
+    });
+    expect(entry.displayName).toBe("bare-bones");
+    expect(entry.label).toBe("bare-bones");
+    expect(entry.description).toBe("");
+  });
+
+  it("uses the fixture icon for the four known skill names", () => {
+    const knownNames = ["ask-matt", "code-review", "codebase-design", "diagnosing-bugs"];
+    for (const name of knownNames) {
+      const fromFixture = WEBUI_SKILL_FIXTURES.find((entry) => entry.name === name);
+      const fromSummary = slashSkillSummaryToEntry({ name });
+      expect(fromSummary.icon).toBe(fromFixture?.icon);
+    }
   });
 });

@@ -23,6 +23,7 @@ import {
   Fragment,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -453,6 +454,15 @@ export interface WebuiClientFoundationAppProps {
   readonly listModels?: (request?: {
     readonly sessionId?: string;
   }) => Promise<readonly WebuiModelEntry[]>;
+  readonly listSkills?: (request?: {
+    readonly agentName?: string;
+  }) => Promise<{
+    readonly skills: readonly {
+      readonly name: string;
+      readonly displayName?: string;
+      readonly description?: string;
+    }[];
+  }>;
   readonly selectModel?: (request: {
     readonly providerId: string;
     readonly modelId: string;
@@ -493,24 +503,22 @@ import {
   isWebuiRunnableCommand,
   rankWebuiSlashPalette,
   sectionWebuiSlashPalette,
+  slashSkillSummaryToEntry,
   WEBUI_BUILTIN_COMMANDS,
   type SlashCommandEntry,
+  type WebuiSlashSkillSummary,
 } from "./slash-palette.js";
 
 // WebUI's static palette: built-ins + the skills resolved from
-// `resolveWebuiSlashSkills` (which today returns the plugin registry
-// + skill catalogue; tomorrow a real harness RPC plugs into the same
-// shape). The async resolver is awaited once at module init so the
-// sectioning pass sees the full pool.
-const WEBUI_SLASH_SKILLS_RESOLVED: SlashCommandEntry[] = await (async () => {
+// `resolveWebuiSlashSkills`. The resolver is awaited once at module init so
+// the sectioning pass has a fallback pool (fixtures) for the moment before
+// the harness `listSkills` RPC returns. The composer overrides this with the
+// live registry as soon as `listSkills` resolves.
+const WEBUI_SLASH_FALLBACK_SECTIONED: SlashCommandEntry[] = await (async () => {
   const { resolveWebuiSlashSkills } = await import("./slash-palette.js");
-  return await resolveWebuiSlashSkills();
+  const entries = await resolveWebuiSlashSkills();
+  return sectionWebuiSlashPalette(WEBUI_BUILTIN_COMMANDS, entries);
 })();
-
-const WEBUI_SLASH_SECTIONED = sectionWebuiSlashPalette(
-  WEBUI_BUILTIN_COMMANDS,
-  WEBUI_SLASH_SKILLS_RESOLVED,
-);
 type WebuiCommandName = SlashCommandEntry["name"];
 
 function useSelectedSessionId(
@@ -1699,6 +1707,7 @@ function WebuiComposer({
   listQueueMessages,
   deleteQueueItem,
   listModels,
+  listSkills,
   selectModel,
   getAccountStatus,
   draft,
@@ -1732,6 +1741,7 @@ function WebuiComposer({
   readonly listQueueMessages?: WebuiClientFoundationAppProps["listQueueMessages"];
   readonly deleteQueueItem?: WebuiClientFoundationAppProps["deleteQueueItem"];
   readonly listModels?: WebuiClientFoundationAppProps["listModels"];
+  readonly listSkills?: WebuiClientFoundationAppProps["listSkills"];
   readonly selectModel?: WebuiClientFoundationAppProps["selectModel"];
   readonly getAccountStatus?: WebuiClientFoundationAppProps["getAccountStatus"];
   /** The draft lives on the shell so it survives silent first-session creation. */
@@ -1764,6 +1774,7 @@ function WebuiComposer({
   const [commandOutput, setCommandOutput] = useState<string>();
   const [commandRunning, setCommandRunning] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const composerRegionRef = useRef<HTMLDivElement | null>(null);
   const fieldId = useId();
   const teamModeText = teamModeCopy(
     typeof document === "undefined" ? undefined : document.documentElement.lang,
@@ -2057,8 +2068,45 @@ function WebuiComposer({
   // pinned above the composer.
   const commandMatch = /^\/([^\s/]*)$/u.exec(draft);
   const commandQuery = commandMatch?.[1] ?? "";
+  // Pull a fresh skill pool from the harness when `listSkills` is wired up.
+  // The fallback (fixtures resolved at module init) keeps the popover
+  // functional even if the RPC is unavailable or rejects; once the live
+  // registry returns, fetched entries replace the fixtures in the sectioning
+  // pass.
+  const [slashSkills, setSlashSkills] = useState<readonly WebuiSlashSkillSummary[]>(
+    [],
+  );
+  const slashSkillsLoadedRef = useRef(false);
+  useEffect(() => {
+    if (!listSkills) return;
+    if (slashSkillsLoadedRef.current) return;
+    let cancelled = false;
+    slashSkillsLoadedRef.current = true;
+    listSkills({ agentName })
+      .then((result) => {
+        if (cancelled) return;
+        setSlashSkills(result.skills);
+      })
+      .catch(() => {
+        // The popover keeps using the fixtures when the RPC rejects; nothing
+        // else to do here. The fetched-set flag stays true so we don't retry
+        // on every keystroke; the composer mounts once per session, not on
+        // every open.
+        if (cancelled) return;
+        slashSkillsLoadedRef.current = false;
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [listSkills, agentName]);
+  const slashSectioned = slashSkills.length
+    ? sectionWebuiSlashPalette(
+        WEBUI_BUILTIN_COMMANDS,
+        slashSkills.map(slashSkillSummaryToEntry),
+      )
+    : WEBUI_SLASH_FALLBACK_SECTIONED;
   const commandSuggestions = commandMatch
-    ? rankWebuiSlashPalette(WEBUI_SLASH_SECTIONED, commandQuery)
+    ? rankWebuiSlashPalette(slashSectioned, commandQuery)
     : [];
   const [commandIndex, setCommandIndex] = useState(0);
   useEffect(() => {
@@ -2068,6 +2116,65 @@ function WebuiComposer({
         : Math.min(current, commandSuggestions.length - 1),
     );
   }, [commandMatch?.[1], commandSuggestions.length]);
+  // Mirror the desktop's TipTap suggestion plugin behaviour: while the slash
+  // popover is open, a pointerdown outside the composer region cancels the
+  // slash invocation. The Escape handler above already does the same thing
+  // for the keyboard. Without this, the popover stays pinned above the
+  // composer until the user types a space or deletes the leading "/" by
+  // hand. We keep refs to `draft` and `commandMatch` so the listener always
+  // sees the latest values without re-attaching on every keystroke.
+  const slashDraftRef = useRef(draft);
+  const slashMatchRef = useRef<RegExpExecArray | null>(commandMatch);
+  useEffect(() => {
+    slashDraftRef.current = draft;
+    slashMatchRef.current = commandMatch;
+  });
+  const slashPanelOpen = commandMatch !== null;
+  // Flip the popover below the composer when there isn't enough room above
+  // for the full 320px cap. The measurement runs in `useLayoutEffect` so the
+  // first paint already shows the correct placement — a normal `useEffect`
+  // would let the panel render above, then re-render below, producing a
+  // visible "jump" the moment the user types `/`.
+  const [slashPanelBelow, setSlashPanelBelow] = useState(false);
+  useLayoutEffect(() => {
+    if (!slashPanelOpen) {
+      setSlashPanelBelow(false);
+      return;
+    }
+    const region = composerRegionRef.current;
+    if (!region) return;
+    const measure = () => {
+      const rect = region.getBoundingClientRect();
+      // Leave headroom of `28px` (= composer top + 24px footer padding + 4px
+      // breathing) so the panel never clips into the viewport top edge.
+      const availableAbove = Math.max(0, rect.top - 28);
+      const needsFlip = availableAbove < 280;
+      setSlashPanelBelow(needsFlip);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => {
+      window.removeEventListener("resize", measure);
+    };
+  }, [slashPanelOpen, slashSkills.length]);
+  useEffect(() => {
+    if (!slashPanelOpen) return;
+    const region = composerRegionRef.current;
+    if (!region) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const match = slashMatchRef.current;
+      if (!match) return;
+      if (!(event.target instanceof Node)) return;
+      if (region.contains(event.target)) return;
+      // Same clear-and-close as Escape: drop the "/xxx" segment so the
+      // regex no longer matches and the popover disappears.
+      onDraftChange(slashDraftRef.current.slice(0, match.index));
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+    };
+  }, [slashPanelOpen, onDraftChange]);
   const chooseCommand = (command: WebuiCommandName) => {
     onDraftChange(`/${command} `);
     textareaRef.current?.focus();
@@ -2118,7 +2225,7 @@ function WebuiComposer({
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const command = commandInvocation
-      ? WEBUI_SLASH_SECTIONED.find(
+      ? slashSectioned.find(
           (item) => item.name === commandInvocation[1],
         )
       : undefined;
@@ -2298,6 +2405,7 @@ function WebuiComposer({
       ) : null}
 
       <div
+        ref={composerRegionRef}
         className={`relative ${sessionLayout ? "mt-0" : "mt-8"} w-full`}
         data-webui-composer-region="true"
       >
@@ -2354,6 +2462,7 @@ function WebuiComposer({
                     role="listbox"
                     aria-label="命令"
                     data-webui-command-menu="true"
+                    data-webui-command-menu-placement={slashPanelBelow ? "below" : "above"}
                     className="webui-command-menu"
                   >
                     {commandSuggestions.map((command, index) => {
@@ -2594,6 +2703,7 @@ export function WebuiClientFoundationApp({
   listQueueMessages,
   deleteQueueItem,
   listModels,
+  listSkills,
   selectModel,
   getSessionUsage,
   getAccountStatus,
@@ -2915,6 +3025,7 @@ export function WebuiClientFoundationApp({
                     listQueueMessages={listQueueMessages}
                     deleteQueueItem={deleteQueueItem}
                     listModels={listModels}
+                    listSkills={listSkills}
                     selectModel={selectModel}
                     getAccountStatus={getAccountStatus}
                     draft={draft}

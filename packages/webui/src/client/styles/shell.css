@@ -305,22 +305,27 @@
   .webui-command-option-icon {
     flex-shrink: 0;
   }
-  /* Label column. Mirrors the desktop's `min-w-0 truncate text-text_default_primary
-     ${primary ? "max-w-[50%]" : "flex-1"}` — the label takes the full row when no
-     description is rendered, otherwise it caps at half so the description gets
-     the rest. */
+  /* Label column. The label is the skill/command name and the user's first
+     anchor — it must always render fully. It takes its natural width up to
+     a sensible cap so a long name like `docker-container-ops` never
+     collapses to `d...`. The desktop uses `max-w-[50%]` here but that fights
+     the description's `flex-1` and crushes long skill names; pin the label
+     to its content + a 220px ceiling so descriptions can wrap or shrink
+     instead. */
   .webui-command-option-label {
-    flex: 1 1 auto;
+    flex: 0 0 auto;
+    width: auto;
+    max-width: 220px;
     min-width: 0;
-    max-width: 50%;
     font-weight: var(--weight_medium);
     color: var(--text_default_primary);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  /* Description column. Mirrors the desktop's `min-w-0 flex-1 truncate text-text_default_tertiary`
-     — takes the remainder of the row, dim text, single line with ellipsis. */
+  /* Description column. Takes whatever horizontal space the label leaves,
+     dim text, single line with ellipsis. `min-width: 0` is what lets the
+     flex item shrink below its content size instead of overflowing. */
   .webui-command-option-description {
     flex: 1 1 auto;
     min-width: 0;
@@ -385,7 +390,19 @@
     border-radius: var(--radius_12);
     background: var(--bg_default_primary);
     box-shadow: 0 8px 24px var(--shadow_default);
-    max-height: min(420px, calc(100vh - 200px));
+    max-height: 320px;
+  }
+  /* Flip variant: when the composer is too close to the viewport top, the
+   * popover cannot fit above without clipping content. The composer measures
+   * available space and toggles `data-webui-command-menu-placement="below"`
+   * so the panel sits below the composer instead. The cap matches the
+   * above-composer cap so the panel never grows taller than 320px regardless
+   * of placement, keeping the popover a focused UI element instead of
+   * dominating the page. */
+  .webui-command-menu[data-webui-command-menu-placement="below"] {
+    top: calc(100% + var(--spacing_8));
+    bottom: auto;
+    max-height: 320px;
   }
 
   /* A square icon control: 28px, 8px radius. */

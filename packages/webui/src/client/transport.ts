@@ -106,6 +106,15 @@ export function createWebuiTransport({
   listModels: (request?: {
     readonly sessionId?: string;
   }) => Promise<readonly WebuiModelEntry[]>;
+  listSkills: (request?: {
+    readonly agentName?: string;
+  }) => Promise<{
+    readonly skills: readonly {
+      readonly name: string;
+      readonly displayName?: string;
+      readonly description?: string;
+    }[];
+  }>;
   selectModel: (request: {
     readonly providerId: string;
     readonly modelId: string;
@@ -318,6 +327,7 @@ export function createWebuiTransport({
     listQueueMessages: (body) => request("listQueueMessages", body),
     deleteQueueItem: (body) => request("deleteQueueItem", body),
     listModels: (body) => request("listModels", body ?? {}),
+    listSkills: (body) => request("listSkills", body ?? {}),
     selectModel: (body) => request("selectModel", body),
     getSessionUsage: (body) => request("getSessionUsage", body),
     getAccountStatus: (body) => request("getAccountStatus", body ?? {}),

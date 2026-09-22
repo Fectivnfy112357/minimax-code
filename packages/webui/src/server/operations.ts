@@ -91,6 +91,7 @@ const LIST_QUEUE_MESSAGES_OPERATION_NAME = "listQueueMessages" as const;
 const DELETE_QUEUE_ITEM_OPERATION_NAME = "deleteQueueItem" as const;
 const LIST_MODELS_OPERATION_NAME = "listModels" as const;
 const SELECT_MODEL_OPERATION_NAME = "selectModel" as const;
+const LIST_SKILLS_OPERATION_NAME = "listSkills" as const;
 const GET_SESSION_USAGE_OPERATION_NAME = "getSessionUsage" as const;
 const GET_ACCOUNT_STATUS_OPERATION_NAME = "getAccountStatus" as const;
 const RUN_COMMAND_OPERATION_NAME = "runCommand" as const;
@@ -804,6 +805,30 @@ export const listModelsOperation: WebuiOperation<
   },
 };
 
+export const listSkillsOperation: WebuiOperation<
+  { readonly agentName?: string },
+  { readonly skills: readonly import("./port.js").WebuiSkillEntry[] }
+> = {
+  name: LIST_SKILLS_OPERATION_NAME,
+  validate: (body) => {
+    const value = validateOptionalObjectBody(LIST_SKILLS_OPERATION_NAME, body);
+    if (!value.ok) return value;
+    if (
+      value.body.agentName !== undefined &&
+      typeof value.body.agentName !== "string"
+    )
+      return {
+        ok: false,
+        code: WebuiErrorCode.invalidBody,
+        message: "agentName must be a string",
+      };
+    return {
+      ok: true,
+      body: value.body.agentName ? { agentName: value.body.agentName } : {},
+    };
+  },
+};
+
 export const selectModelOperation: WebuiOperation<
   {
     readonly providerId: string;
@@ -971,6 +996,7 @@ export function createOperationRegistry(
     | "deleteQueueItem"
     | "listModels"
     | "selectModel"
+    | "listSkills"
     | "getSessionUsage"
     | "getAccountStatus"
     | "requestCompaction"
@@ -1007,6 +1033,12 @@ export function createOperationRegistry(
   registerOperation(registry, {
     operation: selectModelOperation,
     handle: async (_context, body) => ({ body: await port.selectModel(body) }),
+  });
+  registerOperation(registry, {
+    operation: listSkillsOperation,
+    handle: async (_context, body) => ({
+      body: await port.listSkills(body),
+    }),
   });
   registerOperation(registry, {
     operation: getSessionUsageOperation,

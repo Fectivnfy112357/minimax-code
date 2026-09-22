@@ -107,6 +107,22 @@ export interface WebuiRuntimeHostHandle {
     listModels(request?: {
       readonly sessionId?: string;
     }): Promise<readonly WebuiModelEntry[]>;
+    /**
+ * The cliService returns the harness `SkillInfo[]`; the host then projects
+ * it down to `WebuiSkillEntry[]` for the WebUI client. The structural type
+ * spells out the wider shape (incl. `displayDescription` for i18n) so the
+ * field-selection logic in `listSkills()` below type-checks.
+ */
+listSkills(request?: {
+      readonly agentName?: string;
+    }): Promise<{
+      readonly skills: readonly {
+        readonly name: string;
+        readonly displayName?: string;
+        readonly description?: string;
+        readonly displayDescription?: string;
+      }[];
+    }>;
     selectModel(request: {
       readonly providerId: string;
       readonly modelId: string;
@@ -243,6 +259,23 @@ export function createHarnessPortFromHost(
       if (!host.cliService)
         throw new Error("runtime host does not expose the CLI service");
       return host.cliService.selectModel(request);
+    },
+    async listSkills(request) {
+      if (!host.cliService)
+        throw new Error("runtime host does not expose the CLI service");
+      // cliService.listSkills returns the full `SkillInfo[]` shape; map it
+      // down to the WebUI's minimal projection. `displayDescription` and
+      // i18n keys win over the raw `description` so the popover matches the
+      // desktop's translated copy.
+      const result = await host.cliService.listSkills(request ?? {});
+      return {
+        skills: result.skills.map((skill) => ({
+          name: skill.name,
+          displayName: skill.displayName ?? skill.name,
+          description:
+            skill.displayDescription ?? skill.description ?? "",
+        })),
+      };
     },
     async getSessionUsage(request) {
       if (!host.cliService)

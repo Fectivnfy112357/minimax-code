@@ -391,3 +391,20 @@ export function WebuiIconSkillDiagnosingBugs({ className }: WebuiIconProps): Rea
     </svg>
   );
 }
+
+/** slash palette — generic skill row glyph used when the registry returns a
+ * skill name we don't have a dedicated icon for. Spells the same look as the
+ * desktop's `skill-default` glyph (a four-point sparkle) so the popover
+ * stays in 1:1 with the desktop reference. */
+export function WebuiIconSkillGeneric({ className }: WebuiIconProps): ReactElement {
+  return (
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}>
+      <path
+        d="M10 2.5L11.45 7.05C11.69 7.7 12.3 8.31 12.95 8.55L17.5 10L12.95 11.45C12.3 11.69 11.69 12.3 11.45 12.95L10 17.5L8.55 12.95C8.31 12.3 7.7 11.69 7.05 11.45L2.5 10L7.05 8.55C7.7 8.31 8.31 7.7 8.55 7.05L10 2.5Z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}

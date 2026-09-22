@@ -118,6 +118,11 @@ export interface WebuiAssembledHost {
     listModels(request?: {
       readonly sessionId?: string;
     }): Promise<readonly import("./port.js").WebuiModelEntry[]>;
+    listSkills(request?: {
+      readonly agentName?: string;
+    }): Promise<{
+      readonly skills: readonly import("./port.js").WebuiSkillEntry[];
+    }>;
     selectModel(request: {
       readonly providerId: string;
       readonly modelId: string;

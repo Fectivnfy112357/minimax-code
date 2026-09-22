@@ -308,6 +308,18 @@ export interface WebuiModelEntry {
   readonly [key: string]: unknown;
 }
 
+/**
+ * Minimal skill projection the WebUI composer needs to populate the slash
+ * palette. Mirrors the desktop's `listSkills(agentName, ...)` call shape;
+ * the harness returns whatever subset of `SkillInfo` it needs, and the
+ * client only depends on these three fields to render the popover row.
+ */
+export interface WebuiSkillEntry {
+  readonly name: string;
+  readonly displayName?: string;
+  readonly description?: string;
+}
+
 export interface WebuiRunCommandRequest {
   readonly command: "help" | "new" | "compact" | "status" | "usage" | "model";
   readonly input?: string;
@@ -385,6 +397,16 @@ export interface WebuiHarnessPort {
   listModels(request?: {
     readonly sessionId?: string;
   }): Promise<readonly WebuiModelEntry[]>;
+  /**
+   * Returns the slash-palette skill catalogue for the given agent. Mirrors
+   * the desktop's `listSkills(agentName, ...)` call shape so the WebUI can
+   * populate the popover from the live registry instead of a fixture set.
+   * `agentName` is optional: the harness may default to the active agent
+   * when the WebUI has no session yet (e.g. the home composer).
+   */
+  listSkills(request?: {
+    readonly agentName?: string;
+  }): Promise<{ readonly skills: readonly WebuiSkillEntry[] }>;
   selectModel(request: {
     readonly providerId: string;
     readonly modelId: string;

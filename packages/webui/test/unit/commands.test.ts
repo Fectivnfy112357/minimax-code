@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { runWebuiCommand } from "../../src/server/commands/runner.js";
 import {
   createSessionOperation,
+  listSkillsOperation,
   runCommandOperation,
 } from "../../src/server/operations.js";
 
@@ -64,6 +65,19 @@ describe("WebUI command adapter", () => {
         workspaceDir: process.cwd(),
         teamModeOff: "false",
       }),
+    ).toMatchObject({ ok: false, code: "invalid_body" });
+  });
+
+  it("accepts an empty listSkills body and a string agentName", () => {
+    expect(listSkillsOperation.validate(undefined)).toEqual({ ok: true, body: {} });
+    expect(
+      listSkillsOperation.validate({ agentName: "main" }),
+    ).toEqual({ ok: true, body: { agentName: "main" } });
+  });
+
+  it("rejects non-string agentName on listSkills", () => {
+    expect(
+      listSkillsOperation.validate({ agentName: 42 }),
     ).toMatchObject({ ok: false, code: "invalid_body" });
   });
 });

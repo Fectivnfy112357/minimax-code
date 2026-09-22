@@ -173,6 +173,7 @@ export class WebuiService {
       deleteQueueItem: (request) => this.port.deleteQueueItem(request),
       listModels: (request) => this.port.listModels(request),
       selectModel: (request) => this.port.selectModel(request),
+      listSkills: (request) => this.port.listSkills(request),
       getSessionUsage: (request) => this.port.getSessionUsage(request),
       getAccountStatus: (request) => this.port.getAccountStatus(request),
       requestCompaction: (request) => this.port.requestCompaction(request),

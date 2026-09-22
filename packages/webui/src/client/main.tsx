@@ -47,6 +47,7 @@ const app = <WebuiClientFoundationApp
     listQueueMessages={transport.listQueueMessages}
     deleteQueueItem={transport.deleteQueueItem}
     listModels={transport.listModels}
+    listSkills={transport.listSkills}
     selectModel={transport.selectModel}
     getSessionUsage={transport.getSessionUsage}
     getAccountStatus={transport.getAccountStatus}
