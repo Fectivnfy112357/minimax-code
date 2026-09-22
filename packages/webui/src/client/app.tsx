@@ -34,6 +34,11 @@ import {
   WebuiIconBell,
   WebuiIconBrand,
   WebuiIconChevronDown,
+  WebuiIconCommandCompact,
+  WebuiIconCommandHelp,
+  WebuiIconCommandModel,
+  WebuiIconCommandStatus,
+  WebuiIconCommandUsage,
   WebuiIconFolder,
   WebuiIconNewTask,
   WebuiIconPlugins,
@@ -479,14 +484,45 @@ export interface WebuiClientFoundationAppProps {
 }
 
 const WEBUI_COMMANDS = [
-  { name: "help", description: "查看可用命令" },
-  { name: "new", description: "在当前项目创建新任务" },
-  { name: "compact", description: "压缩当前对话" },
-  { name: "status", description: "查看当前状态" },
-  { name: "usage", description: "查看会话用量" },
-  { name: "model", description: "选择模型" },
+  {
+    name: "help",
+    label: "查看可用命令",
+    description: "查看当前所有可用的斜杠命令",
+    icon: WebuiIconCommandHelp,
+  },
+  {
+    name: "new",
+    label: "在当前项目创建新任务",
+    description: "在当前项目下开一个新任务会话",
+    icon: WebuiIconNewTask,
+  },
+  {
+    name: "compact",
+    label: "压缩当前对话",
+    description: "压缩当前会话的上下文，腾出更多可用空间",
+    icon: WebuiIconCommandCompact,
+  },
+  {
+    name: "status",
+    label: "查看当前状态",
+    description: "查看当前会话与运行的实时状态",
+    icon: WebuiIconCommandStatus,
+  },
+  {
+    name: "usage",
+    label: "查看会话用量",
+    description: "查看当前会话的 token 用量与费用",
+    icon: WebuiIconCommandUsage,
+  },
+  {
+    name: "model",
+    label: "选择模型",
+    description: "切换当前会话使用的语言模型",
+    icon: WebuiIconCommandModel,
+  },
 ] as const;
 type WebuiCommandName = (typeof WEBUI_COMMANDS)[number]["name"];
+type WebuiCommandEntry = (typeof WEBUI_COMMANDS)[number];
 
 function useSelectedSessionId(
   locationHash?: string,
@@ -2332,22 +2368,29 @@ function WebuiComposer({
                     data-webui-command-menu="true"
                     className="webui-command-menu"
                   >
-                    {commandSuggestions.map((command, index) => (
-                      <button
-                        key={command.name}
-                        type="button"
-                        role="option"
-                        aria-selected={index === commandIndex}
-                        className="webui-command-option"
-                        onMouseDown={(event) => event.preventDefault()}
-                        onClick={() => chooseCommand(command.name)}
-                      >
-                        <span className="font-medium">/{command.name}</span>
-                        <span className="text-text_default_tertiary">
-                          {command.description}
-                        </span>
-                      </button>
-                    ))}
+                    {commandSuggestions.map((command, index) => {
+                      const Icon = command.icon;
+                      return (
+                        <button
+                          key={command.name}
+                          type="button"
+                          role="option"
+                          aria-selected={index === commandIndex}
+                          className="webui-command-option"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onMouseEnter={() => setCommandIndex(index)}
+                          onClick={() => chooseCommand(command.name)}
+                        >
+                          <Icon className="webui-command-option-icon text-icon_default_secondary" />
+                          <span className="webui-command-option-label">
+                            {command.label}
+                          </span>
+                          <span className="webui-command-option-suffix text-text_default_tertiary">
+                            /{command.name}
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
                 ) : null}
               </div>

@@ -161,3 +161,78 @@ export function WebuiIconSearch({ className }: WebuiIconProps): ReactElement {
     </svg>
   );
 }
+
+// Slash palette row leading glyphs.
+//
+// The WebUI keeps the desktop's slash-palette visual language (icon + bold title + dim
+// description, sized at 18 with text-icon_default_secondary). The five new glyphs below
+// cover the commands that have no direct rail equivalent: help, compact, status, usage,
+// model. `new` reuses the rail's `WebuiIconNewTask` so the popover and the rail stay in
+// sync when the desktop's glyph shifts.
+
+/** slash palette — `help` row leading glyph. */
+export function WebuiIconCommandHelp({ className }: WebuiIconProps): ReactElement {
+  return (
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}>
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M10 1.875C5.5127 1.875 1.875 5.5127 1.875 10C1.875 14.4873 5.5127 18.125 10 18.125C14.4873 18.125 18.125 14.4873 18.125 10C18.125 5.5127 14.4873 1.875 10 1.875ZM10 3.125C6.78906 3.125 4.125 5.78906 4.125 10C4.125 14.2109 6.78906 16.875 10 16.875C13.2109 16.875 15.875 14.2109 15.875 10C15.875 5.78906 13.2109 3.125 10 3.125ZM10 5.625C10.3452 5.625 10.625 5.90482 10.625 6.25C10.625 6.59518 10.3452 6.875 10 6.875C9.65482 6.875 9.375 6.59518 9.375 6.25C9.375 5.90482 9.65482 5.625 10 5.625ZM9.375 9.375C9.375 9.03088 9.65482 8.75065 10 8.75065C10.3452 8.75065 10.625 9.03088 10.625 9.375V13.75C10.625 14.0941 10.3452 14.375 10 14.375C9.65482 14.375 9.375 14.0941 9.375 13.75V9.375Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+/** slash palette — `compact` row leading glyph. */
+export function WebuiIconCommandCompact({ className }: WebuiIconProps): ReactElement {
+  return (
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}>
+      <path d="M9.125 2.375C9.40195 2.375 9.625 2.59805 9.625 2.875V3.875H10.375V2.875C10.375 2.59805 10.598 2.375 10.875 2.375C11.152 2.375 11.375 2.59805 11.375 2.875V3.875H12.375C12.9299 3.875 13.375 4.32011 13.375 4.875V7.375C13.375 7.92989 12.9299 8.375 12.375 8.375H7.625C7.07011 8.375 6.625 7.92989 6.625 7.375V4.875C6.625 4.32011 7.07011 3.875 7.625 3.875H8.625V2.875C8.625 2.59805 8.848 2.375 9.125 2.375ZM7.625 5.125V5.875H12.375V5.125H7.625Z M7.625 11.625H12.375C12.9299 11.625 13.375 12.0701 13.375 12.625V15.125C13.375 15.6799 12.9299 16.125 12.375 16.125H11.375V17.125C11.375 17.402 11.152 17.625 10.875 17.625C10.598 17.625 10.375 17.402 10.375 17.125V16.125H9.625V17.125C9.625 17.402 9.40195 17.625 9.125 17.625C8.848 17.625 8.625 17.402 8.625 17.125V16.125H7.625C7.07011 16.125 6.625 15.6799 6.625 15.125V12.625C6.625 12.0701 7.07011 11.625 7.625 11.625ZM7.625 14.125H12.375V12.875H7.625V14.125Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+/** slash palette — `status` row leading glyph. */
+export function WebuiIconCommandStatus({ className }: WebuiIconProps): ReactElement {
+  return (
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}>
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M10 1.875C5.5127 1.875 1.875 5.5127 1.875 10C1.875 14.4873 5.5127 18.125 10 18.125C14.4873 18.125 18.125 14.4873 18.125 10C18.125 5.5127 14.4873 1.875 10 1.875ZM10 3.125C6.78906 3.125 4.125 5.78906 4.125 10C4.125 14.2109 6.78906 16.875 10 16.875C13.2109 16.875 15.875 14.2109 15.875 10C15.875 5.78906 13.2109 3.125 10 3.125ZM10 5C10.34521 5 10.625 5.27982 10.625 5.625V10.3125C10.625 10.6577 10.34521 10.9375 10 10.9375C9.65479 10.9375 9.375 10.6577 9.375 10.3125V5.625C9.375 5.27982 9.65479 5 10 5ZM10 12.8125C10.34521 12.8125 10.625 13.0923 10.625 13.4375V13.75C10.625 14.0952 10.34521 14.375 10 14.375C9.65479 14.375 9.375 14.0952 9.375 13.75V13.4375C9.375 13.0923 9.65479 12.8125 10 12.8125Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+/** slash palette — `usage` row leading glyph. */
+export function WebuiIconCommandUsage({ className }: WebuiIconProps): ReactElement {
+  return (
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}>
+      <path d="M3 16.25H17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M5.5 13.75V9.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M9.75 13.75V6.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M14 13.75V3.75" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** slash palette — `model` row leading glyph. */
+export function WebuiIconCommandModel({ className }: WebuiIconProps): ReactElement {
+  return (
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}>
+      <path
+        d="M10 1.875L17.5 5.625V14.375L10 18.125L2.5 14.375V5.625L10 1.875Z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+      <path d="M2.5 5.625L10 10L17.5 5.625" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M10 10V18.125" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+    </svg>
+  );
+}
