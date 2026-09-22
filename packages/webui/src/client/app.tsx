@@ -2313,6 +2313,14 @@ function WebuiComposer({
                   value={draft}
                   onChange={(event) => onDraftChange(event.target.value)}
                   onKeyDown={(event) => {
+                    if (event.key === "Escape" && commandMatch) {
+                      // 镜像桌面端 aD 的 Escape 处理：清掉 draft 中的 "/xxx" 段
+                      // 让 commandMatch 不再命中，popover 自动关闭。保留 / 之前的
+                      // 文本（用户可能已经输了前缀词），等价于取消本次 slash 选择。
+                      event.preventDefault();
+                      onDraftChange(draft.slice(0, commandMatch.index));
+                      return;
+                    }
                     if (commandSuggestions.length === 0) return;
                     if (event.key === "ArrowDown") {
                       event.preventDefault();

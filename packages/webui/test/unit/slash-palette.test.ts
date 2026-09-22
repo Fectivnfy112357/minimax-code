@@ -149,13 +149,17 @@ describe("WebUI slash palette — skill fixtures", () => {
     ]);
   });
 
-  it("keeps skill entries inert until the harness port wires a skill RPC", async () => {
+  it("marks every skill entry as supported so the popover row is clickable", async () => {
+    // Mirrors the desktop: skill rows are clickable and insert "/<skill> " into
+    // the composer, but submit does not dispatch runCommand (the name isn't in
+    // WEBUI_RUN_COMMAND_NAMES), so the slash becomes a user message instead.
     const skills = await resolveWebuiSlashSkills();
     const palette = buildWebuiSlashPalette({ skills });
     const skillRows = palette.filter(
       (entry) => entry.paletteSection === "skills",
     );
-    expect(skillRows.every((entry) => entry.supported === false)).toBe(true);
+    expect(skillRows.length).toBeGreaterThan(0);
+    expect(skillRows.every((entry) => entry.supported === true)).toBe(true);
     expect(skillRows.some((entry) => isWebuiRunnableCommand(entry))).toBe(
       false,
     );

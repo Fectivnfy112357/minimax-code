@@ -181,10 +181,13 @@ export const WEBUI_PLUGIN_REGISTRY: Record<
  * `listSkills`, replace `resolveWebuiSlashSkills` with a real fetch — the
  * fixture entries map onto the same `SlashCommandEntry` shape.
  *
- * Each row is inert (`supported: false`) because clicking a skill today
- * does nothing in WebUI. The icons follow the desktop's "lamp / paper /
- * blueprint / bug" vocabulary; in lieu of an extracted path, use generic
- * but consistent monoline glyphs sized to the desktop's 18×18.
+ * Skills are `supported: true` so the popover row is clickable in 1:1 with
+ * the desktop. Clicking inserts `/<skill-name> ` into the composer; the
+ * submit path doesn't dispatch `runCommand` for skill names (they're not
+ * in `WEBUI_RUN_COMMAND_NAMES`), so the slash becomes a user message that
+ * the user can edit before sending — same as the desktop's default
+ * behaviour for entries without `composerMode` / `sendIntent` /
+ * `directAction`.
  */
 export const WEBUI_SKILL_FIXTURES: readonly SlashCommandEntry[] = [
   {
@@ -196,7 +199,7 @@ export const WEBUI_SKILL_FIXTURES: readonly SlashCommandEntry[] = [
     source_kind: "plugin",
     icon: WebuiIconSkillAskMatt,
     paletteSection: "skills",
-    supported: false,
+    supported: true,
   },
   {
     name: "code-review",
@@ -208,7 +211,7 @@ export const WEBUI_SKILL_FIXTURES: readonly SlashCommandEntry[] = [
     source_kind: "plugin",
     icon: WebuiIconSkillCodeReview,
     paletteSection: "skills",
-    supported: false,
+    supported: true,
   },
   {
     name: "codebase-design",
@@ -220,7 +223,7 @@ export const WEBUI_SKILL_FIXTURES: readonly SlashCommandEntry[] = [
     source_kind: "plugin",
     icon: WebuiIconSkillCodebaseDesign,
     paletteSection: "skills",
-    supported: false,
+    supported: true,
   },
   {
     name: "diagnosing-bugs",
@@ -232,7 +235,7 @@ export const WEBUI_SKILL_FIXTURES: readonly SlashCommandEntry[] = [
     source_kind: "plugin",
     icon: WebuiIconSkillDiagnosingBugs,
     paletteSection: "skills",
-    supported: false,
+    supported: true,
   },
 ];
 
