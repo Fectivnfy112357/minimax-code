@@ -1711,7 +1711,6 @@ function WebuiComposer({
   deleteQueueItem,
   listModels,
   selectModel,
-  getSessionUsage,
   getAccountStatus,
   draft,
   onDraftChange,
@@ -1745,7 +1744,6 @@ function WebuiComposer({
   readonly deleteQueueItem?: WebuiClientFoundationAppProps["deleteQueueItem"];
   readonly listModels?: WebuiClientFoundationAppProps["listModels"];
   readonly selectModel?: WebuiClientFoundationAppProps["selectModel"];
-  readonly getSessionUsage?: WebuiClientFoundationAppProps["getSessionUsage"];
   readonly getAccountStatus?: WebuiClientFoundationAppProps["getAccountStatus"];
   /** The draft lives on the shell so it survives silent first-session creation. */
   readonly draft: string;
@@ -1771,7 +1769,6 @@ function WebuiComposer({
   const [queueItems, setQueueItems] = useState<readonly WebuiQueueItem[]>([]);
   const [queuePaused, setQueuePaused] = useState(false);
   const [models, setModels] = useState<readonly WebuiModelEntry[]>([]);
-  const [usage, setUsage] = useState<Record<string, unknown>>();
   const [accountStatus, setAccountStatus] = useState<Record<string, unknown>>();
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
@@ -1786,9 +1783,8 @@ function WebuiComposer({
   useEffect(() => {
     if (!sessionId) {
       // Inspection data belongs to a session. Clear it when New Task returns to
-      // home so the previous session's usage cannot bleed into the new composer.
+      // home so the previous session's model/account state cannot bleed into the composer.
       setModels([]);
-      setUsage(undefined);
       setAccountStatus(undefined);
       return undefined;
     }
@@ -1907,17 +1903,15 @@ function WebuiComposer({
   ]);
 
   useEffect(() => {
-    if (!listModels && !getSessionUsage && !getAccountStatus) return undefined;
+    if (!listModels && !getAccountStatus) return undefined;
     let cancelled = false;
     const refreshInspection = async () => {
-      const [nextModels, nextUsage, nextAccount] = await Promise.all([
+      const [nextModels, nextAccount] = await Promise.all([
         listModels?.({ sessionId }),
-        sessionId ? getSessionUsage?.({ id: sessionId }) : undefined,
         getAccountStatus?.({ sessionId }),
       ]);
       if (cancelled) return;
       setModels(nextModels ?? []);
-      setUsage(nextUsage);
       setAccountStatus(nextAccount);
     };
     void refreshInspection().catch((error: unknown) => {
@@ -1933,7 +1927,7 @@ function WebuiComposer({
       cancelled = true;
       clearInterval(timer);
     };
-  }, [getAccountStatus, getSessionUsage, listModels, sessionId]);
+  }, [getAccountStatus, listModels, sessionId]);
 
   const handlePermission = async (
     permission: WebuiPendingPermission,
@@ -2090,13 +2084,6 @@ function WebuiComposer({
   const commandInvocation = /^\/([^\s/]+)(?:\s+([\s\S]*))?$/u.exec(
     draft.trim(),
   );
-  const summary =
-    sessionId &&
-    usage?.summary &&
-    typeof usage.summary === "object" &&
-    !Array.isArray(usage.summary)
-      ? (usage.summary as Record<string, unknown>)
-      : undefined;
   const credentialMessage =
     sessionId && typeof selectedModel?.status?.lastErrorMessage === "string"
       ? selectedModel.status.lastErrorMessage
@@ -2545,16 +2532,6 @@ function WebuiComposer({
             <span className="whitespace-nowrap">本地</span>
           </span>
         </div>
-        {sessionId && summary ? (
-          <p
-            className="mt-2 text-text_default_secondary text-size_12"
-            data-webui-session-usage="true"
-          >
-            Usage:{" "}
-            {String(summary.totalTokens ?? summary.total_tokens ?? "unknown")}{" "}
-            tokens
-          </p>
-        ) : null}
         {credentialMessage ? (
           <p
             role="alert"
@@ -2590,7 +2567,6 @@ export function WebuiClientFoundationApp({
   deleteQueueItem,
   listModels,
   selectModel,
-  getSessionUsage,
   getAccountStatus,
   runCommand,
   hostLabel,
@@ -2923,7 +2899,6 @@ export function WebuiClientFoundationApp({
                     deleteQueueItem={deleteQueueItem}
                     listModels={listModels}
                     selectModel={selectModel}
-                    getSessionUsage={getSessionUsage}
                     getAccountStatus={getAccountStatus}
                     draft={draft}
                     onDraftChange={setDraft}

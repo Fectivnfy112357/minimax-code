@@ -607,6 +607,14 @@ describe("WebUI shell — desktop anatomy", () => {
     expect(html).toMatch(/webui-session-composer/u);
   });
 
+  it("does not render a usage summary in the session composer", () => {
+    const source = readFileSync(
+      new URL("../../src/client/app.tsx", import.meta.url),
+      "utf8",
+    );
+    expect(source).not.toContain('data-webui-session-usage="true"');
+  });
+
   it("keeps the token-named spacing and type scale in the blocks that use it", () => {
     // The desktop composes both scales; the WebUI's own surfaces (the transcript,
     // the transcript) are written in the token-named one, so assert it where it
