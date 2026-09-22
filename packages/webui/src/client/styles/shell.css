@@ -379,12 +379,13 @@
     z-index: 80;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    overflow-y: auto;
     padding: var(--spacing_4);
     border: 1px solid var(--border_default);
     border-radius: var(--radius_12);
     background: var(--bg_default_primary);
     box-shadow: 0 8px 24px var(--shadow_default);
+    max-height: min(420px, calc(100vh - 200px));
   }
 
   /* A square icon control: 28px, 8px radius. */

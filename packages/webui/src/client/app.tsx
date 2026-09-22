@@ -491,27 +491,22 @@ import {
   rankWebuiSlashPalette,
   sectionWebuiSlashPalette,
   WEBUI_BUILTIN_COMMANDS,
-  WEBUI_PLUGIN_REGISTRY,
   type SlashCommandEntry,
 } from "./slash-palette.js";
 
-// WebUI's static palette: built-ins + the plugin registry treated as
-// `paletteSection: "special"` skills. The async resolver
-// (`resolveWebuiSlashSkills`) is reserved for the future case where the
-// harness port adds a real `listSkills` RPC; today both calls converge on
-// the same static slice.
-const WEBUI_SLASH_PLUGIN_SKILLS: SlashCommandEntry[] = Object.values(
-  WEBUI_PLUGIN_REGISTRY,
-).map((entry) => ({
-  ...entry,
-  display_name: entry.label,
-  display_description: entry.description,
-  source_kind: "plugin",
-}));
+// WebUI's static palette: built-ins + the skills resolved from
+// `resolveWebuiSlashSkills` (which today returns the plugin registry
+// + skill catalogue; tomorrow a real harness RPC plugs into the same
+// shape). The async resolver is awaited once at module init so the
+// sectioning pass sees the full pool.
+const WEBUI_SLASH_SKILLS_RESOLVED: SlashCommandEntry[] = await (async () => {
+  const { resolveWebuiSlashSkills } = await import("./slash-palette.js");
+  return await resolveWebuiSlashSkills();
+})();
 
 const WEBUI_SLASH_SECTIONED = sectionWebuiSlashPalette(
   WEBUI_BUILTIN_COMMANDS,
-  WEBUI_SLASH_PLUGIN_SKILLS,
+  WEBUI_SLASH_SKILLS_RESOLVED,
 );
 type WebuiCommandName = SlashCommandEntry["name"];
 
