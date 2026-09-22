@@ -267,8 +267,7 @@
     box-shadow: 0 8px 24px var(--shadow_default);
   }
   .webui-model-option,
-  .webui-workspace-option,
-  .webui-command-option {
+  .webui-workspace-option {
     display: flex;
     align-items: center;
     width: 100%;
@@ -283,9 +282,46 @@
   }
   .webui-model-option:hover,
   .webui-workspace-option:hover,
-  .webui-command-option:hover,
   .webui-model-option[aria-selected="true"],
-  .webui-workspace-option[aria-selected="true"],
+  .webui-workspace-option[aria-selected="true"] {
+    background-color: var(--bg_interaction_tertiary_hover);
+  }
+  /* Slash palette rows reproduce the desktop's icon, bold title, dim
+     description pattern. The leading icon is the command glyph; the trailing
+     "/name" suffix is dim and shows the literal slash form. */
+  .webui-command-option {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    gap: var(--spacing_12);
+    border-radius: var(--radius_8);
+    padding: var(--spacing_8) var(--spacing_12);
+    color: var(--text_default_primary);
+    text-align: left;
+    font-size: var(--size_14);
+    line-height: var(--line_height_20);
+    transition: background-color 120ms ease;
+  }
+  .webui-command-option-icon {
+    flex-shrink: 0;
+  }
+  .webui-command-option-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-weight: var(--weight_medium);
+    color: var(--text_default_primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .webui-command-option-suffix {
+    flex-shrink: 0;
+    font-size: var(--size_12);
+    line-height: var(--line_height_18);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+      "Liberation Mono", monospace;
+  }
+  .webui-command-option:hover,
   .webui-command-option[aria-selected="true"] {
     background-color: var(--bg_interaction_tertiary_hover);
   }
