@@ -531,10 +531,9 @@ describe("WebUI shell — desktop anatomy", () => {
         !/(?:^|\s)disabled(?:=|\s|>)/u.test(tag) &&
         !/aria-disabled="true"/u.test(tag),
     );
-    expect(operable).toHaveLength(5);
+    expect(operable).toHaveLength(4);
     expect(html).toMatch(/data-webui-sidebar-toggle="true"/u);
     expect(html).toMatch(/data-webui-nav-item="新建任务"/u);
-    expect(html).toMatch(/data-webui-team-mode-toggle="true"/u);
   });
 
   it("lets the composer take a draft before a session exists", () => {

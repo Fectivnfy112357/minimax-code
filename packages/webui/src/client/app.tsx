@@ -1776,9 +1776,6 @@ function WebuiComposer({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const composerRegionRef = useRef<HTMLDivElement | null>(null);
   const fieldId = useId();
-  const teamModeText = teamModeCopy(
-    typeof document === "undefined" ? undefined : document.documentElement.lang,
-  );
 
   useEffect(() => {
     if (!sessionId) {
@@ -2584,19 +2581,6 @@ function WebuiComposer({
                     ) : null}
                   </div>
                   <button
-                    type="button"
-                    role="switch"
-                    aria-checked={!teamModeOff}
-                    aria-disabled={teamModeLocked}
-                    disabled={teamModeLocked}
-                    title={teamModeLocked ? teamModeText.lockedTip : undefined}
-                    data-webui-team-mode-toggle="true"
-                    className={`webui-pill text-sm text-text_default_primary ${teamModeLocked ? "bg-utility_tootip" : teamModeOff ? "bg-bg_default_secondary" : "bg-bg_interaction_primary_default"}`}
-                    onClick={() => onTeamModeOffChange(!teamModeOff)}
-                  >
-                    {teamModeText.label}
-                  </button>
-                  <button
                     type="submit"
                     disabled={!sendable || commandRunning}
                     aria-label="发送"
@@ -2665,9 +2649,6 @@ function WebuiComposer({
               </div>
             ) : null}
           </div>
-          <span className="webui-pill text-sm text-text_default_primary">
-            <span className="whitespace-nowrap">本地</span>
-          </span>
         </div>
         {credentialMessage ? (
           <p
