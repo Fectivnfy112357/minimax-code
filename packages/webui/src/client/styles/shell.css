@@ -21,11 +21,11 @@
 @layer components {
   /* --------------------------------------------------------------- surfaces */
 
-  /* The rail: 240px, one step off the main surface, no border between them. */
+  /* The rail: 274px, one step off the main surface, no border between them. */
   .webui-rail {
     display: flex;
     flex-direction: column;
-    width: 240px;
+    width: 274px;
     background-color: var(--bg_default_scrim);
   }
 
@@ -106,6 +106,51 @@
   }
   .webui-session-card[data-webui-session-active="true"] {
     background-color: var(--bg_interaction_tertiary_selected);
+  }
+
+  /* The desktop home rail is project-first. A project row uses the same quiet
+   * navigation treatment as the fixed rows, but keeps the folder glyph and
+   * label aligned as one navigation target. */
+  .webui-project-card {
+    display: flex;
+    width: 100%;
+    height: 36px;
+    align-items: center;
+    gap: var(--spacing_12);
+    border-radius: var(--radius_8);
+    padding: 0 var(--spacing_8);
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+  .webui-project-card:hover {
+    background-color: var(--bg_interaction_tertiary_hover);
+    color: var(--text_default_primary);
+  }
+  .webui-project-card[data-webui-project-active="true"] {
+    background-color: var(--bg_interaction_tertiary_selected);
+    color: var(--text_default_primary);
+  }
+
+  .webui-project-session-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 0 0 var(--spacing_4) var(--spacing_20);
+  }
+  .webui-project-session-card {
+    display: flex;
+    width: 100%;
+    height: 30px;
+    align-items: center;
+    gap: var(--spacing_4);
+    border-radius: var(--radius_8);
+    padding: 0 var(--spacing_8);
+    font-size: var(--size_12);
+    line-height: var(--line_height_16);
+    transition: background-color 120ms ease;
+  }
+  .webui-project-session-card:hover,
+  .webui-project-session-card[data-webui-session-active="true"] {
+    background-color: var(--bg_interaction_tertiary_hover);
   }
 
   /* The "load more" row under the session list. */

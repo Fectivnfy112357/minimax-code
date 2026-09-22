@@ -34,6 +34,7 @@ import {
   WebuiIconBell,
   WebuiIconBrand,
   WebuiIconChevronDown,
+  WebuiIconCloud,
   WebuiIconFolder,
   WebuiIconNewTask,
   WebuiIconPlugins,
@@ -41,8 +42,8 @@ import {
   WebuiIconRunLocation,
   WebuiIconSchedule,
   WebuiIconSearch,
-  WebuiIconSend,
   WebuiIconSidebarToggle,
+  WebuiIconSend,
   WebuiIconSites,
 } from "./icons.js";
 import { ArchonShell } from "./components/ArchonShell.js";
@@ -329,7 +330,7 @@ export interface WebuiClientFoundationAppProps {
 
 function useSelectedSessionId(
   locationHash?: string,
-): [string | undefined, (id: string) => void] {
+): [string | undefined, (id: string | undefined) => void] {
   const read = () =>
     readSessionIdFromHash(
       locationHash ??
@@ -433,6 +434,206 @@ function sessionLabel(session: WebuiClientSession): string {
 
 function sessionTime(timestamp: number): string {
   return new Date(timestamp).toLocaleString();
+}
+
+function workspaceProjectName(workspaceDir?: string): string {
+  const value = workspaceDir?.trim();
+  if (!value) return "未选项目";
+  const normalized = value.replace(/[\\/]+$/u, "");
+  const parts = normalized.split(/[\\/]/u).filter(Boolean);
+  return parts.at(-1) || normalized;
+}
+
+export interface WebuiProjectGroup {
+  readonly key: string;
+  readonly name: string;
+  readonly workspaceDir?: string;
+  readonly latestSessionId: string;
+  readonly sessionIds: readonly string[];
+  readonly updatedAt: number;
+}
+
+/**
+ * The desktop's home rail is project-first, even though its source data is a
+ * session history. Keep the grouping deterministic so paging and a refresh do
+ * not reshuffle a project while the user is looking at it.
+ */
+export function groupWebuiSessionsByWorkspace(
+  sessions: readonly WebuiClientSession[],
+): WebuiProjectGroup[] {
+  const ordered = [...sessions].sort(
+    (left, right) => right.updatedAt - left.updatedAt,
+  );
+  const groups = new Map<string, WebuiProjectGroup>();
+  for (const session of ordered) {
+    const workspaceDir = session.workspaceDir?.trim() || undefined;
+    const key = workspaceDir ?? "__webui_unassigned_project__";
+    const current = groups.get(key);
+    if (current) {
+      groups.set(key, {
+        ...current,
+        sessionIds: [...current.sessionIds, session.sessionId],
+      });
+      continue;
+    }
+    groups.set(key, {
+      key,
+      name: workspaceProjectName(workspaceDir),
+      ...(workspaceDir ? { workspaceDir } : {}),
+      latestSessionId: session.sessionId,
+      sessionIds: [session.sessionId],
+      updatedAt: session.updatedAt,
+    });
+  }
+  return [...groups.values()];
+}
+
+/**
+ * Project projection for the desktop-shaped rail. The existing session list
+ * remains available for history/detail surfaces; the home rail must not expose
+ * that flat list where desktop exposes workspaces.
+ */
+export function WebuiProjectList({
+  page,
+  loading,
+  onLoadMore,
+  selectedSessionId,
+  error,
+}: {
+  readonly page: WebuiClientSessionPage;
+  readonly loading: boolean;
+  readonly onLoadMore?: () => void;
+  readonly selectedSessionId?: string;
+  readonly error?: string;
+}): ReactElement {
+  const projects = useMemo(
+    () => groupWebuiSessionsByWorkspace(page.sessions),
+    [page.sessions],
+  );
+  const [expandedProjects, setExpandedProjects] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const sessionsById = useMemo(
+    () => new Map(page.sessions.map((session) => [session.sessionId, session])),
+    [page.sessions],
+  );
+
+  useEffect(() => {
+    if (!selectedSessionId) return;
+    const activeProject = projects.find((project) =>
+      project.sessionIds.includes(selectedSessionId),
+    );
+    if (!activeProject) return;
+    setExpandedProjects((current) => {
+      if (current.has(activeProject.key)) return current;
+      return new Set(current).add(activeProject.key);
+    });
+  }, [projects, selectedSessionId]);
+
+  return (
+    <section data-webui-project-list="true">
+      <div
+        className="flex h-7 items-center px-2 text-sm font-normal leading-5 text-text_default_tertiary"
+        data-webui-rail-section-header="true"
+      >
+        项目
+      </div>
+      {error ? (
+        <p
+          role="alert"
+          className="px-1 pb-1 text-text_default_secondary text-size_12 leading-line_height_16"
+        >
+          Unable to load projects: {error}
+        </p>
+      ) : null}
+      {!error && projects.length === 0 ? (
+        <p className="webui-empty-state mx-1 text-text_default_secondary text-size_12 leading-line_height_16">
+          暂无项目
+        </p>
+      ) : (
+        <ul className="space-y-px" data-webui-project-list-items="true">
+          {projects.map((project) => {
+            const active = project.sessionIds.includes(selectedSessionId ?? "");
+            const expanded = expandedProjects.has(project.key);
+            return (
+              <li key={project.key}>
+                <button
+                  type="button"
+                  aria-expanded={expanded}
+                  onClick={() =>
+                    setExpandedProjects((current) => {
+                      const next = new Set(current);
+                      if (next.has(project.key)) next.delete(project.key);
+                      else next.add(project.key);
+                      return next;
+                    })
+                  }
+                  data-webui-project-link={project.key}
+                  data-webui-project-active={active ? "true" : "false"}
+                  title={project.workspaceDir}
+                  className="webui-project-card text-left text-text_default_secondary"
+                >
+                  <WebuiIconFolder className="flex-shrink-0" />
+                  <span className="min-w-0 flex-1 truncate text-sm leading-5">
+                    {project.name}
+                  </span>
+                </button>
+                {expanded ? (
+                  <ul
+                    className="webui-project-session-list"
+                    data-webui-project-sessions={project.key}
+                  >
+                    {project.sessionIds.map((sessionId) => {
+                      const session = sessionsById.get(sessionId);
+                      if (!session) return null;
+                      return (
+                        <li key={session.sessionId}>
+                          <a
+                            href={sessionHash(session.sessionId)}
+                            data-webui-session-link={session.sessionId}
+                            data-webui-session-active={
+                              session.sessionId === selectedSessionId
+                                ? "true"
+                                : "false"
+                            }
+                            className="webui-project-session-card text-text_default_primary"
+                          >
+                            <span className="min-w-0 flex-1 truncate">
+                              {sessionLabel(session)}
+                            </span>
+                            <time
+                              className="ml-2 flex-shrink-0 text-xs leading-4 text-text_default_tertiary"
+                              dateTime={new Date(
+                                session.updatedAt,
+                              ).toISOString()}
+                            >
+                              {sessionTime(session.updatedAt)}
+                            </time>
+                          </a>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {page.hasMore && onLoadMore ? (
+        <div className="px-1 pt-px">
+          <button
+            type="button"
+            onClick={onLoadMore}
+            disabled={loading}
+            className="webui-rail-more text-text_default_secondary"
+          >
+            {loading ? "Loading…" : "Load more"}
+          </button>
+        </div>
+      ) : null}
+    </section>
+  );
 }
 
 /**
@@ -2054,9 +2255,8 @@ export function WebuiClientFoundationApp({
   useEffect(() => {
     writeTeamModeOff(teamModeOff);
   }, [teamModeOff]);
-  // Opening the form answers "send with nowhere to send". Bring it into view: it
-  // renders below the composer, and on a short window it lands under the fold,
-  // where it reads as the button having done nothing.
+  // The create form is a fallback for sending with no target session. The New Task
+  // rail action below is deliberately separate: it returns to the clean home state.
   useEffect(() => {
     if (!createOpen) return;
     createFormRef.current?.scrollIntoView({ block: "center" });
@@ -2148,6 +2348,20 @@ export function WebuiClientFoundationApp({
       }
     : undefined;
 
+  const startNewTask = () => {
+    setCreateOpen(false);
+    setCreateError(undefined);
+    setDraft("");
+    setSelectedSessionId(undefined);
+    if (typeof window !== "undefined") {
+      window.history.replaceState(
+        null,
+        "",
+        `${window.location.pathname}${window.location.search}`,
+      );
+    }
+  };
+
   const homeMode = !selectedSessionId;
   const selectedSession = page.sessions.find(
     (session) => session.sessionId === selectedSessionId,
@@ -2170,6 +2384,7 @@ export function WebuiClientFoundationApp({
           sessionId === selectedSession.sessionId ? childSessions : [],
       )
     : false;
+  const [railCollapsed, setRailCollapsed] = useState(false);
 
   return (
     <ArchonShell>
@@ -2183,64 +2398,65 @@ export function WebuiClientFoundationApp({
             <LeftRail
               sessions={page.sessions}
               activeSessionId={selectedSessionId}
-              onNew={() => setCreateOpen((open) => !open)}
+              onNew={startNewTask}
             >
             <aside
               aria-label="Primary navigation"
               data-webui-shell-region="rail"
-              data-webui-rail-width="240"
-              className="webui-rail relative z-50 flex h-full w-[240px] select-none flex-col overflow-hidden bg-bg_default_scrim"
+              data-webui-rail-width={railCollapsed ? "64" : "274"}
+              className={`webui-rail relative z-50 flex h-full select-none flex-col overflow-hidden bg-bg_default_scrim ${railCollapsed ? "w-[64px]" : "w-[274px]"}`}
             >
-              {/* The desktop's window-control strip; the rail controls ride in it. */}
+              {/* The desktop keeps the rail controls above the first navigation row. */}
               <div className="flex w-full flex-shrink-0 flex-col pb-3">
                 <div className="relative flex h-[38px] w-full items-center">
                   <div className="ml-auto flex items-center gap-1 pr-2">
                     <button
                       type="button"
                       data-webui-sidebar-toggle="true"
-                      data-webui-placeholder-chrome="sidebar-toggle"
-                      aria-disabled="true"
-                      aria-label="切换导航栏"
-                      tabIndex={-1}
-                      className="flex size-8 cursor-default items-center justify-center rounded-[8px] text-text_default_tertiary"
+                      aria-label={railCollapsed ? "展开导航栏" : "收起导航栏"}
+                      aria-expanded={!railCollapsed}
+                      onClick={() => setRailCollapsed((collapsed) => !collapsed)}
+                      className="flex size-8 items-center justify-center rounded-[8px] text-text_default_tertiary hover:bg-bg_interaction_tertiary_hover"
                     >
                       <WebuiIconSidebarToggle />
                     </button>
-                    <div
-                      role="button"
+                    <button
+                      type="button"
                       data-webui-search="true"
                       data-webui-placeholder-chrome="search"
                       aria-disabled="true"
                       aria-label="搜索"
-                      tabIndex={-1}
-                      className="flex size-[30px] cursor-default select-none items-center justify-center rounded-lg text-text_default_tertiary"
+                      disabled
+                      className="flex size-[30px] cursor-default items-center justify-center rounded-lg text-text_default_tertiary opacity-70"
                     >
                       <WebuiIconSearch />
-                    </div>
+                    </button>
                   </div>
                 </div>
               </div>
 
-              <div
-                className="flex-shrink-0 px-2 pb-px"
-                data-webui-rail-fixed-row="true"
-              >
-                <RailRow
-                  label="新建任务"
-                  icon={<WebuiIconNewTask className="flex-shrink-0" />}
-                  active={homeMode}
-                  onSelect={() => setCreateOpen((open) => !open)}
-                />
-              </div>
-
-              <div className="relative min-h-0 flex-1">
-                <div className="h-full overflow-x-hidden overflow-y-auto px-2">
-                  <div className="space-y-px pb-2">
-                    <RailRow label="插件" icon={<WebuiIconPlugins />} inert />
-                    <RailRow label="定时" icon={<WebuiIconSchedule />} inert />
-                    <RailRow label="网站" icon={<WebuiIconSites />} inert />
-                    <RailRow label="远程" icon={<WebuiIconRemote />} inert />
+              {!railCollapsed ? (
+                <>
+                  <div
+                    className="flex-shrink-0 px-2 pb-px"
+                    data-webui-rail-fixed-row="true"
+                  >
+                    <RailRow
+                      label="新建任务"
+                      icon={<WebuiIconNewTask className="flex-shrink-0" />}
+                      active={homeMode}
+                      onSelect={startNewTask}
+                    />
                   </div>
+
+                  <div className="relative min-h-0 flex-1">
+                    <div className="h-full overflow-x-hidden overflow-y-auto px-4">
+                      <div className="space-y-px pb-2">
+                        <RailRow label="插件" icon={<WebuiIconPlugins />} inert />
+                        <RailRow label="定时" icon={<WebuiIconSchedule />} inert />
+                        <RailRow label="网站" icon={<WebuiIconSites />} inert />
+                        <RailRow label="远程" icon={<WebuiIconRemote />} inert />
+                      </div>
 
                   <div
                     className="conversation-source-segmented sticky top-0 z-20 flex justify-start bg-bg_default_scrim pb-2 pt-3"
@@ -2263,56 +2479,61 @@ export function WebuiClientFoundationApp({
                           className="webui-segmented-item bg-bg_default_primary"
                           data-webui-segmented-active="true"
                         >
+                          <WebuiIconFolder className="h-4 w-4" />
                           本地
                         </span>
-                        <span className="webui-segmented-item">云端</span>
+                        <span className="webui-segmented-item">
+                          <WebuiIconCloud className="h-4 w-4" />
+                          云端
+                        </span>
                       </div>
                     </div>
                   </div>
 
-                  <WebuiSessionList
-                    page={page}
-                    loading={loading}
-                    onLoadMore={loadMore}
-                    selectedSessionId={selectedSessionId}
-                    error={pageError}
-                    teamModeChoices={teamModeChoices}
-                  />
-                </div>
-                <div
-                  className="webui-scroll-fade pointer-events-none absolute inset-x-0 bottom-0 z-10 h-6"
-                  aria-hidden="true"
-                  data-webui-scroll-fade="true"
-                />
-              </div>
+                      <WebuiProjectList
+                        page={page}
+                        loading={loading}
+                        onLoadMore={loadMore}
+                        selectedSessionId={selectedSessionId}
+                        error={pageError}
+                      />
+                    </div>
+                    <div
+                      className="webui-scroll-fade pointer-events-none absolute inset-x-0 bottom-0 z-10 h-6"
+                      aria-hidden="true"
+                      data-webui-scroll-fade="true"
+                    />
+                  </div>
 
-              {/* The desktop puts the signed-in account here; the WebUI reports the
-                  scope it actually runs in instead. */}
-              <div className="relative flex-shrink-0 border-t-[0.5px] border-border_default">
-                <div
-                  className="m-1 flex h-12 w-[calc(100%-8px)] items-center overflow-hidden rounded-[10px] px-2"
-                  data-webui-rail-identity="true"
-                >
-                  <div className="flex size-7 flex-shrink-0 items-center justify-center overflow-hidden rounded-full border border-border_light">
-                    <WebuiIconBrand className="h-full w-full" />
+                  {/* The desktop puts the signed-in account here; the WebUI reports the
+                      scope it actually runs in instead. */}
+                  <div className="relative flex-shrink-0 border-t-[0.5px] border-border_default">
+                    <div
+                      className="m-1 flex h-12 w-[calc(100%-8px)] items-center overflow-hidden rounded-[10px] px-2"
+                      data-webui-rail-identity="true"
+                    >
+                      <div className="flex size-7 flex-shrink-0 items-center justify-center overflow-hidden rounded-full border border-border_light">
+                        <WebuiIconBrand className="h-full w-full" />
+                      </div>
+                      <div className="ml-2 flex min-w-0 max-w-[135px] flex-1 flex-col gap-[2px]">
+                        <span className="max-w-[135px] truncate text-[14px] font-[400] leading-[20px] text-text_default_primary">
+                          MiniMax Code
+                        </span>
+                        <span className="max-w-[135px] truncate text-[12px] font-[400] leading-[16px] text-text_default_tertiary">
+                          {hostLabel ? `本地 · ${hostLabel}` : "本地"}
+                        </span>
+                      </div>
+                      <span
+                        aria-hidden="true"
+                        data-webui-placeholder-chrome="identity-bell"
+                        className="ml-auto flex size-8 flex-shrink-0 items-center justify-center rounded-[8px] text-icon_default_primary opacity-40"
+                      >
+                        <WebuiIconBell />
+                      </span>
+                    </div>
                   </div>
-                  <div className="ml-2 flex min-w-0 max-w-[135px] flex-1 flex-col gap-[2px]">
-                    <span className="max-w-[135px] truncate text-[14px] font-[400] leading-[20px] text-text_default_primary">
-                      MiniMax Code
-                    </span>
-                    <span className="max-w-[135px] truncate text-[12px] font-[400] leading-[16px] text-text_default_tertiary">
-                      {hostLabel ? `本地 · ${hostLabel}` : "本地"}
-                    </span>
-                  </div>
-                  <span
-                    aria-hidden="true"
-                    data-webui-placeholder-chrome="identity-bell"
-                    className="ml-auto flex size-8 flex-shrink-0 items-center justify-center rounded-[8px] text-icon_default_primary opacity-40"
-                  >
-                    <WebuiIconBell />
-                  </span>
-                </div>
-              </div>
+                </>
+              ) : null}
             </aside>
             </LeftRail>
           </div>

@@ -36,6 +36,15 @@ export function WebuiIconBrand({ className }: WebuiIconProps): ReactElement {
   );
 }
 
+/** local/cloud source switcher — the desktop's cloud outline glyph. */
+export function WebuiIconCloud({ className }: WebuiIconProps): ReactElement {
+  return (
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}>
+      <path d="M6.2 16.1H15.1C16.8121 16.1 18.2 14.7121 18.2 13C18.2 11.3506 16.9118 10.0021 15.2862 9.906C15.0634 6.9897 12.6309 4.7 9.65714 4.7C7.21296 4.7 5.12873 6.25154 4.33188 8.42142C2.26235 8.53519 0.6 10.2686 0.6 12.3667C0.6 14.5389 2.38112 16.3 4.57778 16.3H6.2V15.1H4.57778C3.04453 15.1 1.8 13.8755 1.8 12.3667C1.8 10.8579 3.04453 9.63333 4.57778 9.63333C4.74189 9.63333 4.90156 9.64754 5.05522 9.67425L5.65066 9.77793L5.82451 9.19986C6.32607 7.53138 7.85657 5.9 9.65714 5.9C12.0296 5.9 13.9571 7.82757 13.9571 10.2V10.8H15.1C16.149 10.8 17 11.651 17 12.7C17 13.749 16.149 14.6 15.1 14.6H6.2V16.1Z" fill="currentColor" />
+    </svg>
+  );
+}
+
 /** circle-plus, the rail's fixed new-task row — the desktop's `新建任务` glyph. */
 export function WebuiIconNewTask({ className }: WebuiIconProps): ReactElement {
   return (

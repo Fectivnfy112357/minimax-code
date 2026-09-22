@@ -23,12 +23,14 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import {
   WebuiClientFoundationApp,
+  WebuiProjectList,
   WebuiSessionList,
   WebuiSessionTranscript,
   buildWebuiQuestionnaireAnswers,
   buildWebuiComposerHandlers,
   createdSessionId,
   groupWebuiTranscriptItems,
+  groupWebuiSessionsByWorkspace,
   projectWebuiMessage,
   readSessionIdFromHash,
   sessionHash,
@@ -269,6 +271,61 @@ describe("WebUI shell", () => {
     expect(html).toMatch(/webui-session-card/u);
   });
 
+  it("projects the desktop's project-first rail from session workspaces", () => {
+    const sessions = [
+      {
+        sessionId: "new-project-session",
+        agentName: "main",
+        createdAt: 1,
+        updatedAt: 30,
+        workspaceDir: "/work/minimax-code",
+      },
+      {
+        sessionId: "old-project-session",
+        agentName: "main",
+        createdAt: 1,
+        updatedAt: 20,
+        workspaceDir: "/work/minimax-code",
+      },
+      {
+        sessionId: "unassigned-session",
+        agentName: "main",
+        createdAt: 1,
+        updatedAt: 10,
+      },
+    ];
+    expect(groupWebuiSessionsByWorkspace(sessions)).toEqual([
+      {
+        key: "/work/minimax-code",
+        name: "minimax-code",
+        workspaceDir: "/work/minimax-code",
+        latestSessionId: "new-project-session",
+        sessionIds: ["new-project-session", "old-project-session"],
+        updatedAt: 30,
+      },
+      {
+        key: "__webui_unassigned_project__",
+        name: "未选项目",
+        latestSessionId: "unassigned-session",
+        sessionIds: ["unassigned-session"],
+        updatedAt: 10,
+      },
+    ]);
+
+    const html = renderToStaticMarkup(
+      createElement(WebuiProjectList, {
+        page: { sessions, hasMore: false },
+        loading: false,
+        selectedSessionId: "old-project-session",
+      }),
+    );
+    expect(html).toContain('data-webui-project-list="true"');
+    expect(html).toContain("minimax-code");
+    expect(html).toContain("未选项目");
+    expect(html).toContain('data-webui-project-active="true"');
+    expect(html).not.toContain('data-webui-session-list="true"');
+  });
+
   it("reacts to hashchange so navigation selects a different transcript without reload", () => {
     const originalWindow = globalThis.window;
     let hash = "#session=first";
@@ -349,9 +406,9 @@ describe("WebUI shell — desktop anatomy", () => {
   it("sizes and colours the rail the way the desktop does", () => {
     const html = renderShell();
 
-    // 240px fixed, one step off the main surface, and no border between the two.
-    expect(html).toMatch(/data-webui-rail-width="240"/u);
-    expect(html).toMatch(/w-\[240px\]/u);
+    // 274px fixed, one step off the main surface, and no border between the two.
+    expect(html).toMatch(/data-webui-rail-width="274"/u);
+    expect(html).toMatch(/w-\[274px\]/u);
     expect(html).toMatch(/bg-bg_default_scrim/u);
     // The main surface is the lightest step.
     expect(html).toMatch(/bg-bg_grouped_secondary/u);
@@ -452,14 +509,9 @@ describe("WebUI shell — desktop anatomy", () => {
         !/(?:^|\s)disabled(?:=|\s|>)/u.test(tag) &&
         !/aria-disabled="true"/u.test(tag),
     );
-    expect(operable).toHaveLength(2);
-    // The row hook sits on the row element, not on the control inside it, so
-    // attribute the operable control to the nearest preceding row.
-    const at = html.indexOf(operable[0]);
-    const owner = [
-      ...html.slice(0, at).matchAll(/data-webui-nav-item="([^"]*)"/gu),
-    ].pop();
-    expect(owner?.[1]).toBe("新建任务");
+    expect(operable).toHaveLength(3);
+    expect(html).toMatch(/data-webui-sidebar-toggle="true"/u);
+    expect(html).toMatch(/data-webui-nav-item="新建任务"/u);
     expect(html).toMatch(/data-webui-team-mode-toggle="true"/u);
   });
 
@@ -499,6 +551,10 @@ describe("WebUI shell — desktop anatomy", () => {
     expect(html).toMatch(
       /data-webui-placeholder-chrome="recommendation-chips"/u,
     );
+    // New Task is the desktop's clean home state, not the WebUI-only create-session
+    // form and not a previously selected transcript.
+    expect(html).not.toMatch(/data-webui-create-form="true"/u);
+    expect(html).not.toMatch(/data-webui-transcript="/u);
 
     // The composer card carries the desktop's own geometry: a 20px radius over a
     // hairline border plus the soft layer. The border alone reads as nothing on
