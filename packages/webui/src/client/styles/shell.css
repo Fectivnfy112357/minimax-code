@@ -266,6 +266,31 @@
     background: var(--bg_default_primary);
     box-shadow: 0 8px 24px var(--shadow_default);
   }
+  .webui-workspace-menu--desktop {
+    display: flex;
+    min-width: 240px;
+    max-width: 320px;
+    padding: var(--spacing_4);
+    border-radius: var(--radius_12);
+  }
+  .webui-workspace-menu--desktop .webui-workspace-option--desktop {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: var(--spacing_8, 8px);
+    padding: 8px 10px;
+    border-radius: var(--radius_8, 8px);
+    background: transparent;
+    color: var(--text_default_primary);
+    font-size: var(--size_14, 14px);
+    line-height: var(--line_height_20, 20px);
+    cursor: pointer;
+    border: none;
+    transition: background-color 80ms ease;
+  }
+  .webui-workspace-menu--desktop .webui-workspace-option--desktop:hover {
+    background: var(--bg_interaction_tertiary_hover, rgba(0, 0, 0, 0.06));
+  }
   .webui-model-menu--two-column {
     display: grid;
     grid-template-columns: minmax(220px, 1fr) minmax(220px, 1.4fr);

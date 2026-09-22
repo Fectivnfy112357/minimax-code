@@ -21,6 +21,7 @@
 
 import {
   Fragment,
+  useCallback,
   useEffect,
   useId,
   useLayoutEffect,
@@ -61,6 +62,7 @@ import {
   writeTeamModeSessionChoice,
   type TeamModeSessionChoices,
 } from "./team-mode.js";
+import { readNoProjectFlag, writeNoProjectFlag } from "./no-project.js";
 import { LeftRail } from "./components/LeftRail.js";
 import { UserMenu } from "./components/UserMenu.js";
 import { Transcript } from "./components/Transcript.js";
@@ -628,6 +630,93 @@ export function createdSessionId(
 
 function sessionLabel(session: WebuiClientSession): string {
   return session.title?.trim() || session.agentName || session.sessionId;
+}
+
+/**
+ * Open a directory picker and return the chosen directory's path string.
+ *
+ * Webui has no native IPC bridge like the desktop's Electron main, so it
+ * has to use whatever the browser exposes:
+ *   1. `<input type="file" webkitdirectory>` — supported everywhere. Chromium
+ *      exposes `File.path` for the absolute path; other engines fall back to
+ *      `webkitRelativePath` for the directory name only.
+ *   2. `window.showDirectoryPicker()` — Chromium 86+, gives a directory handle
+ *      but no path string; we use the directory name as a best-effort label.
+ *
+ * Resolves to `undefined` when the user cancels. Returns an empty string
+ * when the picker succeeded but no path was derivable (Safari etc.) so the
+ * caller can prompt for a manual path.
+ */
+function pickWorkspaceDirectory(): Promise<string | undefined> {
+  if (typeof window === "undefined") return Promise.resolve(undefined);
+  if (typeof window.showDirectoryPicker === "function") {
+    return window
+      .showDirectoryPicker()
+      .then((handle) => {
+        // Chromium returns a handle but no path. Surface the directory name so
+        // the user can confirm what they picked; the runtime will resolve it.
+        return handle.name || "";
+      })
+      .catch((error) => {
+        if (
+          typeof error === "object" &&
+          error !== null &&
+          "name" in error &&
+          (error as { name?: string }).name === "AbortError"
+        ) {
+          return undefined;
+        }
+        throw error;
+      });
+  }
+  return new Promise<string | undefined>((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.style.position = "fixed";
+    input.style.left = "-9999px";
+    // webkitdirectory is the legacy attribute; the spec uses "directory".
+    input.setAttribute("webkitdirectory", "");
+    input.setAttribute("directory", "");
+    input.addEventListener(
+      "change",
+      () => {
+        const file = input.files?.[0];
+        document.body.removeChild(input);
+        if (!file) {
+          resolve(undefined);
+          return;
+        }
+        // Chromium exposes the absolute path on `File.path`. We slice off the
+        // relative portion to land on the directory the user picked.
+        // Fall back to the legacy `webkitRelativePath` (just the directory
+        // name) for browsers that don't expose `path`.
+        const filePath = (file as File & { path?: string }).path;
+        const relativePath = file.webkitRelativePath || "";
+        if (filePath) {
+          const dirPath = filePath.slice(
+            0,
+            filePath.length - relativePath.length,
+          );
+          resolve(dirPath.replace(/[\\/]$/, "") || filePath);
+        } else if (relativePath) {
+          resolve(relativePath.split("/")[0] ?? "");
+        } else {
+          resolve("");
+        }
+      },
+      { once: true },
+    );
+    input.addEventListener(
+      "cancel",
+      () => {
+        document.body.removeChild(input);
+        resolve(undefined);
+      },
+      { once: true },
+    );
+    document.body.appendChild(input);
+    input.click();
+  });
 }
 
 function sessionTime(timestamp: number): string {
@@ -1698,6 +1787,8 @@ function WebuiComposer({
   createSessionWorkspaceDir,
   availableWorkspaces,
   onWorkspaceChange,
+  workspaceMenuOpen,
+  setWorkspaceMenuOpen,
   runCommand,
   sendMessage,
   resumeSession,
@@ -1731,6 +1822,10 @@ function WebuiComposer({
   readonly createSessionWorkspaceDir?: string;
   readonly availableWorkspaces: readonly WebuiProjectGroup[];
   readonly onWorkspaceChange: (workspaceDir?: string) => void;
+  /** Open state for the workspace picker; owned by the parent so the
+   *  parent's workspace-change handler can also close the popover. */
+  readonly workspaceMenuOpen: boolean;
+  readonly setWorkspaceMenuOpen: (open: boolean) => void;
   readonly runCommand?: WebuiClientFoundationAppProps["runCommand"];
   readonly sendMessage?: WebuiClientMessageSender;
   readonly enqueueMessage?: WebuiClientMessageEnqueuer;
@@ -1774,7 +1869,6 @@ function WebuiComposer({
   const [queuePaused, setQueuePaused] = useState(false);
   const [models, setModels] = useState<readonly WebuiModelEntry[]>([]);
   const [accountStatus, setAccountStatus] = useState<Record<string, unknown>>();
-  const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
   const [commandOutput, setCommandOutput] = useState<string>();
   const [commandRunning, setCommandRunning] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -2579,7 +2673,7 @@ function WebuiComposer({
               aria-expanded={workspaceMenuOpen}
               data-webui-workspace-picker="true"
               className="webui-pill max-w-[220px] min-w-0 text-text_default_primary"
-              onClick={() => setWorkspaceMenuOpen((open) => !open)}
+              onClick={() => setWorkspaceMenuOpen(!workspaceMenuOpen)}
             >
             <span className="flex size-5 shrink-0 items-center justify-center text-icon_default_primary">
               <WebuiIconFolder />
@@ -2595,29 +2689,39 @@ function WebuiComposer({
                 role="listbox"
                 aria-label="工作目录"
                 data-webui-workspace-menu="true"
-                className="webui-workspace-menu"
+                className="webui-workspace-menu webui-workspace-menu--desktop"
               >
-                {availableWorkspaces.filter((project) => project.workspaceDir)
-                  .map((project) => (
-                    <button
-                      key={project.key}
-                      type="button"
-                      role="option"
-                      aria-selected={
-                        project.workspaceDir === createSessionWorkspaceDir
-                      }
-                      className="webui-workspace-option"
-                      onClick={() => {
-                        onWorkspaceChange(project.workspaceDir);
-                        setWorkspaceMenuOpen(false);
-                      }}
-                    >
-                      <WebuiIconFolder className="flex-shrink-0" />
-                      <span className="min-w-0 flex-1 truncate text-left">
-                        {project.name}
-                      </span>
-                    </button>
-                  ))}
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={false}
+                  data-webui-workspace-action="add-new"
+                  className="webui-workspace-option webui-workspace-option--desktop"
+                  onClick={() => {
+                    setWorkspaceMenuOpen(false);
+                    void pickWorkspaceDirectory().then((path) => {
+                      if (path) onWorkspaceChange(path);
+                    });
+                  }}
+                >
+                  <WebuiIconFolder className="flex-shrink-0" />
+                  <span className="min-w-0 flex-1 truncate text-left">
+                    选择新项目
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={createSessionWorkspaceDir === undefined}
+                  data-webui-workspace-action="no-project"
+                  className="webui-workspace-option webui-workspace-option--desktop"
+                  onClick={() => onWorkspaceChange(undefined)}
+                >
+                  <WebuiIconFolder className="flex-shrink-0" />
+                  <span className="min-w-0 flex-1 truncate text-left">
+                    不需要项目
+                  </span>
+                </button>
               </div>
             ) : null}
           </div>
@@ -2728,18 +2832,48 @@ export function WebuiClientFoundationApp({
     (session) => session.sessionId === selectedSessionId,
   );
   const [newTaskWorkspaceDir, setNewTaskWorkspaceDir] = useState<string | undefined>(
-    () => selectedSession?.workspaceDir ?? page.sessions.find((session) => session.workspaceDir)?.workspaceDir,
+    () => {
+      // Honour an explicit "no project" choice from localStorage so the
+      // auto-fill below doesn't immediately pull a workspace back.
+      if (readNoProjectFlag()) return undefined;
+      return (
+        selectedSession?.workspaceDir ??
+        page.sessions.find((session) => session.workspaceDir)?.workspaceDir
+      );
+    },
   );
+  const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
+  // Tracks whether the user has explicitly cleared the workspace in *this*
+  // session; the effect below checks both this and the persisted flag.
+  const userClearedWorkspaceRef = useRef(readNoProjectFlag());
   useEffect(() => {
-    if (selectedSession?.workspaceDir)
+    if (userClearedWorkspaceRef.current) return;
+    if (selectedSession?.workspaceDir) {
       setNewTaskWorkspaceDir(selectedSession.workspaceDir);
-    else if (!newTaskWorkspaceDir) {
+    } else if (!newTaskWorkspaceDir) {
       const workspaceDir = page.sessions.find(
         (session) => session.workspaceDir,
       )?.workspaceDir;
       if (workspaceDir) setNewTaskWorkspaceDir(workspaceDir);
     }
   }, [newTaskWorkspaceDir, page.sessions, selectedSession?.workspaceDir]);
+  // Single workspace-change entry point the composer calls. It records the
+  // user's intent (cleared vs picked) so the auto-fill effect above stops
+  // fighting us, and folds the no-project flag into localStorage.
+  const handleWorkspaceChange = useCallback(
+    (workspaceDir?: string) => {
+      if (workspaceDir === undefined) {
+        userClearedWorkspaceRef.current = true;
+        writeNoProjectFlag(true);
+      } else {
+        userClearedWorkspaceRef.current = false;
+        writeNoProjectFlag(false);
+      }
+      setNewTaskWorkspaceDir(workspaceDir);
+      setWorkspaceMenuOpen(false);
+    },
+    [],
+  );
   const handleSessionCreated = (id: string) => {
     setSelectedSessionId(id);
     writeTeamModeSessionChoice(id, teamModeOff);
@@ -2962,7 +3096,9 @@ export function WebuiClientFoundationApp({
                     createSession={createSession}
                     createSessionWorkspaceDir={newTaskWorkspaceDir}
                     availableWorkspaces={groupWebuiSessionsByWorkspace(page.sessions)}
-                    onWorkspaceChange={setNewTaskWorkspaceDir}
+                    onWorkspaceChange={handleWorkspaceChange}
+                    workspaceMenuOpen={workspaceMenuOpen}
+                    setWorkspaceMenuOpen={setWorkspaceMenuOpen}
                     runCommand={runCommand}
                     sendMessage={sendMessage}
                     enqueueMessage={enqueueMessage}
