@@ -40,6 +40,7 @@ import {
   type WebuiPermissionDecision,
 } from "../../src/server/index.js";
 import { createWebuiTransport } from "../../src/client/transport.js";
+import { WebuiTerminalManager } from "../../src/server/terminal.js";
 
 type CloseEvent = [number, Buffer];
 type OncePromise<T> = ReturnType<typeof onceFn<T>>;
@@ -104,6 +105,23 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
     _request: WebuiMessagesRequest,
   ): Promise<WebuiMessagesResult> {
     return { messages: [], hasMore: false };
+  }
+
+  async listWorkspaceFileTree() {
+    return [{ path: "README.md", name: "README.md", kind: "file" }];
+  }
+
+  async readWorkspaceFile(request: { readonly workspaceDir: string; readonly path: string }) {
+    if (request.path.includes("..")) throw new Error("Path traversal denied");
+    return { type: "text" as const, content: "fixture content\n" };
+  }
+
+  async readCanvas() {
+    return { schemaVersion: 1, canvasId: "canvas-fixture", sessionId: "fixture-session", changeSeq: 0, nodes: [], updatedAtMs: 0 };
+  }
+
+  async applyCanvas(request: { readonly sessionId: string; readonly operation: Record<string, unknown> }) {
+    return { operationId: String(request.operation.operationId ?? "fixture-operation"), document: await this.readCanvas() };
   }
 
   async sendMessage(
@@ -329,6 +347,10 @@ function awaitClose(ws: WebSocket): Promise<{ code: number; reason: string }> {
 }
 
 describe("WebUI service", () => {
+  it("turns a node-pty native load failure into an actionable error", () => {
+    const manager = new WebuiTerminalManager(() => { throw new Error("Failed to load native module: pty.node"); });
+    expect(() => manager.create("/tmp")).toThrow(/node-gyp rebuild/);
+  });
   let port: ScriptedHarnessPort;
   let service: WebuiService;
 
@@ -1276,6 +1298,25 @@ describe("WebUI service", () => {
     if (!isWebuiFrame(response)) throw new Error("expected frame");
     expect(response.kind).toBe("error");
     expect(response.code).toBe(WebuiErrorCode.invalidBody);
+    ws.close();
+  });
+
+  it("routes workspace and canvas operations through the harness port", async () => {
+    const { url } = await bootService();
+    const { ws, upgrade } = openClient(url);
+    await upgrade;
+    const request = (requestId: string, operation: string, body: unknown) =>
+      requestOnce(ws, { protocolVersion: WEBUI_PROTOCOL_VERSION, kind: "request", requestId, operation, body });
+    const tree = await request("req-tree", "listWorkspaceFileTree", { workspaceDir: "/tmp" });
+    const content = await request("req-read", "readWorkspaceFile", { workspaceDir: "/tmp", path: "README.md" });
+    const canvas = await request("req-canvas", "readCanvas", { sessionId: "fixture-session" });
+    const applied = await request("req-apply", "applyCanvas", { sessionId: "fixture-session", operation: { operationId: "op-1", mutations: [] } });
+    expect((tree as { body: Array<{ path: string }> }).body[0]?.path).toBe("README.md");
+    expect((content as { body: { content: string } }).body.content).toContain("fixture content");
+    expect((canvas as { body: { sessionId: string } }).body.sessionId).toBe("fixture-session");
+    expect((applied as { body: { operationId: string } }).body.operationId).toBe("op-1");
+    const denied = await request("req-read-denied", "readWorkspaceFile", { workspaceDir: "/tmp", path: "../../etc/passwd" });
+    expect((denied as { kind: string }).kind).toBe("error");
     ws.close();
   });
 

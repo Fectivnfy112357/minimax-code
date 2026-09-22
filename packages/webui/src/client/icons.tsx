@@ -18,6 +18,18 @@ export interface WebuiIconProps {
   readonly className?: string;
 }
 
+export function WebuiIconCheck({ className }: WebuiIconProps): ReactElement {
+  return <svg viewBox="0 0 16 16" aria-hidden="true" className={className}><path d="M4 8.2 6.8 11 12 5.4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+}
+
+export function WebuiIconChevronLeft({ className }: WebuiIconProps): ReactElement {
+  return <svg viewBox="0 0 16 16" aria-hidden="true" className={className}><path d="m10 3-5 5 5 5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+}
+
+export function WebuiIconClose({ className }: WebuiIconProps): ReactElement {
+  return <svg viewBox="0 0 16 16" aria-hidden="true" className={className}><path d="m4 4 8 8m0-8-8 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>;
+}
+
 /** The product mark — the desktop's hero avatar and identity glyph. */
 export function WebuiIconBrand({ className }: WebuiIconProps): ReactElement {
   const clipId = `webui-brand-logo-${useId().replace(/:/gu, "")}`;

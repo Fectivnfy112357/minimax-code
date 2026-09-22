@@ -629,6 +629,7 @@ export interface WebuiClientFoundationAppProps {
   readonly listTerminals?: () => Promise<readonly Record<string, unknown>[]>;
   readonly writeTerminal?: (request: { readonly terminalId: string; readonly data: string }) => Promise<unknown>;
   readonly disposeTerminal?: (request: { readonly terminalId: string }) => Promise<unknown>;
+  readonly watchTerminal?: (request: { readonly terminalId: string }, onFrame: (frame: { terminalId: string; data: string; exited: boolean }) => void) => () => void;
   readonly locationHash?: string;
   readonly createSession?: WebuiClientSessionCreator;
   readonly sendMessage?: WebuiClientMessageSender;
@@ -3203,6 +3204,7 @@ export function WebuiClientFoundationApp({
   listTerminals,
   writeTerminal,
   disposeTerminal,
+  watchTerminal,
 }: WebuiClientFoundationAppProps): ReactElement {
   const [runtimeVersion, setRuntimeVersion] = useState(version);
   useEffect(() => { if (!runtimeVersion && getVersion) void getVersion().then(setRuntimeVersion); }, [getVersion, runtimeVersion]);
@@ -3619,7 +3621,7 @@ export function WebuiClientFoundationApp({
                 </div>
               </div>
             </div>
-            {!homeMode ? <WebuiWorkspacePanel sessionId={selectedSessionId} workspaceDir={selectedSession?.workspaceDir} listWorkspaceFileTree={listWorkspaceFileTree} readWorkspaceFile={readWorkspaceFile} readCanvas={readCanvas} applyCanvas={applyCanvas} createTerminal={createTerminal} listTerminals={listTerminals} writeTerminal={writeTerminal} disposeTerminal={disposeTerminal} todos={progressTodos} /> : null}
+            {!homeMode ? <WebuiWorkspacePanel sessionId={selectedSessionId} workspaceDir={selectedSession?.workspaceDir} listWorkspaceFileTree={listWorkspaceFileTree} readWorkspaceFile={readWorkspaceFile} readCanvas={readCanvas} applyCanvas={applyCanvas} createTerminal={createTerminal} listTerminals={listTerminals} writeTerminal={writeTerminal} disposeTerminal={disposeTerminal} watchTerminal={watchTerminal} todos={progressTodos} /> : null}
           </main>
         </div>
       </div>

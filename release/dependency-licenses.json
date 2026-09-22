@@ -870,9 +870,25 @@
       "homepage": "https://github.com/microsoft/vscode-ripgrep#readme"
     },
     {
+      "name": "@xterm/addon-fit",
+      "versions": [
+        "0.11.0"
+      ],
+      "license": "MIT",
+      "homepage": "https://github.com/xtermjs/xterm.js#readme"
+    },
+    {
       "name": "@xterm/headless",
       "versions": [
         "5.5.0"
+      ],
+      "license": "MIT",
+      "homepage": "https://github.com/xtermjs/xterm.js#readme"
+    },
+    {
+      "name": "@xterm/xterm",
+      "versions": [
+        "6.0.0"
       ],
       "license": "MIT",
       "homepage": "https://github.com/xtermjs/xterm.js#readme"

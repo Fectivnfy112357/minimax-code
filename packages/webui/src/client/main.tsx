@@ -42,6 +42,7 @@ const app = <WebuiClientFoundationApp
     listTerminals={transport.listTerminals}
     writeTerminal={transport.writeTerminal}
     disposeTerminal={transport.disposeTerminal}
+    watchTerminal={transport.watchTerminal}
     createSession={transport.createSession}
     sendMessage={transport.sendMessage}
     enqueueMessage={transport.enqueueMessage}

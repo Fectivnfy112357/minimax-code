@@ -44,10 +44,10 @@
   .webui-canvas-node { border: 1px solid var(--border_default); border-radius: var(--radius_8); background: var(--bg_grouped_secondary); padding: var(--spacing_8); font-size: var(--size_12); }
   .webui-canvas-zoom { position: absolute; right: var(--spacing_8); bottom: var(--spacing_8); font-size: var(--size_12); }
   .webui-terminal-empty button { border: 1px solid var(--border_default); border-radius: var(--radius_8); background: transparent; padding: var(--spacing_8) var(--spacing_12); color: var(--text_default_primary); }
-  .webui-terminal-instance { width: 100%; text-align: left; }
-  .webui-terminal-instance pre { min-height: 160px; max-height: 320px; overflow: auto; background: var(--bg_default_secondary); padding: var(--spacing_8); font-family: Hack, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; white-space: pre-wrap; }
-  .webui-terminal-instance form { display: flex; gap: var(--spacing_4); }
-  .webui-terminal-instance input { min-width: 0; flex: 1; border: 1px solid var(--border_default); border-radius: var(--radius_8); background: var(--bg_default_secondary); color: var(--text_default_primary); padding: var(--spacing_4); }
+  .webui-xterm-host { width: 100%; min-height: 260px; overflow: hidden; background: var(--bg_default_secondary); padding: var(--spacing_8); text-align: left; }
+  .webui-xterm-host .xterm { height: 100%; }
+  .webui-xterm-host .xterm-viewport { background: var(--bg_default_secondary) !important; }
+  .webui-terminal-actions { display: flex; gap: var(--spacing_8); }
   .webui-settings-mask { position: fixed; inset: 0; z-index: 100; display: flex; background: var(--utility_scrim); }
   .webui-settings-modal { display: flex; width: 100vw; height: 100vh; overflow: hidden; background: var(--bg_default_primary); color: var(--text_default_primary); }
   .webui-settings-sidebar { width: 260px; flex: 0 0 260px; overflow-y: auto; padding: var(--spacing_20) var(--spacing_12); background: var(--bg_grouped_secondary); border-right: 1px solid var(--border_default); }

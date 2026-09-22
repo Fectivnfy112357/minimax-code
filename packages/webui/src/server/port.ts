@@ -118,7 +118,7 @@ export interface WebuiMessagesResult {
 export interface WebuiWorkspaceFile {
   readonly path: string;
   readonly name: string;
-  readonly kind?: string;
+  readonly type?: string;
   readonly children?: readonly WebuiWorkspaceFile[];
 }
 
@@ -135,6 +135,12 @@ export interface WebuiCanvasDocument {
   readonly changeSeq: number;
   readonly nodes: readonly Record<string, unknown>[];
   readonly updatedAtMs: number;
+}
+
+export interface WebuiTerminalFrame {
+  readonly terminalId: string;
+  readonly data: string;
+  readonly exited: boolean;
 }
 
 /** Deliberately small WebUI-owned shape; the browser does not import the harness contract. */

@@ -73,6 +73,7 @@ export function createWebuiTransport({
   listTerminals: () => Promise<readonly Record<string, unknown>[]>;
   writeTerminal: (request: { readonly terminalId: string; readonly data: string }) => Promise<{ readonly success: boolean }>;
   disposeTerminal: (request: { readonly terminalId: string }) => Promise<{ readonly success: boolean }>;
+  watchTerminal: (request: { readonly terminalId: string }, onFrame: (frame: { readonly terminalId: string; readonly data: string; readonly exited: boolean }) => void) => () => void;
   createSession: (
     request: WebuiClientCreateSessionRequest,
   ) => Promise<WebuiClientCreateSessionResult>;
@@ -333,6 +334,20 @@ export function createWebuiTransport({
     };
   }
 
+  function watchTerminal(requestBody: { readonly terminalId: string }, onFrame: (frame: { readonly terminalId: string; readonly data: string; readonly exited: boolean }) => void): () => void {
+    let stopped = false;
+    const ws = new webSocket(websocketUrl());
+    const requestId = crypto.randomUUID();
+    ws.addEventListener("open", () => ws.send(JSON.stringify({ protocolVersion: 1, kind: "request", requestId, operation: "watchTerminal", body: requestBody })));
+    ws.addEventListener("message", (event) => {
+      if (stopped) return;
+      let frame: WireFrame;
+      try { frame = JSON.parse(String(event.data)) as WireFrame; } catch { return; }
+      if (frame.requestId === requestId && frame.kind === "event" && frame.body && typeof frame.body === "object") onFrame(frame.body as { terminalId: string; data: string; exited: boolean });
+    });
+    return () => { stopped = true; ws.close(); };
+  }
+
   return {
     version: () => request<WebuiVersionInfo>("version", undefined),
     loadSessions: (cursor) =>
@@ -356,6 +371,7 @@ export function createWebuiTransport({
     listTerminals: () => request("listTerminals", {}),
     writeTerminal: (body) => request("writeTerminal", body),
     disposeTerminal: (body) => request("disposeTerminal", body),
+    watchTerminal,
     createSession: (body) => request("createSession", body),
     sendMessage: (body, onFrame) => stream("sendMessage", body, onFrame),
     enqueueMessage: (body) => request("enqueueMessage", body),

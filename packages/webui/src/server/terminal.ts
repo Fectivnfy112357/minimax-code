@@ -3,16 +3,24 @@ import process from "node:process";
 import { createRequire } from "node:module";
 
 type Pty = { readonly pid: number; write(data: string): void; resize(cols: number, rows: number): void; kill(): void; onData(listener: (data: string) => void): void; onExit(listener: () => void): void };
+type PtyModule = { spawn(shell: string, args: string[], options: Record<string, unknown>): Pty };
 const require = createRequire(import.meta.url);
 
 type Terminal = { readonly id: string; readonly pty: Pty; readonly output: string[]; readonly listeners: Set<(data: string) => void>; exited: boolean };
 
 export class WebuiTerminalManager {
   private readonly terminals = new Map<string, Terminal>();
+  constructor(private readonly loadPty: () => PtyModule = () => require("node-pty") as PtyModule) {}
   create(workspaceDir: string) {
     if (this.terminals.size >= 5) throw new Error("最多可以打开 5 个终端");
     const id = `terminal-${crypto.randomUUID()}`;
-    const ptyModule = require("node-pty") as { spawn(shell: string, args: string[], options: Record<string, unknown>): Pty };
+    let ptyModule: PtyModule;
+    try {
+      ptyModule = this.loadPty();
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new Error(`终端原生模块加载失败；请在 node_modules/node-pty 内执行 npx --yes node-gyp rebuild。${detail}`);
+    }
     const shell = process.env.SHELL || (process.platform === "win32" ? "powershell.exe" : "/bin/sh");
     const child = ptyModule.spawn(shell, process.platform === "win32" ? [] : ["-il"], { name: "xterm-256color", cols: 80, rows: 24, cwd: workspaceDir, env: { ...process.env, TERM: "xterm-256color" } });
     const terminal: Terminal = { id, pty: child, output: [], listeners: new Set(), exited: false };
