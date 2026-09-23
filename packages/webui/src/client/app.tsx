@@ -3664,13 +3664,11 @@ function WebuiComposer({
           error instanceof Error ? error.message : String(error),
         );
     });
-    // The 14-event / 8-effect runtime protocol used to live as an inline
-    // closure here (W2 commit 2 extracted the pure decision into
-    // `reduceWebuiEffect`; this rewrite actually wires the reducer +
-    // executor into the effect). Behaviour matches the original line-for-
-    // line: same order of setter calls, same exception swallowing on
-    // `refreshPending`, same `cancelled` guard around `refreshPending`'s
-    // post-await writes.
+    // Runtime event protocol: the pure decision lives in
+    // `reduceWebuiEffect`, the ordered setter calls in
+    // `applyWebuiEffectCommands`. The order of setter calls, the exception
+    // swallowing on `refreshPending`, and the `cancelled` guard around its
+    // post-await writes are load-bearing — do not reorder them.
     const unsubscribe = watchEvents?.((event) => {
       const commands = reduceWebuiEffect(
         {

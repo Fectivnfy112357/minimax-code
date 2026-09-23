@@ -14,12 +14,11 @@
 //
 //   1. The **session guard is the first thing** the reducer does. If
 //      `eventSessionId(event) !== sessionId`, the reducer returns
-//      `{ state, commands: [] }` — same object identity on the state,
-//      no workspace progress touched. (The original closure's
-//      `if (eventSessionId(event) !== sessionId) return;` ran before any
-//      state write; the W0 inventory wrote it the other way around and
-//      we faithfully implemented that mistake. The inventory is corrected
-//      in place; this reducer now matches the original.)
+//      `{ state, commands: [] }` — same object identity on the state, and
+//      no workspace progress touched. An event carrying no string
+//      `payload.sessionId` takes that same path, because
+//      `eventSessionId` yields `undefined` for it and `undefined` never
+//      equals the active session.
 //   2. Workspace progress is **the first command** whenever the guard
 //      passes. Every dispatched branch — including the `default` arm for
 //      unknown event types — produces a `set-stream` command that
@@ -135,10 +134,9 @@ export function reduceWebuiEffect(
   sessionId: string,
 ): WebuiEffectResult {
   // (1) Session guard runs FIRST. Anything not addressed to the active
-  // session is dropped wholesale — no progress write, no commands,
-  // exact same state object. This matches `app.tsx:3671` in the original
-  // closure; the W0 inventory wrote the order the other way around and
-  // we are correcting it here.
+  // session is dropped wholesale — no progress write, no commands, exact
+  // same state object. An event carrying no string `payload.sessionId`
+  // takes this path too, since `eventSessionId` yields `undefined` for it.
   if (eventSessionId(event) !== sessionId) {
     return { state, commands: [] };
   }
