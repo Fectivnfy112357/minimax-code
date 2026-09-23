@@ -1,7 +1,12 @@
+import assert from "node:assert/strict";
 import { describe, expect, it, vi } from "vitest";
 import { runWebuiCommand } from "../../src/server/commands/runner.js";
 import {
   createSessionOperation,
+  createUserModelProviderOperation,
+  getSessionOperation,
+  getSessionRewindPreviewOperation,
+  listSessionsOperation,
   listSkillsOperation,
   runCommandOperation,
 } from "../../src/server/operations.js";
@@ -79,5 +84,54 @@ describe("WebUI command adapter", () => {
     expect(
       listSkillsOperation.validate({ agentName: 42 }),
     ).toMatchObject({ ok: false, code: "invalid_body" });
+  });
+
+  it("preserves shared record and non-empty-string validator boundaries", () => {
+    assert.deepEqual(listSessionsOperation.validate({ name: "main" }), {
+      ok: true,
+      body: { name: "main" },
+    });
+    assert.deepEqual(listSessionsOperation.validate(null), {
+      ok: false,
+      code: "invalid_body",
+      message: "listSessions body must be an object",
+    });
+    assert.deepEqual(listSessionsOperation.validate({ name: "  " }), {
+      ok: false,
+      code: "invalid_body",
+      message: "listSessions body requires a non-empty name",
+    });
+
+    assert.deepEqual(getSessionOperation.validate({ id: "session-1" }), {
+      ok: true,
+      body: { id: "session-1" },
+    });
+    assert.deepEqual(getSessionOperation.validate({ id: "" }), {
+      ok: false,
+      code: "invalid_body",
+      message: "getSession body requires a non-empty id",
+    });
+  });
+
+  it("preserves shared conversation and provider validator boundaries", () => {
+    assert.deepEqual(getSessionRewindPreviewOperation.validate({ id: "s", userMessageId: "m" }), {
+      ok: true,
+      body: { id: "s", userMessageId: "m" },
+    });
+    assert.deepEqual(getSessionRewindPreviewOperation.validate({ id: "s" }), {
+      ok: false,
+      code: "invalid_body",
+      message: "getSessionRewindPreview body requires a non-empty userMessageId",
+    });
+
+    assert.deepEqual(createUserModelProviderOperation.validate({ providerId: "p" }), {
+      ok: true,
+      body: { providerId: "p" },
+    });
+    assert.deepEqual(createUserModelProviderOperation.validate([]), {
+      ok: false,
+      code: "invalid_body",
+      message: "createUserModelProvider body must be an object",
+    });
   });
 });

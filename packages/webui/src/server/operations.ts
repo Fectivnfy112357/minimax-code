@@ -11,7 +11,7 @@
 
 import { statSync } from "node:fs";
 import { isAbsolute } from "node:path";
-import { WebuiErrorCode, type WebuiErrorCodeValue } from "./envelope.js";
+import { WebuiErrorCode } from "./envelope.js";
 import type {
   WebuiHarnessPort,
   WebuiMessagesRequest,
@@ -59,42 +59,30 @@ import {
   projectUsage,
 } from "./projections/index.js";
 import type { WebuiTerminalManager } from "./terminal.js";
+import {
+  invalidBody,
+  requireNonEmptyString,
+  requireRecord,
+  type WebuiOperation,
+  type WebuiOperationContext,
+  type WebuiOperationHandler,
+  type WebuiOperationRegistration,
+  type WebuiOperationRegistryEntry,
+  type WebuiOperationResult,
+  type WebuiOperationStreamResult,
+  type WebuiOperationValidation,
+} from "./operation-contract.js";
 
-export interface WebuiOperationContext {
-  readonly requestId: string;
-  readonly signal?: AbortSignal;
-}
-
-export interface WebuiOperationResult<Body> {
-  readonly body: Body;
-}
-
-export interface WebuiOperationStreamResult {
-  readonly stream:
-    | import("./port.js").WebuiSendMessageResult
-    | import("./port.js").WebuiWatchEventsResult;
-}
-
-export type WebuiOperationHandler<Body> = (
-  context: WebuiOperationContext,
-  body: unknown,
-) =>
-  | Promise<WebuiOperationResult<Body> | WebuiOperationStreamResult>
-  | WebuiOperationResult<Body>
-  | WebuiOperationStreamResult;
-
-export interface WebuiOperation<Body = unknown, ResultBody = Body> {
-  readonly name: string;
-  readonly validate: (body: unknown) => WebuiOperationValidation<Body>;
-}
-
-export type WebuiOperationValidation<Body> =
-  | { readonly ok: true; readonly body: Body }
-  | {
-      readonly ok: false;
-      readonly code: WebuiErrorCodeValue;
-      readonly message: string;
-    };
+export type {
+  WebuiOperation,
+  WebuiOperationContext,
+  WebuiOperationHandler,
+  WebuiOperationRegistration,
+  WebuiOperationRegistryEntry,
+  WebuiOperationResult,
+  WebuiOperationStreamResult,
+  WebuiOperationValidation,
+} from "./operation-contract.js";
 
 const VERSION_OPERATION_NAME = "version" as const;
 const LIST_SESSIONS_OPERATION_NAME = "listSessions" as const;
@@ -183,11 +171,7 @@ function validateVersionRequestBody(
   // smuggle a field in by encoding the body as something other than
   // an absent field.
   if (body === undefined) return { ok: true, body: undefined };
-  return {
-    ok: false,
-    code: WebuiErrorCode.invalidBody,
-    message: "version operation does not accept a body",
-  };
+  return invalidBody("version operation does not accept a body");
 }
 
 export const versionOperation: WebuiOperation<VersionRequestBody> = {
@@ -198,19 +182,11 @@ export const versionOperation: WebuiOperation<VersionRequestBody> = {
 function validateListSessionsRequestBody(
   body: unknown,
 ): WebuiOperationValidation<WebuiSessionListRequest> {
-  if (body === null || typeof body !== "object" || Array.isArray(body))
-    return {
-      ok: false,
-      code: WebuiErrorCode.invalidBody,
-      message: "listSessions body must be an object",
-    };
-  const candidate = body as Record<string, unknown>;
-  if (typeof candidate.name !== "string" || candidate.name.trim() === "")
-    return {
-      ok: false,
-      code: WebuiErrorCode.invalidBody,
-      message: "listSessions body requires a non-empty name",
-    };
+  const record = requireRecord("listSessions", body);
+  if (!record.ok) return record;
+  const candidate = record.body;
+  const name = requireNonEmptyString("listSessions", candidate, "name");
+  if (typeof name !== "string") return name;
   for (const key of ["limit", "offset"] as const) {
     if (
       candidate[key] !== undefined &&
@@ -391,20 +367,11 @@ function validateSessionIdBody(
   operation: string,
   body: unknown,
 ): WebuiOperationValidation<WebuiSessionLookupRequest> {
-  if (body === null || typeof body !== "object" || Array.isArray(body))
-    return {
-      ok: false,
-      code: WebuiErrorCode.invalidBody,
-      message: `${operation} body must be an object`,
-    };
-  const candidate = body as Record<string, unknown>;
-  if (typeof candidate.id !== "string" || candidate.id.trim() === "")
-    return {
-      ok: false,
-      code: WebuiErrorCode.invalidBody,
-      message: `${operation} body requires a non-empty id`,
-    };
-  return { ok: true, body: { id: candidate.id } };
+  const record = requireRecord(operation, body);
+  if (!record.ok) return record;
+  const id = requireNonEmptyString(operation, record.body, "id");
+  if (typeof id !== "string") return id;
+  return { ok: true, body: { id } };
 }
 
 export const getSessionOperation: WebuiOperation<
@@ -416,9 +383,7 @@ export const getSessionOperation: WebuiOperation<
 };
 
 function validateObjectBody(operation: string, body: unknown): WebuiOperationValidation<Record<string, unknown>> {
-  if (body === null || typeof body !== "object" || Array.isArray(body))
-    return { ok: false, code: WebuiErrorCode.invalidBody, message: `${operation} body must be an object` };
-  return { ok: true, body: body as Record<string, unknown> };
+  return requireRecord(operation, body);
 }
 
 export const listWorkspaceFileTreeOperation: WebuiOperation<Record<string, unknown>> = {
@@ -618,11 +583,11 @@ function validateConversationMutationBody(
   body: unknown,
   required: readonly string[],
 ): WebuiOperationValidation<Record<string, unknown>> {
-  const result = validateObjectBody(operation, body);
+  const result = requireRecord(operation, body);
   if (!result.ok) return result;
   for (const key of required) {
-    if (typeof result.body[key] !== "string" || !(result.body[key] as string).trim())
-      return { ok: false, code: WebuiErrorCode.invalidBody, message: `${operation} body requires a non-empty ${key}` };
+    const value = requireNonEmptyString(operation, result.body, key);
+    if (typeof value !== "string") return value;
   }
   return result;
 }
@@ -1359,8 +1324,7 @@ export const getAccountStatusOperation: WebuiOperation<
 };
 
 function validateProviderRecord(name: string, body: unknown): WebuiOperationValidation<Record<string, unknown>> {
-  if (body === null || typeof body !== "object" || Array.isArray(body)) return { ok: false, code: WebuiErrorCode.invalidBody, message: `${name} body must be an object` };
-  return { ok: true, body: body as Record<string, unknown> };
+  return requireRecord(name, body);
 }
 function validateProviderId(name: string, body: unknown): WebuiOperationValidation<{ readonly providerId: string }> {
   const value = validateProviderRecord(name, body); if (!value.ok) return value;
@@ -1485,22 +1449,6 @@ export const signOutOperation: WebuiOperation<Record<string, never>, { readonly 
     return { ok: true, body: {} };
   },
 };
-
-export interface WebuiOperationRegistryEntry {
-  readonly operation: WebuiOperation;
-  readonly handle: WebuiOperationHandler<unknown>;
-}
-
-export interface WebuiOperationRegistration<Body = unknown, ResultBody = Body> {
-  readonly operation: WebuiOperation<Body, ResultBody>;
-  readonly handle: (
-    context: WebuiOperationContext,
-    body: Body,
-  ) =>
-    | Promise<WebuiOperationResult<ResultBody> | WebuiOperationStreamResult>
-    | WebuiOperationResult<ResultBody>
-    | WebuiOperationStreamResult;
-}
 
 export function createOperationRegistry(
   port: Pick<
