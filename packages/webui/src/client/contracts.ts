@@ -9,11 +9,15 @@
 // dependency direction `main → components → projection → contracts`.
 
 import type {
+  WebuiCanvasDocument,
+  WebuiClaimSigninView,
   WebuiEditSessionMessageRequest,
+  WebuiEditSessionMessageResult,
   WebuiEnqueueMessageRequest,
   WebuiEnqueueMessageResult,
   WebuiFileDiffInfoView,
   WebuiForkSessionRequest,
+  WebuiForkSessionResult,
   WebuiGoal,
   WebuiGoalCreateRequest,
   WebuiGoalEnabledResult,
@@ -26,8 +30,10 @@ import type {
   WebuiGetSessionRewindPreviewResult,
   WebuiGetTurnDiffRequest,
   WebuiGetTurnDiffResult,
+  WebuiInteractionReplyResult,
   WebuiModelEntry,
   WebuiPendingPermission,
+  WebuiQueueItem,
   WebuiQuestionnaireAnswer,
   WebuiQuestionnaireOption,
   WebuiQuestionnaireRequest,
@@ -39,8 +45,18 @@ import type {
   WebuiRewindSessionRequest,
   WebuiRewindSessionResult,
   WebuiRuntimeEvent,
+  WebuiSigninPanelView,
   WebuiStreamFrame,
+  WebuiTerminalFrame,
   WebuiTurnDiffView,
+  WebuiUpdateSessionRequest,
+  WebuiUpdateSessionResult,
+  WebuiUsageQuotaResult,
+  WebuiVersionInfo,
+  WebuiWorkspaceEnvironment,
+  WebuiWorkspaceFile,
+  WebuiWorkspaceFileContent,
+  WebuiWorkspaceGitMutationRequest,
 } from "../server/port.js";
 
 /* Attachment shape — used by the components layer, declared here so the
@@ -281,6 +297,207 @@ export interface WebuiModelSelectionRequest {
   readonly sessionId?: string;
 }
 
+/* Transport — the single bag of methods the foundation app and the
+ * composer consume. Every method here was previously an optional prop on
+ * `WebuiClientFoundationAppProps`. The optional semantics are preserved:
+ *   - `undefined` means "the operation is not wired" (the panel renders
+ *     the affected area conditionally).
+ *   - Optional fields stay optional. Optional inputs stay optional.
+ *   - The transport itself is optional (so a test that renders the
+ *     shell with no transport still gets a "no operations" view).
+ *
+ * No React imports here — this is a pure type that lives in the
+ * contracts layer so the props layer (app.tsx) and the transport
+ * implementation (transport.ts) both import it without crossing
+ * boundaries. */
+
+export interface WebuiTransport {
+  readonly version?: () => Promise<WebuiVersionInfo>;
+  readonly listArchivedSessions?: () => Promise<WebuiClientSessionPage>;
+  readonly loadSessions?: WebuiClientSessionLoader;
+  readonly loadSessionTree?: WebuiClientSessionTreeLoader;
+  readonly loadMessages?: WebuiClientMessageLoader;
+  readonly getTurnDiff?: (
+    request: WebuiGetTurnDiffRequest,
+  ) => Promise<WebuiGetTurnDiffResult>;
+  readonly revertTurnDiff?: (
+    request: WebuiRevertTurnDiffRequest,
+  ) => Promise<WebuiRevertTurnDiffResult>;
+  readonly reapplyTurnDiff?: (
+    request: WebuiReapplyTurnDiffRequest,
+  ) => Promise<WebuiReapplyTurnDiffResult>;
+  readonly getSessionRewindPreview?: (
+    request: WebuiGetSessionRewindPreviewRequest,
+  ) => Promise<WebuiGetSessionRewindPreviewResult>;
+  readonly rewindSession?: (
+    request: WebuiRewindSessionRequest,
+  ) => Promise<WebuiRewindSessionResult>;
+  readonly editSessionMessage?: (
+    request: WebuiEditSessionMessageRequest,
+  ) => Promise<WebuiEditSessionMessageResult>;
+  readonly isGoalEnabled?: () => Promise<WebuiGoalEnabledResult>;
+  readonly getGoal?: (
+    request: WebuiGoalSessionRequest,
+  ) => Promise<WebuiGoal | undefined>;
+  readonly createGoal?: (request: WebuiGoalCreateRequest) => Promise<WebuiGoal>;
+  readonly patchGoal?: (request: WebuiGoalPatchRequest) => Promise<WebuiGoal>;
+  readonly clearGoal?: (
+    request: WebuiGoalSessionRequest,
+  ) => Promise<{ readonly success: boolean }>;
+  readonly listWorkspaceFileTree?: (request: {
+    readonly workspaceDir: string;
+    readonly path?: string;
+  }) => Promise<readonly WebuiWorkspaceFile[]>;
+  readonly readWorkspaceFile?: (request: {
+    readonly workspaceDir: string;
+    readonly path: string;
+  }) => Promise<WebuiWorkspaceFileContent>;
+  readonly getWorkspaceEnvironment?: (request: {
+    readonly workspaceDir: string;
+  }) => Promise<WebuiWorkspaceEnvironment>;
+  readonly mutateWorkspaceGit?: (
+    request: WebuiWorkspaceGitMutationRequest,
+  ) => Promise<Record<string, unknown>>;
+  readonly readCanvas?: (request: {
+    readonly sessionId: string;
+  }) => Promise<WebuiCanvasDocument>;
+  readonly applyCanvas?: (request: {
+    readonly sessionId: string;
+    readonly operation: Record<string, unknown>;
+  }) => Promise<unknown>;
+  readonly createTerminal?: (request: {
+    readonly workspaceDir: string;
+  }) => Promise<{ readonly terminalId: string; readonly status: string }>;
+  readonly listTerminals?: () => Promise<readonly Record<string, unknown>[]>;
+  readonly writeTerminal?: (request: {
+    readonly terminalId: string;
+    readonly data: string;
+  }) => Promise<unknown>;
+  readonly disposeTerminal?: (request: {
+    readonly terminalId: string;
+  }) => Promise<unknown>;
+  readonly watchTerminal?: (
+    request: { readonly terminalId: string },
+    onFrame: (frame: WebuiTerminalFrame) => void,
+  ) => () => void;
+  readonly createSession?: WebuiClientSessionCreator;
+  readonly sendMessage?: WebuiClientMessageSender;
+  readonly enqueueMessage?: WebuiClientMessageEnqueuer;
+  readonly resumeSession?: WebuiClientSessionResumer;
+  readonly watchEvents?: WebuiClientEventWatcher;
+  readonly listPendingPermissions?: () => Promise<{
+    readonly requests: readonly WebuiPendingPermission[];
+  }>;
+  readonly getPendingQuestionnaire?: (request: {
+    readonly name: string;
+    readonly sessionId: string;
+  }) => Promise<{ readonly request?: WebuiQuestionnaireRequest }>;
+  readonly replyPermission?: (request: {
+    readonly name: string;
+    readonly requestId: string;
+    readonly reply: "allowOnce" | "allowAlways" | "deny";
+  }) => Promise<WebuiInteractionReplyResult>;
+  readonly replyQuestionnaire?: (request: {
+    readonly name: string;
+    readonly requestId: string;
+    readonly schemaVersion: number;
+    readonly answers: readonly WebuiQuestionnaireAnswer[];
+  }) => Promise<WebuiInteractionReplyResult>;
+  readonly dismissQuestionnaire?: (request: {
+    readonly name: string;
+    readonly requestId: string;
+  }) => Promise<WebuiInteractionReplyResult>;
+  readonly abortSession?: (request: {
+    readonly id: string;
+  }) => Promise<{ readonly success?: boolean }>;
+  readonly listQueueMessages?: (request: {
+    readonly id: string;
+  }) => Promise<{
+    readonly items?: readonly WebuiQueueItem[];
+    readonly paused?: boolean;
+    readonly pendingCount?: number;
+  }>;
+  readonly deleteQueueItem?: (request: {
+    readonly id: string;
+    readonly itemId: string;
+  }) => Promise<{ readonly item?: WebuiQueueItem }>;
+  readonly listModels?: (request?: {
+    readonly sessionId?: string;
+  }) => Promise<readonly WebuiModelEntry[]>;
+  readonly listSkills?: (request?: {
+    readonly agentName?: string;
+  }) => Promise<{
+    readonly skills: readonly {
+      readonly name: string;
+      readonly displayName?: string;
+      readonly description?: string;
+    }[];
+  }>;
+  readonly selectModel?: (
+    request: WebuiModelSelectionRequest,
+  ) => Promise<{ readonly success?: boolean }>;
+  readonly getSessionUsage?: (request: {
+    readonly id: string;
+  }) => Promise<Record<string, unknown>>;
+  readonly getUsageQuota?: (request?: {
+    readonly forceRefresh?: boolean;
+  }) => Promise<WebuiUsageQuotaResult>;
+  readonly getSigninPanel?: () => Promise<WebuiSigninPanelView>;
+  readonly claimSignin?: () => Promise<WebuiClaimSigninView>;
+  readonly getAccountStatus?: (request?: {
+    readonly sessionId?: string;
+  }) => Promise<Record<string, unknown>>;
+  readonly signOut?: () => Promise<{ readonly success?: boolean }>;
+  readonly archiveSession?: (request: {
+    readonly id: string;
+  }) => Promise<{ readonly success?: boolean }>;
+  readonly deleteSession?: (request: {
+    readonly id: string;
+  }) => Promise<{ readonly success?: boolean }>;
+  readonly updateSession?: (
+    request: WebuiUpdateSessionRequest,
+  ) => Promise<WebuiUpdateSessionResult>;
+  readonly getSessionForkOptions?: (
+    request: WebuiGetSessionForkOptionsRequest,
+  ) => Promise<WebuiGetSessionForkOptionsResult>;
+  readonly forkSession?: (
+    request: WebuiForkSessionRequest,
+  ) => Promise<WebuiForkSessionResult>;
+  readonly listUserModelProviders?: () => Promise<readonly Record<string, unknown>[]>;
+  readonly createUserModelProvider?: (
+    request: Record<string, unknown>,
+  ) => Promise<unknown>;
+  readonly updateUserModelProvider?: (
+    request: Record<string, unknown>,
+  ) => Promise<unknown>;
+  readonly deleteUserModelProvider?: (providerId: string) => Promise<unknown>;
+  readonly testUserModelProvider?: (providerId: string) => Promise<unknown>;
+  readonly testUserModel?: (request: {
+    readonly providerId: string;
+    readonly modelId: string;
+  }) => Promise<unknown>;
+  readonly discoverUserModelsCandidate?: (
+    request: Record<string, unknown>,
+  ) => Promise<unknown>;
+  readonly saveUserModelProviderCandidate?: (
+    request: Record<string, unknown>,
+  ) => Promise<unknown>;
+  readonly listProviderPresets?: () => Promise<readonly Record<string, unknown>[]>;
+  readonly getMiniMaxApiKeyStatus?: () => Promise<Record<string, unknown>>;
+  readonly upsertMiniMaxApiKey?: (request: {
+    readonly apiKey: string;
+    readonly saveAndUse?: boolean;
+  }) => Promise<unknown>;
+  readonly getCodexOAuthStatus?: () => Promise<Record<string, unknown>>;
+  readonly runCommand?: (request: {
+    readonly command: "help" | "new" | "compact" | "status" | "usage" | "model";
+    readonly input?: string;
+    readonly sessionId?: string;
+    readonly agentName?: string;
+    readonly workspaceDir?: string;
+  }) => Promise<Record<string, unknown>>;
+}
+
 export type {
   WebuiEditSessionMessageRequest,
   WebuiEnqueueMessageRequest,
@@ -299,8 +516,10 @@ export type {
   WebuiGoalPatchRequest,
   WebuiGoalSessionRequest,
   WebuiGoalStatus,
+  WebuiInteractionReplyResult,
   WebuiModelEntry,
   WebuiPendingPermission,
+  WebuiQueueItem,
   WebuiQuestionnaireAnswer,
   WebuiQuestionnaireOption,
   WebuiQuestionnaireRequest,
@@ -313,5 +532,6 @@ export type {
   WebuiRewindSessionResult,
   WebuiRuntimeEvent,
   WebuiStreamFrame,
+  WebuiTerminalFrame,
   WebuiTurnDiffView,
 };

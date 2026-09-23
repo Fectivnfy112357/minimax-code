@@ -98,7 +98,7 @@ function renderSessionShell(): string {
         ],
         hasMore: false,
       },
-      loadMessages: async () => ({ messages: [], hasMore: false }),
+    transport: { loadMessages: async () => ({ messages: [], hasMore: false }) },
     }),
   );
 }
@@ -925,7 +925,7 @@ describe("WebUI shell — desktop anatomy", () => {
     const html = renderToStaticMarkup(
       createElement(WebuiClientFoundationApp, {
         label: "webui-foundation",
-        sendMessage: async () => undefined,
+        transport: { sendMessage: async () => undefined },
       }),
     );
     const at = html.indexOf("<textarea");
@@ -2146,7 +2146,7 @@ describe("WebUI composer transcriptIncomplete", () => {
     const html = renderToStaticMarkup(
       createElement(WebuiClientFoundationApp, {
         label: "webui-foundation",
-        sendMessage: () => Promise.resolve(),
+        transport: { sendMessage: () => Promise.resolve() },
       }),
     );
     expect(html).not.toContain("data-webui-transcript-incomplete");

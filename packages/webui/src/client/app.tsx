@@ -153,6 +153,10 @@ import type {
   WebuiGoal,
   WebuiGoalStatus,
   WebuiUsageQuotaResult,
+  WebuiGoalSessionRequest,
+  WebuiGoalCreateRequest,
+  WebuiGoalPatchRequest,
+  WebuiGoalEnabledResult,
 } from "../server/port.js";
 import {
   initialWebuiWorkspaceProgress,
@@ -249,6 +253,7 @@ import type {
   WebuiDiffState,
   WebuiDiffStateAction,
   WebuiModelSelectionRequest,
+  WebuiTransport,
 } from "./contracts.js";
 import type {
   WebuiComposerSubmitArgs,
@@ -1095,11 +1100,11 @@ export function MessageItem({
   readonly actions?: WebuiMessageActionCapabilities;
   readonly timestamp?: number;
   readonly isGoal?: boolean;
-  readonly getSessionForkOptions?: WebuiClientFoundationAppProps["getSessionForkOptions"];
-  readonly forkSession?: WebuiClientFoundationAppProps["forkSession"];
-  readonly getSessionRewindPreview?: WebuiClientFoundationAppProps["getSessionRewindPreview"];
-  readonly rewindSession?: WebuiClientFoundationAppProps["rewindSession"];
-  readonly editSessionMessage?: WebuiClientFoundationAppProps["editSessionMessage"];
+  readonly getSessionForkOptions?: (request: WebuiGetSessionForkOptionsRequest) => Promise<WebuiGetSessionForkOptionsResult>;
+  readonly forkSession?: (request: WebuiForkSessionRequest) => Promise<WebuiForkSessionResult>;
+  readonly getSessionRewindPreview?: (request: WebuiGetSessionRewindPreviewRequest) => Promise<WebuiGetSessionRewindPreviewResult>;
+  readonly rewindSession?: (request: WebuiRewindSessionRequest) => Promise<WebuiRewindSessionResult>;
+  readonly editSessionMessage?: (request: WebuiEditSessionMessageRequest) => Promise<WebuiEditSessionMessageResult>;
   readonly onMutationComplete?: () => void;
   readonly userText?: string;
   readonly thinking?: string;
@@ -1263,149 +1268,42 @@ export function MessageItem({
 }
 
 export interface WebuiClientFoundationAppProps {
+  // Non-method props (seed / UI / SSR). The 78 method props that used to
+  // live here are now bundled into `transport` (see contracts.ts →
+  // `WebuiTransport`). Optional semantics preserved: `transport.X` is
+  // `undefined` exactly when the underlying operation is not wired.
   readonly label: string;
   readonly version?: WebuiVersionInfo;
-  readonly getVersion?: () => Promise<WebuiVersionInfo>;
-  readonly listArchivedSessions?: () => Promise<WebuiClientSessionPage>;
   readonly sessionPage?: WebuiClientSessionPage;
-  readonly loadSessions?: WebuiClientSessionLoader;
-  readonly loadSessionTree?: WebuiClientSessionTreeLoader;
-  readonly loadMessages?: WebuiClientMessageLoader;
   /** Seed for the transcript so SSR / first paint can render messages before
    * `loadMessages` resolves; production always re-fetches in the background
    * so the prop only changes the initial paint, not the source of truth. */
   readonly initialMessages?: WebuiClientMessagePage;
-  readonly getTurnDiff?: (request: WebuiGetTurnDiffRequest) => Promise<WebuiGetTurnDiffResult>;
-  readonly revertTurnDiff?: (request: WebuiRevertTurnDiffRequest) => Promise<WebuiRevertTurnDiffResult>;
-  readonly reapplyTurnDiff?: (request: WebuiReapplyTurnDiffRequest) => Promise<WebuiReapplyTurnDiffResult>;
-  readonly getSessionRewindPreview?: (request: import("../server/port.js").WebuiGetSessionRewindPreviewRequest) => Promise<import("../server/port.js").WebuiGetSessionRewindPreviewResult>;
-  readonly rewindSession?: (request: import("../server/port.js").WebuiRewindSessionRequest) => Promise<import("../server/port.js").WebuiRewindSessionResult>;
-  readonly editSessionMessage?: (request: import("../server/port.js").WebuiEditSessionMessageRequest) => Promise<import("../server/port.js").WebuiEditSessionMessageResult>;
-  readonly isGoalEnabled?: () => Promise<import("../server/port.js").WebuiGoalEnabledResult>;
-  readonly getGoal?: (request: { readonly sessionId: string }) => Promise<import("../server/port.js").WebuiGoal | undefined>;
-  readonly createGoal?: (request: import("../server/port.js").WebuiGoalCreateRequest) => Promise<import("../server/port.js").WebuiGoal>;
-  readonly patchGoal?: (request: import("../server/port.js").WebuiGoalPatchRequest) => Promise<import("../server/port.js").WebuiGoal>;
-  readonly clearGoal?: (request: { readonly sessionId: string }) => Promise<{ readonly success: boolean }>;
-  readonly listWorkspaceFileTree?: (request: { readonly workspaceDir: string; readonly path?: string }) => Promise<readonly import("../server/port.js").WebuiWorkspaceFile[]>;
-  readonly readWorkspaceFile?: (request: { readonly workspaceDir: string; readonly path: string }) => Promise<import("../server/port.js").WebuiWorkspaceFileContent>;
-  readonly getWorkspaceEnvironment?: (request: { readonly workspaceDir: string }) => Promise<import("../server/port.js").WebuiWorkspaceEnvironment>;
-  readonly mutateWorkspaceGit?: (request: import("../server/port.js").WebuiWorkspaceGitMutationRequest) => Promise<Record<string, unknown>>;
-  readonly readCanvas?: (request: { readonly sessionId: string }) => Promise<import("../server/port.js").WebuiCanvasDocument>;
-  readonly applyCanvas?: (request: { readonly sessionId: string; readonly operation: Record<string, unknown> }) => Promise<unknown>;
-  readonly createTerminal?: (request: { readonly workspaceDir: string }) => Promise<{ readonly terminalId: string; readonly status: string }>;
-  readonly listTerminals?: () => Promise<readonly Record<string, unknown>[]>;
-  readonly writeTerminal?: (request: { readonly terminalId: string; readonly data: string }) => Promise<unknown>;
-  readonly disposeTerminal?: (request: { readonly terminalId: string }) => Promise<unknown>;
-  readonly watchTerminal?: (request: { readonly terminalId: string }, onFrame: (frame: { terminalId: string; data: string; exited: boolean }) => void) => () => void;
-  readonly locationHash?: string;
-  readonly createSession?: WebuiClientSessionCreator;
-  readonly sendMessage?: WebuiClientMessageSender;
-  readonly enqueueMessage?: WebuiClientMessageEnqueuer;
-  readonly resumeSession?: WebuiClientSessionResumer;
-  readonly watchEvents?: WebuiClientEventWatcher;
-  readonly listPendingPermissions?: () => Promise<{
-    readonly requests: readonly WebuiPendingPermission[];
-  }>;
-  readonly getPendingQuestionnaire?: (request: {
-    readonly name: string;
-    readonly sessionId: string;
-  }) => Promise<{ readonly request?: WebuiQuestionnaireRequest }>;
-  readonly replyPermission?: (request: {
-    readonly name: string;
-    readonly requestId: string;
-    readonly reply: "allowOnce" | "allowAlways" | "deny";
-  }) => Promise<WebuiInteractionReplyResult>;
-  readonly replyQuestionnaire?: (request: {
-    readonly name: string;
-    readonly requestId: string;
-    readonly schemaVersion: number;
-    readonly answers: readonly WebuiQuestionnaireAnswer[];
-  }) => Promise<WebuiInteractionReplyResult>;
-  readonly dismissQuestionnaire?: (request: {
-    readonly name: string;
-    readonly requestId: string;
-  }) => Promise<WebuiInteractionReplyResult>;
-  readonly abortSession?: (request: {
-    readonly id: string;
-  }) => Promise<{ readonly success?: boolean }>;
-  readonly listQueueMessages?: (request: { readonly id: string }) => Promise<{
-    readonly items?: readonly WebuiQueueItem[];
-    readonly paused?: boolean;
-    readonly pendingCount?: number;
-  }>;
-  readonly deleteQueueItem?: (request: {
-    readonly id: string;
-    readonly itemId: string;
-  }) => Promise<{ readonly item?: WebuiQueueItem }>;
-  readonly listModels?: (request?: {
-    readonly sessionId?: string;
-  }) => Promise<readonly WebuiModelEntry[]>;
-  readonly listSkills?: (request?: {
-    readonly agentName?: string;
-  }) => Promise<{
-    readonly skills: readonly {
-      readonly name: string;
-      readonly displayName?: string;
-      readonly description?: string;
-    }[];
-  }>;
-  readonly selectModel?: (
-    request: WebuiModelSelectionRequest,
-  ) => Promise<{ readonly success?: boolean }>;
-  readonly getSessionUsage?: (request: {
-    readonly id: string;
-  }) => Promise<Record<string, unknown>>;
-  readonly getUsageQuota?: (request?: {
-    readonly forceRefresh?: boolean;
-  }) => Promise<import("../server/port.js").WebuiUsageQuotaResult>;
   /** Seed for the conversation usage banner so SSR / first paint can render
    * it before `getUsageQuota` resolves; production always re-fetches in the
    * background so the prop only changes the initial paint, not the source
    * of truth.
    */
   readonly initialUsageQuota?: WebuiUsageQuotaResult;
-  readonly getSigninPanel?: () => Promise<
-    import("../server/port.js").WebuiSigninPanelView
-  >;
-  readonly claimSignin?: () => Promise<
-    import("../server/port.js").WebuiClaimSigninView
-  >;
-  readonly getAccountStatus?: (request?: {
-    readonly sessionId?: string;
-  }) => Promise<Record<string, unknown>>;
-  readonly signOut?: () => Promise<{ readonly success?: boolean }>;
-  readonly archiveSession?: (request: { readonly id: string }) => Promise<{ readonly success?: boolean }>;
-  readonly deleteSession?: (request: { readonly id: string }) => Promise<{ readonly success?: boolean }>;
-  readonly updateSession?: (request: import("../server/port.js").WebuiUpdateSessionRequest) => Promise<import("../server/port.js").WebuiUpdateSessionResult>;
-  readonly getSessionForkOptions?: (request: import("../server/port.js").WebuiGetSessionForkOptionsRequest) => Promise<import("../server/port.js").WebuiGetSessionForkOptionsResult>;
-  readonly forkSession?: (request: import("../server/port.js").WebuiForkSessionRequest) => Promise<import("../server/port.js").WebuiForkSessionResult>;
-  readonly listUserModelProviders?: () => Promise<readonly Record<string, unknown>[]>;
-  readonly createUserModelProvider?: (request: Record<string, unknown>) => Promise<unknown>;
-  readonly updateUserModelProvider?: (request: Record<string, unknown>) => Promise<unknown>;
-  readonly deleteUserModelProvider?: (providerId: string) => Promise<unknown>;
-  readonly testUserModelProvider?: (providerId: string) => Promise<unknown>;
-  readonly testUserModel?: (request: { readonly providerId: string; readonly modelId: string }) => Promise<unknown>;
-  readonly discoverUserModelsCandidate?: (request: Record<string, unknown>) => Promise<unknown>;
-  readonly saveUserModelProviderCandidate?: (request: Record<string, unknown>) => Promise<unknown>;
-  readonly listProviderPresets?: () => Promise<readonly Record<string, unknown>[]>;
-  readonly getMiniMaxApiKeyStatus?: () => Promise<Record<string, unknown>>;
-  readonly upsertMiniMaxApiKey?: (request: { readonly apiKey: string; readonly saveAndUse?: boolean }) => Promise<unknown>;
-  readonly getCodexOAuthStatus?: () => Promise<Record<string, unknown>>;
+  readonly locationHash?: string;
   readonly dataDir?: string;
-  readonly runCommand?: (request: {
-    readonly command: "help" | "new" | "compact" | "status" | "usage" | "model";
-    readonly input?: string;
-    readonly sessionId?: string;
-    readonly agentName?: string;
-    readonly workspaceDir?: string;
-  }) => Promise<Record<string, unknown>>;
   /**
    * What the identity row shows under the product name. The desktop puts the signed-in
    * account's plan there; the WebUI is loopback-only and has no account, so it reports
    * the scope it actually runs in. `main.tsx` passes the page's host.
    */
   readonly hostLabel?: string;
+  /**
+   * W2.5 transport object — the single bag of methods the foundation app
+   * consumes. `main.tsx` constructs it ONCE at module scope so the React
+   * effect dependency identity is stable across renders. Passing a fresh
+   * object every render would re-subscribe the watcher / fetcher effects
+   * on every keystroke. Optional fields stay optional: `transport.X`
+   * is `undefined` iff the operation is not wired.
+   */
+  readonly transport?: WebuiTransport;
 }
+
 
 // Slash palette for the composer hinting model.
 //
@@ -2738,14 +2636,14 @@ export function WebuiSessionTranscript({
   readonly sessionId: string;
   readonly loadMessages: WebuiClientMessageLoader;
   readonly initialMessages?: WebuiClientMessagePage;
-  readonly getTurnDiff?: WebuiClientFoundationAppProps["getTurnDiff"];
-  readonly revertTurnDiff?: WebuiClientFoundationAppProps["revertTurnDiff"];
-  readonly reapplyTurnDiff?: WebuiClientFoundationAppProps["reapplyTurnDiff"];
-  readonly getSessionForkOptions?: WebuiClientFoundationAppProps["getSessionForkOptions"];
-  readonly forkSession?: WebuiClientFoundationAppProps["forkSession"];
-  readonly getSessionRewindPreview?: WebuiClientFoundationAppProps["getSessionRewindPreview"];
-  readonly rewindSession?: WebuiClientFoundationAppProps["rewindSession"];
-  readonly editSessionMessage?: WebuiClientFoundationAppProps["editSessionMessage"];
+  readonly getTurnDiff?: (request: WebuiGetTurnDiffRequest) => Promise<WebuiGetTurnDiffResult>;
+  readonly revertTurnDiff?: (request: WebuiRevertTurnDiffRequest) => Promise<WebuiRevertTurnDiffResult>;
+  readonly reapplyTurnDiff?: (request: WebuiReapplyTurnDiffRequest) => Promise<WebuiReapplyTurnDiffResult>;
+  readonly getSessionForkOptions?: (request: WebuiGetSessionForkOptionsRequest) => Promise<WebuiGetSessionForkOptionsResult>;
+  readonly forkSession?: (request: WebuiForkSessionRequest) => Promise<WebuiForkSessionResult>;
+  readonly getSessionRewindPreview?: (request: WebuiGetSessionRewindPreviewRequest) => Promise<WebuiGetSessionRewindPreviewResult>;
+  readonly rewindSession?: (request: WebuiRewindSessionRequest) => Promise<WebuiRewindSessionResult>;
+  readonly editSessionMessage?: (request: WebuiEditSessionMessageRequest) => Promise<WebuiEditSessionMessageResult>;
 }): ReactElement {
   const [page, setPage] = useState<WebuiClientMessagePage>(
     () => initialMessages ?? {},
@@ -3058,8 +2956,8 @@ export function WebuiGoalBanner({
   interactionBlocked = false,
 }: {
   readonly goal?: WebuiGoal;
-  readonly patchGoal?: WebuiClientFoundationAppProps["patchGoal"];
-  readonly clearGoal?: WebuiClientFoundationAppProps["clearGoal"];
+  readonly patchGoal?: (request: WebuiGoalPatchRequest) => Promise<WebuiGoal>;
+  readonly clearGoal?: (request: WebuiGoalSessionRequest) => Promise<{ readonly success: boolean }>;
   readonly onReplace?: () => void;
   readonly isGenerating?: boolean;
   readonly interactionBlocked?: boolean;
@@ -3560,37 +3458,37 @@ function WebuiComposer({
    *  parent's workspace-change handler can also close the popover. */
   readonly workspaceMenuOpen: boolean;
   readonly setWorkspaceMenuOpen: (open: boolean) => void;
-  readonly runCommand?: WebuiClientFoundationAppProps["runCommand"];
+  readonly runCommand?: (request: { readonly command: "help" | "new" | "compact" | "status" | "usage" | "model"; readonly input?: string; readonly sessionId?: string; readonly agentName?: string; readonly workspaceDir?: string; }) => Promise<Record<string, unknown>>;
   readonly sendMessage?: WebuiClientMessageSender;
   readonly enqueueMessage?: WebuiClientMessageEnqueuer;
   readonly resumeSession?: WebuiClientSessionResumer;
   readonly loadMessages?: WebuiClientMessageLoader;
-  readonly getTurnDiff?: WebuiClientFoundationAppProps["getTurnDiff"];
-  readonly revertTurnDiff?: WebuiClientFoundationAppProps["revertTurnDiff"];
-  readonly reapplyTurnDiff?: WebuiClientFoundationAppProps["reapplyTurnDiff"];
-  readonly getSessionForkOptions?: WebuiClientFoundationAppProps["getSessionForkOptions"];
-  readonly forkSession?: WebuiClientFoundationAppProps["forkSession"];
-  readonly getSessionRewindPreview?: WebuiClientFoundationAppProps["getSessionRewindPreview"];
-  readonly rewindSession?: WebuiClientFoundationAppProps["rewindSession"];
-  readonly editSessionMessage?: WebuiClientFoundationAppProps["editSessionMessage"];
-  readonly getGoal?: WebuiClientFoundationAppProps["getGoal"];
-  readonly createGoal?: WebuiClientFoundationAppProps["createGoal"];
-  readonly patchGoal?: WebuiClientFoundationAppProps["patchGoal"];
-  readonly clearGoal?: WebuiClientFoundationAppProps["clearGoal"];
-  readonly isGoalEnabled?: WebuiClientFoundationAppProps["isGoalEnabled"];
+  readonly getTurnDiff?: (request: WebuiGetTurnDiffRequest) => Promise<WebuiGetTurnDiffResult>;
+  readonly revertTurnDiff?: (request: WebuiRevertTurnDiffRequest) => Promise<WebuiRevertTurnDiffResult>;
+  readonly reapplyTurnDiff?: (request: WebuiReapplyTurnDiffRequest) => Promise<WebuiReapplyTurnDiffResult>;
+  readonly getSessionForkOptions?: (request: WebuiGetSessionForkOptionsRequest) => Promise<WebuiGetSessionForkOptionsResult>;
+  readonly forkSession?: (request: WebuiForkSessionRequest) => Promise<WebuiForkSessionResult>;
+  readonly getSessionRewindPreview?: (request: WebuiGetSessionRewindPreviewRequest) => Promise<WebuiGetSessionRewindPreviewResult>;
+  readonly rewindSession?: (request: WebuiRewindSessionRequest) => Promise<WebuiRewindSessionResult>;
+  readonly editSessionMessage?: (request: WebuiEditSessionMessageRequest) => Promise<WebuiEditSessionMessageResult>;
+  readonly getGoal?: (request: WebuiGoalSessionRequest) => Promise<WebuiGoal | undefined>;
+  readonly createGoal?: (request: WebuiGoalCreateRequest) => Promise<WebuiGoal>;
+  readonly patchGoal?: (request: WebuiGoalPatchRequest) => Promise<WebuiGoal>;
+  readonly clearGoal?: (request: WebuiGoalSessionRequest) => Promise<{ readonly success: boolean }>;
+  readonly isGoalEnabled?: () => Promise<WebuiGoalEnabledResult>;
   readonly watchEvents?: WebuiClientEventWatcher;
-  readonly listPendingPermissions?: WebuiClientFoundationAppProps["listPendingPermissions"];
-  readonly getPendingQuestionnaire?: WebuiClientFoundationAppProps["getPendingQuestionnaire"];
-  readonly replyPermission?: WebuiClientFoundationAppProps["replyPermission"];
-  readonly replyQuestionnaire?: WebuiClientFoundationAppProps["replyQuestionnaire"];
-  readonly dismissQuestionnaire?: WebuiClientFoundationAppProps["dismissQuestionnaire"];
-  readonly abortSession?: WebuiClientFoundationAppProps["abortSession"];
-  readonly listQueueMessages?: WebuiClientFoundationAppProps["listQueueMessages"];
-  readonly deleteQueueItem?: WebuiClientFoundationAppProps["deleteQueueItem"];
-  readonly listModels?: WebuiClientFoundationAppProps["listModels"];
-  readonly listSkills?: WebuiClientFoundationAppProps["listSkills"];
-  readonly selectModel?: WebuiClientFoundationAppProps["selectModel"];
-  readonly getAccountStatus?: WebuiClientFoundationAppProps["getAccountStatus"];
+  readonly listPendingPermissions?: () => Promise<{ readonly requests: readonly WebuiPendingPermission[] }>;
+  readonly getPendingQuestionnaire?: (request: { readonly name: string; readonly sessionId: string }) => Promise<{ readonly request?: WebuiQuestionnaireRequest }>;
+  readonly replyPermission?: (request: { readonly name: string; readonly requestId: string; readonly reply: "allowOnce" | "allowAlways" | "deny" }) => Promise<WebuiInteractionReplyResult>;
+  readonly replyQuestionnaire?: (request: { readonly name: string; readonly requestId: string; readonly schemaVersion: number; readonly answers: readonly WebuiQuestionnaireAnswer[] }) => Promise<WebuiInteractionReplyResult>;
+  readonly dismissQuestionnaire?: (request: { readonly name: string; readonly requestId: string }) => Promise<WebuiInteractionReplyResult>;
+  readonly abortSession?: (request: { readonly id: string }) => Promise<{ readonly success?: boolean }>;
+  readonly listQueueMessages?: (request: { readonly id: string }) => Promise<{ readonly items?: readonly WebuiQueueItem[]; readonly paused?: boolean; readonly pendingCount?: number }>;
+  readonly deleteQueueItem?: (request: { readonly id: string; readonly itemId: string }) => Promise<{ readonly item?: WebuiQueueItem }>;
+  readonly listModels?: (request?: { readonly sessionId?: string }) => Promise<readonly WebuiModelEntry[]>;
+  readonly listSkills?: (request?: { readonly agentName?: string }) => Promise<{ readonly skills: readonly { readonly name: string; readonly displayName?: string; readonly description?: string }[] }>;
+  readonly selectModel?: (request: WebuiModelSelectionRequest) => Promise<{ readonly success?: boolean }>;
+  readonly getAccountStatus?: (request?: { readonly sessionId?: string }) => Promise<Record<string, unknown>>;
   /** The draft lives on the shell so it survives silent first-session creation. */
   readonly draft: string;
   readonly onDraftChange: (next: string) => void;
@@ -4607,83 +4505,90 @@ function WebuiComposer({
   );
 }
 
-export function WebuiClientFoundationApp({
-  label,
-  sessionPage,
-  loadSessions,
-  loadSessionTree,
-  listArchivedSessions,
-  locationHash,
-  loadMessages,
-  initialMessages,
-  getTurnDiff,
-  revertTurnDiff,
-  reapplyTurnDiff,
-  getSessionRewindPreview,
-  rewindSession,
-  editSessionMessage,
-  isGoalEnabled,
-  getGoal,
-  createGoal,
-  patchGoal,
-  clearGoal,
-  createSession,
-  sendMessage,
-  enqueueMessage,
-  resumeSession,
-  watchEvents,
-  listPendingPermissions,
-  getPendingQuestionnaire,
-  replyPermission,
-  replyQuestionnaire,
-  dismissQuestionnaire,
-  abortSession,
-  listQueueMessages,
-  deleteQueueItem,
-  listModels,
-  listSkills,
-  selectModel,
-  getSessionUsage,
-  getUsageQuota,
-  initialUsageQuota,
-  getSigninPanel,
-  claimSignin,
-  getAccountStatus,
-  signOut,
-  version,
-  getVersion,
-  archiveSession,
-  deleteSession,
-  updateSession,
-  getSessionForkOptions,
-  forkSession,
-  listUserModelProviders,
-  createUserModelProvider,
-  updateUserModelProvider,
-  deleteUserModelProvider,
-  testUserModelProvider,
-  testUserModel,
-  discoverUserModelsCandidate,
-  saveUserModelProviderCandidate,
-  listProviderPresets,
-  getMiniMaxApiKeyStatus,
-  upsertMiniMaxApiKey,
-  getCodexOAuthStatus,
-  dataDir,
-  runCommand,
-  hostLabel,
-  listWorkspaceFileTree,
-  readWorkspaceFile,
-  getWorkspaceEnvironment,
-  mutateWorkspaceGit,
-  readCanvas,
-  applyCanvas,
-  createTerminal,
-  listTerminals,
-  writeTerminal,
-  disposeTerminal,
-  watchTerminal,
-}: WebuiClientFoundationAppProps): ReactElement {
+export function WebuiClientFoundationApp(
+  props: WebuiClientFoundationAppProps,
+): ReactElement {
+  const {
+    label,
+    sessionPage,
+    initialMessages,
+    initialUsageQuota,
+    version,
+    locationHash,
+    dataDir,
+    hostLabel,
+    transport,
+  } = props;
+  // Each method comes from `transport`. Re-binding to the same local
+  // name as before keeps the rest of the function body identical.
+  const loadSessions = transport?.loadSessions;
+  const loadSessionTree = transport?.loadSessionTree;
+  const listArchivedSessions = transport?.listArchivedSessions;
+  const loadMessages = transport?.loadMessages;
+  const getTurnDiff = transport?.getTurnDiff;
+  const revertTurnDiff = transport?.revertTurnDiff;
+  const reapplyTurnDiff = transport?.reapplyTurnDiff;
+  const getSessionRewindPreview = transport?.getSessionRewindPreview;
+  const rewindSession = transport?.rewindSession;
+  const editSessionMessage = transport?.editSessionMessage;
+  const isGoalEnabled = transport?.isGoalEnabled;
+  const getGoal = transport?.getGoal;
+  const createGoal = transport?.createGoal;
+  const patchGoal = transport?.patchGoal;
+  const clearGoal = transport?.clearGoal;
+  const listWorkspaceFileTree = transport?.listWorkspaceFileTree;
+  const readWorkspaceFile = transport?.readWorkspaceFile;
+  const getWorkspaceEnvironment = transport?.getWorkspaceEnvironment;
+  const mutateWorkspaceGit = transport?.mutateWorkspaceGit;
+  const readCanvas = transport?.readCanvas;
+  const applyCanvas = transport?.applyCanvas;
+  const createTerminal = transport?.createTerminal;
+  const listTerminals = transport?.listTerminals;
+  const writeTerminal = transport?.writeTerminal;
+  const disposeTerminal = transport?.disposeTerminal;
+  const watchTerminal = transport?.watchTerminal;
+  const createSession = transport?.createSession;
+  const sendMessage = transport?.sendMessage;
+  const enqueueMessage = transport?.enqueueMessage;
+  const resumeSession = transport?.resumeSession;
+  const watchEvents = transport?.watchEvents;
+  const listPendingPermissions = transport?.listPendingPermissions;
+  const getPendingQuestionnaire = transport?.getPendingQuestionnaire;
+  const replyPermission = transport?.replyPermission;
+  const replyQuestionnaire = transport?.replyQuestionnaire;
+  const dismissQuestionnaire = transport?.dismissQuestionnaire;
+  const abortSession = transport?.abortSession;
+  const listQueueMessages = transport?.listQueueMessages;
+  const deleteQueueItem = transport?.deleteQueueItem;
+  const listModels = transport?.listModels;
+  const listSkills = transport?.listSkills;
+  const selectModel = transport?.selectModel;
+  const getSessionUsage = transport?.getSessionUsage;
+  const getUsageQuota = transport?.getUsageQuota;
+  const getSigninPanel = transport?.getSigninPanel;
+  const claimSignin = transport?.claimSignin;
+  const getAccountStatus = transport?.getAccountStatus;
+  const signOut = transport?.signOut;
+  const getVersion = transport?.version;
+  const archiveSession = transport?.archiveSession;
+  const deleteSession = transport?.deleteSession;
+  const updateSession = transport?.updateSession;
+  const getSessionForkOptions = transport?.getSessionForkOptions;
+  const forkSession = transport?.forkSession;
+  const listUserModelProviders = transport?.listUserModelProviders;
+  const createUserModelProvider = transport?.createUserModelProvider;
+  const updateUserModelProvider = transport?.updateUserModelProvider;
+  const deleteUserModelProvider = transport?.deleteUserModelProvider;
+  const testUserModelProvider = transport?.testUserModelProvider;
+  const testUserModel = transport?.testUserModel;
+  const discoverUserModelsCandidate = transport?.discoverUserModelsCandidate;
+  const saveUserModelProviderCandidate = transport?.saveUserModelProviderCandidate;
+  const listProviderPresets = transport?.listProviderPresets;
+  const getMiniMaxApiKeyStatus = transport?.getMiniMaxApiKeyStatus;
+  const upsertMiniMaxApiKey = transport?.upsertMiniMaxApiKey;
+  const getCodexOAuthStatus = transport?.getCodexOAuthStatus;
+  const runCommand = transport?.runCommand;
+
   const [runtimeVersion, setRuntimeVersion] = useState(version);
   useEffect(() => { if (!runtimeVersion && getVersion) void getVersion().then(setRuntimeVersion); }, [getVersion, runtimeVersion]);
   const [page, setPage] = useState<WebuiClientSessionPage>(

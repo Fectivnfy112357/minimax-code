@@ -73,17 +73,19 @@ function sessionShell(opts: {
         ],
         hasMore: false,
       },
-      loadMessages: async () => ({
-        messages: opts.messages ?? [],
-        hasMore: false,
-      }),
       initialMessages: { messages: opts.messages ?? [], hasMore: false },
       ...(opts.quota ? { initialUsageQuota: opts.quota } : {}),
-      getUsageQuota: async () =>
-        opts.quota ?? {
-          signedIn: false,
-        },
-      watchEvents: () => () => undefined,
+      transport: {
+        loadMessages: async () => ({
+          messages: opts.messages ?? [],
+          hasMore: false,
+        }),
+        getUsageQuota: async () =>
+          opts.quota ?? {
+            signedIn: false,
+          },
+        watchEvents: () => () => undefined,
+      },
     }),
   );
 }
@@ -172,9 +174,11 @@ describe("WebUI transcript widget wiring", () => {
           ],
           hasMore: false,
         },
+        transport: {
         loadMessages: () => new Promise(() => undefined),
         watchEvents: () => () => undefined,
-      }),
+      },
+    }),
     );
     expect(html).toContain('data-testid="chat-skeleton"');
   });
