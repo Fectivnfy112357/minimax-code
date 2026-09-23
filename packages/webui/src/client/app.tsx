@@ -3606,7 +3606,7 @@ export function WebuiClientFoundationApp({
                   </div>
 
                   <div className="relative min-h-0 flex-1">
-                    <div className="h-full overflow-x-hidden overflow-y-auto px-4">
+                    <div className="webui-rail-scroll h-full overflow-x-hidden overflow-y-auto px-4">
                       <div className="space-y-px pb-2">
                         <RailRow label="插件" icon={<WebuiIconPlugins />} inert />
                         <RailRow label="定时" icon={<WebuiIconSchedule />} inert />

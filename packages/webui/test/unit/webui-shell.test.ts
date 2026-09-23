@@ -579,11 +579,30 @@ describe("WebUI shell — desktop anatomy", () => {
     // 256px fixed, one step off the main surface, and no border between the two.
     expect(html).toMatch(/data-webui-rail-width="256"/u);
     expect(html).toMatch(/w-\[256px\]/u);
+    expect(html).toMatch(/webui-rail-scroll/u);
     expect(html).toMatch(/bg-bg_default_scrim/u);
     // The main surface is the lightest step.
     expect(html).toMatch(/bg-bg_grouped_secondary/u);
     // The composer carries the elevated desktop surface token.
     expect(html).toMatch(/bg-bg_grouped_secondary_elevated/u);
+  });
+
+  it("keeps the rail scrollable without showing a scrollbar", () => {
+    const styles = readFileSync(
+      new URL("../../src/client/styles/shell.css", import.meta.url),
+      "utf8",
+    );
+    const railScrollRule = styles.match(
+      /\.webui-rail-scroll\s*\{([^}]*)\}/u,
+    );
+    const webkitScrollbarRule = styles.match(
+      /\.webui-rail-scroll::-webkit-scrollbar\s*\{([^}]*)\}/u,
+    );
+    expect(railScrollRule, "rail scrollbar rule is missing").not.toBeNull();
+    expect(railScrollRule![1]).toMatch(/scrollbar-width:\s*none/u);
+    expect(railScrollRule![1]).toMatch(/-ms-overflow-style:\s*none/u);
+    expect(webkitScrollbarRule, "WebKit rail scrollbar rule is missing").not.toBeNull();
+    expect(webkitScrollbarRule![1]).toMatch(/display:\s*none/u);
   });
 
   it("stacks the rail in the desktop's order", () => {
