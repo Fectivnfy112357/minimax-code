@@ -3434,6 +3434,7 @@
     "packages/webui/src/client/components/TranscriptSkeletons.tsx",
     "packages/webui/src/client/components/TurnNavigator.tsx",
     "packages/webui/src/client/components/UserMenu.tsx",
+    "packages/webui/src/client/components/WebuiClientFoundationApp.tsx",
     "packages/webui/src/client/components/WorkspacePanels.tsx",
     "packages/webui/src/client/components/settings-search-highlight.ts",
     "packages/webui/src/client/contracts.ts",
