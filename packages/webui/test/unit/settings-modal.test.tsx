@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DESKTOP_SETTINGS_TABS, filterSettingsTabs, resolveThemePreference, SETTINGS_GROUPS } from "../../src/client/components/SettingsModal.js";
+import { DESKTOP_SETTINGS_TABS, filterSettingsTabs, GENERIC_FILE_ROW_ORDER, GENERIC_RADIO_CONTRACT, GENERIC_SECTION_TEST_IDS, resolveThemePreference, SETTINGS_GROUPS, SETTINGS_ICON_PATHS } from "../../src/client/components/SettingsModal.js";
 
 describe("desktop settings registry", () => {
   it("keeps the electron tab order, labels, and groups", () => {
@@ -32,5 +32,12 @@ describe("desktop settings registry", () => {
 
   it("returns the desktop empty-state condition for an unmatched search", () => {
     expect(filterSettingsTabs("不存在的设置")).toHaveLength(0);
+  });
+
+  it("keeps the generic page structure and control contracts", () => {
+    expect(GENERIC_SECTION_TEST_IDS).toEqual(["app-mode-section", "application-section", "link-open-destination-section", "file-section", "session-management-section", "agent-control-permission-section", "preference-settings", "about-section"]);
+    expect(GENERIC_FILE_ROW_ORDER).toEqual(["file-open-in-new-tab-switch", "file-line-wrap-switch"]);
+    expect(GENERIC_RADIO_CONTRACT).toEqual({ position: "absolute right-4 top-[22px]", accentToken: "icon_default_accent" });
+    for (const tab of DESKTOP_SETTINGS_TABS) expect(SETTINGS_ICON_PATHS[tab.icon]).toBeTruthy();
   });
 });

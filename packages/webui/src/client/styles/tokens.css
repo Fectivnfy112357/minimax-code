@@ -13,6 +13,16 @@
  */
 
 :root {
+  --bg_default_scrim: #fafafa;
+  --bg_grouped_secondary: #fff;
+  --bg_grouped_tertiary: #f5f5f5;
+  --border_light: #0a0a0a0a;
+  --bg_interaction_secondary_default: #0a0a0a0a;
+  --bg_interaction_tertiary_press: #0a0a0a14;
+  --icon_interaction_accent_accent: #0094fc;
+  --icon_default_accent: #0094fc;
+  --text_default_primary: #171717;
+  --text_default_secondary: #666;
   /* primitive ramps */
   --blue_100: #93d2ff;
   --blue_1000: #000c14;
