@@ -105,6 +105,7 @@ export interface WebuiClientSession {
   readonly createdAt: number;
   readonly updatedAt: number;
   readonly workspaceDir?: string;
+  readonly isDefaultWorkspace?: boolean;
   readonly sessionKind?: string;
   readonly parentSessionId?: string;
 }
@@ -623,6 +624,8 @@ export interface WebuiClientFoundationAppProps {
   readonly loadMessages?: WebuiClientMessageLoader;
   readonly listWorkspaceFileTree?: (request: { readonly workspaceDir: string; readonly path?: string }) => Promise<readonly import("../server/port.js").WebuiWorkspaceFile[]>;
   readonly readWorkspaceFile?: (request: { readonly workspaceDir: string; readonly path: string }) => Promise<import("../server/port.js").WebuiWorkspaceFileContent>;
+  readonly getWorkspaceEnvironment?: (request: { readonly workspaceDir: string }) => Promise<import("../server/port.js").WebuiWorkspaceEnvironment>;
+  readonly mutateWorkspaceGit?: (request: import("../server/port.js").WebuiWorkspaceGitMutationRequest) => Promise<Record<string, unknown>>;
   readonly readCanvas?: (request: { readonly sessionId: string }) => Promise<import("../server/port.js").WebuiCanvasDocument>;
   readonly applyCanvas?: (request: { readonly sessionId: string; readonly operation: Record<string, unknown> }) => Promise<unknown>;
   readonly createTerminal?: (request: { readonly workspaceDir: string }) => Promise<{ readonly terminalId: string; readonly status: string }>;
@@ -3198,6 +3201,8 @@ export function WebuiClientFoundationApp({
   hostLabel,
   listWorkspaceFileTree,
   readWorkspaceFile,
+  getWorkspaceEnvironment,
+  mutateWorkspaceGit,
   readCanvas,
   applyCanvas,
   createTerminal,
@@ -3384,6 +3389,12 @@ export function WebuiClientFoundationApp({
   const [workspaceEnvironmentCollapsed, setWorkspaceEnvironmentCollapsed] = useState(false);
   const [workspaceProgressCollapsed, setWorkspaceProgressCollapsed] = useState(false);
   const [workspacePanelTab, setWorkspacePanelTab] = useState<"files" | "canvas" | "terminal">("files");
+  useEffect(() => {
+    // Desktop derives these sections from the selected session/workspace. Do
+    // not carry a previous session's collapsed state into the next session.
+    setWorkspaceEnvironmentCollapsed(false);
+    setWorkspaceProgressCollapsed(false);
+  }, [selectedSessionId]);
 
   return (
     <ArchonShell>
@@ -3527,7 +3538,7 @@ export function WebuiClientFoundationApp({
             className="relative flex min-h-0 min-w-0 flex-1 flex-row"
           >
             {!homeMode ? <WebuiWorkspacePanelControls filePanelOpen={workspacePanelOpen} workspaceOpen={workspaceOverviewOpen && !workspacePanelOpen} onOpenFiles={() => { setWorkspacePanelTab("files"); setWorkspacePanelOpen((value) => !value); }} onToggleWorkspace={() => setWorkspaceOverviewOpen((value) => !value)} /> : null}
-            {!homeMode && workspaceOverviewOpen && !workspacePanelOpen ? <WebuiWorkspaceOverview workspaceDir={selectedSession?.workspaceDir} todos={progressTodos} environmentCollapsed={workspaceEnvironmentCollapsed} progressCollapsed={workspaceProgressCollapsed} onToggleEnvironment={() => setWorkspaceEnvironmentCollapsed((value) => !value)} onToggleProgress={() => setWorkspaceProgressCollapsed((value) => !value)} onOpenTerminal={() => { setWorkspacePanelTab("terminal"); setWorkspacePanelOpen(true); }} /> : null}
+            {!homeMode && workspaceOverviewOpen && !workspacePanelOpen ? <WebuiWorkspaceOverview workspaceDir={selectedSession?.workspaceDir} isDefaultWorkspace={selectedSession?.isDefaultWorkspace} todos={progressTodos} showProgress={!homeMode} showEmptyProgress={true} getWorkspaceEnvironment={getWorkspaceEnvironment} mutateWorkspaceGit={mutateWorkspaceGit} environmentCollapsed={workspaceEnvironmentCollapsed} progressCollapsed={workspaceProgressCollapsed} onToggleEnvironment={() => setWorkspaceEnvironmentCollapsed((value) => !value)} onToggleProgress={() => setWorkspaceProgressCollapsed((value) => !value)} onOpenChanges={() => { setWorkspacePanelTab("files"); setWorkspacePanelOpen(true); }} onOpenTerminal={() => { setWorkspacePanelTab("terminal"); setWorkspacePanelOpen(true); }} /> : null}
             <div className="relative flex h-full min-w-0 flex-1 flex-col">
               <div
                 className="pointer-events-none absolute inset-x-0 top-6 z-[60] flex justify-center"

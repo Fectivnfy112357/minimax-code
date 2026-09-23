@@ -111,6 +111,14 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
     return [{ path: "README.md", name: "README.md", kind: "file" }];
   }
 
+  async getWorkspaceEnvironment() {
+    return { isGitRepo: true, branch: "fixture", changedFiles: 1, insertions: 2, deletions: 1, lineStatsStatus: "ready" as const, canPush: true };
+  }
+
+  async mutateWorkspaceGit() {
+    return { success: true };
+  }
+
   async readWorkspaceFile(request: { readonly workspaceDir: string; readonly path: string }) {
     if (request.path.includes("..")) throw new Error("Path traversal denied");
     return { type: "text" as const, content: "fixture content\n" };
@@ -1634,6 +1642,8 @@ describe("WebUI operation allowlist", () => {
       expect(registry.has("enqueueMessage")).toBe(true);
       expect(registry.has("getSession")).toBe(true);
       expect(registry.has("getMessages")).toBe(true);
+      expect(registry.has("getWorkspaceEnvironment")).toBe(true);
+      expect(registry.has("mutateWorkspaceGit")).toBe(true);
       // resumeSession sits next to sendMessage in the allowlist because it
       // shares the same wire shape (the brief's "resume is not a second
       // transport"). It must be registered, validator-bound, and reachable
@@ -1671,6 +1681,14 @@ describe("WebUI operation allowlist", () => {
     expect(await result("listProviderPresets", undefined)).toMatchObject({ body: [] });
     expect(await result("getMiniMaxApiKeyStatus", undefined)).toMatchObject({ body: { hasApiKey: false } });
     expect(await result("getCodexOAuthStatus", undefined)).toMatchObject({ body: { connected: false } });
+  });
+
+  it("routes workspace environment reads and git mutations through the registry", async () => {
+    const { createOperationRegistry } = await import("../../src/server/index.js");
+    const registry = createOperationRegistry(new ScriptedHarnessPort());
+    const result = async (name: string, body: unknown) => (await registry.get(name)?.handle({ requestId: name }, body)) as { readonly body: unknown };
+    expect(await result("getWorkspaceEnvironment", { workspaceDir: "/tmp/project" })).toMatchObject({ body: { isGitRepo: true, branch: "fixture", changedFiles: 1 } });
+    expect(await result("mutateWorkspaceGit", { workspaceDir: "/tmp/project", action: "commit", message: "fixture" })).toMatchObject({ body: { success: true } });
   });
 });
 

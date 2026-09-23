@@ -34,6 +34,8 @@ import type {
   WebuiQueueItem,
   WebuiWorkspaceFile,
   WebuiWorkspaceFileContent,
+  WebuiWorkspaceEnvironment,
+  WebuiWorkspaceGitMutationRequest,
   WebuiCanvasDocument,
   WebuiModelEntry,
 } from "./port.js";
@@ -83,6 +85,8 @@ export interface WebuiRuntimeHostHandle {
     ): Promise<import("./port.js").WebuiMessagesResult>;
     listWorkspaceFileTree?(request: { readonly workspaceDir: string; readonly path?: string }): Promise<readonly WebuiWorkspaceFile[]>;
     readWorkspaceFile?(request: { readonly workspaceDir: string; readonly path: string }): Promise<WebuiWorkspaceFileContent>;
+    getWorkspaceGitEnvironment?(workspaceDir: string): Promise<{ readonly metadata: Record<string, unknown>; readonly changes: Record<string, unknown> }>;
+    mutateWorkspaceGit?(request: WebuiWorkspaceGitMutationRequest): Promise<Record<string, unknown>>;
     readCanvas?(request: { readonly sessionId: string }): Promise<WebuiCanvasDocument>;
     applyCanvas?(request: { readonly sessionId: string; readonly operation: Record<string, unknown> }): Promise<{ readonly operationId: string; readonly document: WebuiCanvasDocument }>;
     sendMessage(
@@ -244,6 +248,29 @@ export function createHarnessPortFromHost(
     async readWorkspaceFile(request) {
       if (!host.cliService) throw new Error("runtime host does not expose the CLI service");
       return host.cliService.readWorkspaceFile?.(request) as Promise<WebuiWorkspaceFileContent>;
+    },
+    async getWorkspaceEnvironment(request) {
+      if (!host.cliService?.getWorkspaceGitEnvironment)
+        throw new Error("runtime host does not expose Workspace git state");
+      const { metadata, changes } = await host.cliService.getWorkspaceGitEnvironment(request.workspaceDir);
+      return {
+        isGitRepo: changes.isGitRepo === true || metadata.isGitRepo === true,
+        ...(typeof metadata.branch === "string" ? { branch: metadata.branch } : {}),
+        changedFiles: typeof changes.changedFiles === "number" ? changes.changedFiles : 0,
+        insertions: typeof changes.insertions === "number" ? changes.insertions : 0,
+        deletions: typeof changes.deletions === "number" ? changes.deletions : 0,
+        lineStatsStatus: changes.lineStatsStatus === "ready" || changes.lineStatsStatus === "partial" ? changes.lineStatsStatus : "skipped",
+        ...(typeof metadata.canPush === "boolean" ? { canPush: metadata.canPush } : {}),
+        ...(typeof metadata.hasRemote === "boolean" ? { hasRemote: metadata.hasRemote } : {}),
+        ...(typeof metadata.hasUpstream === "boolean" ? { hasUpstream: metadata.hasUpstream } : {}),
+        ...(typeof changes.error === "string" ? { changesError: changes.error } : {}),
+        ...(typeof metadata.error === "string" ? { metadataError: metadata.error } : {}),
+      } as WebuiWorkspaceEnvironment;
+    },
+    async mutateWorkspaceGit(request) {
+      if (!host.cliService?.mutateWorkspaceGit)
+        throw new Error("runtime host does not expose Workspace git mutations");
+      return host.cliService.mutateWorkspaceGit(request);
     },
     async readCanvas(request) {
       if (!host.cliService) throw new Error("runtime host does not expose the CLI service");

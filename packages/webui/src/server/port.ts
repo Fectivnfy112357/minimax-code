@@ -128,6 +128,36 @@ export interface WebuiWorkspaceFileContent {
   readonly error?: string;
 }
 
+/**
+ * The small, session-scoped projection used by the Desktop environment
+ * section. Keep the runtime's snapshot ids and file-level details private;
+ * the browser only needs the state that controls visibility and actions.
+ */
+export interface WebuiWorkspaceEnvironment {
+  readonly isGitRepo: boolean;
+  readonly branch?: string;
+  readonly changedFiles: number;
+  readonly insertions: number;
+  readonly deletions: number;
+  readonly lineStatsStatus: "ready" | "partial" | "skipped";
+  readonly canPush?: boolean;
+  readonly hasRemote?: boolean;
+  readonly hasUpstream?: boolean;
+  readonly changesError?: string;
+  readonly metadataError?: string;
+}
+
+export type WebuiWorkspaceGitMutation =
+  | "commit"
+  | "commitAndPush"
+  | "push";
+
+export interface WebuiWorkspaceGitMutationRequest {
+  readonly workspaceDir: string;
+  readonly action: WebuiWorkspaceGitMutation;
+  readonly message?: string;
+}
+
 export interface WebuiCanvasDocument {
   readonly schemaVersion: number;
   readonly canvasId: string;
@@ -377,6 +407,8 @@ export interface WebuiHarnessPort {
   getMessages(request: WebuiMessagesRequest): Promise<WebuiMessagesResult>;
   listWorkspaceFileTree?(request: { readonly workspaceDir: string; readonly path?: string }): Promise<readonly WebuiWorkspaceFile[]>;
   readWorkspaceFile?(request: { readonly workspaceDir: string; readonly path: string }): Promise<WebuiWorkspaceFileContent>;
+  getWorkspaceEnvironment?(request: { readonly workspaceDir: string }): Promise<WebuiWorkspaceEnvironment>;
+  mutateWorkspaceGit?(request: WebuiWorkspaceGitMutationRequest): Promise<Record<string, unknown>>;
   readCanvas?(request: { readonly sessionId: string }): Promise<WebuiCanvasDocument>;
   applyCanvas?(request: { readonly sessionId: string; readonly operation: Record<string, unknown> }): Promise<{ readonly operationId: string; readonly document: WebuiCanvasDocument }>;
   sendMessage(

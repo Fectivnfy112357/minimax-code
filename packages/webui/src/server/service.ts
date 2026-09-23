@@ -162,6 +162,8 @@ export class WebuiService {
       getMessages: (request) => this.port.getMessages(request),
       listWorkspaceFileTree: (request) => this.port.listWorkspaceFileTree?.(request) ?? Promise.reject(new Error("workspace file tree is unavailable")),
       readWorkspaceFile: (request) => this.port.readWorkspaceFile?.(request) ?? Promise.reject(new Error("workspace file reads are unavailable")),
+      getWorkspaceEnvironment: (request) => this.port.getWorkspaceEnvironment?.(request) ?? Promise.reject(new Error("workspace environment is unavailable")),
+      mutateWorkspaceGit: (request) => this.port.mutateWorkspaceGit?.(request) ?? Promise.reject(new Error("workspace git mutations are unavailable")),
       readCanvas: (request) => this.port.readCanvas?.(request) ?? Promise.reject(new Error("canvas is unavailable")),
       applyCanvas: (request) => this.port.applyCanvas?.(request) ?? Promise.reject(new Error("canvas is unavailable")),
       sendMessage: (request, signal) => this.port.sendMessage(request, signal),

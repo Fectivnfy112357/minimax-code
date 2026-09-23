@@ -26,6 +26,7 @@ import type {
   WebuiResumeSessionRequest,
   WebuiPermissionDecision,
   WebuiQuestionnaireAnswer,
+  WebuiWorkspaceGitMutationRequest,
 } from "./port.js";
 import { runWebuiCommand } from "./commands/runner.js";
 import {
@@ -78,6 +79,8 @@ const GET_SESSION_OPERATION_NAME = "getSession" as const;
 const GET_MESSAGES_OPERATION_NAME = "getMessages" as const;
 const LIST_WORKSPACE_FILE_TREE_OPERATION_NAME = "listWorkspaceFileTree" as const;
 const READ_WORKSPACE_FILE_OPERATION_NAME = "readWorkspaceFile" as const;
+const GET_WORKSPACE_ENVIRONMENT_OPERATION_NAME = "getWorkspaceEnvironment" as const;
+const MUTATE_WORKSPACE_GIT_OPERATION_NAME = "mutateWorkspaceGit" as const;
 const READ_CANVAS_OPERATION_NAME = "readCanvas" as const;
 const APPLY_CANVAS_OPERATION_NAME = "applyCanvas" as const;
 const CREATE_TERMINAL_OPERATION_NAME = "createTerminal" as const;
@@ -332,6 +335,33 @@ export const readWorkspaceFileOperation: WebuiOperation<Record<string, unknown>>
     if (typeof result.body.workspaceDir !== "string" || typeof result.body.path !== "string")
       return { ok: false, code: WebuiErrorCode.invalidBody, message: "workspaceDir and path are required" };
     return result;
+  },
+};
+export const getWorkspaceEnvironmentOperation: WebuiOperation<Record<string, unknown>> = {
+  name: GET_WORKSPACE_ENVIRONMENT_OPERATION_NAME,
+  validate: (body) => {
+    const result = validateObjectBody(GET_WORKSPACE_ENVIRONMENT_OPERATION_NAME, body);
+    if (!result.ok) return result;
+    return typeof result.body.workspaceDir === "string" && result.body.workspaceDir.trim()
+      ? result
+      : { ok: false, code: WebuiErrorCode.invalidBody, message: "workspaceDir is required" };
+  },
+};
+export const mutateWorkspaceGitOperation: WebuiOperation<WebuiWorkspaceGitMutationRequest, Record<string, unknown>> = {
+  name: MUTATE_WORKSPACE_GIT_OPERATION_NAME,
+  validate: (body) => {
+    const result = validateObjectBody(MUTATE_WORKSPACE_GIT_OPERATION_NAME, body);
+    if (!result.ok) return result as WebuiOperationValidation<WebuiWorkspaceGitMutationRequest>;
+    const { workspaceDir, action, message } = result.body;
+    if (typeof workspaceDir !== "string" || !workspaceDir.trim())
+      return { ok: false, code: WebuiErrorCode.invalidBody, message: "workspaceDir is required" };
+    if (action !== "commit" && action !== "commitAndPush" && action !== "push")
+      return { ok: false, code: WebuiErrorCode.invalidBody, message: "action must be commit, commitAndPush, or push" };
+    if (message !== undefined && typeof message !== "string")
+      return { ok: false, code: WebuiErrorCode.invalidBody, message: "message must be a string" };
+    if (action !== "push" && (typeof message !== "string" || !message.trim()))
+      return { ok: false, code: WebuiErrorCode.invalidBody, message: "message is required for commit actions" };
+    return { ok: true, body: { workspaceDir, action, ...(message === undefined ? {} : { message }) } };
   },
 };
 export const readCanvasOperation: WebuiOperation<Record<string, unknown>> = {
@@ -1164,6 +1194,8 @@ export function createOperationRegistry(
     | "getMessages"
     | "listWorkspaceFileTree"
     | "readWorkspaceFile"
+    | "getWorkspaceEnvironment"
+    | "mutateWorkspaceGit"
     | "readCanvas"
     | "applyCanvas"
     | "sendMessage"
@@ -1215,6 +1247,12 @@ export function createOperationRegistry(
     registerOperation(registry, { operation: readWorkspaceFileOperation, handle: async (_context, body) => ({ body: await port.readWorkspaceFile!(body as never) as unknown as Record<string, unknown> }) });
     registerOperation(registry, { operation: readCanvasOperation, handle: async (_context, body) => ({ body: await port.readCanvas!(body as never) as unknown as Record<string, unknown> }) });
     registerOperation(registry, { operation: applyCanvasOperation, handle: async (_context, body) => ({ body: await port.applyCanvas!(body as never) as unknown as Record<string, unknown> }) });
+  }
+  if (port.getWorkspaceEnvironment) {
+    registerOperation(registry, { operation: getWorkspaceEnvironmentOperation, handle: async (_context, body) => ({ body: await port.getWorkspaceEnvironment!(body as never) as unknown as Record<string, unknown> }) });
+  }
+  if (port.mutateWorkspaceGit) {
+    registerOperation(registry, { operation: mutateWorkspaceGitOperation, handle: async (_context, body) => ({ body: await port.mutateWorkspaceGit!(body as never) }) });
   }
   if (terminal) {
     registerOperation(registry, { operation: createTerminalOperation, handle: async (_context, body) => ({ body: terminal.create(String(body.workspaceDir ?? process.cwd())) }) });

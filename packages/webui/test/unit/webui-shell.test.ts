@@ -66,6 +66,7 @@ import type {
   WebuiTranscriptItem,
 } from "../../src/client/app.js";
 import type { WebuiStreamFrame } from "../../src/server/port.js";
+import type { WebuiWorkspaceEnvironment } from "../../src/server/port.js";
 import {
   initialWebuiStreamState,
   type WebuiStreamState,
@@ -116,17 +117,30 @@ describe("WebUI shell", () => {
   });
 
   it("keeps the desktop environment/progress card separate from the file panel", () => {
-    const overview = renderToStaticMarkup(createElement(WebuiWorkspaceOverview, { workspaceDir: "/tmp/project", todos: [] }));
+    const environment: WebuiWorkspaceEnvironment = { isGitRepo: true, branch: "webui", changedFiles: 2, insertions: 4, deletions: 1, lineStatsStatus: "ready", canPush: true };
+    const overview = renderToStaticMarkup(createElement(WebuiWorkspaceOverview, { workspaceDir: "/tmp/project", workspaceEnvironment: environment, todos: [] }));
     expect(overview).toContain('data-testid="workspace-section-group"');
     expect(overview).toContain("环境信息");
+    expect(overview).toContain(">webui<");
+    expect(overview).toContain("+4 -1");
     expect(overview).toContain("进度");
     expect(overview).toContain("跟踪较长任务的进度");
-    expect(overview).toContain('data-webui-placeholder-chrome="environment-变更"');
+    expect(overview).not.toContain('data-webui-placeholder-chrome="environment-变更"');
 
     const controls = renderToStaticMarkup(createElement(WebuiWorkspacePanelControls, { filePanelOpen: false, workspaceOpen: true, onOpenFiles: () => undefined, onToggleWorkspace: () => undefined }));
     expect(controls).toContain('aria-label="打开文件"');
     expect(controls).toContain('aria-label="工作区"');
     expect(controls).toContain('aria-label="浏览器"');
+  });
+
+  it("does not render Desktop's environment section for a non-git session", () => {
+    const overview = renderToStaticMarkup(createElement(WebuiWorkspaceOverview, {
+      workspaceDir: "/tmp/non-git-workspace",
+      workspaceEnvironment: { isGitRepo: false, changedFiles: 0, insertions: 0, deletions: 0, lineStatsStatus: "skipped" },
+      todos: [],
+    }));
+    expect(overview).not.toContain("环境信息");
+    expect(overview).toContain("进度");
   });
 
   it("renders completed, in-progress, and pending progress rows in SSR", () => {

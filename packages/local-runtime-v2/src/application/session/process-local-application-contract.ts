@@ -187,6 +187,10 @@ export interface LocalRuntimeApplication {
   readonly workspace?: {
     readonly git: {
       getMetadata(workspaceDir: string): Promise<Record<string, unknown>>;
+      getChanges?(workspaceDir: string, mode: "fast" | "full"): Promise<Record<string, unknown>>;
+      commit?(workspaceDir: string, message: string, includeUnstaged?: boolean): Promise<Record<string, unknown>>;
+      commitAndPush?(workspaceDir: string, message: string, includeUnstaged?: boolean): Promise<Record<string, unknown>>;
+      push?(workspaceDir: string): Promise<Record<string, unknown>>;
       getReviewLink?(
         workspaceDir: string,
         branch: string,

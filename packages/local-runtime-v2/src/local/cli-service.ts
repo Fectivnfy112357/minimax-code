@@ -517,6 +517,39 @@ export class CliService {
     );
   }
 
+  async getWorkspaceGitEnvironment(workspaceDir: string) {
+    const git = this.requireCapability("workspace", "Workspace").git;
+    const [metadata, changes] = await Promise.all([
+      git.getMetadata(workspaceDir),
+      git.getChanges
+        ? git.getChanges(workspaceDir, "full")
+        : Promise.resolve({ isGitRepo: false }),
+    ]);
+    return { metadata, changes };
+  }
+
+  mutateWorkspaceGit(input: {
+    workspaceDir: string;
+    action: "commit" | "commitAndPush" | "push";
+    message?: string;
+  }) {
+    const git = this.requireCapability("workspace", "Workspace").git;
+    if (input.action === "push") {
+      if (!git.push) throw new Error("Runtime does not expose Workspace git push.");
+      return git.push(input.workspaceDir);
+    }
+    if (!input.message?.trim())
+      throw new Error("A commit message is required.");
+    if (input.action === "commitAndPush") {
+      if (!git.commitAndPush)
+        throw new Error("Runtime does not expose Workspace git commitAndPush.");
+      return git.commitAndPush(input.workspaceDir, input.message.trim(), true);
+    }
+    if (!git.commit)
+      throw new Error("Runtime does not expose Workspace git commit.");
+    return git.commit(input.workspaceDir, input.message.trim(), true);
+  }
+
   /**
    * Reads the review link recorded for a workspace branch.
    *
