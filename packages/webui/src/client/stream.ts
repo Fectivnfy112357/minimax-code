@@ -1,24 +1,9 @@
 import type { WebuiStreamFrame } from "../server/port.js";
-import type { WebuiTerminalFrame } from "../server/port.js";
 import {
   initialWebuiWorkspaceProgress,
   reduceWebuiWorkspaceProgressEvent,
   type WebuiWorkspaceProgressState,
 } from "./workspace-progress.js";
-
-export interface WebuiTerminalStreamState {
-  readonly outputByTerminal: Readonly<Record<string, string>>;
-  readonly exited: Readonly<Record<string, boolean>>;
-}
-
-export const initialWebuiTerminalStreamState: WebuiTerminalStreamState = { outputByTerminal: {}, exited: {} };
-
-export function reduceWebuiTerminalFrame(state: WebuiTerminalStreamState, frame: WebuiTerminalFrame): WebuiTerminalStreamState {
-  return {
-    outputByTerminal: { ...state.outputByTerminal, [frame.terminalId]: `${state.outputByTerminal[frame.terminalId] ?? ""}${frame.data}` },
-    exited: frame.exited ? { ...state.exited, [frame.terminalId]: true } : state.exited,
-  };
-}
 
 export interface WebuiStreamMessage {
   readonly id: string;

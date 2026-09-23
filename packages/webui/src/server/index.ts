@@ -14,14 +14,6 @@ import {
 export const WEBUI_SERVER_VERSION: WebuiFoundationVersion =
   WEBUI_FOUNDATION_VERSION;
 
-export interface WebuiServerFoundation {
-  readonly version: WebuiFoundationVersion;
-}
-
-export function createWebuiServerFoundation(): WebuiServerFoundation {
-  return { version: WEBUI_SERVER_VERSION };
-}
-
 export {
   WebuiService,
   WEBUI_MAX_MESSAGE_BYTES,

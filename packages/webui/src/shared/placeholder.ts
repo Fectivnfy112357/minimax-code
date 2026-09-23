@@ -8,7 +8,3 @@
 export type WebuiFoundationVersion = "0.1.0";
 
 export const WEBUI_FOUNDATION_VERSION: WebuiFoundationVersion = "0.1.0";
-
-export function describeWebuiFoundation(): string {
-  return `webui-foundation ${WEBUI_FOUNDATION_VERSION}`;
-}

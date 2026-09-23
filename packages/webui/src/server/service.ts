@@ -41,7 +41,6 @@ import type { WebuiHarnessPort } from "./port.js";
 import { WebuiTerminalManager } from "./terminal.js";
 
 export const WEBUI_MAX_MESSAGE_BYTES = 256 * 1024;
-const WEBUI_CLOSE_GRACE_MS = 1000;
 
 /**
  * Truthy env-var spellings that turn the development mode on. Anything that
@@ -791,6 +790,3 @@ function isAllowedOrigin(origin: string, host: string, port?: number): boolean {
 function defaultPortForProtocol(protocol: string): number {
   return protocol === "https:" ? 443 : 80;
 }
-
-// Used by integration tests; not part of the public API.
-export const __testingCloseGraceMs = WEBUI_CLOSE_GRACE_MS;

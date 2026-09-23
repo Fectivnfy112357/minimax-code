@@ -275,16 +275,3 @@ export function TurnNavigator(props: TurnNavigatorProps): React.JSX.Element {
     </div>
   );
 }
-
-export function _internal_stateClasses(): Record<TurnState, string> {
-  return { ...STATE_CLASS };
-}
-
-export function _internal_setPreviewMasks(
-  instance: { setInternalShowTop: (v: boolean) => void; setInternalShowBottom: (v: boolean) => void },
-  top: boolean,
-  bottom: boolean,
-): void {
-  instance.setInternalShowTop(top);
-  instance.setInternalShowBottom(bottom);
-}

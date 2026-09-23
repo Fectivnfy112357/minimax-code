@@ -59,13 +59,6 @@ const REGIONS = new Set(["cn", "en"]);
 const BUILD_ENVS = new Set(["dev", "test", "staging", "prod"]);
 const MANAGED_FLAG_VALUES = new Set(["0", "1"]);
 
-/** The keys this resolver owns; everything else in `target` is left alone. */
-export const WEBUI_RUNTIME_ENV_KEYS = [
-  "MAVIS_REGION",
-  "MAVIS_BUILD_ENV",
-  "__MAVIS_RUNTIME_MANAGED",
-] as const;
-
 export type WebuiRuntimeScopeSource = "env" | "projection" | "directory";
 
 export interface WebuiRuntimeScope {
