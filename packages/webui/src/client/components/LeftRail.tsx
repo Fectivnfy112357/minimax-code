@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { WebuiClientSession } from "../app.js";
+import type { WebuiClientSession } from "../contracts.js";
 
 export const WEBUI_SESSION_OVERLAY_KEYS = {
   stars: "mavis-webui-session-stars:v1",
