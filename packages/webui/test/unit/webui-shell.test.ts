@@ -786,6 +786,8 @@ describe("WebUI shell — desktop anatomy", () => {
     expect(html).toMatch(/data-webui-session-composer="true"/u);
     expect(html).toMatch(/webui-session-transcript-scroll/u);
     expect(html).toMatch(/webui-session-composer/u);
+    expect(html).not.toMatch(/data-webui-workspace-toolbar="true"/u);
+    expect(html).not.toMatch(/data-webui-workspace-picker="true"/u);
   });
 
   it("does not render a usage summary in the session composer", () => {

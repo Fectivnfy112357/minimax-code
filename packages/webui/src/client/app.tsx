@@ -3123,6 +3123,8 @@ function WebuiComposer({
           </div>
         </form>
 
+        {!sessionLayout ? (
+          <>
         {/* The workspace pills sit outside the card, as they do on the desktop. */}
         <div
           className="flex w-full items-center gap-3 px-3"
@@ -3188,6 +3190,8 @@ function WebuiComposer({
             ) : null}
           </div>
         </div>
+          </>
+        ) : null}
         {credentialMessage ? (
           <p
             role="alert"
@@ -3485,8 +3489,14 @@ export function WebuiClientFoundationApp({
       );
   };
   const startNewTask = () => {
-    if (selectedSession?.workspaceDir)
-      setNewTaskWorkspaceDir(selectedSession.workspaceDir);
+    // Desktop's "new task without a project" action clears the pending
+    // workspace choice. A project selected again on the home surface is still
+    // passed to createSession; once a session exists, its workspace belongs to
+    // the session and must not be cleared just because the picker is hidden.
+    userClearedWorkspaceRef.current = true;
+    writeNoProjectFlag(true);
+    setNewTaskWorkspaceDir(undefined);
+    setWorkspaceMenuOpen(false);
     setDraft("");
     setSelectedSessionId(undefined);
     if (typeof window !== "undefined") {
