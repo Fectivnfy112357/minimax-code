@@ -87,6 +87,20 @@ import {
 import { UserMenu } from "./components/UserMenu.js";
 import { WebuiWorkspacePanel, WebuiWorkspaceOverview, WebuiWorkspacePanelControls, type WebuiTodo } from "./components/WorkspacePanels.js";
 import { Transcript } from "./components/Transcript.js";
+import { TurnNavigator, type TurnSummary } from "./components/TurnNavigator.js";
+import { MessageAttachments, type MessageAttachment } from "./components/MessageAttachments.js";
+import {
+  ActivityIndicator,
+  MessageAfterQueryStreamingPlaceholder,
+  MessagePassiveLoadingPlaceholder,
+  MessageViewportStreamingLoader,
+} from "./components/ActivityIndicator.js";
+import { ChatSkeleton, GreetingSkeleton } from "./components/TranscriptSkeletons.js";
+import { OutputError } from "./components/OutputError.js";
+import {
+  ConversationUsageBanner,
+  type ConversationUsageNotice,
+} from "./components/ConversationUsageBanner.js";
 import { initialWebuiStreamState, type WebuiStreamState } from "./stream.js";
 import {
   buildWebuiStreamLoopSink,
@@ -126,6 +140,7 @@ import type {
   WebuiEditSessionMessageResult,
   WebuiGoal,
   WebuiGoalStatus,
+  WebuiUsageQuotaResult,
 } from "../server/port.js";
 import {
   initialWebuiWorkspaceProgress,
@@ -326,6 +341,7 @@ export type WebuiTranscriptItem =
       readonly actions?: { readonly fork?: boolean; readonly rewind?: boolean; readonly edit?: boolean };
       readonly timestamp?: number;
       readonly isGoal?: boolean;
+      readonly attachments?: readonly MessageAttachment[];
     }
   | {
       readonly kind: "tool";
@@ -398,17 +414,106 @@ function booleanValue(value: unknown): boolean | undefined {
   return typeof value === "boolean" ? value : undefined;
 }
 
+function projectMessageAttachments(
+  attachments: readonly unknown[] | undefined,
+): readonly MessageAttachment[] | undefined {
+  if (!attachments || attachments.length === 0) return undefined;
+  const projected: MessageAttachment[] = [];
+  for (const entry of attachments) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const record = entry as Record<string, unknown>;
+    const id = stringValue(record.id) ?? stringValue(record.attachment_id) ?? `${projected.length}-`;
+    const typeValue = stringValue(record.type) ?? stringValue(record.attachment_type);
+    const type: MessageAttachment["type"] = typeValue === "file" ? "file" : "image";
+    const fileName =
+      stringValue(record.file_name) ??
+      stringValue(record.fileName) ??
+      stringValue(record.name) ??
+      id;
+    projected.push({
+      id,
+      type,
+      file_name: fileName,
+      ...(stringValue(record.file_path) ?? stringValue(record.filePath)
+        ? { file_path: stringValue(record.file_path) ?? stringValue(record.filePath) }
+        : {}),
+      ...(stringValue(record.preview_url) ?? stringValue(record.previewUrl)
+        ? { preview_url: stringValue(record.preview_url) ?? stringValue(record.previewUrl) }
+        : {}),
+      ...(stringValue(record.desktop_path) ?? stringValue(record.desktopPath)
+        ? { desktop_path: stringValue(record.desktop_path) ?? stringValue(record.desktopPath) }
+        : {}),
+      ...(stringValue(record.mime_type) ?? stringValue(record.mimeType)
+        ? { mime_type: stringValue(record.mime_type) ?? stringValue(record.mimeType) }
+        : {}),
+      ...(typeof record.file_size === "number" ? { file_size: record.file_size } : {}),
+      ...(stringValue(record.src) ? { src: stringValue(record.src) } : {}),
+    });
+  }
+  return projected.length > 0 ? projected : undefined;
+}
+
+/**
+ * Derive a `ConversationUsageNotice` from the cloud-issued quota window so
+ * the session banner can surface a real signal without inventing one. The
+ * cloud API returns percentage-based usage for the five-hour and weekly
+ * windows plus a count for video; the threshold is the same value the
+ * desktop panel treats as "approaching cap". Only one notice is returned —
+ * the most restrictive signal wins — so the banner never duplicates.
+ */
+function deriveConversationUsageNotice(
+  quota: WebuiUsageQuotaResult | undefined,
+): ConversationUsageNotice | null {
+  if (!quota || quota.signedIn === false) return null;
+  const view = quota.quota;
+  if (!view) return null;
+  const candidates: ConversationUsageNotice[] = [];
+  if (!view.weekly.unlimited && (view.weekly.usedPercent ?? 0) >= 80) {
+    candidates.push({
+      kind: "weekly",
+      messageKey: "weekly",
+      resetAtMs: view.weekly.resetAtMs ?? null,
+      actions: ["subscribe_plan", "upgrade_plan"],
+      dismissable: true,
+    });
+  }
+  if (!view.fiveHour.unlimited && (view.fiveHour.usedPercent ?? 0) >= 80) {
+    candidates.push({
+      kind: "five_hour",
+      messageKey: "five_hour",
+      resetAtMs: view.fiveHour.resetAtMs ?? null,
+      actions: ["buy_credits"],
+      dismissable: true,
+    });
+  }
+  if (view.video && !view.video.unlimited) {
+    const remaining =
+      (view.video.totalCount ?? 0) - (view.video.usedCount ?? 0);
+    if (remaining <= 0) {
+      candidates.push({
+        kind: "video",
+        messageKey: "video",
+        resetAtMs: view.video.resetAtMs ?? null,
+        actions: ["buy_credits"],
+        dismissable: true,
+      });
+    }
+  }
+  return candidates[0] ?? null;
+}
+
 export function projectWebuiMessage(
   message: WebuiClientMessage,
 ): WebuiTranscriptItem[] {
   const thinkingItems: WebuiTranscriptItem[] = [];
   const toolItems: WebuiTranscriptItem[] = [];
   const answerItems: WebuiTranscriptItem[] = [];
+  const attachments = projectMessageAttachments(message.attachments);
   for (const part of projectMessageParts(message)) {
     if (part.type === "thinking")
-      thinkingItems.push({ kind: "thinking", text: part.content, messageId: message.msgId, ...(part.durationMs !== undefined ? { durationMs: part.durationMs } : {}), ...(message.actions ? { actions: message.actions } : {}), ...(message.timestamp !== undefined ? { timestamp: message.timestamp } : {}) });
+      thinkingItems.push({ kind: "thinking", text: part.content, messageId: message.msgId, ...(part.durationMs !== undefined ? { durationMs: part.durationMs } : {}), ...(message.actions ? { actions: message.actions } : {}), ...(message.timestamp !== undefined ? { timestamp: message.timestamp } : {}), ...(attachments ? { attachments } : {}) });
     else if (part.type === "text")
-      answerItems.push({ kind: message.role === "user" ? "user" : "assistant", text: part.content, messageId: message.msgId, ...(message.actions ? { actions: message.actions } : {}), ...(message.timestamp !== undefined ? { timestamp: message.timestamp } : {}), ...((message.source === "thread-goal" || message.kind === "goal") ? { isGoal: true } : {}) });
+      answerItems.push({ kind: message.role === "user" ? "user" : "assistant", text: part.content, messageId: message.msgId, ...(message.actions ? { actions: message.actions } : {}), ...(message.timestamp !== undefined ? { timestamp: message.timestamp } : {}), ...((message.source === "thread-goal" || message.kind === "goal") ? { isGoal: true } : {}), ...(attachments ? { attachments } : {}) });
     else if (part.type === "tool_call")
       toolItems.push({ kind: "tool", tools: [part.toolCall], messageId: message.msgId });
   }
@@ -990,6 +1095,7 @@ function WebuiAssistantBody({
   processingStartedAtMs,
   tools,
   answers,
+  attachments,
   streaming = false,
 }: {
   readonly messageId: string;
@@ -1006,6 +1112,7 @@ function WebuiAssistantBody({
   readonly processingStartedAtMs?: number;
   readonly tools?: readonly Record<string, unknown>[];
   readonly answers: readonly string[];
+  readonly attachments?: readonly MessageAttachment[];
   readonly streaming?: boolean;
 }): ReactElement {
   return (
@@ -1050,6 +1157,9 @@ function WebuiAssistantBody({
           <WebuiMarkdown source={answer} />
         </div>
       ))}
+      {attachments?.length ? (
+        <MessageAttachments attachments={attachments} />
+      ) : null}
     </div>
   );
 }
@@ -1085,6 +1195,7 @@ export function MessageItem({
   processingStartedAtMs,
   tools,
   answers,
+  attachments,
   streaming = false,
   streamMessageId,
   messageRootId,
@@ -1114,6 +1225,7 @@ export function MessageItem({
   readonly processingStartedAtMs?: number;
   readonly tools?: readonly Record<string, unknown>[];
   readonly answers?: readonly string[];
+  readonly attachments?: readonly MessageAttachment[];
   readonly streaming?: boolean;
   readonly streamMessageId?: string;
   readonly messageRootId?: string;
@@ -1248,6 +1360,7 @@ export function MessageItem({
         thinkingDurationMs={thinkingDurationMs}
         tools={tools}
         answers={answers ?? []}
+        attachments={attachments}
         streaming={streaming}
         processingStartedAtMs={processingStartedAtMs}
       />
@@ -1267,6 +1380,10 @@ export interface WebuiClientFoundationAppProps {
   readonly loadSessions?: WebuiClientSessionLoader;
   readonly loadSessionTree?: WebuiClientSessionTreeLoader;
   readonly loadMessages?: WebuiClientMessageLoader;
+  /** Seed for the transcript so SSR / first paint can render messages before
+   * `loadMessages` resolves; production always re-fetches in the background
+   * so the prop only changes the initial paint, not the source of truth. */
+  readonly initialMessages?: WebuiClientMessagePage;
   readonly getTurnDiff?: (request: WebuiGetTurnDiffRequest) => Promise<WebuiGetTurnDiffResult>;
   readonly revertTurnDiff?: (request: WebuiRevertTurnDiffRequest) => Promise<WebuiRevertTurnDiffResult>;
   readonly reapplyTurnDiff?: (request: WebuiReapplyTurnDiffRequest) => Promise<WebuiReapplyTurnDiffResult>;
@@ -1350,6 +1467,12 @@ export interface WebuiClientFoundationAppProps {
   readonly getUsageQuota?: (request?: {
     readonly forceRefresh?: boolean;
   }) => Promise<import("../server/port.js").WebuiUsageQuotaResult>;
+  /** Seed for the conversation usage banner so SSR / first paint can render
+   * it before `getUsageQuota` resolves; production always re-fetches in the
+   * background so the prop only changes the initial paint, not the source
+   * of truth.
+   */
+  readonly initialUsageQuota?: WebuiUsageQuotaResult;
   readonly getSigninPanel?: () => Promise<
     import("../server/port.js").WebuiSigninPanelView
   >;
@@ -2557,6 +2680,7 @@ function WebuiRewindDialog({
 export function WebuiSessionTranscript({
   sessionId,
   loadMessages,
+  initialMessages,
   getTurnDiff,
   revertTurnDiff,
   reapplyTurnDiff,
@@ -2568,6 +2692,7 @@ export function WebuiSessionTranscript({
 }: {
   readonly sessionId: string;
   readonly loadMessages: WebuiClientMessageLoader;
+  readonly initialMessages?: WebuiClientMessagePage;
   readonly getTurnDiff?: WebuiClientFoundationAppProps["getTurnDiff"];
   readonly revertTurnDiff?: WebuiClientFoundationAppProps["revertTurnDiff"];
   readonly reapplyTurnDiff?: WebuiClientFoundationAppProps["reapplyTurnDiff"];
@@ -2577,8 +2702,10 @@ export function WebuiSessionTranscript({
   readonly rewindSession?: WebuiClientFoundationAppProps["rewindSession"];
   readonly editSessionMessage?: WebuiClientFoundationAppProps["editSessionMessage"];
 }): ReactElement {
-  const [page, setPage] = useState<WebuiClientMessagePage>({});
-  const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState<WebuiClientMessagePage>(
+    () => initialMessages ?? {},
+  );
+  const [loading, setLoading] = useState(initialMessages === undefined);
   const [error, setError] = useState<string | undefined>();
   const { stream } = useSessionRuntimeState(sessionId).state;
   const streamPhase = stream.phase;
@@ -2620,6 +2747,18 @@ export function WebuiSessionTranscript({
   // does: a process disclosure carrying the thinking and the tool steps, then
   // the assistant's markdown. A user turn is its own block.
   const groups = useMemo(() => groupWebuiTranscriptItems(items), [items]);
+  // The right-rail navigator's tick list mirrors the assistant turns visible
+  // on the page. A user turn isn't a tick — only the assistant block that
+  // follows it counts. The first assistant group is `active` while we have
+  // nothing settled; the last is `running` while streaming is live.
+  const turns = useMemo<readonly TurnSummary[]>(() => {
+    return groups
+      .filter((group) => group.items.some((item) => item.kind === "assistant"))
+      .map((group) => ({
+        id: group.messageId,
+        state: "default",
+      }));
+  }, [groups]);
   const loadOlder =
     page.hasMore && page.nextCursor
       ? () => {
@@ -2642,7 +2781,7 @@ export function WebuiSessionTranscript({
     <section
       aria-label="Transcript"
       data-webui-transcript={sessionId}
-      className="message-container-viewport scrollbar-hide webui-session-transcript-scroll flex w-full flex-col"
+      className="message-container-viewport scrollbar-hide webui-session-transcript-scroll relative flex w-full flex-col"
       data-webui-session-transcript-scroll="true"
     >
       <div
@@ -2657,6 +2796,7 @@ export function WebuiSessionTranscript({
             Unable to load messages: {error}
           </p>
         ) : null}
+        {loading && items.length === 0 ? <ChatSkeleton /> : null}
         {!error && !loading && items.length === 0 ? (
           <p className="text-text_default_secondary text-size_14 leading-line_height_20">
             No messages in this session.
@@ -2740,10 +2880,15 @@ export function WebuiSessionTranscript({
               thinkingDurationMs={thinkingItems[0]?.durationMs}
               tools={tools.length > 0 ? tools : undefined}
               answers={answers.map((item) => item.text)}
+              attachments={answers[0]?.attachments}
             />
           );
         })}
+        {streamPhase === "streaming" ? (
+          <MessageViewportStreamingLoader testId="webui-transcript-viewport-loader" />
+        ) : null}
       </div>
+      <TurnNavigator turns={turns} />
     </section>
   );
 }
@@ -4338,19 +4483,30 @@ function WebuiComposer({
               />
             ))}
           {stream.phase === "reconnecting" ? (
-            <p
-              role="status"
-              data-webui-reconnecting="true"
-              className="text-text_default_secondary text-size_14 leading-line_height_20"
-            >
-              重连中…
-            </p>
+            <MessagePassiveLoadingPlaceholder label="重连中…" />
           ) : null}
           {(() => {
             const assistant = stream.messages.filter(
               (message) => message.role !== "user",
             );
-            if (assistant.length === 0) return null;
+            // Pending user just landed but the assistant has not yet sent a
+            // frame: the desktop shows the post-query placeholder so the live
+            // column has a single owner between the user bubble and the
+            // first assistant body. Skip it once an assistant frame is in.
+            if (assistant.length === 0) {
+              if (
+                stream.messages.some((message) => message.role === "user") &&
+                stream.phase === "waiting"
+              ) {
+                return <MessageAfterQueryStreamingPlaceholder />;
+              }
+              // Stream is in flight but no thinking yet — pulse the rose
+              // loader so the live column reads as active.
+              if (stream.phase === "streaming" || stream.phase === "waiting") {
+                return <ActivityIndicator />;
+              }
+              return null;
+            }
             const thinking = assistant
               .map((message) => message.thinking)
               .filter((value) => value.trim())
@@ -4366,31 +4522,43 @@ function WebuiComposer({
             // thinking — desktop shows a single disclosure for the whole
             // turn, so merge here instead of rendering N live bodies.
             return (
-              <MessageItem
-                messageId="stream-live"
-                role="assistant"
-                sessionId={sessionId}
-                assistantMessageId={assistant[assistant.length - 1]?.id}
-                getTurnDiff={getTurnDiff}
-                revertTurnDiff={revertTurnDiff}
-                reapplyTurnDiff={reapplyTurnDiff}
-                streamMessageId="merged"
-                messageRootId="merged"
-                thinking={thinking || undefined}
-                tools={tools.length > 0 ? tools : undefined}
-                answers={answers}
-                streaming={stream.phase === "streaming"}
-                processingStartedAtMs={stream.processingStartedAtMs}
-              />
+              <>
+                <MessageItem
+                  messageId="stream-live"
+                  role="assistant"
+                  sessionId={sessionId}
+                  assistantMessageId={assistant[assistant.length - 1]?.id}
+                  getTurnDiff={getTurnDiff}
+                  revertTurnDiff={revertTurnDiff}
+                  reapplyTurnDiff={reapplyTurnDiff}
+                  streamMessageId="merged"
+                  messageRootId="merged"
+                  thinking={thinking || undefined}
+                  tools={tools.length > 0 ? tools : undefined}
+                  answers={answers}
+                  streaming={stream.phase === "streaming"}
+                  processingStartedAtMs={stream.processingStartedAtMs}
+                />
+                {stream.phase === "streaming" && answers.length === 0 && !thinking.trim() ? (
+                  <ActivityIndicator />
+                ) : null}
+              </>
             );
           })()}
           {stream.refusal ? (
-            <p
-              role="alert"
-              className="text-text_default_secondary text-size_14 leading-line_height_20"
-            >
-              发送消息失败：{stream.refusal}
-            </p>
+            <OutputError
+              variant="output_error"
+              text={stream.refusal}
+              errorAt={Date.now()}
+              {...(abortSession ? { onRetry: () => void abortSession({ id: sessionId ?? "" }) } : {})}
+            />
+          ) : null}
+          {stream.transcriptIncomplete ? (
+            <OutputError
+              variant="output_error"
+              text="上一轮回复未完整送达，请重新发送以继续。"
+              errorAt={Date.now()}
+            />
           ) : null}
         </div>
       ) : null}
@@ -4667,6 +4835,7 @@ export function WebuiClientFoundationApp({
   listArchivedSessions,
   locationHash,
   loadMessages,
+  initialMessages,
   getTurnDiff,
   revertTurnDiff,
   reapplyTurnDiff,
@@ -4696,6 +4865,7 @@ export function WebuiClientFoundationApp({
   selectModel,
   getSessionUsage,
   getUsageQuota,
+  initialUsageQuota,
   getSigninPanel,
   claimSignin,
   getAccountStatus,
@@ -4750,6 +4920,9 @@ export function WebuiClientFoundationApp({
   const [teamModeChoices, setTeamModeChoices] =
     useState<TeamModeSessionChoices>(readTeamModeSessionChoices);
   const [pageError, setPageError] = useState<string | undefined>();
+  const [usageQuota, setUsageQuota] = useState<WebuiUsageQuotaResult | undefined>(
+    () => initialUsageQuota,
+  );
   const [pinnedSessions, setPinnedSessions] = useState<Record<string, boolean>>(
     readSessionOverlay("pins"),
   );
@@ -4847,6 +5020,27 @@ export function WebuiClientFoundationApp({
       cancelled = true;
     };
   }, [loadSessionTree, sessionPage]);
+  // Cloud usage quota for the conversation banner. The runtime exposes
+  // getUsageQuota when a bearer lease is available; we only fetch once per
+  // session switch so the banner reflects the user's current state without
+  // re-fetching on every render.
+  useEffect(() => {
+    if (!getUsageQuota) {
+      setUsageQuota(undefined);
+      return undefined;
+    }
+    let cancelled = false;
+    void getUsageQuota()
+      .then((next) => {
+        if (!cancelled) setUsageQuota(next);
+      })
+      .catch(() => {
+        if (!cancelled) setUsageQuota(undefined);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [getUsageQuota]);
   const treeSubagents = useMemo<readonly WebuiWorkspaceSubagent[]>(() => {
     const node = treePage.sessions.find(
       (candidate) => candidate.session.sessionId === selectedSessionId,
@@ -5000,6 +5194,16 @@ export function WebuiClientFoundationApp({
       .catch((reason: unknown) => setPageError(reason instanceof Error ? reason.message : String(reason)));
   };
   const homeMode = !selectedSessionId;
+  const usageNotice = useMemo(
+    () => deriveConversationUsageNotice(usageQuota),
+    [usageQuota],
+  );
+  // First-paint of the home page: the rail reads from the sessions list,
+  // but the welcome hero appears regardless. Show the greeting skeleton
+  // while the initial session page is still being fetched so the layout
+  // doesn't flash an empty hero before the rail populates.
+  const homeGreetingPending =
+    homeMode && loadSessions !== undefined && page.sessions.length === 0 && loading;
   const selectedSession = flatSessionsWithChildren.find(
     (session) => session.sessionId === selectedSessionId,
   );
@@ -5312,6 +5516,9 @@ export function WebuiClientFoundationApp({
                   className={`flex w-full ${homeMode ? "max-w-[743px]" : "max-w-[768px]"} flex-col items-center gap-2 px-4 ${homeMode ? "" : "webui-session-layout h-full min-h-0"}`}
                 >
                   {homeMode ? (
+                    homeGreetingPending ? (
+                      <GreetingSkeleton />
+                    ) : (
                     <div className="flex flex-col items-center gap-2 text-center">
                       <div className="group/avatar relative size-16 flex-shrink-0">
                         <div className="webui-hero-avatar relative h-full w-full overflow-visible rounded-full bg-bg_grouped_tertiary">
@@ -5324,6 +5531,7 @@ export function WebuiClientFoundationApp({
                         MiniMax Code，让工作更简单。
                       </h1>
                     </div>
+                    )
                   ) : (
                     <div className="flex w-full items-center gap-2">
                       <span className="text-text_default_secondary text-size_12 leading-line_height_16">
@@ -5331,6 +5539,18 @@ export function WebuiClientFoundationApp({
                       </span>
                     </div>
                   )}
+                  {usageNotice ? (
+                    <ConversationUsageBanner
+                      notice={usageNotice}
+                      messageText={
+                        usageNotice.kind === "weekly"
+                          ? "本周配额接近上限。"
+                          : usageNotice.kind === "five_hour"
+                            ? "五小时配额接近上限。"
+                            : "本周期视频配额已用尽。"
+                      }
+                    />
+                  ) : null}
 
                   <Composer>
                   <WebuiComposer
@@ -5401,6 +5621,7 @@ export function WebuiClientFoundationApp({
                     <WebuiSessionTranscript
                       sessionId={selectedSessionId}
                       loadMessages={loadMessages}
+                      {...(initialMessages ? { initialMessages } : {})}
                       getTurnDiff={getTurnDiff}
                       revertTurnDiff={revertTurnDiff}
                       reapplyTurnDiff={reapplyTurnDiff}

@@ -186,7 +186,8 @@
       "packages/webui/test/unit/output-error.test.tsx",
       "packages/webui/test/unit/message-attachments.test.tsx",
       "packages/webui/test/unit/transcript-skeletons.test.tsx",
-      "packages/webui/test/unit/conversation-usage-banner.test.tsx"
+      "packages/webui/test/unit/conversation-usage-banner.test.tsx",
+      "packages/webui/test/unit/webui-transcript-widgets-integration.test.ts"
     ]
   }
 }
