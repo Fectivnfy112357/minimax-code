@@ -359,6 +359,59 @@
     background-color: var(--bg_interaction_tertiary_hover);
   }
 
+  .webui-context-menu {
+    position: fixed;
+    z-index: 120;
+    display: flex;
+    width: 208px;
+    flex-direction: column;
+    gap: 1px;
+    border: .5px solid var(--border_light);
+    border-radius: 12px;
+    background: var(--bg_grouped_secondary_elevated);
+    padding: 6px;
+    box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
+    color: var(--text_default_primary);
+  }
+  .webui-context-menu-item-wrap { position: relative; }
+  .webui-context-menu-item {
+    display: flex;
+    min-height: 30px;
+    width: 100%;
+    align-items: center;
+    gap: var(--spacing_8);
+    border: 0;
+    border-radius: var(--radius_8);
+    background: transparent;
+    padding: 4px 8px;
+    color: var(--text_default_primary);
+    font-size: var(--size_14);
+    line-height: var(--line_height_20);
+    text-align: left;
+  }
+  .webui-context-menu-item:not(:disabled):hover { background: var(--bg_interaction_tertiary_hover); }
+  .webui-context-menu-item:disabled { cursor: default; color: var(--text_default_tertiary); opacity: .68; }
+  .webui-context-menu-item.is-danger:not(:disabled) { color: var(--text_label_danger_secondary_default); }
+  .webui-context-menu-item-icon { display: flex; width: 18px; height: 18px; flex: 0 0 18px; align-items: center; justify-content: center; }
+  .webui-context-menu-item-label { min-width: 0; flex: 1; white-space: nowrap; }
+  .webui-context-menu-chevron { flex: 0 0 16px; }
+  .webui-context-menu-divider { height: 1px; margin: 5px 8px; background: var(--border_light); }
+  .webui-context-menu-submenu {
+    position: absolute;
+    top: -7px;
+    left: calc(100% + 5px);
+    z-index: 121;
+    display: flex;
+    width: 190px;
+    flex-direction: column;
+    gap: 1px;
+    border: .5px solid var(--border_light);
+    border-radius: 12px;
+    background: var(--bg_grouped_secondary_elevated);
+    padding: 6px;
+    box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
+  }
+
   /* The "load more" row under the session list. */
   .webui-rail-more {
     display: flex;

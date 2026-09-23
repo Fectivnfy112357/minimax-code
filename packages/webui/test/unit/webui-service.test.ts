@@ -92,6 +92,9 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
 
   async archiveSession() { return { success: true }; }
   async deleteSession() { return { success: true }; }
+  async updateSession() { return { session: { sessionId: "fixture-session", title: "Renamed fixture" } }; }
+  async getSessionForkOptions() { return { canFork: true, worktreeVisible: true, worktreeEligible: true }; }
+  async forkSession() { return { session: { sessionId: "forked-fixture" } }; }
 
   async createSession(_request: WebuiCreateSessionRequest) {
     return { sessionId: "created-session" };
@@ -1655,7 +1658,7 @@ describe("WebUI operation allowlist", () => {
       expect(registry.has("listModels")).toBe(true);
       expect(registry.has("getAccountStatus")).toBe(true);
       for (const operation of [
-        "archiveSession", "deleteSession", "listUserModelProviders", "createUserModelProvider",
+        "archiveSession", "deleteSession", "updateSession", "getSessionForkOptions", "forkSession", "listUserModelProviders", "createUserModelProvider",
         "updateUserModelProvider", "deleteUserModelProvider", "testUserModelProvider", "testUserModel",
         "discoverUserModelsCandidate", "saveUserModelProviderCandidate", "listProviderPresets",
         "getMiniMaxApiKeyStatus", "upsertMiniMaxApiKey", "getCodexOAuthStatus",

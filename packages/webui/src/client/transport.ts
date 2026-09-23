@@ -67,6 +67,9 @@ export function createWebuiTransport({
   listArchivedSessions: () => Promise<WebuiClientSessionPage>;
   archiveSession: (request: { readonly id: string }) => Promise<{ readonly success?: boolean }>;
   deleteSession: (request: { readonly id: string }) => Promise<{ readonly success?: boolean }>;
+  updateSession: (request: import("../server/port.js").WebuiUpdateSessionRequest) => Promise<import("../server/port.js").WebuiUpdateSessionResult>;
+  getSessionForkOptions: (request: import("../server/port.js").WebuiGetSessionForkOptionsRequest) => Promise<import("../server/port.js").WebuiGetSessionForkOptionsResult>;
+  forkSession: (request: import("../server/port.js").WebuiForkSessionRequest) => Promise<import("../server/port.js").WebuiForkSessionResult>;
   loadMessages: WebuiClientMessageLoader;
   listWorkspaceFileTree: (request: { readonly workspaceDir: string; readonly path?: string }) => Promise<readonly import("../server/port.js").WebuiWorkspaceFile[]>;
   readWorkspaceFile: (request: { readonly workspaceDir: string; readonly path: string }) => Promise<import("../server/port.js").WebuiWorkspaceFileContent>;
@@ -370,6 +373,9 @@ export function createWebuiTransport({
     listArchivedSessions: () => request<WebuiClientSessionPage>("listSessions", { name: "main", includeArchived: true, onlyArchived: true }),
     archiveSession: (body) => request("archiveSession", body),
     deleteSession: (body) => request("deleteSession", body),
+    updateSession: (body) => request("updateSession", body),
+    getSessionForkOptions: (body) => request("getSessionForkOptions", body),
+    forkSession: (body) => request("forkSession", body),
     loadMessages: ({ id, before }) =>
       request<WebuiClientMessagePage>("getMessages", {
         id,

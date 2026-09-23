@@ -29,8 +29,10 @@ import {
   useRef,
   useState,
   type FormEvent,
+  type MouseEvent,
   type ReactElement,
 } from "react";
+import { createPortal } from "react-dom";
 import { WebuiMarkdown } from "./markdown.js";
 import {
   WebuiIconAttach,
@@ -47,6 +49,14 @@ import {
   WebuiIconFile,
   WebuiIconSend,
   WebuiIconSites,
+  WebuiIconContextArchive,
+  WebuiIconContextChevron,
+  WebuiIconContextCopy,
+  WebuiIconContextFeedback,
+  WebuiIconContextFork,
+  WebuiIconContextPin,
+  WebuiIconContextRename,
+  WebuiIconContextTrash,
 } from "./icons.js";
 import { ArchonShell } from "./components/ArchonShell.js";
 import { Composer } from "./components/Composer.js";
@@ -64,7 +74,15 @@ import {
   type TeamModeSessionChoices,
 } from "./team-mode.js";
 import { readNoProjectFlag, writeNoProjectFlag } from "./no-project.js";
-import { LeftRail } from "./components/LeftRail.js";
+import {
+  LeftRail,
+  readProjectNames,
+  readProjectPins,
+  readSessionOverlay,
+  toggleProjectPin,
+  toggleSessionOverlay,
+  writeProjectName,
+} from "./components/LeftRail.js";
 import { UserMenu } from "./components/UserMenu.js";
 import { WebuiWorkspacePanel, WebuiWorkspaceOverview, WebuiWorkspacePanelControls, type WebuiTodo } from "./components/WorkspacePanels.js";
 import { Transcript } from "./components/Transcript.js";
@@ -116,6 +134,7 @@ export interface WebuiClientSession {
   readonly isDefaultWorkspace?: boolean;
   readonly sessionKind?: string;
   readonly parentSessionId?: string;
+  readonly archived?: boolean;
   readonly status?: unknown;
 }
 
@@ -731,6 +750,9 @@ export interface WebuiClientFoundationAppProps {
   readonly signOut?: () => Promise<{ readonly success?: boolean }>;
   readonly archiveSession?: (request: { readonly id: string }) => Promise<{ readonly success?: boolean }>;
   readonly deleteSession?: (request: { readonly id: string }) => Promise<{ readonly success?: boolean }>;
+  readonly updateSession?: (request: import("../server/port.js").WebuiUpdateSessionRequest) => Promise<import("../server/port.js").WebuiUpdateSessionResult>;
+  readonly getSessionForkOptions?: (request: import("../server/port.js").WebuiGetSessionForkOptionsRequest) => Promise<import("../server/port.js").WebuiGetSessionForkOptionsResult>;
+  readonly forkSession?: (request: import("../server/port.js").WebuiForkSessionRequest) => Promise<import("../server/port.js").WebuiForkSessionResult>;
   readonly listUserModelProviders?: () => Promise<readonly Record<string, unknown>[]>;
   readonly createUserModelProvider?: (request: Record<string, unknown>) => Promise<unknown>;
   readonly updateUserModelProvider?: (request: Record<string, unknown>) => Promise<unknown>;
@@ -1061,6 +1083,155 @@ export function groupWebuiSessionsByWorkspace(
   return [...groups.values()];
 }
 
+export function sortWebuiProjectSessionIds(
+  sessions: readonly Pick<WebuiClientSession, "sessionId" | "updatedAt">[],
+  pinnedSessions: Readonly<Record<string, boolean>>,
+  sessionIds: readonly string[],
+): string[] {
+  const byId = new Map(sessions.map((session) => [session.sessionId, session]));
+  return [...sessionIds].sort((left, right) => {
+    const pinDelta = Number(Boolean(pinnedSessions[right])) - Number(Boolean(pinnedSessions[left]));
+    if (pinDelta) return pinDelta;
+    return (byId.get(right)?.updatedAt ?? 0) - (byId.get(left)?.updatedAt ?? 0);
+  });
+}
+
+export function placeWebuiContextMenu({
+  x,
+  y,
+  width,
+  height,
+  viewportWidth,
+  viewportHeight,
+  padding = 8,
+}: {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+  readonly viewportWidth: number;
+  readonly viewportHeight: number;
+  readonly padding?: number;
+}): { readonly left: number; readonly top: number } {
+  const maxLeft = Math.max(padding, viewportWidth - width - padding);
+  const left = Math.min(Math.max(padding, x), maxLeft);
+  const flippedTop = y + height + padding > viewportHeight ? y - height : y;
+  const maxTop = Math.max(padding, viewportHeight - height - padding);
+  return { left, top: Math.min(Math.max(padding, flippedTop), maxTop) };
+}
+
+export type WebuiContextMenuItem =
+  | { readonly kind: "divider"; readonly key: string }
+  | {
+      readonly kind: "item";
+      readonly key: string;
+      readonly label: string;
+      readonly icon?: ReactElement;
+      readonly danger?: boolean;
+      readonly disabled?: boolean;
+      readonly onSelect?: () => void | Promise<void>;
+      readonly submenu?: readonly WebuiContextMenuItem[];
+    };
+
+export function WebuiContextMenu({
+  x,
+  y,
+  items,
+  onClose,
+}: {
+  readonly x: number;
+  readonly y: number;
+  readonly items: readonly WebuiContextMenuItem[];
+  readonly onClose: () => void;
+}): ReactElement {
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const [openSubmenu, setOpenSubmenu] = useState<string>();
+  const [position, setPosition] = useState({ left: x, top: y });
+  useLayoutEffect(() => {
+    setPosition({ left: x, top: y });
+  }, [x, y]);
+  useLayoutEffect(() => {
+    const menu = menuRef.current;
+    if (!menu || typeof window === "undefined") return;
+    const next = placeWebuiContextMenu({
+      x,
+      y,
+      width: menu.offsetWidth,
+      height: menu.offsetHeight,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+    });
+    setPosition((current) =>
+      current.left === next.left && current.top === next.top ? current : next,
+    );
+  }, [items, x, y]);
+  useEffect(() => {
+    const handlePointerDown = (event: globalThis.MouseEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) onClose();
+    };
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose]);
+  const renderItems = (menuItems: readonly WebuiContextMenuItem[]) =>
+    menuItems.map((item) => {
+      if (item.kind === "divider") {
+        return <div key={item.key} className="webui-context-menu-divider" role="separator" />;
+      }
+      const hasSubmenu = Boolean(item.submenu?.length);
+      return (
+        <div
+          key={item.key}
+          className="webui-context-menu-item-wrap"
+          onMouseEnter={() => hasSubmenu && setOpenSubmenu(item.key)}
+          onMouseLeave={() => hasSubmenu && setOpenSubmenu(undefined)}
+        >
+          <button
+            type="button"
+            className={`webui-context-menu-item${item.danger ? " is-danger" : ""}`}
+            disabled={item.disabled}
+            aria-disabled={item.disabled ? "true" : undefined}
+            onClick={() => {
+              if (hasSubmenu) {
+                setOpenSubmenu((current) => (current === item.key ? undefined : item.key));
+                return;
+              }
+              onClose();
+              void item.onSelect?.();
+            }}
+          >
+            <span className="webui-context-menu-item-icon">{item.icon ?? null}</span>
+            <span className="webui-context-menu-item-label">{item.label}</span>
+            {hasSubmenu ? <WebuiIconContextChevron className="webui-context-menu-chevron" /> : null}
+          </button>
+          {hasSubmenu && openSubmenu === item.key ? (
+            <div className="webui-context-menu-submenu" role="menu">
+              {renderItems(item.submenu ?? [])}
+            </div>
+          ) : null}
+        </div>
+      );
+    });
+  const menu = (
+    <div
+      ref={menuRef}
+      role="menu"
+      data-webui-context-menu="true"
+      className="webui-context-menu"
+      style={{ left: position.left, top: position.top }}
+    >
+      {renderItems(items)}
+    </div>
+  );
+  return typeof document !== "undefined" ? createPortal(menu, document.body) : menu;
+}
+
 /**
  * Project projection for the desktop-shaped rail. The existing session list
  * remains available for history/detail surfaces; the home rail must not expose
@@ -1074,6 +1245,18 @@ export function WebuiProjectList({
   selectedSessionId,
   onProjectSelect,
   error,
+  pinnedSessions,
+  pinnedProjects,
+  projectNames,
+  onRenameProject,
+  onToggleProjectPin,
+  onArchiveProject,
+  onRenameSession,
+  onToggleSessionPin,
+  onArchiveSession,
+  onForkSession,
+  onCopySession,
+  onDeleteSession,
 }: {
   readonly page: WebuiClientSessionPage;
   readonly treePage?: WebuiClientSessionTreePage;
@@ -1082,6 +1265,18 @@ export function WebuiProjectList({
   readonly selectedSessionId?: string;
   readonly onProjectSelect?: (workspaceDir?: string) => void;
   readonly error?: string;
+  readonly pinnedSessions?: Readonly<Record<string, boolean>>;
+  readonly pinnedProjects?: Readonly<Record<string, boolean>>;
+  readonly projectNames?: Readonly<Record<string, string>>;
+  readonly onRenameProject?: (project: WebuiProjectGroup) => void;
+  readonly onToggleProjectPin?: (project: WebuiProjectGroup) => void;
+  readonly onArchiveProject?: (project: WebuiProjectGroup) => void;
+  readonly onRenameSession?: (session: WebuiClientSession) => void;
+  readonly onToggleSessionPin?: (session: WebuiClientSession) => void;
+  readonly onArchiveSession?: (session: WebuiClientSession) => void;
+  readonly onForkSession?: (session: WebuiClientSession, createIsolatedWorktree: boolean) => void;
+  readonly onCopySession?: (session: WebuiClientSession, value: "workspaceDir" | "sessionId") => void;
+  readonly onDeleteSession?: (session: WebuiClientSession) => void;
 }): ReactElement {
   // Build a lookup from parent session id to its child sessions. When
   // `treePage` is provided, this lets the rail render child sessions under
@@ -1097,16 +1292,127 @@ export function WebuiProjectList({
     return map;
   }, [treePage]);
   const projects = useMemo(
-    () => groupWebuiSessionsByWorkspace(page.sessions),
-    [page.sessions],
+    () => {
+      const grouped = groupWebuiSessionsByWorkspace(page.sessions);
+      return [...grouped].sort((left, right) => {
+        const pinDelta = Number(Boolean(pinnedProjects?.[right.key])) - Number(Boolean(pinnedProjects?.[left.key]));
+        return pinDelta || right.updatedAt - left.updatedAt;
+      });
+    },
+    [page.sessions, pinnedProjects],
   );
   const [expandedProjects, setExpandedProjects] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
+  const [contextMenu, setContextMenu] = useState<
+    | { readonly x: number; readonly y: number; readonly items: readonly WebuiContextMenuItem[] }
+    | undefined
+  >();
   const sessionsById = useMemo(
     () => new Map(page.sessions.map((session) => [session.sessionId, session])),
     [page.sessions],
   );
+
+  const openSessionMenu = (event: MouseEvent<HTMLElement>, session: WebuiClientSession) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      items: [
+        {
+          kind: "item",
+          key: "pin",
+          label: pinnedSessions?.[session.sessionId] ? "取消置顶" : "置顶",
+          icon: <WebuiIconContextPin />,
+          disabled: !onToggleSessionPin,
+          onSelect: () => onToggleSessionPin?.(session),
+        },
+        {
+          kind: "item",
+          key: "rename",
+          label: "重命名",
+          icon: <WebuiIconContextRename />,
+          disabled: !onRenameSession,
+          onSelect: () => onRenameSession?.(session),
+        },
+        {
+          kind: "item",
+          key: "archive",
+          label: session.archived ? "取消归档" : "归档",
+          icon: <WebuiIconContextArchive />,
+          disabled: !onArchiveSession,
+          onSelect: () => onArchiveSession?.(session),
+        },
+        { kind: "divider", key: "fork-divider" },
+        {
+          kind: "item",
+          key: "fork-current",
+          label: "复制为新会话",
+          icon: <WebuiIconContextFork />,
+          disabled: !onForkSession,
+          onSelect: () => onForkSession?.(session, false),
+        },
+        {
+          kind: "item",
+          key: "fork-worktree",
+          label: "复制到新工作树",
+          icon: <WebuiIconContextFork />,
+          disabled: !onForkSession,
+          onSelect: () => onForkSession?.(session, true),
+        },
+        { kind: "divider", key: "copy-divider" },
+        {
+          kind: "item",
+          key: "show-folder",
+          label: "在文件夹中显示",
+          icon: <WebuiIconFolder />,
+          disabled: true,
+        },
+        {
+          kind: "item",
+          key: "copy",
+          label: "复制",
+          icon: <WebuiIconContextCopy />,
+          submenu: [
+            {
+              kind: "item",
+              key: "copy-workspace-dir",
+              label: "复制工作目录",
+              icon: <WebuiIconContextCopy />,
+              disabled: !session.workspaceDir || !onCopySession,
+              onSelect: () => onCopySession?.(session, "workspaceDir"),
+            },
+            {
+              kind: "item",
+              key: "copy-session-id",
+              label: "复制会话 ID",
+              icon: <WebuiIconContextCopy />,
+              disabled: !onCopySession,
+              onSelect: () => onCopySession?.(session, "sessionId"),
+            },
+          ],
+        },
+        {
+          kind: "item",
+          key: "feedback",
+          label: "问题反馈",
+          icon: <WebuiIconContextFeedback />,
+          disabled: true,
+        },
+        { kind: "divider", key: "delete-divider" },
+        {
+          kind: "item",
+          key: "delete",
+          label: "删除",
+          icon: <WebuiIconContextTrash />,
+          danger: true,
+          disabled: !onDeleteSession,
+          onSelect: () => onDeleteSession?.(session),
+        },
+      ],
+    });
+  };
 
   useEffect(() => {
     if (!selectedSessionId) return;
@@ -1144,6 +1450,12 @@ export function WebuiProjectList({
         <ul className="space-y-px" data-webui-project-list-items="true">
           {projects.map((project) => {
             const expanded = expandedProjects.has(project.key);
+            const projectName = projectNames?.[project.key] ?? project.name;
+            const orderedSessionIds = sortWebuiProjectSessionIds(
+              page.sessions,
+              pinnedSessions ?? {},
+              project.sessionIds,
+            );
             return (
               <li key={project.key}>
                 <button
@@ -1158,13 +1470,63 @@ export function WebuiProjectList({
                       return next;
                     });
                   }}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    if (!project.workspaceDir) return;
+                    setContextMenu({
+                      x: event.clientX,
+                      y: event.clientY,
+                      items: [
+                        {
+                          kind: "item",
+                          key: "rename-project",
+                          label: "重命名项目",
+                          icon: <WebuiIconContextRename />,
+                          disabled: !onRenameProject,
+                          onSelect: () => onRenameProject?.(project),
+                        },
+                        {
+                          kind: "item",
+                          key: "toggle-pin-project",
+                          label: pinnedProjects?.[project.key] ? "取消置顶项目" : "置顶项目",
+                          icon: <WebuiIconContextPin />,
+                          disabled: !onToggleProjectPin,
+                          onSelect: () => onToggleProjectPin?.(project),
+                        },
+                        {
+                          kind: "item",
+                          key: "show-project-in-folder",
+                          label: "在文件夹中显示",
+                          icon: <WebuiIconFolder />,
+                          disabled: true,
+                        },
+                        {
+                          kind: "item",
+                          key: "archive-project-sessions",
+                          label: "归档对话",
+                          icon: <WebuiIconContextArchive />,
+                          disabled: !onArchiveProject,
+                          onSelect: () => onArchiveProject?.(project),
+                        },
+                        {
+                          kind: "item",
+                          key: "remove-project",
+                          label: "移除",
+                          icon: <WebuiIconContextTrash />,
+                          danger: true,
+                          disabled: true,
+                        },
+                      ],
+                    });
+                  }}
                   data-webui-project-link={project.key}
                   title={project.workspaceDir}
                   className="webui-project-card text-left text-text_default_secondary"
                 >
                   <WebuiIconFolder className="flex-shrink-0" />
                   <span className="min-w-0 flex-1 truncate text-sm leading-5">
-                    {project.name}
+                    {projectName}
                   </span>
                 </button>
                 {expanded ? (
@@ -1172,7 +1534,7 @@ export function WebuiProjectList({
                     className="webui-project-session-list"
                     data-webui-project-sessions={project.key}
                   >
-                    {project.sessionIds.map((sessionId) => {
+                    {orderedSessionIds.map((sessionId) => {
                       const session = sessionsById.get(sessionId);
                       if (!session) return null;
                       const children = childrenByParentId.get(session.sessionId) ?? [];
@@ -1186,6 +1548,7 @@ export function WebuiProjectList({
                                 ? "true"
                                 : "false"
                             }
+                            onContextMenu={(event) => openSessionMenu(event, session)}
                             className="webui-project-session-card text-text_default_primary"
                           >
                             <span className="min-w-0 flex-1 truncate">
@@ -1208,6 +1571,7 @@ export function WebuiProjectList({
                                         ? "true"
                                         : "false"
                                     }
+                                    onContextMenu={(event) => openSessionMenu(event, child)}
                                     className="webui-project-child-session-card text-text_default_primary"
                                   >
                                     <span className="min-w-0 flex-1 truncate">
@@ -1239,6 +1603,14 @@ export function WebuiProjectList({
             {loading ? "Loading…" : "Load more"}
           </button>
         </div>
+      ) : null}
+      {contextMenu ? (
+        <WebuiContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={contextMenu.items}
+          onClose={() => setContextMenu(undefined)}
+        />
       ) : null}
     </section>
   );
@@ -3240,6 +3612,9 @@ export function WebuiClientFoundationApp({
   getVersion,
   archiveSession,
   deleteSession,
+  updateSession,
+  getSessionForkOptions,
+  forkSession,
   listUserModelProviders,
   createUserModelProvider,
   updateUserModelProvider,
@@ -3283,6 +3658,15 @@ export function WebuiClientFoundationApp({
   const [teamModeChoices, setTeamModeChoices] =
     useState<TeamModeSessionChoices>(readTeamModeSessionChoices);
   const [pageError, setPageError] = useState<string | undefined>();
+  const [pinnedSessions, setPinnedSessions] = useState<Record<string, boolean>>(
+    readSessionOverlay("pins"),
+  );
+  const [pinnedProjects, setPinnedProjects] = useState<Record<string, boolean>>(
+    readProjectPins,
+  );
+  const [projectNames, setProjectNames] = useState<Record<string, string>>(
+    readProjectNames,
+  );
   const selectedRuntimeState = useSessionRuntimeState(selectedSessionId).state;
   const [historyProgress, setHistoryProgress] =
     useState<WebuiWorkspaceProgressState>(initialWebuiWorkspaceProgress);
@@ -3409,9 +3793,120 @@ export function WebuiClientFoundationApp({
                 nextCursor: nextPage.nextCursor,
               }));
             })
-            .finally(() => setLoading(false));
+        .finally(() => setLoading(false));
         }
       : undefined;
+  const refreshRail = async () => {
+    const [nextPage, nextTree] = await Promise.all([
+      loadSessions?.(),
+      loadSessionTree?.(),
+    ]);
+    if (nextPage) {
+      setPage(nextPage);
+      setPageError(undefined);
+    }
+    if (nextTree) setTreePage(nextTree);
+  };
+  const handleRenameProject = (project: WebuiProjectGroup) => {
+    if (typeof window === "undefined") return;
+    const next = window.prompt("重命名项目", projectNames[project.key] ?? project.name)?.trim();
+    if (next) setProjectNames(writeProjectName(project.key, next));
+  };
+  const handleToggleProjectPin = (project: WebuiProjectGroup) => {
+    setPinnedProjects(toggleProjectPin(project.key));
+  };
+  const handleRenameSession = (session: WebuiClientSession) => {
+    if (!updateSession || typeof window === "undefined") return;
+    const next = window.prompt("重命名", sessionLabel(session))?.trim();
+    if (!next || next === sessionLabel(session)) return;
+    void updateSession({ id: session.sessionId, title: next })
+      .then((result) => {
+        const title = result.session?.title;
+        if (title) {
+          setPage((current) => ({
+            ...current,
+            sessions: current.sessions.map((candidate) =>
+              candidate.sessionId === session.sessionId ? { ...candidate, title } : candidate,
+            ),
+          }));
+          setTreePage((current) => ({
+            ...current,
+            sessions: current.sessions.map((node) => ({
+              ...node,
+              session: node.session.sessionId === session.sessionId ? { ...node.session, title } : node.session,
+              childSessions: node.childSessions.map((candidate) =>
+                candidate.sessionId === session.sessionId ? { ...candidate, title } : candidate,
+              ),
+            })),
+          }));
+        }
+        return refreshRail();
+      })
+      .catch((reason: unknown) => setPageError(reason instanceof Error ? reason.message : String(reason)));
+  };
+  const handleToggleSessionPin = (session: WebuiClientSession) => {
+    setPinnedSessions(toggleSessionOverlay("pins", session.sessionId));
+  };
+  const handleArchiveSession = (session: WebuiClientSession) => {
+    if (!archiveSession) return;
+    void archiveSession({ id: session.sessionId })
+      .then(() => refreshRail())
+      .catch((reason: unknown) => setPageError(reason instanceof Error ? reason.message : String(reason)));
+  };
+  const handleArchiveProject = (project: WebuiProjectGroup) => {
+    if (!archiveSession) return;
+    const ids = new Set(project.sessionIds);
+    for (const node of treePage.sessions) {
+      if (!project.sessionIds.includes(node.session.sessionId)) continue;
+      for (const child of node.childSessions) ids.add(child.sessionId);
+    }
+    void Promise.all([...ids].map((id) => archiveSession({ id })))
+      .then(() => refreshRail())
+      .catch((reason: unknown) => setPageError(reason instanceof Error ? reason.message : String(reason)));
+  };
+  const handleForkSession = (session: WebuiClientSession, createIsolatedWorktree: boolean) => {
+    if (!forkSession) return;
+    void (async () => {
+      const options = await getSessionForkOptions?.({ id: session.sessionId });
+      if (options && !options.canFork)
+        throw new Error(`当前会话不可复制：${options.unavailableReason ?? "没有可复制的消息边界"}`);
+      if (createIsolatedWorktree && options && !options.worktreeVisible)
+        throw new Error(`当前会话不可复制到新工作树：${options.worktreeUnavailableReason ?? "工作树不可用"}`);
+      return forkSession({
+        id: session.sessionId,
+        clientRequestId: globalThis.crypto.randomUUID(),
+        useSuggestedTitle: true,
+        createIsolatedWorktree,
+      });
+    })()
+      .then(async (result) => {
+        await refreshRail();
+        const id = result.session?.sessionId;
+        if (id) {
+          setSelectedSessionId(id);
+          if (typeof window !== "undefined")
+            window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}${sessionHash(id)}`);
+        }
+      })
+      .catch((reason: unknown) => setPageError(reason instanceof Error ? reason.message : String(reason)));
+  };
+  const handleCopySession = (session: WebuiClientSession, value: "workspaceDir" | "sessionId") => {
+    const text = value === "workspaceDir" ? session.workspaceDir : session.sessionId;
+    if (!text || typeof navigator === "undefined" || !navigator.clipboard) return;
+    void navigator.clipboard.writeText(text);
+  };
+  const handleDeleteSession = (session: WebuiClientSession) => {
+    if (!deleteSession) return;
+    void deleteSession({ id: session.sessionId })
+      .then(async () => {
+        if (selectedSessionId === session.sessionId) {
+          setSelectedSessionId(undefined);
+          if (typeof window !== "undefined") window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+        }
+        await refreshRail();
+      })
+      .catch((reason: unknown) => setPageError(reason instanceof Error ? reason.message : String(reason)));
+  };
   const homeMode = !selectedSessionId;
   const selectedSession = flatSessionsWithChildren.find(
     (session) => session.sessionId === selectedSessionId,
@@ -3632,6 +4127,18 @@ export function WebuiClientFoundationApp({
                         selectedSessionId={selectedSessionId}
                         onProjectSelect={setNewTaskWorkspaceDir}
                         error={pageError}
+                        pinnedSessions={pinnedSessions}
+                        pinnedProjects={pinnedProjects}
+                        projectNames={projectNames}
+                        onRenameProject={handleRenameProject}
+                        onToggleProjectPin={handleToggleProjectPin}
+                        onArchiveProject={handleArchiveProject}
+                        onRenameSession={handleRenameSession}
+                        onToggleSessionPin={handleToggleSessionPin}
+                        onArchiveSession={handleArchiveSession}
+                        onForkSession={handleForkSession}
+                        onCopySession={handleCopySession}
+                        onDeleteSession={handleDeleteSession}
                       />
                     </div>
                     <div

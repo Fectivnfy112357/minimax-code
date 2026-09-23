@@ -70,6 +70,9 @@ export interface WebuiAssembledHost {
     ): Promise<import("./port.js").WebuiSessionTreePage>;
     archiveSession(request: { readonly id: string }, context?: Record<string, never>): Promise<{ readonly success?: boolean }>;
     deleteSession(request: { readonly id: string }, context?: Record<string, never>): Promise<{ readonly success?: boolean }>;
+    updateSession(request: import("./port.js").WebuiUpdateSessionRequest, context?: Record<string, never>): Promise<import("./port.js").WebuiUpdateSessionResult>;
+    getSessionForkOptions(request: import("./port.js").WebuiGetSessionForkOptionsRequest, context?: Record<string, never>): Promise<import("./port.js").WebuiGetSessionForkOptionsResult>;
+    forkSession(request: import("./port.js").WebuiForkSessionRequest, context?: Record<string, never>): Promise<import("./port.js").WebuiForkSessionResult>;
     listUserModelProviders(): Promise<readonly Record<string, unknown>[]>;
     createUserModelProvider(request: Record<string, unknown>): Promise<unknown>;
     updateUserModelProvider(request: Record<string, unknown>): Promise<unknown>;

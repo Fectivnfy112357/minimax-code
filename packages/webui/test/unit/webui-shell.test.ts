@@ -23,6 +23,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import {
   WebuiClientFoundationApp,
+  WebuiContextMenu,
   WebuiProjectList,
   WebuiInteractionPanel,
   WebuiSessionList,
@@ -36,11 +37,13 @@ import {
   createdSessionId,
   groupWebuiTranscriptItems,
   groupWebuiSessionsByWorkspace,
+  placeWebuiContextMenu,
   projectWebuiMessage,
   migrateSessionRuntimeState,
   readSessionRuntimeState,
   readSessionIdFromHash,
   sessionHash,
+  sortWebuiProjectSessionIds,
   submitWebuiComposerTurn,
   subscribeToSessionHash,
   updateSessionRuntimeState,
@@ -449,6 +452,57 @@ describe("WebUI shell", () => {
     expect(html).toContain("未选项目");
     expect(html).not.toContain('data-webui-session-list="true"');
     expect(html).not.toContain("<time");
+  });
+
+  it("renders the desktop context-menu vocabulary and inert WebUI-only gaps", () => {
+    const html = renderToStaticMarkup(
+      createElement(WebuiContextMenu, {
+        x: 12,
+        y: 18,
+        onClose: () => undefined,
+        items: [
+          { kind: "item", key: "rename", label: "重命名", icon: createElement("span") },
+          { kind: "divider", key: "divider" },
+          {
+            kind: "item",
+            key: "copy",
+            label: "复制",
+            submenu: [
+              { kind: "item", key: "copy-id", label: "复制会话 ID", disabled: false },
+            ],
+          },
+          { kind: "item", key: "feedback", label: "问题反馈", disabled: true },
+          { kind: "item", key: "delete", label: "删除", danger: true },
+        ],
+      }),
+    );
+    expect(html).toContain('data-webui-context-menu="true"');
+    expect(html).toContain("重命名");
+    expect(html).toContain("复制");
+    expect(html).toContain("问题反馈");
+    expect(html).toContain("删除");
+    expect(html).toContain('aria-disabled="true"');
+    expect(html).toContain("webui-context-menu-divider");
+  });
+
+  it("moves a pinned session ahead of newer unpinned sessions", () => {
+    const sessions = [
+      { sessionId: "newer", agentName: "main", createdAt: 1, updatedAt: 30 },
+      { sessionId: "pinned", agentName: "main", createdAt: 1, updatedAt: 10 },
+    ];
+    expect(sortWebuiProjectSessionIds(sessions, { pinned: true }, ["newer", "pinned"]))
+      .toEqual(["pinned", "newer"]);
+  });
+
+  it("flips a context menu above the pointer when it would hit the viewport bottom", () => {
+    expect(placeWebuiContextMenu({
+      x: 10,
+      y: 780,
+      width: 208,
+      height: 360,
+      viewportWidth: 1024,
+      viewportHeight: 900,
+    })).toEqual({ left: 10, top: 420 });
   });
 
   it("leaves a visible gap before the first session under an expanded project", () => {

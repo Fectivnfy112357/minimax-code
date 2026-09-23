@@ -118,6 +118,9 @@ const RUN_COMMAND_OPERATION_NAME = "runCommand" as const;
 const SIGN_OUT_OPERATION_NAME = "signOut" as const;
 const ARCHIVE_SESSION_OPERATION_NAME = "archiveSession" as const;
 const DELETE_SESSION_OPERATION_NAME = "deleteSession" as const;
+const UPDATE_SESSION_OPERATION_NAME = "updateSession" as const;
+const GET_SESSION_FORK_OPTIONS_OPERATION_NAME = "getSessionForkOptions" as const;
+const FORK_SESSION_OPERATION_NAME = "forkSession" as const;
 const LIST_USER_MODEL_PROVIDERS_OPERATION_NAME = "listUserModelProviders" as const;
 const CREATE_USER_MODEL_PROVIDER_OPERATION_NAME = "createUserModelProvider" as const;
 const UPDATE_USER_MODEL_PROVIDER_OPERATION_NAME = "updateUserModelProvider" as const;
@@ -1169,6 +1172,52 @@ function providerRecordOperation(name: string): WebuiOperation<Record<string, un
 
 export const archiveSessionOperation: WebuiOperation<{ readonly id: string }, { readonly success?: boolean }> = { name: ARCHIVE_SESSION_OPERATION_NAME, validate: (body) => validateSessionIdBody(ARCHIVE_SESSION_OPERATION_NAME, body) };
 export const deleteSessionOperation: WebuiOperation<{ readonly id: string }, { readonly success?: boolean }> = { name: DELETE_SESSION_OPERATION_NAME, validate: (body) => validateSessionIdBody(DELETE_SESSION_OPERATION_NAME, body) };
+export const updateSessionOperation: WebuiOperation<import("./port.js").WebuiUpdateSessionRequest, import("./port.js").WebuiUpdateSessionResult> = {
+  name: UPDATE_SESSION_OPERATION_NAME,
+  validate: (body) => {
+    const value = validateSessionIdBody(UPDATE_SESSION_OPERATION_NAME, body);
+    if (!value.ok) return value;
+    const candidate = body as Record<string, unknown>;
+    const title = typeof candidate.title === "string" ? candidate.title.trim() : "";
+    return title
+      ? { ok: true, body: { id: value.body.id, title } }
+      : { ok: false, code: WebuiErrorCode.invalidBody, message: "updateSession requires a non-empty title" };
+  },
+};
+export const getSessionForkOptionsOperation: WebuiOperation<import("./port.js").WebuiGetSessionForkOptionsRequest, import("./port.js").WebuiGetSessionForkOptionsResult> = {
+  name: GET_SESSION_FORK_OPTIONS_OPERATION_NAME,
+  validate: (body) => {
+    const value = validateSessionIdBody(GET_SESSION_FORK_OPTIONS_OPERATION_NAME, body);
+    if (!value.ok) return value;
+    const candidate = body as Record<string, unknown>;
+    const assistantMessageId = candidate.assistantMessageId;
+    if (assistantMessageId !== undefined && (typeof assistantMessageId !== "string" || !assistantMessageId.trim()))
+      return { ok: false, code: WebuiErrorCode.invalidBody, message: "assistantMessageId must be a non-empty string" };
+    return {
+      ok: true,
+      body: {
+        id: value.body.id,
+        ...(typeof assistantMessageId === "string" ? { assistantMessageId: assistantMessageId.trim() } : {}),
+      },
+    };
+  },
+};
+export const forkSessionOperation: WebuiOperation<import("./port.js").WebuiForkSessionRequest, import("./port.js").WebuiForkSessionResult> = {
+  name: FORK_SESSION_OPERATION_NAME,
+  validate: (body) => {
+    if (body === null || typeof body !== "object" || Array.isArray(body))
+      return { ok: false, code: WebuiErrorCode.invalidBody, message: "forkSession body must be an object" };
+    const candidate = body as Record<string, unknown>;
+    const id = typeof candidate.id === "string" ? candidate.id.trim() : "";
+    const clientRequestId = typeof candidate.clientRequestId === "string" ? candidate.clientRequestId.trim() : "";
+    if (!id || !clientRequestId || typeof candidate.useSuggestedTitle !== "boolean" || typeof candidate.createIsolatedWorktree !== "boolean")
+      return { ok: false, code: WebuiErrorCode.invalidBody, message: "forkSession requires id, clientRequestId, useSuggestedTitle, and createIsolatedWorktree" };
+    const title = candidate.title === undefined ? undefined : typeof candidate.title === "string" ? candidate.title.trim() : "";
+    if (candidate.title !== undefined && !title)
+      return { ok: false, code: WebuiErrorCode.invalidBody, message: "forkSession title must not be empty" };
+    return { ok: true, body: { id, clientRequestId, useSuggestedTitle: candidate.useSuggestedTitle, createIsolatedWorktree: candidate.createIsolatedWorktree, ...(title ? { title } : {}) } };
+  },
+};
 export const listUserModelProvidersOperation: WebuiOperation<undefined, readonly Record<string, unknown>[]> = { name: LIST_USER_MODEL_PROVIDERS_OPERATION_NAME, validate: (body) => body === undefined ? { ok: true, body: undefined } : { ok: false, code: WebuiErrorCode.invalidBody, message: `${LIST_USER_MODEL_PROVIDERS_OPERATION_NAME} does not accept a body` } };
 export const createUserModelProviderOperation = providerRecordOperation(CREATE_USER_MODEL_PROVIDER_OPERATION_NAME);
 export const updateUserModelProviderOperation = providerRecordOperation(UPDATE_USER_MODEL_PROVIDER_OPERATION_NAME);
@@ -1259,6 +1308,9 @@ export function createOperationRegistry(
     | "getSessionTree"
     | "archiveSession"
     | "deleteSession"
+    | "updateSession"
+    | "getSessionForkOptions"
+    | "forkSession"
     | "createSession"
     | "getSession"
     | "getMessages"
@@ -1334,6 +1386,9 @@ export function createOperationRegistry(
   }
   registerOperation(registry, { operation: archiveSessionOperation, handle: async (_context, body) => ({ body: await port.archiveSession(body) }) });
   registerOperation(registry, { operation: deleteSessionOperation, handle: async (_context, body) => ({ body: await port.deleteSession(body) }) });
+  registerOperation(registry, { operation: updateSessionOperation, handle: async (_context, body) => ({ body: await port.updateSession(body) }) });
+  registerOperation(registry, { operation: getSessionForkOptionsOperation, handle: async (_context, body) => ({ body: await port.getSessionForkOptions(body) }) });
+  registerOperation(registry, { operation: forkSessionOperation, handle: async (_context, body) => ({ body: await port.forkSession(body) }) });
   registerOperation(registry, {
     operation: abortSessionOperation,
     handle: async (_context, body) => ({ body: await port.abortSession(body) }),

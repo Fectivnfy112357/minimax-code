@@ -165,6 +165,39 @@ export function WebuiIconFolder({ className }: WebuiIconProps): ReactElement {
   );
 }
 
+/** Context-menu glyphs used by the desktop session/project actions. */
+export function WebuiIconContextPin({ className }: WebuiIconProps): ReactElement {
+  return <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}><path d="m6 3 8 8m-5-6 3-2 2 2-2 3m-6 6 5-5m-7 8 4-4" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+}
+
+export function WebuiIconContextRename({ className }: WebuiIconProps): ReactElement {
+  return <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}><path d="m4 14.8-.7 2.9 2.9-.7L16.8 6.4a1.7 1.7 0 0 0 0-2.4l-.8-.8a1.7 1.7 0 0 0-2.4 0L4 14.8Z" stroke="currentColor" strokeWidth="1.35" strokeLinejoin="round" /><path d="m12.8 4.1 3.1 3.1" stroke="currentColor" strokeWidth="1.35" /></svg>;
+}
+
+export function WebuiIconContextArchive({ className }: WebuiIconProps): ReactElement {
+  return <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}><path d="M3 5.2h14v10.1a1.4 1.4 0 0 1-1.4 1.4H4.4A1.4 1.4 0 0 1 3 15.3V5.2Z" stroke="currentColor" strokeWidth="1.35" strokeLinejoin="round" /><path d="M2.5 3.3h15v1.9h-15zM7 9.2h6" stroke="currentColor" strokeWidth="1.35" strokeLinejoin="round" strokeLinecap="round" /></svg>;
+}
+
+export function WebuiIconContextFork({ className }: WebuiIconProps): ReactElement {
+  return <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}><path d="M4 4h4v4H4zm8 8h4v4h-4zM6 8v2a2 2 0 0 0 2 2h4" stroke="currentColor" strokeWidth="1.35" strokeLinejoin="round" /><path d="m11 10 3 2-3 2" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+}
+
+export function WebuiIconContextCopy({ className }: WebuiIconProps): ReactElement {
+  return <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}><rect x="6.5" y="6.5" width="9" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.35" /><path d="M13.5 6.5V5A1.5 1.5 0 0 0 12 3.5H5A1.5 1.5 0 0 0 3.5 5v8A1.5 1.5 0 0 0 5 14.5h1.5" stroke="currentColor" strokeWidth="1.35" /></svg>;
+}
+
+export function WebuiIconContextFeedback({ className }: WebuiIconProps): ReactElement {
+  return <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}><path d="M10 3a7 7 0 0 1 7 7c0 3.9-3.1 7-7 7a7.2 7.2 0 0 1-2.8-.6L4 17l.6-3.2A7 7 0 1 1 10 3Z" stroke="currentColor" strokeWidth="1.35" /><path d="M8.6 8a1.4 1.4 0 1 1 2.6.8c-.8.8-1.4 1-1.4 2m0 2.2v.1" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" /></svg>;
+}
+
+export function WebuiIconContextTrash({ className }: WebuiIconProps): ReactElement {
+  return <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}><path d="M4.5 6.2h11m-7.5-2h4m-6 2 .6 10.3h5.8L13 6.2M8 8.5v5.8m4-5.8v5.8" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+}
+
+export function WebuiIconContextChevron({ className }: WebuiIconProps): ReactElement {
+  return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true" className={className}><path d="m6 3 5 5-5 5" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+}
+
 /** run-location pill leading icon — the desktop's `run-location-pill` glyph. */
 export function WebuiIconRunLocation({ className }: WebuiIconProps): ReactElement {
   return (

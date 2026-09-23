@@ -7,6 +7,11 @@ export const WEBUI_SESSION_OVERLAY_KEYS = {
   archives: "mavis-webui-session-archives:v1",
 } as const;
 
+export const WEBUI_PROJECT_OVERLAY_KEYS = {
+  pins: "mavis-webui-project-pins:v1",
+  names: "mavis-webui-project-names:v1",
+} as const;
+
 export type WebuiSessionOverlay = "stars" | "pins" | "archives";
 
 export function readSessionOverlay(kind: WebuiSessionOverlay): Record<string, boolean> {
@@ -22,6 +27,41 @@ export function toggleSessionOverlay(kind: WebuiSessionOverlay, sessionId: strin
   const next = readSessionOverlay(kind);
   if (next[sessionId]) delete next[sessionId]; else next[sessionId] = true;
   localStorage.setItem(WEBUI_SESSION_OVERLAY_KEYS[kind], JSON.stringify(next));
+  return next;
+}
+
+export function readProjectPins(): Record<string, boolean> {
+  try {
+    const value = JSON.parse(localStorage.getItem(WEBUI_PROJECT_OVERLAY_KEYS.pins) ?? "{}");
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  } catch {
+    return {};
+  }
+}
+
+export function toggleProjectPin(projectKey: string): Record<string, boolean> {
+  const next = readProjectPins();
+  if (next[projectKey]) delete next[projectKey]; else next[projectKey] = true;
+  localStorage.setItem(WEBUI_PROJECT_OVERLAY_KEYS.pins, JSON.stringify(next));
+  return next;
+}
+
+export function readProjectNames(): Record<string, string> {
+  try {
+    const value = JSON.parse(localStorage.getItem(WEBUI_PROJECT_OVERLAY_KEYS.names) ?? "{}");
+    if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+    return Object.fromEntries(
+      Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+    );
+  } catch {
+    return {};
+  }
+}
+
+export function writeProjectName(projectKey: string, name: string): Record<string, string> {
+  const next = readProjectNames();
+  next[projectKey] = name;
+  localStorage.setItem(WEBUI_PROJECT_OVERLAY_KEYS.names, JSON.stringify(next));
   return next;
 }
 

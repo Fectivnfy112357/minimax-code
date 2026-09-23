@@ -93,6 +93,40 @@ export interface WebuiSessionInfo {
 export interface WebuiSessionLookupResult {
   readonly session?: WebuiSessionInfo;
 }
+export interface WebuiUpdateSessionRequest {
+  readonly id: string;
+  readonly title?: string;
+}
+export interface WebuiUpdateSessionResult {
+  readonly session?: WebuiSessionInfo;
+}
+export interface WebuiForkSessionRequest {
+  readonly id: string;
+  readonly clientRequestId: string;
+  readonly title?: string;
+  readonly useSuggestedTitle: boolean;
+  readonly createIsolatedWorktree: boolean;
+}
+export interface WebuiGetSessionForkOptionsRequest {
+  readonly id: string;
+  readonly assistantMessageId?: string;
+}
+export interface WebuiGetSessionForkOptionsResult {
+  readonly canFork: boolean;
+  readonly unavailableReason?: string;
+  readonly suggestedTitle?: string;
+  readonly nextForkOrdinal?: number;
+  readonly sourceTitle?: string;
+  readonly worktreeVisible: boolean;
+  readonly worktreeEligible: boolean;
+  readonly worktreeUnavailableReason?: string;
+}
+export interface WebuiForkSessionResult {
+  readonly session?: WebuiSessionInfo;
+  readonly sourceDisplayMessageId?: string;
+  readonly displayRevision?: string;
+  readonly historyRevision?: string;
+}
 export interface WebuiCreateSessionRequest {
   readonly name: string;
   /** Optional: absent means "use the default workspace" (harness resolves it). */
@@ -422,6 +456,9 @@ export interface WebuiHarnessPort {
   getSessionTree(request: WebuiSessionTreeRequest): Promise<WebuiSessionTreePage>;
   archiveSession(request: { readonly id: string }): Promise<{ readonly success?: boolean }>;
   deleteSession(request: { readonly id: string }): Promise<{ readonly success?: boolean }>;
+  updateSession(request: WebuiUpdateSessionRequest): Promise<WebuiUpdateSessionResult>;
+  getSessionForkOptions(request: WebuiGetSessionForkOptionsRequest): Promise<WebuiGetSessionForkOptionsResult>;
+  forkSession(request: WebuiForkSessionRequest): Promise<WebuiForkSessionResult>;
   createSession(
     request: WebuiCreateSessionRequest,
   ): Promise<WebuiCreateSessionResult>;
