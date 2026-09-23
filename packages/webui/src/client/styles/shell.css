@@ -85,20 +85,20 @@
   .webui-terminal-actions { display: flex; gap: var(--spacing_8); }
   .webui-settings-mask { position: fixed; inset: 0; z-index: 100; display: flex; background: var(--utility_scrim); }
   .webui-settings-modal { display: flex; width: 100vw; height: 100vh; overflow: hidden; background: var(--bg_default_primary); color: var(--text_default_primary); }
-  .webui-settings-sidebar { width: 260px; flex: 0 0 260px; overflow-y: auto; padding: var(--spacing_20) var(--spacing_12); background: var(--bg_grouped_secondary); border-right: 1px solid var(--border_default); }
+  .webui-settings-sidebar { width: 260px; flex: 0 0 260px; overflow-y: auto; }
   .webui-settings-back, .webui-settings-nav-item { display: flex; width: 100%; align-items: center; gap: var(--spacing_8); border: 0; background: transparent; color: var(--text_default_secondary); text-align: left; }
-  .webui-settings-back { height: 36px; margin-bottom: var(--spacing_20); padding: 0 var(--spacing_8); font-size: var(--size_14); }
+  .webui-settings-back { font-size: var(--size_14); }
   .webui-settings-back:hover, .webui-settings-nav-item:hover { color: var(--text_default_primary); }
   .webui-settings-search { display: flex; height: 36px; align-items: center; gap: var(--spacing_8); padding: 0 var(--spacing_8); border: 1px solid var(--border_default); border-radius: var(--radius_8); color: var(--text_default_tertiary); }
   .webui-settings-search input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: inherit; }
   .webui-settings-search button { border: 0; background: transparent; color: inherit; }
   .webui-settings-group { margin-top: var(--spacing_24); }
-  .webui-settings-group h3 { margin: 0 0 var(--spacing_6); padding: 0 var(--spacing_8); color: var(--text_default_tertiary); font-size: var(--size_12); font-weight: var(--weight_medium); }
-  .webui-settings-nav-item { min-height: 36px; padding: 0 var(--spacing_8); border-radius: var(--radius_8); font-size: var(--size_14); transition: background-color 120ms ease, color 120ms ease; }
+  .webui-settings-group h3 { margin: 0 0 var(--spacing_6); color: var(--text_default_tertiary); font-weight: var(--weight_medium); }
+  .webui-settings-nav-item { border-radius: var(--radius_8); transition: background-color 120ms ease, color 120ms ease; }
   .webui-settings-nav-item.is-active { background: var(--bg_interaction_tertiary_selected); color: var(--text_default_primary); }
   .webui-settings-icon { width: 18px; height: 18px; flex: 0 0 18px; }
-  .webui-settings-content { min-width: 0; flex: 1; overflow: auto; padding: var(--spacing_40) clamp(var(--spacing_32), 7vw, var(--spacing_90)); animation: webui-settings-content-in 180ms ease both; }
-  .webui-settings-content-header { display: flex; align-items: flex-start; justify-content: space-between; max-width: 760px; margin: 0 auto var(--spacing_32); }
+  .webui-settings-content { min-width: 0; flex: 1; overflow: auto; animation: webui-settings-content-in 180ms ease both; }
+  .webui-settings-content-header { display: flex; align-items: flex-start; justify-content: space-between; }
   .webui-settings-eyebrow { margin: 0 0 var(--spacing_4); color: var(--text_default_tertiary); font-size: var(--size_12); }
   .webui-settings-content h2 { margin: 0; font-size: var(--size_24); font-weight: var(--weight_medium); }
   .webui-settings-close { border: 0; background: transparent; color: var(--icon_default_tertiary); }
@@ -120,10 +120,10 @@
   .webui-settings-data-dir { max-width: 760px; margin: var(--spacing_32) auto 0; color: var(--text_default_tertiary); font-size: var(--size_12); word-break: break-all; }
   .webui-settings-empty { height: var(--spacing_128); }
   .webui-settings-theme-options { display: flex; gap: var(--spacing_12); }
-  .mavis-settings-theme-option { display: flex; width: 100px; flex: 0 0 100px; flex-direction: column; align-items: center; gap: var(--spacing_8); border: 0; background: transparent; color: var(--text_default_secondary); font-size: var(--size_12); }
-  .mavis-settings-theme-preview { display: block; width: 100px; height: 64px; overflow: hidden; padding: 4px; border-radius: var(--radius_8); outline: 2px solid var(--border_light); outline-offset: -2px; }
+  .mavis-settings-theme-option { }
+  .mavis-settings-theme-preview { }
   .mavis-settings-theme-preview.is-selected { outline-color: var(--border_accent); }
-  .mavis-settings-theme-preview img { display: block; width: 100%; height: 100%; border-radius: var(--radius_8); object-fit: cover; }
+  .mavis-settings-theme-preview img { border-radius: var(--radius_8); object-fit: cover; }
   .webui-settings-mode-options { display: flex; gap: var(--spacing_12); padding: var(--spacing_12); }
   .webui-settings-mode-card { display: flex; min-height: 118px; flex: 1; flex-direction: column; align-items: flex-start; gap: var(--spacing_4); padding: var(--spacing_12) var(--spacing_16); border: 0; border-radius: var(--radius_12); background: var(--bg_interaction_secondary_default); color: var(--text_default_primary); text-align: left; }
   .webui-settings-mode-card:disabled { cursor: not-allowed; opacity: .6; }
@@ -176,7 +176,7 @@
   .webui-mavis-button-gray { background: var(--bg_interaction_secondary_default); color: var(--text_default_primary); }
   .webui-mavis-button-black { background: var(--gray_1000); color: #fff; }
   .webui-mavis-button:disabled { cursor: default; opacity: .6; }
-  .webui-segmented { display: flex; height: 32px; align-items: center; gap: 0; border-radius: var(--radius_8); background: var(--gray_75); padding: 2px; }
+  .webui-segmented { gap: 0; background: var(--gray_75); }
   .webui-segmented button { height: 28px; border: 0; border-radius: 6px; background: transparent; padding: 0 var(--spacing_12); color: var(--text_default_primary); font-size: var(--size_14); }
   .webui-segmented button.is-selected { background: #fff; }
   .webui-settings-sidebar { padding: 0 var(--spacing_12) var(--spacing_20); border-right: 0; background: var(--bg_default_scrim); }
@@ -1054,7 +1054,6 @@
     min-height: 0;
     flex: 1 1 auto;
     overflow-y: auto;
-    padding-bottom: var(--spacing_16);
   }
   .webui-session-layout .webui-session-composer {
     order: 2;
@@ -2551,7 +2550,6 @@
   /* The action row is glyph-only; the desktop keeps a 26px square per control and
      paints the revealed state on the row, not on each button. */
   .webui-message-action:hover:not(:disabled) {
-    background: var(--bg_interaction_tertiary_hover);
   }
 
   .webui-message-action svg {
