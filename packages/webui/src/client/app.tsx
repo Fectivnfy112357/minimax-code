@@ -66,7 +66,7 @@ import {
 import { readNoProjectFlag, writeNoProjectFlag } from "./no-project.js";
 import { LeftRail } from "./components/LeftRail.js";
 import { UserMenu } from "./components/UserMenu.js";
-import { WebuiWorkspacePanel, WebuiWorkspaceOverview, WebuiWorkspacePanelControls, projectWebuiTodos, type WebuiTodo } from "./components/WorkspacePanels.js";
+import { WebuiWorkspacePanel, WebuiWorkspaceOverview, WebuiWorkspacePanelControls, type WebuiTodo } from "./components/WorkspacePanels.js";
 import { Transcript } from "./components/Transcript.js";
 import { initialWebuiStreamState, type WebuiStreamState } from "./stream.js";
 import {
@@ -88,6 +88,14 @@ import type {
   WebuiStreamFrame,
   WebuiVersionInfo,
 } from "../server/port.js";
+import {
+  initialWebuiWorkspaceProgress,
+  projectWebuiWorkspaceHistory,
+  reduceWebuiWorkspaceProgressEvent,
+  webuiWorkspaceSubagentStatus,
+  type WebuiWorkspaceProgressState,
+  type WebuiWorkspaceSubagent,
+} from "./workspace-progress.js";
 
 export interface WebuiClientMessage {
   readonly msgId: string;
@@ -108,6 +116,7 @@ export interface WebuiClientSession {
   readonly isDefaultWorkspace?: boolean;
   readonly sessionKind?: string;
   readonly parentSessionId?: string;
+  readonly status?: unknown;
 }
 
 export interface WebuiClientSessionPage {
@@ -2346,6 +2355,14 @@ function WebuiComposer({
     const unsubscribe = watchEvents?.(
       (event) => {
         if (eventSessionId(event) !== sessionId) return;
+        setStream((current) => ({
+          ...current,
+          workspaceProgress: reduceWebuiWorkspaceProgressEvent(
+            current.workspaceProgress,
+            { type: event.type, ...event.payload },
+            sessionId,
+          ),
+        }));
         if (event.type === "session.start") {
           setSending(true);
           setStream((current) => ({ ...current, phase: "streaming" }));
@@ -3292,7 +3309,9 @@ export function WebuiClientFoundationApp({
   const [teamModeChoices, setTeamModeChoices] =
     useState<TeamModeSessionChoices>(readTeamModeSessionChoices);
   const [pageError, setPageError] = useState<string | undefined>();
-  const [progressTodos, setProgressTodos] = useState<readonly WebuiTodo[]>([]);
+  const selectedRuntimeState = useSessionRuntimeState(selectedSessionId).state;
+  const [historyProgress, setHistoryProgress] =
+    useState<WebuiWorkspaceProgressState>(initialWebuiWorkspaceProgress);
   // Sessions visible to lookups: roots from the flat page plus any child
   // sessions surfaced through the tree projection. Without the tree the
   // flat list is the only source, matching the original behaviour.
@@ -3314,11 +3333,20 @@ export function WebuiClientFoundationApp({
     flatSessionsWithChildren.find((session) => session.sessionId === selectedSessionId)
       ?.agentName ?? "main";
   useEffect(() => {
-    if (!selectedSessionId || !loadMessages) { setProgressTodos([]); return; }
+    if (!selectedSessionId || !loadMessages) {
+      setHistoryProgress(initialWebuiWorkspaceProgress);
+      return;
+    }
     let cancelled = false;
     void loadMessages({ id: selectedSessionId }).then((result) => {
-      if (!cancelled) setProgressTodos(projectWebuiTodos((result.messages ?? []) as unknown as readonly Record<string, unknown>[]));
-    }).catch(() => { if (!cancelled) setProgressTodos([]); });
+      if (!cancelled)
+        setHistoryProgress(
+          projectWebuiWorkspaceHistory(
+            (result.messages ?? []) as unknown as readonly WebuiClientMessage[],
+            selectedSessionId,
+          ),
+        );
+    }).catch(() => { if (!cancelled) setHistoryProgress(initialWebuiWorkspaceProgress); });
     return () => { cancelled = true; };
   }, [loadMessages, selectedSessionId]);
   useEffect(() => {
@@ -3369,6 +3397,32 @@ export function WebuiClientFoundationApp({
       cancelled = true;
     };
   }, [loadSessionTree, sessionPage]);
+  const treeSubagents = useMemo<readonly WebuiWorkspaceSubagent[]>(() => {
+    const node = treePage.sessions.find(
+      (candidate) => candidate.session.sessionId === selectedSessionId,
+    );
+    return (node?.childSessions ?? []).map((child) => ({
+      sessionId: child.sessionId,
+      agentName: child.agentName,
+      ...(child.title ? { title: child.title } : {}),
+      status: webuiWorkspaceSubagentStatus(child.status),
+      ...(child.createdAt ? { createdAt: child.createdAt } : {}),
+      ...(child.updatedAt ? { updatedAt: child.updatedAt } : {}),
+      parentSessionId: selectedSessionId,
+    }));
+  }, [selectedSessionId, treePage.sessions]);
+  const progressTodos: readonly WebuiTodo[] =
+    selectedRuntimeState.stream.workspaceProgress.hasTodoSnapshot
+      ? selectedRuntimeState.stream.workspaceProgress.todos
+      : historyProgress.todos;
+  const progressSubagents = useMemo<readonly WebuiWorkspaceSubagent[]>(() => {
+    const merged = new Map<string, WebuiWorkspaceSubagent>();
+    for (const subagent of historyProgress.subagents) merged.set(subagent.sessionId, subagent);
+    for (const subagent of treeSubagents) merged.set(subagent.sessionId, subagent);
+    for (const subagent of selectedRuntimeState.stream.workspaceProgress.subagents)
+      merged.set(subagent.sessionId, { ...merged.get(subagent.sessionId), ...subagent });
+    return [...merged.values()].sort((left, right) => (left.createdAt ?? 0) - (right.createdAt ?? 0));
+  }, [historyProgress.subagents, selectedRuntimeState.stream.workspaceProgress.subagents, treeSubagents]);
   const loadMore =
     loadSessions && page.hasMore
       ? () => {
@@ -3473,6 +3527,18 @@ export function WebuiClientFoundationApp({
       );
     }
   };
+  const handleWorkspaceSubagentClick = useCallback(
+    (subagent: WebuiWorkspaceSubagent) => {
+      setSelectedSessionId(subagent.sessionId);
+      if (typeof window !== "undefined")
+        window.history.replaceState(
+          null,
+          "",
+          `${window.location.pathname}${window.location.search}${sessionHash(subagent.sessionId)}`,
+        );
+    },
+    [],
+  );
   const childSessions = selectedSessionId
     ? page.sessions.filter(
         (session) => session.parentSessionId === selectedSessionId,
@@ -3496,12 +3562,14 @@ export function WebuiClientFoundationApp({
   const [workspaceOverviewOpen, setWorkspaceOverviewOpen] = useState(true);
   const [workspaceEnvironmentCollapsed, setWorkspaceEnvironmentCollapsed] = useState(false);
   const [workspaceProgressCollapsed, setWorkspaceProgressCollapsed] = useState(false);
+  const [workspaceSubagentsCollapsed, setWorkspaceSubagentsCollapsed] = useState(false);
   const [workspacePanelTab, setWorkspacePanelTab] = useState<"files" | "canvas" | "terminal">("files");
   useEffect(() => {
     // Desktop derives these sections from the selected session/workspace. Do
     // not carry a previous session's collapsed state into the next session.
     setWorkspaceEnvironmentCollapsed(false);
     setWorkspaceProgressCollapsed(false);
+    setWorkspaceSubagentsCollapsed(false);
   }, [selectedSessionId]);
 
   return (
@@ -3647,7 +3715,7 @@ export function WebuiClientFoundationApp({
             className="relative flex min-h-0 min-w-0 flex-1 flex-row"
           >
             {!homeMode ? <WebuiWorkspacePanelControls filePanelOpen={workspacePanelOpen} workspaceOpen={workspaceOverviewOpen && !workspacePanelOpen} onOpenFiles={() => { setWorkspacePanelTab("files"); setWorkspacePanelOpen((value) => !value); }} onToggleWorkspace={() => setWorkspaceOverviewOpen((value) => !value)} /> : null}
-            {!homeMode && workspaceOverviewOpen && !workspacePanelOpen ? <WebuiWorkspaceOverview workspaceDir={selectedSession?.workspaceDir} isDefaultWorkspace={selectedSession?.isDefaultWorkspace} todos={progressTodos} showProgress={!homeMode} showEmptyProgress={true} getWorkspaceEnvironment={getWorkspaceEnvironment} mutateWorkspaceGit={mutateWorkspaceGit} environmentCollapsed={workspaceEnvironmentCollapsed} progressCollapsed={workspaceProgressCollapsed} onToggleEnvironment={() => setWorkspaceEnvironmentCollapsed((value) => !value)} onToggleProgress={() => setWorkspaceProgressCollapsed((value) => !value)} onOpenChanges={() => { setWorkspacePanelTab("files"); setWorkspacePanelOpen(true); }} onOpenTerminal={() => { setWorkspacePanelTab("terminal"); setWorkspacePanelOpen(true); }} /> : null}
+            {!homeMode && workspaceOverviewOpen && !workspacePanelOpen ? <WebuiWorkspaceOverview workspaceDir={selectedSession?.workspaceDir} isDefaultWorkspace={selectedSession?.isDefaultWorkspace} todos={progressTodos} subagents={progressSubagents} showProgress={!homeMode} showEmptyProgress={true} getWorkspaceEnvironment={getWorkspaceEnvironment} mutateWorkspaceGit={mutateWorkspaceGit} environmentCollapsed={workspaceEnvironmentCollapsed} progressCollapsed={workspaceProgressCollapsed} subagentsCollapsed={workspaceSubagentsCollapsed} onToggleEnvironment={() => setWorkspaceEnvironmentCollapsed((value) => !value)} onToggleProgress={() => setWorkspaceProgressCollapsed((value) => !value)} onToggleSubagents={() => setWorkspaceSubagentsCollapsed((value) => !value)} onMemberClick={handleWorkspaceSubagentClick} onOpenChanges={() => { setWorkspacePanelTab("files"); setWorkspacePanelOpen(true); }} onOpenTerminal={() => { setWorkspacePanelTab("terminal"); setWorkspacePanelOpen(true); }} /> : null}
             <div className="relative flex h-full min-w-0 flex-1 flex-col">
               <div
                 className="pointer-events-none absolute inset-x-0 top-6 z-[60] flex justify-center"

@@ -1,5 +1,10 @@
 import type { WebuiStreamFrame } from "../server/port.js";
 import type { WebuiTerminalFrame } from "../server/port.js";
+import {
+  initialWebuiWorkspaceProgress,
+  reduceWebuiWorkspaceProgressEvent,
+  type WebuiWorkspaceProgressState,
+} from "./workspace-progress.js";
 
 export interface WebuiTerminalStreamState {
   readonly outputByTerminal: Readonly<Record<string, string>>;
@@ -39,6 +44,8 @@ export interface WebuiStreamState {
   readonly messages: readonly WebuiStreamMessage[];
   readonly runtimeEvents: readonly Record<string, unknown>[];
   readonly actionDeltas: readonly Record<string, unknown>[];
+  /** The session-scoped Todo/Subagent projection fed by Desktop-compatible events. */
+  readonly workspaceProgress: WebuiWorkspaceProgressState;
   /** The server-owned projection snapshot carried by the current stream. */
   readonly projection?: unknown;
   readonly status?: string;
@@ -76,6 +83,7 @@ export const initialWebuiStreamState: WebuiStreamState = {
   messages: [],
   runtimeEvents: [],
   actionDeltas: [],
+  workspaceProgress: initialWebuiWorkspaceProgress,
   resumeRequired: false,
   transcriptIncomplete: false,
 };
@@ -239,6 +247,11 @@ export function applyFrameData(
   // state unchanged, mirroring the previous guard against bad bodies.
   const event = recognised.event;
   if (!event) return next;
+  const workspaceProgress = reduceWebuiWorkspaceProgressEvent(
+    next.workspaceProgress,
+    event,
+  );
+  next = { ...next, workspaceProgress };
   const type = event.type;
   if (type === 10 || type === "heartbeat") {
     return { ...next, phase: "streaming" };

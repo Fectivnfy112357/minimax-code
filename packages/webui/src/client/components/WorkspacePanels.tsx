@@ -8,31 +8,20 @@ import type {
   WebuiWorkspaceFileContent,
   WebuiWorkspaceGitMutationRequest,
 } from "../../server/port.js";
+import {
+  projectWebuiWorkspaceHistory,
+  type WebuiWorkspaceSubagent,
+  type WebuiWorkspaceTodo,
+} from "../workspace-progress.js";
 import { WebuiIconCheck, WebuiIconChevronDown, WebuiIconChevronLeft, WebuiIconClose, WebuiIconFile, WebuiIconFolder, WebuiIconGlobe, WebuiIconRunLocation, WebuiIconSidebarToggle } from "../icons.js";
 
-export type WebuiTodo = { readonly content: string; readonly status: "completed" | "in_progress" | "pending" };
+export type WebuiTodo = WebuiWorkspaceTodo;
 const DESKTOP_COPY = { environment: "环境信息", progress: "进度", progressEmpty: "跟踪较长任务的进度", newTerminal: "新建终端", terminalLimit: "最多可以打开 5 个终端", terminalLabel: "终端", terminalExited: "已退出", terminalEmptyTitle: "还没有终端", terminalEmptyDescription: "可直接在右侧面板中启动当前工作区的 Shell。", canvasEmptyTitle: "把文件放到画布上", canvasEmptyDescription: "添加图片或其他工作区文件，然后自由排列和调整大小。", fileClose: "关闭", changes: "变更", commit: "提交或推送", openTerminal: "打开终端", unsupported: "WebUI 尚未接入此操作" } as const;
 
 export function projectWebuiTodos(messages: readonly Record<string, unknown>[]): WebuiTodo[] {
-  for (const message of [...messages].reverse()) {
-    const calls = Array.isArray(message.toolCalls) ? message.toolCalls : [];
-    for (const call of [...calls].reverse()) {
-      const name = String((call as Record<string, unknown>).name ?? (call as Record<string, unknown>).toolName ?? "").toLowerCase();
-      if (name !== "todowrite" && name !== "todo_write") continue;
-      const input = ((call as Record<string, unknown>).input ?? (call as Record<string, unknown>).arguments) as Record<string, unknown> | undefined;
-      const todos = input?.todos;
-      if (!Array.isArray(todos)) continue;
-      return todos.flatMap((todo) => {
-        if (!todo || typeof todo !== "object") return [];
-        const value = todo as Record<string, unknown>;
-        const status = value.status;
-        return typeof value.content === "string" && (status === "completed" || status === "in_progress" || status === "pending")
-          ? [{ content: value.content, status }]
-          : [];
-      });
-    }
-  }
-  return [];
+  return projectWebuiWorkspaceHistory(
+    messages as never,
+  ).todos as WebuiTodo[];
 }
 
 export function WebuiProgressPanel({ todos, showProgress = true, showEmptyProgress = true, collapsed = false, onToggle }: { readonly todos: readonly WebuiTodo[]; readonly showProgress?: boolean; readonly showEmptyProgress?: boolean; readonly collapsed?: boolean; readonly onToggle?: () => void }): ReactElement | null {
@@ -51,6 +40,35 @@ export function WebuiProgressPanel({ todos, showProgress = true, showEmptyProgre
             <span className={todo.status === "completed" ? "line-through text-text_default_tertiary" : ""}>{todo.content}</span>
           </div>)}
         </div>
+      </div>
+    </div>
+  </div>;
+}
+
+export function WebuiSubagentsPanel({ subagents, collapsed = false, onToggle, onMemberClick }: {
+  readonly subagents: readonly WebuiWorkspaceSubagent[];
+  readonly collapsed?: boolean;
+  readonly onToggle?: () => void;
+  readonly onMemberClick?: (subagent: WebuiWorkspaceSubagent) => void;
+}): ReactElement | null {
+  if (subagents.length === 0) return null;
+  return <div className="webui-subagents-panel" data-webui-subagents-panel="true" data-workspace-section="true">
+    <button type="button" className="webui-workspace-section-title" onClick={onToggle} aria-expanded={!collapsed}>
+      <span data-workspace-section-title="true">Subagents</span>
+      <WebuiIconChevronDown className={collapsed ? "size-4 -rotate-90 text-icon_default_tertiary transition-transform duration-[180ms] ease-out" : "size-4 text-icon_default_tertiary transition-transform duration-[180ms] ease-out"} />
+    </button>
+    <div className={`grid transition-[grid-template-rows,opacity] duration-[180ms] ease-out ${collapsed ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100"}`} aria-hidden={collapsed}>
+      <div className="min-h-0 overflow-hidden">
+        {subagents.map((subagent) => {
+          const label = subagent.title?.trim() || subagent.agentName;
+          return <button type="button" className="webui-subagent-row" key={subagent.sessionId} onClick={() => onMemberClick?.(subagent)}>
+            <span className="webui-subagent-avatar" aria-hidden="true">🤖</span>
+            <span className="min-w-0 flex-1 truncate text-left">{label}</span>
+            <span className={`webui-subagent-status webui-subagent-status--${subagent.status}`} aria-label={subagent.status}>
+              {subagent.status === "completed" ? <WebuiIconCheck className="size-3" /> : subagent.status === "error" ? "!" : "·"}
+            </span>
+          </button>;
+        })}
       </div>
     </div>
   </div>;
@@ -150,10 +168,11 @@ export function WebuiWorkspacePanelControls({ filePanelOpen, workspaceOpen, onOp
   </div>;
 }
 
-export function WebuiWorkspaceOverview({ workspaceDir, isDefaultWorkspace = false, workspaceEnvironment, todos, showProgress = true, showEmptyProgress = true, getWorkspaceEnvironment, mutateWorkspaceGit, environmentCollapsed = false, progressCollapsed = false, onToggleEnvironment, onToggleProgress, onOpenChanges, onOpenTerminal }: { readonly workspaceDir?: string; readonly isDefaultWorkspace?: boolean; readonly workspaceEnvironment?: WebuiWorkspaceEnvironment; readonly todos: readonly WebuiTodo[]; readonly showProgress?: boolean; readonly showEmptyProgress?: boolean; readonly getWorkspaceEnvironment?: (request: { readonly workspaceDir: string }) => Promise<WebuiWorkspaceEnvironment>; readonly mutateWorkspaceGit?: (request: WebuiWorkspaceGitMutationRequest) => Promise<Record<string, unknown>>; readonly environmentCollapsed?: boolean; readonly progressCollapsed?: boolean; readonly onToggleEnvironment?: () => void; readonly onToggleProgress?: () => void; readonly onOpenChanges?: () => void; readonly onOpenTerminal?: () => void }): ReactElement {
+export function WebuiWorkspaceOverview({ workspaceDir, isDefaultWorkspace = false, workspaceEnvironment, todos, subagents = [], showProgress = true, showEmptyProgress = true, getWorkspaceEnvironment, mutateWorkspaceGit, environmentCollapsed = false, progressCollapsed = false, subagentsCollapsed = false, onToggleEnvironment, onToggleProgress, onToggleSubagents, onMemberClick, onOpenChanges, onOpenTerminal }: { readonly workspaceDir?: string; readonly isDefaultWorkspace?: boolean; readonly workspaceEnvironment?: WebuiWorkspaceEnvironment; readonly todos: readonly WebuiTodo[]; readonly subagents?: readonly WebuiWorkspaceSubagent[]; readonly showProgress?: boolean; readonly showEmptyProgress?: boolean; readonly getWorkspaceEnvironment?: (request: { readonly workspaceDir: string }) => Promise<WebuiWorkspaceEnvironment>; readonly mutateWorkspaceGit?: (request: WebuiWorkspaceGitMutationRequest) => Promise<Record<string, unknown>>; readonly environmentCollapsed?: boolean; readonly progressCollapsed?: boolean; readonly subagentsCollapsed?: boolean; readonly onToggleEnvironment?: () => void; readonly onToggleProgress?: () => void; readonly onToggleSubagents?: () => void; readonly onMemberClick?: (subagent: WebuiWorkspaceSubagent) => void; readonly onOpenChanges?: () => void; readonly onOpenTerminal?: () => void }): ReactElement {
   return <div className="webui-workspace-section-group" data-testid="workspace-section-group">
     <WebuiEnvironmentPanel workspaceDir={workspaceDir} isDefaultWorkspace={isDefaultWorkspace} workspaceEnvironment={workspaceEnvironment} getWorkspaceEnvironment={getWorkspaceEnvironment} mutateWorkspaceGit={mutateWorkspaceGit} collapsed={environmentCollapsed} onToggle={onToggleEnvironment} onOpenChanges={onOpenChanges} onOpenTerminal={onOpenTerminal} />
     <WebuiProgressPanel todos={todos} showProgress={showProgress} showEmptyProgress={showEmptyProgress} collapsed={progressCollapsed} onToggle={onToggleProgress} />
+    <WebuiSubagentsPanel subagents={subagents} collapsed={subagentsCollapsed} onToggle={onToggleSubagents} onMemberClick={onMemberClick} />
   </div>;
 }
 

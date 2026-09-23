@@ -358,12 +358,13 @@ export function createWebuiTransport({
     loadSessions: (cursor) =>
       request<WebuiClientSessionPage>("listSessions", {
         name: "main",
+        limit: 500,
         ...(cursor ? { cursor } : {}),
       }),
     loadSessionTree: (cursor) =>
       request<WebuiClientSessionTreePage>("getSessionTree", {
         name: "main",
-        limit: 50,
+        limit: 500,
         ...(cursor ? { cursor } : {}),
       }),
     listArchivedSessions: () => request<WebuiClientSessionPage>("listSessions", { name: "main", includeArchived: true, onlyArchived: true }),

@@ -57,6 +57,57 @@ describe("WebUI mixed stream reducer", () => {
     expect(state.phase).toBe("done");
   });
 
+  it("projects Desktop-compatible Todo and Subagent events into session state", () => {
+    let state = reduceWebuiStreamFrame(
+      initialWebuiStreamState,
+      frame(JSON.stringify({
+        type: "todo_updated",
+        todos: [
+          { content: "完成面板", status: "completed", priority: "high" },
+          { content: "验证交互", status: "in_progress", priority: "medium" },
+        ],
+      })),
+    );
+    state = reduceWebuiStreamFrame(
+      state,
+      frame(JSON.stringify({
+        type: "generic",
+        generic: {
+          eventType: "session.spawned",
+          data: {
+            sessionId: "child-1",
+            agentName: "goal-verification",
+            title: "Goal verification",
+            parentSessionId: "parent-1",
+          },
+        },
+      })),
+    );
+    state = reduceWebuiStreamFrame(
+      state,
+      frame(JSON.stringify({
+        type: "generic",
+        generic: {
+          eventType: "session.status_updated",
+          data: { sessionId: "child-1", status: "completed" },
+        },
+      })),
+    );
+    expect(state.workspaceProgress.todos).toEqual([
+      { content: "完成面板", status: "completed", priority: "high" },
+      { content: "验证交互", status: "in_progress", priority: "medium" },
+    ]);
+    expect(state.workspaceProgress.subagents).toEqual([
+      {
+        sessionId: "child-1",
+        agentName: "goal-verification",
+        title: "Goal verification",
+        status: "completed",
+        parentSessionId: "parent-1",
+      },
+    ]);
+  });
+
   it("keeps committed tool calls and their results in the live transcript", () => {
     let state = reduceWebuiStreamFrame(
       initialWebuiStreamState,

@@ -32,6 +32,7 @@ const app = <WebuiClientFoundationApp
     label="webui-foundation"
     hostLabel={location.host}
     loadSessions={transport.loadSessions}
+    loadSessionTree={transport.loadSessionTree}
     listArchivedSessions={transport.listArchivedSessions}
     loadMessages={transport.loadMessages}
     listWorkspaceFileTree={transport.listWorkspaceFileTree}

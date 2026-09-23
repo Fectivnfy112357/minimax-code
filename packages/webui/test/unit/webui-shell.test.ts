@@ -56,7 +56,7 @@ import {
   reduceWebuiStreamFrame,
   type WebuiStreamState,
 } from "../../src/client/stream.js";
-import { projectWebuiTodos, WebuiProgressPanel, WebuiWorkspaceOverview, WebuiWorkspacePanel, WebuiWorkspacePanelControls } from "../../src/client/components/WorkspacePanels.js";
+import { projectWebuiTodos, WebuiProgressPanel, WebuiSubagentsPanel, WebuiWorkspaceOverview, WebuiWorkspacePanel, WebuiWorkspacePanelControls } from "../../src/client/components/WorkspacePanels.js";
 import type {
   WebuiClientMessageLoader,
   WebuiClientMessageSender,
@@ -106,6 +106,7 @@ const INERT_NAV_LABELS = ["插件", "定时", "网站", "远程"];
 describe("WebUI shell", () => {
   it("projects the latest desktop todowrite state and exposes only the three workspace tabs", () => {
     expect(projectWebuiTodos([{ toolCalls: [{ name: "todowrite", input: { todos: [{ content: "完成面板", status: "in_progress" }] } }] }])).toEqual([{ content: "完成面板", status: "in_progress" }]);
+    expect(projectWebuiTodos([{ msgContent: JSON.stringify({ eventType: "todo_updated", todos: [{ content: "事件进度", status: "completed", priority: "high" }] }) }])).toEqual([{ content: "事件进度", status: "completed", priority: "high" }]);
     const markup = renderToStaticMarkup(createElement(WebuiWorkspacePanel, { workspaceDir: "/tmp", todos: [] }));
     expect(markup).toContain('data-testid="workspace-panel"');
     expect(markup).toContain("查看文件");
@@ -114,6 +115,16 @@ describe("WebUI shell", () => {
     expect(markup).not.toContain('data-webui-progress-panel="true"');
     expect(markup).not.toContain("浏览器");
     expect(markup).not.toContain("Mini App");
+  });
+
+  it("renders Desktop-compatible Subagents and exposes child selection", () => {
+    const markup = renderToStaticMarkup(createElement(WebuiSubagentsPanel, {
+      subagents: [{ sessionId: "child-1", agentName: "goal-verification", title: "Goal verification", status: "completed" }],
+    }));
+    expect(markup).toContain("Subagents");
+    expect(markup).toContain("Goal verification");
+    expect(markup).toContain("webui-subagent-status--completed");
+    expect(markup).toContain('data-webui-subagents-panel="true"');
   });
 
   it("keeps the desktop environment/progress card separate from the file panel", () => {
