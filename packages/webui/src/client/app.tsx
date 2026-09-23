@@ -367,6 +367,65 @@ export {
   TurnElapsedRow,
 } from "./components/TranscriptPrimitives.js";
 
+// W3 tier 2 — diff state + card moved to ./components/DiffCard.tsx
+import {
+  buildWebuiDiffMutationRequest,
+  confirmWebuiDiffMutation,
+  initialWebuiDiffState,
+  reduceWebuiDiffState,
+  WebuiDiffCard,
+} from "./components/DiffCard.js";
+export {
+  buildWebuiDiffMutationRequest,
+  confirmWebuiDiffMutation,
+  initialWebuiDiffState,
+  reduceWebuiDiffState,
+  WebuiDiffCard,
+} from "./components/DiffCard.js";
+
+// W3 tier 2 — message renderer moved to ./components/MessageItem.tsx
+import { MessageItem } from "./components/MessageItem.js";
+export { MessageItem } from "./components/MessageItem.js";
+
+// W3 tier 2 — context menu + placement helper moved to ./components/ContextMenu.tsx
+import {
+  placeWebuiContextMenu,
+  WebuiContextMenu,
+  type WebuiContextMenuItem,
+} from "./components/ContextMenu.js";
+export {
+  placeWebuiContextMenu,
+  WebuiContextMenu,
+} from "./components/ContextMenu.js";
+export type { WebuiContextMenuItem } from "./components/ContextMenu.js";
+
+// W3 tier 2 — RailRow moved to ./components/RailRow.tsx (still used by WebuiProjectList / WebuiSessionList below; no re-export — RailRow is private)
+import { RailRow } from "./components/RailRow.js";
+
+// W3 tier 2 — message actions cluster moved to ./components/MessageActions.tsx
+import {
+  copyWebuiMessageText,
+  formatWebuiMessageTimestamp,
+  scheduleWebuiCopiedReset,
+  toggleWebuiFeedback,
+  WebuiFeedbackActions,
+  WebuiMessageActionButton,
+  WebuiMessageActions,
+  WebuiRewindDialog,
+  type WebuiMessageActionCapabilities,
+} from "./components/MessageActions.js";
+export {
+  copyWebuiMessageText,
+  formatWebuiMessageTimestamp,
+  scheduleWebuiCopiedReset,
+  toggleWebuiFeedback,
+  WebuiFeedbackActions,
+  WebuiMessageActionButton,
+  WebuiMessageActions,
+  WebuiRewindDialog,
+} from "./components/MessageActions.js";
+export type { WebuiMessageActionCapabilities } from "./components/MessageActions.js";
+
 // (WebuiClientMessage, WebuiClientSession, page/loader types,
 //  WebuiTranscriptItem, WebuiDiffState/Action, etc. moved to ./contracts.ts in W2)
 
@@ -388,549 +447,9 @@ export function sessionHash(sessionId: string): string {
 
 // (tool helpers moved to ./projection/tool-projection.ts in W2)
 
-export const initialWebuiDiffState: WebuiDiffState = {
-  unsupported: false,
-  busy: false,
-  expanded: false,
-  reviewing: false,
-};
+// (W3 tier 2: diff state + WebuiDiffCard moved to ./components/DiffCard.tsx)
 
-export function reduceWebuiDiffState(
-  state: WebuiDiffState,
-  action: WebuiDiffStateAction,
-): WebuiDiffState {
-  switch (action.type) {
-    case "loaded":
-      return { ...state, view: action.view, unsupported: false, busy: false };
-    case "unsupported":
-    case "mutation-failed":
-      return { ...state, unsupported: true, busy: false };
-    case "begin-mutation":
-      return state.busy ? state : { ...state, busy: true };
-    case "mutation-succeeded":
-      return { ...state, view: action.view, unsupported: false, busy: false };
-    case "toggle-expanded":
-      return { ...state, expanded: !state.expanded };
-    case "toggle-review":
-      return { ...state, reviewing: !state.reviewing };
-  }
-}
-
-export function buildWebuiDiffMutationRequest(
-  state: WebuiDiffState,
-  request: WebuiGetTurnDiffRequest,
-  action: "revert" | "reapply",
-): WebuiRevertTurnDiffRequest | WebuiReapplyTurnDiffRequest | undefined {
-  if (state.busy || state.unsupported || !state.view?.changeSetId) return undefined;
-  if (action === "revert" && (state.view.status === "reverted" || state.view.canUndo === false)) return undefined;
-  if (action === "reapply" && (state.view.status !== "reverted" || state.view.canReapply === false)) return undefined;
-  return { ...request, changeSetId: state.view.changeSetId };
-}
-
-export function confirmWebuiDiffMutation(
-  state: WebuiDiffState,
-  confirmed: boolean,
-): WebuiDiffState {
-  return confirmed
-    ? reduceWebuiDiffState(state, { type: "begin-mutation" })
-    : state;
-}
-
-export function WebuiDiffCard({
-  sessionId,
-  assistantMessageId,
-  turnId,
-  changeSetId,
-  initialView,
-  initialState,
-  getTurnDiff,
-  revertTurnDiff,
-  reapplyTurnDiff,
-}: {
-  readonly sessionId?: string;
-  readonly assistantMessageId?: string;
-  readonly turnId?: string;
-  readonly changeSetId?: string;
-  readonly initialView?: WebuiTurnDiffView;
-  readonly initialState?: Partial<WebuiDiffState>;
-  readonly getTurnDiff?: WebuiTransport["getTurnDiff"];
-  readonly revertTurnDiff?: WebuiTransport["revertTurnDiff"];
-  readonly reapplyTurnDiff?: WebuiTransport["reapplyTurnDiff"];
-}): ReactElement | null {
-  const [diffState, setDiffState] = useState<WebuiDiffState>(() => ({
-    ...initialWebuiDiffState,
-    ...initialState,
-    ...(initialView ? { view: initialView } : {}),
-  }));
-  const { view, unsupported, busy, expanded, reviewing } = diffState;
-  const request = useMemo<WebuiGetTurnDiffRequest | undefined>(() => {
-    if (!sessionId || !getTurnDiff) return undefined;
-    // The runtime keys a turn diff by the turn: an `assistantMessageId` is
-    // answered only for the turn's LAST assistant message, and any other
-    // message of the same turn yields an empty file list (it also wins over
-    // `turnId` when both are sent). The rendered group is keyed by its first
-    // message, so ask by turn whenever the group knows one.
-    return {
-      id: sessionId,
-      ...(turnId ? { turnId } : assistantMessageId ? { assistantMessageId } : {}),
-      ...(changeSetId ? { changeSetId } : {}),
-    };
-  }, [assistantMessageId, changeSetId, getTurnDiff, sessionId, turnId]);
-
-  useEffect(() => {
-    if (!request || !getTurnDiff) return undefined;
-    let cancelled = false;
-    void getTurnDiff(request)
-      .then((nextView) => {
-        if (!cancelled) setDiffState((current) => reduceWebuiDiffState(current, { type: "loaded", view: nextView }));
-      })
-      .catch(() => {
-        // The runtime deliberately reports an unavailable diff capability as a
-        // neutral card state. The client must not infer success from edit-tool
-        // output when the authoritative application is unavailable.
-        if (!cancelled) setDiffState((current) => reduceWebuiDiffState(current, { type: "unsupported" }));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [getTurnDiff, request]);
-
-  const mutate = async (action: "revert" | "reapply") => {
-    if (!request || busy) return;
-    const handler = action === "revert" ? revertTurnDiff : reapplyTurnDiff;
-    if (!handler) {
-      setDiffState((current) => reduceWebuiDiffState(current, { type: "unsupported" }));
-      return;
-    }
-    const confirmed = window.confirm(action === "revert" ? "撤销这轮文件改动？" : "重新应用这轮文件改动？");
-    if (!confirmed) return;
-    const mutationRequest = buildWebuiDiffMutationRequest(diffState, request, action);
-    if (!mutationRequest) return;
-    setDiffState((current) => confirmWebuiDiffMutation(current, confirmed));
-    try {
-      const result = await handler(mutationRequest);
-      const nextView = action === "revert"
-        ? (result as WebuiRevertTurnDiffResult).turnDiff
-        : (result as WebuiReapplyTurnDiffResult);
-      if (nextView) setDiffState((current) => reduceWebuiDiffState(current, { type: "mutation-succeeded", view: nextView }));
-      else setDiffState((current) => reduceWebuiDiffState(current, { type: "mutation-failed" }));
-    } catch {
-      setDiffState((current) => reduceWebuiDiffState(current, { type: "mutation-failed" }));
-    } finally {
-      setDiffState((current) => ({ ...current, busy: false }));
-    }
-  };
-
-  if (unsupported)
-    return (
-      <div className="webui-diff-card webui-diff-card--neutral" data-webui-diff-card="true" data-webui-diff-state="runtime-unsupported">
-        <span className="webui-diff-header-title">文件改动暂不可用</span>
-        <span className="webui-diff-neutral-copy">当前运行时未提供 session diff 能力。</span>
-      </div>
-    );
-  if ((!getTurnDiff || !request) && !view) return null;
-  if (!view || (view.fileChanges ?? []).length === 0) return null;
-  const files = view.fileChanges ?? [];
-  const shown = expanded ? files : files.slice(0, 3);
-  const totalAdded = files.reduce((sum, file) => sum + file.additions, 0);
-  const totalDeleted = files.reduce((sum, file) => sum + file.deletions, 0);
-  const reverted = view.status === "reverted";
-  const basenameOf = (path: string): string => {
-    if (!path) return "";
-    const normalized = path.replace(/\\/g, "/");
-    const idx = normalized.lastIndexOf("/");
-    return idx === -1 ? normalized : normalized.slice(idx + 1);
-  };
-  return (
-    <div
-      className="webui-diff-card"
-      data-webui-diff-card="true"
-      data-webui-diff-state={view.status ?? "active"}
-      data-change-set-id={view.changeSetId}
-      data-source-message-id={view.sourceMessageId ?? assistantMessageId}
-    >
-      <div className="webui-diff-header">
-        <span className="webui-diff-icon" aria-hidden="true"><WebuiIconFile /></span>
-        <span className="webui-diff-header-title">{`已编辑 ${files.length} 个文件`}</span>
-        <span className="webui-diff-header-stats" data-webui-diff-stats="true">
-          <span className="webui-diff-add">{`+${totalAdded}`}</span>
-          {/* Desktop's diff card hides the deletion badge when no lines
-           * were removed from the change set — keeping the row additions-only
-           * avoids the misleading "+{n}-0" stat the WebUI used to render. */}
-          {totalDeleted > 0 ? <span className="webui-diff-del">{`-${totalDeleted}`}</span> : null}
-        </span>
-      </div>
-      <ul className="webui-diff-files">
-        {shown.map((file) => (
-          <li className="webui-diff-file" key={file.file} data-webui-diff-file="true" data-file-path={file.file}>
-            <WebuiIconFile className="webui-diff-file-icon" />
-            <span className="webui-diff-file-name" title={file.file}>{basenameOf(file.file)}</span>
-            <span className="webui-diff-file-stats" data-webui-diff-file-stats="true">
-              <span className="webui-diff-add">{`+${file.additions}`}</span>
-              {file.deletions > 0 ? <span className="webui-diff-del">{`-${file.deletions}`}</span> : null}
-            </span>
-          </li>
-        ))}
-      </ul>
-      {files.length > 3 ? (
-        <button type="button" className="webui-diff-expand" data-webui-diff-expand="true" onClick={() => setDiffState((current) => reduceWebuiDiffState(current, { type: "toggle-expanded" }))}>
-          {expanded ? "收起" : `展开其余 ${files.length - 3} 个`}
-        </button>
-      ) : null}
-      <div className="webui-diff-actions">
-        <button type="button" className="webui-diff-review" data-webui-diff-review="true" onClick={() => setDiffState((current) => reduceWebuiDiffState(current, { type: "toggle-review" }))}>
-          {reviewing ? "关闭 Review" : "Review"}
-        </button>
-        {reverted ? (
-          <button type="button" className="webui-diff-reapply" disabled={busy || view.canReapply === false} onClick={() => void mutate("reapply")}>
-            重新应用
-          </button>
-        ) : (
-          <button type="button" className="webui-diff-revert" disabled={busy || view.canUndo === false} onClick={() => void mutate("revert")}>
-            撤销
-          </button>
-        )}
-      </div>
-      {reviewing ? (
-        <div className="webui-diff-review-panel" data-webui-diff-review-panel="true">
-          {files.map((file) => (
-            <details key={`${file.file}-review`} open>
-              <summary>{file.file}</summary>
-              {file.diff ? <pre>{file.diff}</pre> : file.patch ? <pre>{JSON.stringify(file.patch, null, 2)}</pre> : <p>当前运行时没有提供该文件的 patch 预览。</p>}
-            </details>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function WebuiAssistantBody({
-  messageId,
-  sessionId,
-  assistantMessageId,
-  turnId,
-  changeSetId,
-  initialDiff,
-  getTurnDiff,
-  revertTurnDiff,
-  reapplyTurnDiff,
-  thinking,
-  thinkingDurationMs,
-  processingStartedAtMs,
-  totalRequestDurationMs,
-  totalOutputTokens,
-  wallClockDurationMs,
-  tools,
-  answers,
-  attachments,
-  streaming = false,
-}: {
-  readonly messageId: string;
-  readonly sessionId?: string;
-  readonly assistantMessageId?: string;
-  readonly turnId?: string;
-  readonly changeSetId?: string;
-  readonly initialDiff?: WebuiTurnDiffView;
-  readonly getTurnDiff?: WebuiTransport["getTurnDiff"];
-  readonly revertTurnDiff?: WebuiTransport["revertTurnDiff"];
-  readonly reapplyTurnDiff?: WebuiTransport["reapplyTurnDiff"];
-  readonly thinking?: string;
-  readonly thinkingDurationMs?: number;
-  readonly processingStartedAtMs?: number;
-  /** Sum of `usage.requestDurationMs` across the turn's assistant messages
-   *  when the runtime reports it. Falls back to `wallClockDurationMs`. */
-  readonly totalRequestDurationMs?: number;
-  /** Sum of `usage.outputTokens` across the turn's assistant messages. */
-  readonly totalOutputTokens?: number;
-  /** Wall-clock duration computed from message timestamps inside the turn
-   *  (oldest user → newest assistant). Used when the runtime doesn't emit
-   *  a per-request duration. */
-  readonly wallClockDurationMs?: number;
-  readonly tools?: readonly Record<string, unknown>[];
-  readonly answers: readonly string[];
-  readonly attachments?: readonly MessageAttachment[];
-  readonly streaming?: boolean;
-}): ReactElement {
-  return (
-    <div
-      className="webui-assistant-body text-sm space-y-4"
-      data-webui-assistant-body={messageId}
-    >
-      {thinking || tools?.length ? (
-        <WebuiTurnProcess
-          active={streaming}
-          startedAtMs={processingStartedAtMs}
-          {...(!streaming && totalRequestDurationMs !== undefined
-            ? { endedAtMs: (processingStartedAtMs ?? 0) + totalRequestDurationMs }
-            : {})}
-          tokenCount={
-            !streaming && typeof totalOutputTokens === "number"
-              ? totalOutputTokens
-              : answers.reduce((sum, answer) => sum + answer.length, 0)
-          }
-          requestDurationMs={totalRequestDurationMs}
-          wallClockDurationMs={wallClockDurationMs}
-        >
-          <div className="activity-group-content">
-            {thinking ? (
-              <WebuiThinkingBlock
-                text={thinking}
-                durationMs={thinkingDurationMs}
-                streaming={streaming}
-                processingStartedAtMs={processingStartedAtMs}
-              />
-            ) : null}
-            {tools?.length ? <WebuiActivityGroup tools={tools} authoritativeDiffAvailable={Boolean(getTurnDiff)} streaming={streaming} /> : null}
-          </div>
-        </WebuiTurnProcess>
-      ) : null}
-      {answers.map((answer, index) => (
-        <div
-          key={`${messageId}-answer-${index}`}
-          className="webui-assistant-answer"
-          data-webui-message-kind="assistant"
-        >
-          <WebuiMarkdown source={answer} />
-        </div>
-      ))}
-      {/* Desktop places the diff card after the assistant body so the
-       * edited-files summary sits at the end of the message. */}
-      <WebuiDiffCard
-        sessionId={sessionId}
-        assistantMessageId={assistantMessageId ?? messageId}
-        turnId={turnId}
-        changeSetId={changeSetId}
-        initialView={initialDiff}
-        getTurnDiff={getTurnDiff}
-        revertTurnDiff={revertTurnDiff}
-        reapplyTurnDiff={reapplyTurnDiff}
-      />
-      {attachments?.length ? (
-        <MessageAttachments attachments={attachments} />
-      ) : null}
-    </div>
-  );
-}
-
-/**
- * The single message renderer shared by persisted history and the live turn.
- * The shell still decides which source owns the turn (history after done,
- * composer while active), but the DOM for either role is produced here.
- */
-export function MessageItem({
-  messageId,
-  role,
-  sessionId,
-  assistantMessageId,
-  turnId,
-  changeSetId,
-  initialDiff,
-  getTurnDiff,
-  revertTurnDiff,
-  reapplyTurnDiff,
-  actions,
-  timestamp,
-  isGoal = false,
-  getSessionForkOptions,
-  forkSession,
-  getSessionRewindPreview,
-  rewindSession,
-  editSessionMessage,
-  onMutationComplete,
-  totalRequestDurationMs,
-  totalOutputTokens,
-  wallClockDurationMs,
-  userText,
-  thinking,
-  thinkingDurationMs,
-  processingStartedAtMs,
-  tools,
-  answers,
-  attachments,
-  streaming = false,
-  streamMessageId,
-  messageRootId,
-}: {
-  readonly messageId: string;
-  readonly role: "user" | "assistant";
-  readonly sessionId?: string;
-  readonly assistantMessageId?: string;
-  readonly turnId?: string;
-  readonly changeSetId?: string;
-  readonly initialDiff?: WebuiTurnDiffView;
-  readonly getTurnDiff?: WebuiTransport["getTurnDiff"];
-  readonly revertTurnDiff?: WebuiTransport["revertTurnDiff"];
-  readonly reapplyTurnDiff?: WebuiTransport["reapplyTurnDiff"];
-  readonly actions?: WebuiMessageActionCapabilities;
-  readonly timestamp?: number;
-  readonly isGoal?: boolean;
-  readonly getSessionForkOptions?: WebuiTransport["getSessionForkOptions"];
-  readonly forkSession?: WebuiTransport["forkSession"];
-  readonly getSessionRewindPreview?: WebuiTransport["getSessionRewindPreview"];
-  readonly rewindSession?: WebuiTransport["rewindSession"];
-  readonly editSessionMessage?: WebuiTransport["editSessionMessage"];
-  readonly onMutationComplete?: () => void;
-  readonly userText?: string;
-  readonly thinking?: string;
-  readonly thinkingDurationMs?: number;
-  readonly processingStartedAtMs?: number;
-  readonly tools?: readonly Record<string, unknown>[];
-  readonly answers?: readonly string[];
-  readonly attachments?: readonly MessageAttachment[];
-  readonly streaming?: boolean;
-  readonly streamMessageId?: string;
-  readonly messageRootId?: string;
-  readonly totalRequestDurationMs?: number;
-  readonly totalOutputTokens?: number;
-  readonly wallClockDurationMs?: number;
-}): ReactElement {
-  const [editing, setEditing] = useState(false);
-  const [editText, setEditText] = useState(userText ?? "");
-  const [rewindOpen, setRewindOpen] = useState(false);
-  const [rewindPreview, setRewindPreview] = useState<WebuiGetSessionRewindPreviewResult>();
-  const [rewindLoading, setRewindLoading] = useState(false);
-  const [mutationBusy, setMutationBusy] = useState(false);
-  const [mutationError, setMutationError] = useState<string>();
-  const [forkTitle, setForkTitle] = useState("");
-  const [forkOpen, setForkOpen] = useState(false);
-  const [forkOptions, setForkOptions] = useState<WebuiGetSessionForkOptionsResult>();
-  const openRewind = () => {
-    setRewindOpen(true);
-    setRewindPreview(undefined);
-    setMutationError(undefined);
-    if (!sessionId || !getSessionRewindPreview) return;
-    setRewindLoading(true);
-    void getSessionRewindPreview({ id: sessionId, userMessageId: messageId })
-      .then(setRewindPreview)
-      .catch((error: unknown) => setMutationError(error instanceof Error ? error.message : String(error)))
-      .finally(() => setRewindLoading(false));
-  };
-  const confirmRewind = (rewindTurnDiff: boolean) => {
-    if (!sessionId || !rewindSession) return;
-    setMutationBusy(true);
-    void rewindSession(buildWebuiRewindRequest(sessionId, messageId, webuiClientRequestId("rewind"), rewindTurnDiff))
-      .then(() => { setRewindOpen(false); onMutationComplete?.(); })
-      .catch((error: unknown) => setMutationError(error instanceof Error ? error.message : String(error)))
-      .finally(() => setMutationBusy(false));
-  };
-  const submitEdit = () => {
-    if (!sessionId || !editSessionMessage) return;
-    const request = buildWebuiEditRequest(sessionId, messageId, webuiClientRequestId("edit"), editText);
-    if (!request) return;
-    setMutationBusy(true);
-    void editSessionMessage(request)
-      .then(() => { setEditing(false); onMutationComplete?.(); })
-      .catch((error: unknown) => setMutationError(error instanceof Error ? error.message : String(error)))
-      .finally(() => setMutationBusy(false));
-  };
-  const confirmFork = () => {
-    if (!sessionId || !forkSession || forkOptions?.canFork === false) return;
-    setMutationBusy(true);
-    void forkSession(buildWebuiMessageForkRequest(sessionId, messageId, webuiClientRequestId("fork"), forkTitle))
-      .then(() => { setForkOpen(false); onMutationComplete?.(); })
-      .catch((error: unknown) => setMutationError(error instanceof Error ? error.message : String(error)))
-      .finally(() => setMutationBusy(false));
-  };
-  const openFork = () => {
-    setForkOpen(true);
-    setForkOptions(undefined);
-    if (!sessionId || !getSessionForkOptions) return;
-    void getSessionForkOptions({ id: sessionId, assistantMessageId: messageId })
-      .then((nextOptions) => {
-        setForkOptions(nextOptions);
-        if (nextOptions.suggestedTitle) setForkTitle(nextOptions.suggestedTitle);
-      })
-      .catch((error: unknown) => setMutationError(error instanceof Error ? error.message : String(error)));
-  };
-  const actionProps = {
-    role,
-    messageId,
-    copyText: role === "user" ? userText ?? "" : answers?.join("\n\n") ?? "",
-    actions,
-    onRewind: role === "user" ? openRewind : undefined,
-    onEdit: role === "user" ? () => { setEditText(userText ?? ""); setEditing(true); } : undefined,
-    onFork: role === "assistant" ? openFork : undefined,
-    timestamp,
-  };
-  if (role === "user") {
-    return (
-      <div
-        className="webui-message message-animate-in group relative"
-        data-webui-stream-message={streamMessageId}
-        data-webui-message-root={messageRootId ?? messageId}
-        data-webui-message-role="user"
-        data-testid="message-item"
-        data-role="user"
-        data-message-id={messageId}
-        data-webui-goal-message={isGoal ? "true" : undefined}
-        data-message-timestamp={timestamp}
-      >
-        <div className="flex w-full justify-end">
-          <div className="flex w-full flex-col items-end gap-spacing_8">
-            {editing ? (
-              <div className="webui-user-inline-editor" data-testid="user-message-inline-editor">
-                <textarea aria-label="编辑" value={editText} onChange={(event) => setEditText(event.target.value)} autoFocus />
-                <div className="webui-inline-editor-actions"><button type="button" onClick={() => setEditing(false)} disabled={mutationBusy}>取消</button><button type="button" onClick={submitEdit} disabled={mutationBusy || !editText.trim()}>发送</button></div>
-              </div>
-            ) : <div
-              className="webui-user-bubble bg-bg_grouped_tertiary rounded-[16px] px-3 py-2 max-w-[80%]"
-              data-webui-user-bubble="true"
-            >
-              <div className="webui-user-text-clamp">
-                <p
-                  className="webui-user-text"
-                  data-webui-message-kind="user"
-                  data-webui-user-text="true"
-                >
-                  <span>{userText ?? ""}</span>
-                </p>
-              </div>
-            </div>}
-            {!editing ? <WebuiMessageActions {...actionProps} /> : null}
-            {rewindOpen ? <WebuiRewindDialog messageId={messageId} preview={rewindPreview} loading={rewindLoading} error={mutationError} busy={mutationBusy} onClose={() => setRewindOpen(false)} onConfirm={confirmRewind} /> : null}
-          </div>
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div
-      className="webui-message message-animate-in group relative"
-      data-webui-stream-message={streamMessageId}
-      data-webui-message-root={messageRootId ?? messageId}
-      data-webui-message-role="assistant"
-      data-testid="message-item"
-      data-role="assistant"
-      data-message-id={messageId}
-    >
-      <WebuiAssistantBody
-        messageId={messageId}
-        sessionId={sessionId}
-        assistantMessageId={assistantMessageId}
-        turnId={turnId}
-        changeSetId={changeSetId}
-        initialDiff={initialDiff}
-        getTurnDiff={getTurnDiff}
-        revertTurnDiff={revertTurnDiff}
-        reapplyTurnDiff={reapplyTurnDiff}
-        thinking={thinking}
-        thinkingDurationMs={thinkingDurationMs}
-        tools={tools}
-        answers={answers ?? []}
-        attachments={attachments}
-        streaming={streaming}
-        processingStartedAtMs={processingStartedAtMs}
-        totalRequestDurationMs={totalRequestDurationMs}
-        totalOutputTokens={totalOutputTokens}
-        wallClockDurationMs={wallClockDurationMs}
-      />
-      <WebuiMessageActions {...actionProps} />
-      {forkOpen ? <div className="webui-message-dialog" role="dialog" aria-modal="true" data-testid="fork-dialog"><div className="webui-message-dialog-surface"><h3>复制为新会话</h3><p>{forkOptions?.unavailableReason ?? "保留当前上下文，在新会话中继续"}</p><input aria-label="会话名称" value={forkTitle} onChange={(event) => setForkTitle(event.target.value)} placeholder="使用简短且不同的名称，便于识别" disabled={forkOptions?.canFork === false} /><div className="webui-message-dialog-actions"><button type="button" onClick={() => setForkOpen(false)} disabled={mutationBusy}>取消</button><button type="button" onClick={confirmFork} disabled={mutationBusy || forkOptions?.canFork === false}>复制并进入</button></div></div></div> : null}
-      {mutationError && !rewindOpen && !forkOpen ? <p role="alert" className="webui-message-mutation-error">{mutationError}</p> : null}
-    </div>
-  );
-}
+// (W3 tier 2: MessageItem moved to ./components/MessageItem.tsx)
 
 export interface WebuiClientFoundationAppProps {
   // Non-method props (seed / UI / SSR). The 78 method props that used to
@@ -1186,141 +705,7 @@ export function sortWebuiProjectSessionIds(
   });
 }
 
-export function placeWebuiContextMenu({
-  x,
-  y,
-  width,
-  height,
-  viewportWidth,
-  viewportHeight,
-  padding = 8,
-}: {
-  readonly x: number;
-  readonly y: number;
-  readonly width: number;
-  readonly height: number;
-  readonly viewportWidth: number;
-  readonly viewportHeight: number;
-  readonly padding?: number;
-}): { readonly left: number; readonly top: number } {
-  const maxLeft = Math.max(padding, viewportWidth - width - padding);
-  const left = Math.min(Math.max(padding, x), maxLeft);
-  const flippedTop = y + height + padding > viewportHeight ? y - height : y;
-  const maxTop = Math.max(padding, viewportHeight - height - padding);
-  return { left, top: Math.min(Math.max(padding, flippedTop), maxTop) };
-}
-
-export type WebuiContextMenuItem =
-  | { readonly kind: "divider"; readonly key: string }
-  | {
-      readonly kind: "item";
-      readonly key: string;
-      readonly label: string;
-      readonly icon?: ReactElement;
-      readonly danger?: boolean;
-      readonly disabled?: boolean;
-      readonly onSelect?: () => void | Promise<void>;
-      readonly submenu?: readonly WebuiContextMenuItem[];
-    };
-
-export function WebuiContextMenu({
-  x,
-  y,
-  items,
-  onClose,
-}: {
-  readonly x: number;
-  readonly y: number;
-  readonly items: readonly WebuiContextMenuItem[];
-  readonly onClose: () => void;
-}): ReactElement {
-  const menuRef = useRef<HTMLDivElement | null>(null);
-  const [openSubmenu, setOpenSubmenu] = useState<string>();
-  const [position, setPosition] = useState({ left: x, top: y });
-  useLayoutEffect(() => {
-    setPosition({ left: x, top: y });
-  }, [x, y]);
-  useLayoutEffect(() => {
-    const menu = menuRef.current;
-    if (!menu || typeof window === "undefined") return;
-    const next = placeWebuiContextMenu({
-      x,
-      y,
-      width: menu.offsetWidth,
-      height: menu.offsetHeight,
-      viewportWidth: window.innerWidth,
-      viewportHeight: window.innerHeight,
-    });
-    setPosition((current) =>
-      current.left === next.left && current.top === next.top ? current : next,
-    );
-  }, [items, x, y]);
-  useEffect(() => {
-    const handlePointerDown = (event: globalThis.MouseEvent) => {
-      if (!menuRef.current?.contains(event.target as Node)) onClose();
-    };
-    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [onClose]);
-  const renderItems = (menuItems: readonly WebuiContextMenuItem[]) =>
-    menuItems.map((item) => {
-      if (item.kind === "divider") {
-        return <div key={item.key} className="webui-context-menu-divider" role="separator" />;
-      }
-      const hasSubmenu = Boolean(item.submenu?.length);
-      return (
-        <div
-          key={item.key}
-          className="webui-context-menu-item-wrap"
-          onMouseEnter={() => hasSubmenu && setOpenSubmenu(item.key)}
-          onMouseLeave={() => hasSubmenu && setOpenSubmenu(undefined)}
-        >
-          <button
-            type="button"
-            className={`webui-context-menu-item${item.danger ? " is-danger" : ""}`}
-            disabled={item.disabled}
-            aria-disabled={item.disabled ? "true" : undefined}
-            onClick={() => {
-              if (hasSubmenu) {
-                setOpenSubmenu((current) => (current === item.key ? undefined : item.key));
-                return;
-              }
-              onClose();
-              void item.onSelect?.();
-            }}
-          >
-            <span className="webui-context-menu-item-icon">{item.icon ?? null}</span>
-            <span className="webui-context-menu-item-label">{item.label}</span>
-            {hasSubmenu ? <WebuiIconContextChevron className="webui-context-menu-chevron" /> : null}
-          </button>
-          {hasSubmenu && openSubmenu === item.key ? (
-            <div className="webui-context-menu-submenu" role="menu">
-              {renderItems(item.submenu ?? [])}
-            </div>
-          ) : null}
-        </div>
-      );
-    });
-  const menu = (
-    <div
-      ref={menuRef}
-      role="menu"
-      data-webui-context-menu="true"
-      className="webui-context-menu"
-      style={{ left: position.left, top: position.top }}
-    >
-      {renderItems(items)}
-    </div>
-  );
-  return typeof document !== "undefined" ? createPortal(menu, document.body) : menu;
-}
+// (W3 tier 2: placeWebuiContextMenu, WebuiContextMenuItem, WebuiContextMenu moved to ./components/ContextMenu.tsx)
 
 /**
  * Project projection for the desktop-shaped rail. The existing session list
@@ -1829,215 +1214,9 @@ export function WebuiSessionList({
  */
 // (groupWebuiTranscriptItems moved to ./projection/transcript-projection.ts in W2)
 
-type WebuiMessageActionCapabilities = {
-  readonly fork?: boolean;
-  readonly rewind?: boolean;
-  readonly edit?: boolean;
-};
-
-export function toggleWebuiFeedback(
-  value: "like" | "dislike" | undefined,
-  next: "like" | "dislike",
-): "like" | "dislike" {
-  return value === next ? (next === "like" ? "dislike" : "like") : next;
-}
-
-export interface WebuiCopyDependencies {
-  readonly clipboard?: { readonly writeText: (value: string) => Promise<void> };
-  readonly fallback?: () => void;
-}
-
-export async function copyWebuiMessageText(
-  value: string,
-  dependencies: WebuiCopyDependencies,
-): Promise<boolean> {
-  try {
-    if (dependencies.clipboard) await dependencies.clipboard.writeText(value);
-    else if (dependencies.fallback) dependencies.fallback();
-    else return false;
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export function scheduleWebuiCopiedReset(
-  setCopied: (value: boolean) => void,
-  schedule: (callback: () => void, delayMs: number) => unknown,
-): void {
-  schedule(() => setCopied(false), 1_200);
-}
-
-// (action-request builders moved to ./projection/action-requests.ts in W2)
-
-export function WebuiMessageActionButton({
-  testId,
-  label,
-  icon,
-  onClick,
-  disabled = false,
-  active,
-}: {
-  readonly testId: string;
-  readonly label: string;
-  /** The desktop's action row is glyph-only: a 26px square holding a 16–18px icon. */
-  readonly icon: ReactElement;
-  readonly onClick: () => void;
-  readonly disabled?: boolean;
-  /** Selection state for the feedback toggles; the desktop paints the active glyph differently. */
-  readonly active?: boolean;
-}): ReactElement {
-  return (
-    <button
-      type="button"
-      className={`webui-message-action${active ? " webui-message-action-active" : ""}`}
-      data-testid={testId}
-      aria-label={label}
-      title={label}
-      {...(active === undefined ? {} : { "aria-pressed": active })}
-      disabled={disabled}
-      onClick={onClick}
-    >
-      {icon}
-    </button>
-  );
-}
-
-export function WebuiFeedbackActions({
-  value,
-  onChange,
-}: {
-  readonly value?: "like" | "dislike";
-  readonly onChange: (value: "like" | "dislike") => void;
-}): ReactElement {
-  return (
-    <span className="webui-message-feedback" data-testid="message-feedback-actions">
-      <span data-testid="message-feedback-like">
-        <WebuiMessageActionButton
-          testId="message-feedback-like-action"
-          label="赞"
-          icon={value === "like" ? <WebuiIconMessageLikeOn size={18} /> : <WebuiIconMessageLikeOff size={18} />}
-          active={value === "like"}
-          onClick={() => onChange(toggleWebuiFeedback(value, "like"))}
-        />
-      </span>
-      <span data-testid="message-feedback-dislike">
-        <WebuiMessageActionButton
-          testId="message-feedback-dislike-action"
-          label="踩"
-          icon={value === "dislike" ? <WebuiIconMessageDislikeOn size={18} /> : <WebuiIconMessageDislikeOff size={18} />}
-          active={value === "dislike"}
-          onClick={() => onChange(toggleWebuiFeedback(value, "dislike"))}
-        />
-      </span>
-    </span>
-  );
-}
-
-/** Desktop timestamp format for the action row: `9月22日, 22:37`. */
-export function formatWebuiMessageTimestamp(value?: number): string | undefined {
-  if (value === undefined || !Number.isFinite(value)) return undefined;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return undefined;
-  const pad = (input: number) => String(input).padStart(2, "0");
-  return `${date.getMonth() + 1}月${date.getDate()}日, ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-export function WebuiMessageActions({
-  role,
-  messageId,
-  copyText,
-  actions,
-  onRewind,
-  onEdit,
-  onFork,
-  timestamp,
-}: {
-  readonly role: "user" | "assistant";
-  readonly messageId: string;
-  readonly copyText: string;
-  readonly actions?: WebuiMessageActionCapabilities;
-  readonly onRewind?: () => void;
-  readonly onEdit?: () => void;
-  readonly onFork?: () => void;
-  /** Epoch ms; the desktop prints it inside the action row. */
-  readonly timestamp?: number;
-}): ReactElement {
-  const [copied, setCopied] = useState(false);
-  const [feedback, setFeedback] = useState<"like" | "dislike">();
-  const copy = async () => {
-    try {
-      const copied = await copyWebuiMessageText(copyText, {
-        ...(typeof navigator !== "undefined" && navigator.clipboard
-          ? { clipboard: navigator.clipboard }
-          : {}),
-        ...(typeof document !== "undefined"
-          ? {
-              fallback: () => {
-                const area = document.createElement("textarea");
-                area.value = copyText;
-                area.style.position = "fixed";
-                area.style.opacity = "0";
-                document.body.appendChild(area);
-                area.select();
-                document.execCommand("copy");
-                area.remove();
-              },
-            }
-          : {}),
-      });
-      if (copied) {
-        setCopied(true);
-        scheduleWebuiCopiedReset(setCopied, window.setTimeout);
-      } else setCopied(false);
-    } catch {
-      setCopied(false);
-    }
-  };
-  const timestampLabel = formatWebuiMessageTimestamp(timestamp);
-  const copyIcon = copied ? <WebuiIconMessageCopied size={18} /> : <WebuiIconMessageCopy size={18} />;
-  return (
-    <div
-      className={`webui-message-actions ${role === "user" ? "webui-user-message-actions" : ""}`}
-      data-testid={role === "user" ? "user-message-actions" : "message-actions"}
-      data-message-id={messageId}
-    >
-      {role === "user" ? (
-        <>
-          {timestampLabel ? (
-            <span className="webui-message-timestamp" data-testid="user-message-timestamp">{timestampLabel}</span>
-          ) : null}
-          {actions?.rewind && onRewind ? (
-            <WebuiMessageActionButton testId="user-message-rewind-button" label="回退" icon={<WebuiIconMessageRewind size={18} />} onClick={onRewind} />
-          ) : null}
-          {(actions?.edit ?? actions?.rewind) && onEdit ? (
-            <WebuiMessageActionButton testId="user-message-edit-button" label="编辑" icon={<WebuiIconMessageEditUser size={18} />} onClick={onEdit} />
-          ) : null}
-          {copyText ? (
-            <WebuiMessageActionButton testId="user-message-copy-button" label={copied ? "已复制" : "复制"} icon={copyIcon} onClick={() => void copy()} />
-          ) : null}
-        </>
-      ) : (
-        <>
-          <WebuiMessageActionButton testId="message-copy-button" label={copied ? "已复制" : "复制"} icon={copyIcon} onClick={() => void copy()} />
-          {actions?.rewind && onRewind ? (
-            <WebuiMessageActionButton testId="message-rewind-button" label="回退" icon={<WebuiIconMessageRewind size={16} />} onClick={onRewind} />
-          ) : null}
-          {(actions?.edit ?? actions?.rewind) && onEdit ? (
-            <WebuiMessageActionButton testId="message-edit-button" label="编辑" icon={<WebuiIconMessageEdit size={16} />} onClick={onEdit} />
-          ) : null}
-          <WebuiFeedbackActions value={feedback} onChange={setFeedback} />
-          {actions?.fork && onFork ? (
-            <WebuiMessageActionButton testId="message-fork-button" label="复制为新会话" icon={<WebuiIconMessageFork size={18} />} onClick={onFork} />
-          ) : null}
-          {timestampLabel ? (
-            <span className="webui-message-timestamp" data-testid="message-timestamp">{timestampLabel}</span>
-          ) : null}
-        </>
-      )}
-    </div>
-  );
-}
+// (W3 tier 2: WebuiMessageActionCapabilities, toggleWebuiFeedback, WebuiCopyDependencies,
+// copyWebuiMessageText, scheduleWebuiCopiedReset, WebuiMessageActionButton, WebuiFeedbackActions,
+// formatWebuiMessageTimestamp, WebuiMessageActions moved to ./components/MessageActions.tsx)
 
 /**
  * Historical questionnaire-response projection. Once the user submits a
@@ -2148,47 +1327,6 @@ export function WebuiQuestionnaireResponse({
         </span>
       ) : null}
     </article>
-  );
-}
-
-export function WebuiRewindDialog({
-  messageId,
-  preview,
-  loading,
-  error,
-  busy,
-  onClose,
-  onConfirm,
-}: {
-  readonly messageId: string;
-  readonly preview?: WebuiGetSessionRewindPreviewResult;
-  readonly loading: boolean;
-  readonly error?: string;
-  readonly busy: boolean;
-  readonly onClose: () => void;
-  readonly onConfirm: (rewindTurnDiff: boolean) => void;
-}): ReactElement {
-  const files = preview?.turns.flatMap((turn) => turn.files) ?? [];
-  const turns = preview?.turns.length ?? 1;
-  return (
-    <div className="webui-message-dialog" role="dialog" aria-modal="true" data-testid="rewind-preview-dialog" data-message-id={messageId}>
-      <div className="webui-message-dialog-surface">
-        <h3>{"回退"}</h3>
-        <p>{files.length > 0 ? `${turns} 轮对话将会回退 · ${files.length} 个文件将被修改。` : `${turns} 轮对话将会回退，不涉及任何文件改动。`}</p>
-        <section data-testid="rewind-preview-files">
-          <h4>受影响的文件改动</h4>
-          {loading ? <p>正在检查当前文件…</p> : null}
-          {!loading && error ? <p role="alert">暂时无法读取文件预览，仍可选择仅回退对话。</p> : null}
-          {!loading && !error && files.length === 0 ? <p>没有受影响的文件改动。</p> : null}
-          {files.map((file) => <div key={`${file.filePath}-${file.action}`} className="webui-rewind-file-row"><span>{file.filePath}</span><span>{file.skipped ? "跳过" : file.action}</span></div>)}
-        </section>
-        <div className="webui-message-dialog-actions">
-          <button type="button" onClick={onClose} disabled={busy}>取消</button>
-          <button type="button" onClick={() => onConfirm(false)} disabled={busy} data-testid="rewind-confirm-only">仅回退对话</button>
-          {files.length > 0 ? <button type="button" onClick={() => onConfirm(true)} disabled={busy} data-testid="rewind-confirm-with-files">回退对话和文件</button> : null}
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -2449,46 +1587,7 @@ export function WebuiSessionTranscript({
  * A rail row. `webui-nav-item` carries the shared hover and selected treatment; the fixed
  * row passes `active` so the current destination reads differently from a hover-only row.
  */
-function RailRow({
-  label,
-  icon,
-  active,
-  onSelect,
-  inert,
-}: {
-  readonly label: string;
-  readonly icon?: ReactElement;
-  readonly active?: boolean;
-  readonly onSelect?: () => void;
-  readonly inert?: boolean;
-}): ReactElement {
-  return (
-    <div
-      className="webui-nav-item group/nav flex h-8 w-full items-center rounded-lg text-sm text-text_default_primary transition-colors hover:bg-bg_interaction_tertiary_hover"
-      data-webui-placeholder-chrome={inert ? "rail-nav" : undefined}
-      data-webui-nav-item={label}
-      data-webui-nav-active={active ? "true" : "false"}
-    >
-      <button
-        type="button"
-        onClick={onSelect}
-        disabled={inert}
-        aria-disabled={inert ? "true" : undefined}
-        tabIndex={inert ? -1 : undefined}
-        className="flex h-full min-w-0 flex-1 items-center gap-2 pl-2 pr-2.5 text-left focus:outline-none"
-      >
-        {icon ? (
-          <span className="flex flex-shrink-0 items-center justify-center">
-            {icon}
-          </span>
-        ) : null}
-        <span className="min-w-0 flex-1 truncate whitespace-nowrap">
-          {label}
-        </span>
-      </button>
-    </div>
-  );
-}
+
 
 /**
  * Pure form-submit handler extracted from the React component so a test
