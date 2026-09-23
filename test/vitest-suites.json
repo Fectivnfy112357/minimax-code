@@ -179,7 +179,13 @@
       "packages/webui/test/unit/slash-palette.test.ts",
       "packages/webui/test/unit/webui-usage-quota.test.ts",
       "packages/webui/test/unit/webui-checkin.test.ts",
-      "packages/webui/test/unit/message-parts.test.ts"
+      "packages/webui/test/unit/message-parts.test.ts",
+      "packages/webui/test/unit/activity-indicator.test.tsx",
+      "packages/webui/test/unit/turn-navigator.test.tsx",
+      "packages/webui/test/unit/output-error.test.tsx",
+      "packages/webui/test/unit/message-attachments.test.tsx",
+      "packages/webui/test/unit/transcript-skeletons.test.tsx",
+      "packages/webui/test/unit/conversation-usage-banner.test.tsx"
     ]
   }
 }
