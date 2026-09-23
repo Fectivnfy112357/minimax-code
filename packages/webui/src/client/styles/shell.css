@@ -19,20 +19,35 @@
  */
 
 @layer components {
-  .webui-workspace-panel { width: 288px; flex: 0 0 288px; min-height: 0; overflow: hidden; border-left: 1px solid var(--border_default); background: var(--bg_default_primary); color: var(--text_default_primary); }
-  .webui-workspace-panel > [data-workspace-section="true"]:first-child > [data-testid="workspace-section-divider"] { display: none; }
+  .webui-workspace-panel { position: relative; z-index: 30; width: 288px; flex: 0 0 288px; min-height: 0; overflow: hidden; border-left: 1px solid var(--border_default); background: var(--bg_default_primary); color: var(--text_default_primary); }
+  .webui-workspace-section-group { position: absolute; top: 56px; right: 12px; z-index: 40; display: flex; width: 288px; flex-shrink: 0; flex-direction: column; overflow: hidden; border: .5px solid var(--border_default); border-radius: 16px; background: var(--bg_grouped_secondary_elevated); padding: 6px; box-shadow: 0 6px 24px rgb(0 0 0 / 8%); color: var(--text_default_primary); }
+  .webui-environment-panel, .webui-progress-panel { display: flex; flex-shrink: 0; flex-direction: column; overflow: hidden; }
+  .webui-environment-panel + .webui-progress-panel { border-top: 1px solid var(--border_light); }
+  .webui-environment-body { padding: 0 6px 6px; }
+  .webui-environment-workspace { overflow: hidden; padding: 0 0 4px; color: var(--text_default_tertiary); font-size: var(--size_12); line-height: 18px; text-overflow: ellipsis; white-space: nowrap; }
+  .webui-environment-actions { display: flex; flex-direction: column; gap: 1px; }
+  .webui-environment-action { display: flex; min-height: 34px; width: 100%; align-items: center; gap: var(--spacing_8); border: 0; border-radius: var(--radius_8); background: transparent; padding: 0 2px; color: var(--text_default_primary); font-size: var(--size_14); text-align: left; }
+  .webui-environment-action:not(:disabled):hover { background: var(--bg_interaction_tertiary_hover); }
+  .webui-environment-action:disabled { cursor: default; color: var(--text_default_tertiary); opacity: .72; }
+  .webui-workspace-panel-controls { position: absolute; top: 16px; right: 12px; z-index: 50; display: flex; align-items: center; gap: 8px; }
+  .webui-workspace-icon-button { display: flex; width: 36px; height: 36px; align-items: center; justify-content: center; border: 0; border-radius: 10px; background: transparent; color: var(--icon_default_secondary); }
+  .webui-workspace-icon-button:not(:disabled):hover, .webui-workspace-icon-button.is-active { background: var(--bg_interaction_tertiary_selected); color: var(--icon_default_primary); }
+  .webui-workspace-icon-button:disabled { cursor: default; opacity: .72; }
   .webui-workspace-section-title { display: flex; height: 28px; width: 100%; align-items: center; justify-content: space-between; border: 0; background: transparent; padding: 0 var(--spacing_12); color: var(--text_default_secondary); font-size: var(--size_12); text-align: left; }
-  .webui-progress-panel { padding: var(--spacing_8) var(--spacing_8) var(--spacing_4); border-bottom: 1px solid var(--border_default); }
+  .webui-progress-panel { padding: 0 0 2px; }
   .webui-progress-row { display: flex; min-height: 30px; align-items: center; gap: var(--spacing_8); border-radius: 10px; padding: 0 var(--spacing_4); font-size: var(--size_12); }
   .webui-progress-marker { display: inline-flex; width: 18px; height: 18px; flex: 0 0 18px; align-items: center; justify-content: center; border-radius: 50%; font-size: 11px; }
   .webui-progress-row--completed .webui-progress-marker { background: var(--icon_default_secondary); color: var(--text_default_inverted); }
   .webui-progress-row--in_progress .webui-progress-marker { background: var(--bg_grouped_tertiary); color: var(--text_default_primary); }
   .webui-progress-row--pending .webui-progress-marker { background: var(--bg_default_secondary); color: var(--text_default_tertiary); }
   .webui-progress-empty { margin: 0; padding: var(--spacing_8) var(--spacing_4); color: var(--text_default_tertiary); font-size: var(--size_12); }
-  .webui-workspace-tabs { display: flex; gap: 2px; padding: var(--spacing_8); border-bottom: 1px solid var(--border_default); }
+  .webui-workspace-panel-header { display: flex; align-items: center; border-bottom: 1px solid var(--border_default); }
+  .webui-workspace-panel-close { display: flex; width: 32px; height: 32px; flex: 0 0 32px; align-items: center; justify-content: center; border: 0; border-radius: var(--radius_8); background: transparent; color: var(--icon_default_tertiary); }
+  .webui-workspace-panel-close:hover { background: var(--bg_interaction_tertiary_hover); color: var(--icon_default_primary); }
+  .webui-workspace-tabs { display: flex; min-width: 0; flex: 1; gap: 2px; padding: var(--spacing_8); }
   .webui-workspace-tabs button { flex: 1; border: 0; border-radius: var(--radius_8); background: transparent; padding: var(--spacing_8) var(--spacing_4); color: var(--text_default_secondary); font-size: var(--size_12); }
   .webui-workspace-tabs button.is-active { background: var(--bg_interaction_tertiary_selected); color: var(--text_default_primary); }
-  .webui-workspace-content { min-height: 0; height: calc(100% - 196px); overflow: auto; padding: var(--spacing_8); }
+  .webui-workspace-content { min-height: 0; height: calc(100% - 52px); overflow: auto; padding: var(--spacing_8); }
   .webui-file-tree-row { width: 100%; border: 0; background: transparent; padding: 4px; color: var(--text_default_secondary); text-align: left; font-size: var(--size_12); }
   .webui-file-tree-row:hover { background: var(--bg_interaction_tertiary_hover); color: var(--text_default_primary); }
   .webui-file-viewer { margin-top: var(--spacing_8); }

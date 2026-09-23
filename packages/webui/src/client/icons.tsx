@@ -192,6 +192,16 @@ export function WebuiIconSearch({ className }: WebuiIconProps): ReactElement {
   );
 }
 
+/** workspace controls — the desktop's browser/globe entry glyph. */
+export function WebuiIconGlobe({ className }: WebuiIconProps): ReactElement {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}>
+      <circle cx="10" cy="10" r="7.8" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M2.5 10H17.5M10 2.2C12.1 4.3 13.2 7 13.2 10C13.2 13 12.1 15.7 10 17.8C7.9 15.7 6.8 13 6.8 10C6.8 7 7.9 4.3 10 2.2Z" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 // Slash palette row leading glyphs.
 //
 // The WebUI keeps the desktop's slash-palette visual language (icon + bold title + dim

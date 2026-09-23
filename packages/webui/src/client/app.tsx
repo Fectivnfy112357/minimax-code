@@ -66,7 +66,7 @@ import {
 import { readNoProjectFlag, writeNoProjectFlag } from "./no-project.js";
 import { LeftRail } from "./components/LeftRail.js";
 import { UserMenu } from "./components/UserMenu.js";
-import { WebuiWorkspacePanel, projectWebuiTodos, type WebuiTodo } from "./components/WorkspacePanels.js";
+import { WebuiWorkspacePanel, WebuiWorkspaceOverview, WebuiWorkspacePanelControls, projectWebuiTodos, type WebuiTodo } from "./components/WorkspacePanels.js";
 import { Transcript } from "./components/Transcript.js";
 import { initialWebuiStreamState, type WebuiStreamState } from "./stream.js";
 import {
@@ -3379,6 +3379,11 @@ export function WebuiClientFoundationApp({
       )
     : false;
   const [railCollapsed, setRailCollapsed] = useState(false);
+  const [workspacePanelOpen, setWorkspacePanelOpen] = useState(false);
+  const [workspaceOverviewOpen, setWorkspaceOverviewOpen] = useState(true);
+  const [workspaceEnvironmentCollapsed, setWorkspaceEnvironmentCollapsed] = useState(false);
+  const [workspaceProgressCollapsed, setWorkspaceProgressCollapsed] = useState(false);
+  const [workspacePanelTab, setWorkspacePanelTab] = useState<"files" | "canvas" | "terminal">("files");
 
   return (
     <ArchonShell>
@@ -3521,6 +3526,8 @@ export function WebuiClientFoundationApp({
             data-webui-shell-region="surface"
             className="relative flex min-h-0 min-w-0 flex-1 flex-row"
           >
+            {!homeMode ? <WebuiWorkspacePanelControls filePanelOpen={workspacePanelOpen} workspaceOpen={workspaceOverviewOpen && !workspacePanelOpen} onOpenFiles={() => { setWorkspacePanelTab("files"); setWorkspacePanelOpen((value) => !value); }} onToggleWorkspace={() => setWorkspaceOverviewOpen((value) => !value)} /> : null}
+            {!homeMode && workspaceOverviewOpen && !workspacePanelOpen ? <WebuiWorkspaceOverview workspaceDir={selectedSession?.workspaceDir} todos={progressTodos} environmentCollapsed={workspaceEnvironmentCollapsed} progressCollapsed={workspaceProgressCollapsed} onToggleEnvironment={() => setWorkspaceEnvironmentCollapsed((value) => !value)} onToggleProgress={() => setWorkspaceProgressCollapsed((value) => !value)} onOpenTerminal={() => { setWorkspacePanelTab("terminal"); setWorkspacePanelOpen(true); }} /> : null}
             <div className="relative flex h-full min-w-0 flex-1 flex-col">
               <div
                 className="pointer-events-none absolute inset-x-0 top-6 z-[60] flex justify-center"
@@ -3621,7 +3628,7 @@ export function WebuiClientFoundationApp({
                 </div>
               </div>
             </div>
-            {!homeMode ? <WebuiWorkspacePanel sessionId={selectedSessionId} workspaceDir={selectedSession?.workspaceDir} listWorkspaceFileTree={listWorkspaceFileTree} readWorkspaceFile={readWorkspaceFile} readCanvas={readCanvas} applyCanvas={applyCanvas} createTerminal={createTerminal} listTerminals={listTerminals} writeTerminal={writeTerminal} disposeTerminal={disposeTerminal} watchTerminal={watchTerminal} todos={progressTodos} /> : null}
+            {!homeMode && workspacePanelOpen ? <WebuiWorkspacePanel sessionId={selectedSessionId} workspaceDir={selectedSession?.workspaceDir} listWorkspaceFileTree={listWorkspaceFileTree} readWorkspaceFile={readWorkspaceFile} readCanvas={readCanvas} applyCanvas={applyCanvas} createTerminal={createTerminal} listTerminals={listTerminals} writeTerminal={writeTerminal} disposeTerminal={disposeTerminal} watchTerminal={watchTerminal} todos={progressTodos} defaultTab={workspacePanelTab} onClose={() => setWorkspacePanelOpen(false)} /> : null}
           </main>
         </div>
       </div>
