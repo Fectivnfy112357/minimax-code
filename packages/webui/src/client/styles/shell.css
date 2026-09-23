@@ -942,6 +942,15 @@
   .webui-textarea::placeholder {
     color: var(--text_default_tertiary);
   }
+  /* The composer is already framed by its card; do not add the generic blue
+   * input focus ring around the message field. Keep focus styling on the
+   * send/action controls where it remains useful. */
+  .webui-textarea.webui-composer-input:focus,
+  .webui-textarea.webui-composer-input:focus-visible {
+    border: 0;
+    outline: none;
+    box-shadow: none;
+  }
 
   /* The empty state gets the same surface as a card so it breathes the
    * same way without competing for visual weight. */

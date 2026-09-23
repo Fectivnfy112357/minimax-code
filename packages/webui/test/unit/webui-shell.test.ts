@@ -745,6 +745,20 @@ describe("WebUI shell — desktop anatomy", () => {
     expect(html).not.toMatch(/data-webui-placeholder-chrome="recommendation-chips"/u);
   });
 
+  it("does not add the generic blue focus ring to the composer input", () => {
+    const styles = readFileSync(
+      new URL("../../src/client/styles/shell.css", import.meta.url),
+      "utf8",
+    );
+    const composerFocusRule = styles.match(
+      /\.webui-textarea\.webui-composer-input:focus,\s*\.webui-textarea\.webui-composer-input:focus-visible\s*\{([^}]*)\}/u,
+    );
+    expect(composerFocusRule, "composer focus override is missing").not.toBeNull();
+    expect(composerFocusRule![1]).toMatch(/border:\s*0/u);
+    expect(composerFocusRule![1]).toMatch(/outline:\s*none/u);
+    expect(composerFocusRule![1]).toMatch(/box-shadow:\s*none/u);
+  });
+
   it("keeps the session composer below a separately scrolling transcript", () => {
     const html = renderSessionShell();
 
