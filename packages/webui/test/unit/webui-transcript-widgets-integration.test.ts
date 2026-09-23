@@ -3,7 +3,7 @@
 // These tests render the full `WebuiClientFoundationApp` shell with the
 // minimum scaffolding each transcript widget needs to be reached, then
 // assert ONE core marker per widget. They were written BEFORE the
-// corresponding wiring landed in `app.tsx` and confirmed to fail; the
+// corresponding wiring landed in the shell and confirmed to fail; the
 // widget-specific unit tests in this directory cover the per-component
 // shape, while this file covers the wiring.
 
@@ -11,8 +11,9 @@ import { describe, it, expect } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { WebuiClientFoundationApp } from "../../src/client/app.js";
-import type { WebuiClientMessage } from "../../src/client/app.js";
+import { WebuiClientFoundationApp } from "../../src/client/components/WebuiClientFoundationApp.js";
+import type { WebuiClientMessage } from "../../src/client/contracts.js";
+
 import { updateSessionRuntimeState } from "../../src/client/session-runtime-store.js";
 import type { WebuiUsageQuotaResult } from "../../src/server/port.js";
 

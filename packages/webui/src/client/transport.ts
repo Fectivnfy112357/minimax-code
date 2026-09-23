@@ -9,7 +9,7 @@ import type {
   WebuiClientSessionResumer,
   WebuiClientSessionTreeLoader,
   WebuiClientSessionTreePage,
-} from "./app.js";
+} from "./contracts.js";
 import type {
   WebuiInteractionReplyResult,
   WebuiPendingPermission,

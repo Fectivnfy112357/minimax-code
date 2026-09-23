@@ -17,12 +17,14 @@ import { describe, it, expect } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
-  WebuiActivityGroup,
   WebuiFeedbackActions,
   WebuiMessageActionButton,
-  WebuiQuestionnaireResponse,
+} from "../../src/client/components/MessageActions.js";
+import { WebuiQuestionnaireResponse } from "../../src/client/components/SessionTranscript.js";
+import {
+  WebuiActivityGroup,
   WebuiTurnProcess,
-} from "../../src/client/app.js";
+} from "../../src/client/components/TranscriptPrimitives.js";
 
 const READ_TOOL = { tool_call_name: "read", tool_call_args: "README.md" };
 const EDIT_TOOL = {

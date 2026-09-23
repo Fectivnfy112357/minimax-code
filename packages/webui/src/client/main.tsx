@@ -1,6 +1,12 @@
 import * as React from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { WebuiClientFoundationApp } from "./app.js";
+import { WebuiClientFoundationApp } from "./components/WebuiClientFoundationApp.js";
+export { WebuiSessionList } from "./components/SessionRail.js";
+export { WebuiSessionTranscript } from "./components/SessionTranscript.js";
+export {
+  WebuiClientFoundationApp,
+  subscribeToSessionHash,
+} from "./components/WebuiClientFoundationApp.js";
 import { createWebuiTransport } from "./transport.js";
 import { route } from "./router.js";
 import { LoginCard } from "./components/LoginCard.js";
@@ -45,9 +51,3 @@ root.render(
   currentRoute === "404" ? <NotFound /> : <ArchonPage>{app}</ArchonPage>,
 );
 
-export {
-  WebuiClientFoundationApp,
-  WebuiSessionList,
-  WebuiSessionTranscript,
-  subscribeToSessionHash,
-} from "./app.js";

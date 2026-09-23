@@ -1,19 +1,19 @@
 // W0 safety net — the session runtime store's transition sequence.
 //
-// `sessionRuntimeStates` is a module-level Map plus a listener registry that
-// currently lives inside `app.tsx` (L1878-1961). W2.75 moves it into its own
-// module, and two documented contracts have to survive that move:
+// `sessionRuntimeStates` is a module-level Map plus a listener registry in
+// `session-runtime-store.ts`, and two documented contracts hold there:
 //
 //   1. `migrateSessionRuntimeState` deliberately does NOT notify listeners
-//      (`app.tsx:1907-1916`): the only subscriber is the view that is about to
-//      switch keys, and the target key has no subscriber yet.
+//      (`session-runtime-store.ts:68-81`): the only subscriber is the view
+//      that is about to switch keys, and the target key has no subscriber yet.
 //   2. Writes follow the key that is currently on screen (`sessionKeyRef`,
-//      `app.tsx:1934-1953`), not the key a setter was captured with.
+//      `session-runtime-store.ts:89-113`), not the key a setter was captured
+//      with.
 //
 // Contract 1 is NOT observable from this file: listeners are registered inside
-// the `useSessionRuntimeState` hook, which needs a mounted React tree, and W0 is
-// not allowed to change production code to expose a subscribe seam. It is
-// recorded as an open W2.75 requirement rather than faked here.
+// the `useSessionRuntimeState` hook, which needs a mounted React tree, and W0
+// does not change production code to expose a subscribe seam. It is recorded as
+// an open requirement rather than faked here.
 //
 // What this file pins is the observable half: read/update/migrate semantics,
 // object identity across a migration, isolation between keys, and the two
@@ -22,14 +22,13 @@
 
 import { describe, it, expect, afterEach } from "vitest";
 import {
+  HOME_SESSION_RUNTIME_KEY as HOME_KEY,
   migrateSessionRuntimeState,
   readSessionRuntimeState,
   updateSessionRuntimeState,
 } from "../../src/client/session-runtime-store.js";
 import { initialWebuiStreamState } from "../../src/client/stream.js";
 
-/** `HOME_SESSION_RUNTIME_KEY` is not exported; this is the literal at `app.tsx:1878`. */
-const HOME_KEY = "__webui-home__";
 const SESSION_KEY = "w0-session";
 
 function initialState(): {

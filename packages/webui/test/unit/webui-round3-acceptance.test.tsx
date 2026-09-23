@@ -4,30 +4,38 @@ import { describe, expect, it } from "vitest";
 
 import {
   WebuiDiffCard,
+  buildWebuiDiffMutationRequest,
+  confirmWebuiDiffMutation,
+  initialWebuiDiffState,
+  reduceWebuiDiffState,
+} from "../../src/client/components/DiffCard.js";
+import { WebuiGoalBanner } from "../../src/client/components/GoalBanner.js";
+import { WebuiInteractionPanel } from "../../src/client/components/InteractionPanel.js";
+import {
   WebuiFeedbackActions,
-  WebuiGoalBanner,
-  WebuiInteractionPanel,
   WebuiMessageActions,
   WebuiRewindDialog,
-  buildWebuiDiffMutationRequest,
+  copyWebuiMessageText,
+  scheduleWebuiCopiedReset,
+  toggleWebuiFeedback,
+} from "../../src/client/components/MessageActions.js";
+import { MessageItem } from "../../src/client/components/MessageItem.js";
+import {
   buildWebuiEditRequest,
   buildWebuiForkRequest,
   buildWebuiMessageForkRequest,
+  buildWebuiRewindRequest,
+} from "../../src/client/projection/action-requests.js";
+import {
   buildWebuiGoalEditPatch,
   buildWebuiGoalStatusPatch,
-  buildWebuiRewindRequest,
-  canAdvanceWebuiQuestionnaireStep,
-  copyWebuiMessageText,
-  confirmWebuiDiffMutation,
-  initialWebuiDiffState,
   projectWebuiThreadGoalMessage,
-  reduceWebuiDiffState,
-  scheduleWebuiCopiedReset,
+} from "../../src/client/projection/goal-state.js";
+import {
+  canAdvanceWebuiQuestionnaireStep,
   sortWebuiQuestionnaireOptions,
-  toggleWebuiFeedback,
   toggleWebuiQuestionnaireOption,
-  MessageItem,
-} from "../../src/client/app.js";
+} from "../../src/client/projection/questionnaire-state.js";
 import {
   computeThinkingPhraseStartDelay,
   DEFAULT_THINKING_PHRASE_ROTATION_INTERVAL_MS,

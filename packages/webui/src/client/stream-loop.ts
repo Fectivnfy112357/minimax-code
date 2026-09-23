@@ -17,8 +17,9 @@ import type {
   WebuiClientMessageLoader,
   WebuiClientMessageSender,
   WebuiClientSessionResumer,
-} from "./app.js";
-import { projectWebuiMessage } from "./app.js";
+} from "./contracts.js";
+import { projectWebuiMessage } from "./projection/message-projection.js";
+
 import {
   recogniseWebuiStreamPayload,
   reduceWebuiStreamFrame,

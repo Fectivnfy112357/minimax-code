@@ -3308,7 +3308,6 @@
     "packages/webui/screenshots/desktop-user-menu.png",
     "packages/webui/screenshots/webui-user-menu-usage.png",
     "packages/webui/screenshots/webui-user-menu.png",
-    "packages/webui/src/client/app.tsx",
     "packages/webui/src/client/assets/assets-manifest.txt",
     "packages/webui/src/client/assets/fonts/katex/KaTeX_AMS-Regular.ttf",
     "packages/webui/src/client/assets/fonts/katex/KaTeX_AMS-Regular.woff",

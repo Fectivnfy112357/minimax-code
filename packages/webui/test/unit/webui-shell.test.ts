@@ -22,30 +22,48 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import {
-  WebuiClientFoundationApp,
   WebuiContextMenu,
-  WebuiProjectList,
-  WebuiInteractionPanel,
-  WebuiSessionList,
-  WebuiSessionTranscript,
-  WebuiThinkingBlock,
-  WebuiToolResults,
-  TurnElapsedRow,
-  buildWebuiModelSelectionRequest,
-  buildWebuiQuestionnaireAnswers,
-  buildWebuiComposerHandlers,
-  createdSessionId,
-  groupWebuiTranscriptItems,
-  groupWebuiSessionsByWorkspace,
   placeWebuiContextMenu,
-  projectWebuiMessage,
-  readSessionIdFromHash,
+} from "../../src/client/components/ContextMenu.js";
+import { WebuiInteractionPanel } from "../../src/client/components/InteractionPanel.js";
+import {
+  WebuiProjectList,
+  WebuiSessionList,
+  groupWebuiSessionsByWorkspace,
   sessionHash,
   sortWebuiProjectSessionIds,
-  submitWebuiComposerTurn,
+} from "../../src/client/components/SessionRail.js";
+import { WebuiSessionTranscript } from "../../src/client/components/SessionTranscript.js";
+import {
+  TurnElapsedRow,
+  WebuiThinkingBlock,
+  WebuiToolResults,
+} from "../../src/client/components/TranscriptPrimitives.js";
+import {
+  WebuiClientFoundationApp,
+  readSessionIdFromHash,
   subscribeToSessionHash,
+} from "../../src/client/components/WebuiClientFoundationApp.js";
+import type {
+  WebuiClientMessageEnqueuer,
+  WebuiClientMessageLoader,
+  WebuiClientMessageSender,
+  WebuiClientSessionResumer,
+  WebuiTranscriptItem,
+} from "../../src/client/contracts.js";
+import {
+  buildWebuiModelSelectionRequest,
   webuiModelOptionValue,
-} from "../../src/client/app.js";
+} from "../../src/client/projection/action-requests.js";
+import {
+  buildWebuiComposerHandlers,
+  createdSessionId,
+  submitWebuiComposerTurn,
+} from "../../src/client/projection/composer-state.js";
+import { projectWebuiMessage } from "../../src/client/projection/message-projection.js";
+import { buildWebuiQuestionnaireAnswers } from "../../src/client/projection/questionnaire-state.js";
+import { groupWebuiTranscriptItems } from "../../src/client/projection/transcript-projection.js";
+import type { WebuiQuestionnaireRequest } from "../../src/server/port.js";
 import {
   migrateSessionRuntimeState,
   readSessionRuntimeState,
@@ -58,24 +76,16 @@ import {
 } from "../../src/client/stream-loop.js";
 import { createSessionOperation } from "../../src/server/operations.js";
 import {
+  initialWebuiStreamState,
   reduceWebuiStreamFrame,
   type WebuiStreamState,
 } from "../../src/client/stream.js";
 import { projectWebuiTodos, WebuiProgressPanel, WebuiSubagentsPanel, WebuiWorkspaceOverview, WebuiWorkspacePanel, WebuiWorkspacePanelControls } from "../../src/client/components/WorkspacePanels.js";
+
 import type {
-  WebuiClientMessageLoader,
-  WebuiClientMessageSender,
-  WebuiClientMessageEnqueuer,
-  WebuiClientSessionResumer,
-  WebuiQuestionnaireRequest,
-  WebuiTranscriptItem,
-} from "../../src/client/app.js";
-import type { WebuiStreamFrame } from "../../src/server/port.js";
-import type { WebuiWorkspaceEnvironment } from "../../src/server/port.js";
-import {
-  initialWebuiStreamState,
-  type WebuiStreamState,
-} from "../../src/client/stream.js";
+  WebuiStreamFrame,
+  WebuiWorkspaceEnvironment,
+} from "../../src/server/port.js";
 
 function renderShell(label = "webui-foundation"): string {
   return renderToStaticMarkup(
@@ -1009,7 +1019,7 @@ describe("WebUI shell — desktop anatomy", () => {
 
   it("does not render a usage summary in the session composer", () => {
     const source = readFileSync(
-      new URL("../../src/client/app.tsx", import.meta.url),
+      new URL("../../src/client/components/SessionComposer.tsx", import.meta.url),
       "utf8",
     );
     expect(source).not.toContain('data-webui-session-usage="true"');
@@ -1069,7 +1079,8 @@ describe("WebUI shell — theme switching", () => {
 });
 
 // Behaviour-level coverage of the composer's send/resume loop. The test
-// drives the same `runWebuiStreamLoop` the composer in `app.tsx` calls
+// drives the same `runWebuiStreamLoop` the composer in
+// `components/SessionComposer.tsx` calls
 // from its submit handler, with a WebSocket double (the mocked
 // `sendMessage` / `resumeSession` close over the `onFrame` callback the
 // transport would otherwise hand to a real socket). The assertions
@@ -1245,7 +1256,7 @@ describe("WebUI composer sink binding", () => {
   // Brief R7: the previous shell tests called `runWebuiStreamLoop`
   // directly with their own sinks, so a misrouted or dropped callback
   // in the production binding (the inline object literal the composer
-  // in `app.tsx` constructed) would not fail a test. The fix extracts
+  // used to build) would not fail a test. The fix extracts
   // the binding into `buildWebuiStreamLoopSink`, which the production
   // shell now uses. This describe block exercises that helper with a
   // recording state reducer so that:
@@ -1444,7 +1455,8 @@ describe("WebUI composer sink binding", () => {
 // Coverage of the production app-to-helper seam. The earlier binding
 // tests exercised `buildWebuiStreamLoopSink` and the loop that uses
 // it; they did not exercise the React composer's submit handler at
-// `app.tsx:702-712` (the seam where the component assembles its
+// `components/SessionComposer.tsx:723-788` (the seam where the component
+// assembles its
 // handlers and hands them to `submitWebuiComposerTurn`). The new
 // shape: `submitWebuiComposerTurn` is the extracted form-submit body
 // that the React component calls once per submit, and
