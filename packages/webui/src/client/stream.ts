@@ -3,7 +3,7 @@ import {
   initialWebuiWorkspaceProgress,
   reduceWebuiWorkspaceProgressEvent,
   type WebuiWorkspaceProgressState,
-} from "./workspace-progress.js";
+} from "./projection/workspace-progress.js";
 
 export interface WebuiStreamMessage {
   readonly id: string;

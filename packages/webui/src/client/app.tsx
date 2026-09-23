@@ -34,8 +34,8 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { WebuiMarkdown } from "./markdown.js";
-import { projectMessageParts, stripQuestionnaireResponse } from "./message-parts.js";
-import type { WebuiQuestionnaireResponseSummary } from "./message-parts.js";
+import { projectMessageParts, stripQuestionnaireResponse } from "./projection/message-parts.js";
+import type { WebuiQuestionnaireResponseSummary } from "./projection/message-parts.js";
 import {
   WebuiIconActivity,
   WebuiIconAttach,
@@ -161,173 +161,186 @@ import {
   webuiWorkspaceSubagentStatus,
   type WebuiWorkspaceProgressState,
   type WebuiWorkspaceSubagent,
-} from "./workspace-progress.js";
+} from "./projection/workspace-progress.js";
 
-export interface WebuiClientMessage {
-  readonly msgId: string;
-  readonly parentMsgId?: string;
-  readonly turnId?: string;
-  readonly queryKey?: string;
-  readonly timestamp?: number;
-  readonly msgContent?: string;
-  readonly msgType?: number;
-  readonly role?: string;
-  readonly thinkingContent?: string;
-  readonly thinkingDurationMs?: number;
-  readonly finishReason?: string;
-  readonly toolCalls?: readonly Record<string, unknown>[];
-  readonly attachments?: readonly unknown[];
-  readonly usage?: Record<string, unknown>;
-  readonly source?: string;
-  readonly kind?: string;
-  readonly actions?: {
-    readonly fork?: boolean;
-    readonly rewind?: boolean;
-    readonly edit?: boolean;
-  };
-  readonly forkOrigin?: Record<string, unknown>;
-  readonly originJson?: string;
-  readonly communicationInfosJson?: string;
-  readonly rawJson?: string;
-  readonly fileChanges?: readonly WebuiFileDiffInfoView[];
-  readonly sourceMessageId?: string;
-  readonly changeSetId?: string;
-  readonly turnDiffStatus?: string;
-  readonly revertedAt?: number;
-  readonly canUndo?: boolean;
-  readonly canReapply?: boolean;
-  readonly meta?: Record<string, unknown>;
-}
+// ---------------------------------------------------------------------------
+// W2 imports — the pure helpers and types that W2 moved into dedicated
+// modules under `projection/`, `value-readers.ts`, and `contracts.ts`.
+// `app.tsx` keeps its own internal copies for the React components
+// (unchanged behaviour), but the moved symbols are now sourced from the new
+// modules so the types and helpers stay in one place per concern.
+// ---------------------------------------------------------------------------
+import {
+  formatWebuiError,
+  recordValue,
+  stringValue,
+  numberValue,
+  booleanValue,
+} from "./value-readers.js";
+import {
+  readMessageDiff,
+  projectMessageAttachments,
+  deriveConversationUsageNotice,
+  projectWebuiMessage,
+  readMessageUsage,
+  readUsageNumber,
+} from "./projection/message-projection.js";
+import {
+  toolCallResultText,
+  toolCallName,
+  toolCallLabel,
+  toolCallInputText,
+  isWebuiEditTool,
+  webuiEditFileStat,
+  webuiActivitySummary,
+} from "./projection/tool-projection.js";
+import {
+  groupWebuiTranscriptItems,
+  eventSessionId,
+  pendingPermissionFromEvent,
+  questionnaireFromEvent,
+  replacePermission,
+} from "./projection/transcript-projection.js";
+import {
+  webuiClientRequestId,
+  buildWebuiRewindRequest,
+  buildWebuiEditRequest,
+  buildWebuiForkRequest,
+  buildWebuiMessageForkRequest,
+  buildWebuiModelSelectionRequest,
+  webuiModelOptionValue,
+} from "./projection/action-requests.js";
+import {
+  sortWebuiQuestionnaireOptions,
+  canAdvanceWebuiQuestionnaireStep,
+  toggleWebuiQuestionnaireOption,
+  buildWebuiQuestionnaireAnswers,
+  optionIdsForStep,
+} from "./projection/questionnaire-state.js";
+import {
+  formatWebuiGoalDuration,
+  buildWebuiGoalEditPatch,
+  buildWebuiGoalStatusPatch,
+  WEBUI_GOAL_STATUS_COPY,
+  WEBUI_GOAL_WAIT_COPY,
+  projectWebuiThreadGoalMessage,
+} from "./projection/goal-state.js";
+import {
+  buildWebuiComposerHandlers,
+  submitWebuiComposerTurn,
+} from "./projection/composer-state.js";
+import type {
+  WebuiClientMessage,
+  WebuiClientSession,
+  WebuiClientSessionPage,
+  WebuiClientSessionTreeNode,
+  WebuiClientSessionTreePage,
+  WebuiClientSessionTreeLoader,
+  WebuiClientSessionLoader,
+  WebuiClientMessagePage,
+  WebuiClientMessageLoader,
+  WebuiClientCreateSessionRequest,
+  WebuiClientCreateSessionResult,
+  WebuiClientSessionCreator,
+  WebuiClientMessageSender,
+  WebuiClientMessageEnqueuer,
+  WebuiClientSessionResumer,
+  WebuiClientEventWatcher,
+  WebuiTranscriptItem,
+  WebuiDiffState,
+  WebuiDiffStateAction,
+  WebuiModelSelectionRequest,
+} from "./contracts.js";
+import type {
+  WebuiComposerSubmitArgs,
+  WebuiComposerSubmitHandlers,
+} from "./projection/composer-state.js";
 
-export interface WebuiClientSession {
-  readonly sessionId: string;
-  readonly agentName: string;
-  readonly title?: string;
-  readonly createdAt: number;
-  readonly updatedAt: number;
-  readonly workspaceDir?: string;
-  readonly isDefaultWorkspace?: boolean;
-  readonly sessionKind?: string;
-  readonly parentSessionId?: string;
-  readonly archived?: boolean;
-  readonly status?: unknown;
-}
+// Re-export the moved symbols so external consumers (tests + future
+// importers) can read them from `app.tsx` while they migrate.
+export {
+  formatWebuiError,
+  recordValue,
+  stringValue,
+  numberValue,
+  booleanValue,
+} from "./value-readers.js";
+export type {
+  WebuiClientMessage,
+  WebuiClientSession,
+  WebuiClientSessionPage,
+  WebuiClientSessionTreeNode,
+  WebuiClientSessionTreePage,
+  WebuiClientSessionTreeLoader,
+  WebuiClientSessionLoader,
+  WebuiClientMessagePage,
+  WebuiClientMessageLoader,
+  WebuiClientCreateSessionRequest,
+  WebuiClientCreateSessionResult,
+  WebuiClientSessionCreator,
+  WebuiClientMessageSender,
+  WebuiClientMessageEnqueuer,
+  WebuiClientSessionResumer,
+  WebuiClientEventWatcher,
+  WebuiTranscriptItem,
+  WebuiDiffState,
+  WebuiDiffStateAction,
+} from "./contracts.js";
+export {
+  readMessageDiff,
+  projectMessageAttachments,
+  deriveConversationUsageNotice,
+  projectWebuiMessage,
+  readMessageUsage,
+  readUsageNumber,
+} from "./projection/message-projection.js";
+export {
+  toolCallResultText,
+  toolCallName,
+  toolCallLabel,
+  toolCallInputText,
+  isWebuiEditTool,
+  webuiEditFileStat,
+  webuiActivitySummary,
+} from "./projection/tool-projection.js";
+export {
+  groupWebuiTranscriptItems,
+  eventSessionId,
+  pendingPermissionFromEvent,
+  questionnaireFromEvent,
+  replacePermission,
+} from "./projection/transcript-projection.js";
+export {
+  webuiClientRequestId,
+  buildWebuiRewindRequest,
+  buildWebuiEditRequest,
+  buildWebuiForkRequest,
+  buildWebuiMessageForkRequest,
+  buildWebuiModelSelectionRequest,
+  webuiModelOptionValue,
+} from "./projection/action-requests.js";
+export {
+  sortWebuiQuestionnaireOptions,
+  canAdvanceWebuiQuestionnaireStep,
+  toggleWebuiQuestionnaireOption,
+  buildWebuiQuestionnaireAnswers,
+  optionIdsForStep,
+} from "./projection/questionnaire-state.js";
+export {
+  formatWebuiGoalDuration,
+  buildWebuiGoalEditPatch,
+  buildWebuiGoalStatusPatch,
+  WEBUI_GOAL_STATUS_COPY,
+  WEBUI_GOAL_WAIT_COPY,
+  projectWebuiThreadGoalMessage,
+} from "./projection/goal-state.js";
+export {
+  buildWebuiComposerHandlers,
+  submitWebuiComposerTurn,
+} from "./projection/composer-state.js";
 
-export interface WebuiClientSessionPage {
-  readonly sessions: readonly WebuiClientSession[];
-  readonly hasMore: boolean;
-  readonly nextCursor?: string;
-}
-
-export interface WebuiClientSessionTreeNode {
-  readonly session: WebuiClientSession;
-  readonly childSessions: readonly WebuiClientSession[];
-}
-
-export interface WebuiClientSessionTreePage {
-  readonly sessions: readonly WebuiClientSessionTreeNode[];
-  readonly hasMore: boolean;
-  readonly nextCursor?: string;
-}
-
-export type WebuiClientSessionTreeLoader = (
-  cursor?: string,
-) => Promise<WebuiClientSessionTreePage>;
-
-export type WebuiClientSessionLoader = (
-  cursor?: string,
-) => Promise<WebuiClientSessionPage>;
-
-export interface WebuiClientMessagePage {
-  readonly messages?: readonly WebuiClientMessage[];
-  readonly nextCursor?: string;
-  readonly hasMore?: boolean;
-}
-
-export type WebuiClientMessageLoader = (request: {
-  readonly id: string;
-  readonly before?: string;
-}) => Promise<WebuiClientMessagePage>;
-
-export interface WebuiClientCreateSessionRequest {
-  readonly name: string;
-  /** Optional: absent means "use the default workspace" (harness resolves it). */
-  readonly workspaceDir?: string;
-  readonly teamModeOff?: boolean;
-}
-export interface WebuiClientCreateSessionResult {
-  readonly sessionId?: string;
-  readonly session?: {
-    readonly sessionId?: string;
-    readonly workspaceDir?: string;
-  };
-}
-export type WebuiClientSessionCreator = (
-  request: WebuiClientCreateSessionRequest,
-) => Promise<WebuiClientCreateSessionResult>;
-export type WebuiClientMessageSender = (
-  request: { readonly id: string; readonly content: string },
-  onFrame: (frame: WebuiStreamFrame) => void,
-) => Promise<void>;
-
-export type WebuiClientMessageEnqueuer = (
-  request: WebuiEnqueueMessageRequest,
-) => Promise<WebuiEnqueueMessageResult>;
-
-export type WebuiClientSessionResumer = (
-  request: {
-    readonly id: string;
-    readonly afterCursor?: string;
-    readonly afterMsgId?: string;
-    readonly drainQueued?: boolean;
-  },
-  onFrame: (frame: WebuiStreamFrame) => void,
-) => Promise<void>;
-
-export type WebuiClientEventWatcher = (
-  onEvent: (event: WebuiRuntimeEvent) => void,
-  onReconnect?: () => void,
-) => () => void;
-
-/**
- * A provider/model pair is not always a unique picker identity: one catalog
- * entry can expose multiple variants. Keep the variant in the native select
- * value so the lookup that follows a change selects the same catalog entry
- * that the user actually chose.
- */
-export function webuiModelOptionValue(model: WebuiModelEntry): string {
-  return `${model.providerId}/${model.modelId}/${model.variant ?? ""}`;
-}
-
-export interface WebuiModelSelectionRequest {
-  readonly providerId: string;
-  readonly modelId: string;
-  readonly variant?: string;
-  readonly contextLimit?: number;
-  readonly sessionId?: string;
-}
-
-export function buildWebuiModelSelectionRequest(
-  model: WebuiModelEntry,
-  draft: WebuiModelPickerDraft,
-  sessionId?: string,
-): WebuiModelSelectionRequest {
-  const variant = draft.variant !== undefined ? draft.variant : model.variant;
-  const inheritedContextLimit =
-    typeof model.contextLimit === "number" ? model.contextLimit : undefined;
-  const contextLimit =
-    draft.contextLimit !== undefined
-      ? draft.contextLimit
-      : inheritedContextLimit;
-  return {
-    providerId: model.providerId,
-    modelId: model.modelId,
-    // The empty string is meaningful: it explicitly disables thinking.
-    ...(variant !== undefined ? { variant } : {}),
-    ...(contextLimit !== undefined ? { contextLimit } : {}),
-    ...(sessionId ? { sessionId } : {}),
-  };
-}
+// (WebuiClientMessage, WebuiClientSession, page/loader types,
+//  WebuiTranscriptItem, WebuiDiffState/Action, etc. moved to ./contracts.ts in W2)
 
 export function readSessionIdFromHash(hash: string): string | undefined {
   const params = new URLSearchParams(
@@ -343,406 +356,9 @@ export function sessionHash(sessionId: string): string {
   return `#${params.toString()}`;
 }
 
-export type WebuiTranscriptItem =
-  | {
-      readonly kind: "user" | "assistant" | "thinking";
-      readonly text: string;
-      readonly messageId: string;
-      /** Turn the message belongs to: the key the runtime accepts for a turn diff. */
-      readonly turnId?: string;
-      readonly durationMs?: number;
-      readonly diff?: WebuiTurnDiffView;
-      readonly actions?: { readonly fork?: boolean; readonly rewind?: boolean; readonly edit?: boolean };
-      readonly timestamp?: number;
-      readonly isGoal?: boolean;
-      readonly attachments?: readonly MessageAttachment[];
-      readonly usage?: Record<string, unknown>;
-    }
-  | {
-      readonly kind: "tool";
-      readonly messageId: string;
-      readonly turnId?: string;
-      readonly tools: readonly Record<string, unknown>[];
-      readonly diff?: WebuiTurnDiffView;
-      readonly actions?: { readonly fork?: boolean; readonly rewind?: boolean; readonly edit?: boolean };
-      readonly timestamp?: number;
-      readonly isGoal?: boolean;
-      readonly usage?: Record<string, unknown>;
-    }
-  | {
-      readonly kind: "questionnaire_response";
-      readonly messageId: string;
-      readonly turnId?: string;
-      readonly summary: WebuiQuestionnaireResponseSummary;
-      readonly timestamp?: number;
-    };
+// (moved to ./projection/message-projection.ts in W2)
 
-function recordValue(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
-
-function readMessageDiff(message: WebuiClientMessage): WebuiTurnDiffView | undefined {
-  const raw = (() => {
-    if (message.rawJson) {
-      try {
-        return recordValue(JSON.parse(message.rawJson));
-      } catch {
-        return undefined;
-      }
-    }
-    return recordValue(message);
-  })();
-  const meta = message.meta ?? recordValue(raw?.meta);
-  const rawFiles = message.fileChanges ?? raw?.file_changes ?? raw?.fileChanges ?? meta?.file_changes ?? meta?.fileChanges;
-  const fileChanges = Array.isArray(rawFiles)
-    ? rawFiles.flatMap((file): WebuiFileDiffInfoView[] => {
-        const value = recordValue(file);
-        if (!value || typeof value.file !== "string") return [];
-        return [{
-          file: value.file,
-          additions: typeof value.additions === "number" ? value.additions : 0,
-          deletions: typeof value.deletions === "number" ? value.deletions : 0,
-          ...(typeof value.status === "string" ? { status: value.status } : {}),
-        }];
-      })
-    : undefined;
-  const sourceMessageId = message.sourceMessageId ?? stringValue(raw?.sourceMessageId) ?? stringValue(meta?.sourceMessageId);
-  const changeSetId = message.changeSetId ?? stringValue(raw?.changeSetId) ?? stringValue(meta?.changeSetId);
-  const status = message.turnDiffStatus ?? stringValue(raw?.turnDiffStatus) ?? stringValue(meta?.turnDiffStatus);
-  const revertedAt = message.revertedAt ?? numberValue(raw?.revertedAt) ?? numberValue(meta?.revertedAt);
-  const canUndo = message.canUndo ?? booleanValue(raw?.canUndo) ?? booleanValue(meta?.canUndo);
-  const canReapply = message.canReapply ?? booleanValue(raw?.canReapply) ?? booleanValue(meta?.canReapply);
-  if (!fileChanges?.length && !sourceMessageId && !changeSetId && !status) return undefined;
-  return {
-    ...(fileChanges?.length ? { fileChanges } : {}),
-    ...(sourceMessageId ? { sourceMessageId } : {}),
-    ...(changeSetId ? { changeSetId } : {}),
-    ...(status ? { status } : {}),
-    ...(revertedAt !== undefined ? { revertedAt } : {}),
-    ...(canUndo !== undefined ? { canUndo } : {}),
-    ...(canReapply !== undefined ? { canReapply } : {}),
-  };
-}
-
-function stringValue(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value : undefined;
-}
-
-function numberValue(value: unknown): number | undefined {
-  return typeof value === "number" ? value : undefined;
-}
-
-function booleanValue(value: unknown): boolean | undefined {
-  return typeof value === "boolean" ? value : undefined;
-}
-
-function projectMessageAttachments(
-  attachments: readonly unknown[] | undefined,
-): readonly MessageAttachment[] | undefined {
-  if (!attachments || attachments.length === 0) return undefined;
-  const projected: MessageAttachment[] = [];
-  for (const entry of attachments) {
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
-    const record = entry as Record<string, unknown>;
-    const id = stringValue(record.id) ?? stringValue(record.attachment_id) ?? `${projected.length}-`;
-    const typeValue = stringValue(record.type) ?? stringValue(record.attachment_type);
-    const type: MessageAttachment["type"] = typeValue === "file" ? "file" : "image";
-    const fileName =
-      stringValue(record.file_name) ??
-      stringValue(record.fileName) ??
-      stringValue(record.name) ??
-      id;
-    projected.push({
-      id,
-      type,
-      file_name: fileName,
-      ...(stringValue(record.file_path) ?? stringValue(record.filePath)
-        ? { file_path: stringValue(record.file_path) ?? stringValue(record.filePath) }
-        : {}),
-      ...(stringValue(record.preview_url) ?? stringValue(record.previewUrl)
-        ? { preview_url: stringValue(record.preview_url) ?? stringValue(record.previewUrl) }
-        : {}),
-      ...(stringValue(record.desktop_path) ?? stringValue(record.desktopPath)
-        ? { desktop_path: stringValue(record.desktop_path) ?? stringValue(record.desktopPath) }
-        : {}),
-      ...(stringValue(record.mime_type) ?? stringValue(record.mimeType)
-        ? { mime_type: stringValue(record.mime_type) ?? stringValue(record.mimeType) }
-        : {}),
-      ...(typeof record.file_size === "number" ? { file_size: record.file_size } : {}),
-      ...(stringValue(record.src) ? { src: stringValue(record.src) } : {}),
-    });
-  }
-  return projected.length > 0 ? projected : undefined;
-}
-
-/**
- * Derive a `ConversationUsageNotice` from the cloud-issued quota window so
- * the session banner can surface a real signal without inventing one. The
- * cloud API returns percentage-based usage for the five-hour and weekly
- * windows plus a count for video; the threshold is the same value the
- * desktop panel treats as "approaching cap". Only one notice is returned —
- * the most restrictive signal wins — so the banner never duplicates.
- */
-function deriveConversationUsageNotice(
-  quota: WebuiUsageQuotaResult | undefined,
-): ConversationUsageNotice | null {
-  if (!quota || quota.signedIn === false) return null;
-  const view = quota.quota;
-  if (!view) return null;
-  const candidates: ConversationUsageNotice[] = [];
-  if (!view.weekly.unlimited && (view.weekly.usedPercent ?? 0) >= 80) {
-    candidates.push({
-      kind: "weekly",
-      messageKey: "weekly",
-      resetAtMs: view.weekly.resetAtMs ?? null,
-      actions: ["subscribe_plan", "upgrade_plan"],
-      dismissable: true,
-    });
-  }
-  if (!view.fiveHour.unlimited && (view.fiveHour.usedPercent ?? 0) >= 80) {
-    candidates.push({
-      kind: "five_hour",
-      messageKey: "five_hour",
-      resetAtMs: view.fiveHour.resetAtMs ?? null,
-      actions: ["buy_credits"],
-      dismissable: true,
-    });
-  }
-  if (view.video && !view.video.unlimited) {
-    const remaining =
-      (view.video.totalCount ?? 0) - (view.video.usedCount ?? 0);
-    if (remaining <= 0) {
-      candidates.push({
-        kind: "video",
-        messageKey: "video",
-        resetAtMs: view.video.resetAtMs ?? null,
-        actions: ["buy_credits"],
-        dismissable: true,
-      });
-    }
-  }
-  return candidates[0] ?? null;
-}
-
-export function projectWebuiMessage(
-  message: WebuiClientMessage,
-): WebuiTranscriptItem[] {
-  const thinkingItems: WebuiTranscriptItem[] = [];
-  const toolItems: WebuiTranscriptItem[] = [];
-  const answerItems: WebuiTranscriptItem[] = [];
-  const questionnaireItems: WebuiTranscriptItem[] = [];
-  const attachments = projectMessageAttachments(message.attachments);
-  // Pull the raw message-level usage (matches `TokenUsage` from agent-core).
-  // The message-parts projector already strips the questionnaire XML block
-  // before producing text parts, so the user bubble never surfaces raw
-  // `<questionnaire-response>` markup.
-  const messageUsage = readMessageUsage(message);
-  for (const part of projectMessageParts(message)) {
-    const turn = message.turnId ? { turnId: message.turnId } : {};
-    if (part.type === "thinking")
-      thinkingItems.push({
-        kind: "thinking",
-        text: part.content,
-        messageId: message.msgId,
-        ...turn,
-        ...(part.durationMs !== undefined ? { durationMs: part.durationMs } : {}),
-        ...(message.actions ? { actions: message.actions } : {}),
-        ...(message.timestamp !== undefined ? { timestamp: message.timestamp } : {}),
-        ...(attachments ? { attachments } : {}),
-        ...(messageUsage ? { usage: messageUsage } : {}),
-      });
-    else if (part.type === "text")
-      answerItems.push({
-        kind: message.role === "user" ? "user" : "assistant",
-        text: part.content,
-        messageId: message.msgId,
-        ...turn,
-        ...(message.actions ? { actions: message.actions } : {}),
-        ...(message.timestamp !== undefined ? { timestamp: message.timestamp } : {}),
-        ...((message.source === "thread-goal" || message.kind === "goal") ? { isGoal: true } : {}),
-        ...(attachments ? { attachments } : {}),
-        ...(messageUsage ? { usage: messageUsage } : {}),
-      });
-    else if (part.type === "tool_call")
-      toolItems.push({
-        kind: "tool",
-        tools: [part.toolCall],
-        messageId: message.msgId,
-        ...turn,
-        ...(messageUsage ? { usage: messageUsage } : {}),
-      });
-    else if (part.type === "questionnaire_response")
-      questionnaireItems.push({
-        kind: "questionnaire_response",
-        messageId: message.msgId,
-        ...turn,
-        summary: part.summary,
-        ...(message.timestamp !== undefined ? { timestamp: message.timestamp } : {}),
-      });
-  }
-  // The pure parts layer preserves Desktop's source order. The legacy
-  // transcript item contract renders the process disclosure before markdown,
-  // so keep that public projection order stable for existing callers.
-  const output = [...thinkingItems, ...toolItems, ...answerItems, ...questionnaireItems];
-  const diff = readMessageDiff(message);
-  if (diff && output.length > 0) {
-    const last = output.length - 1;
-    const lastItem = output[last];
-    // The questionnaire response kind intentionally never carries a diff — its
-    // text payload records the user's answers, not a tool call summary.
-    if (
-      lastItem &&
-      (lastItem.kind === "user" ||
-        lastItem.kind === "assistant" ||
-        lastItem.kind === "thinking" ||
-        lastItem.kind === "tool")
-    )
-      output[last] = { ...lastItem, diff };
-  }
-  return output;
-}
-
-function readMessageUsage(message: WebuiClientMessage): Record<string, unknown> | undefined {
-  const direct = (message as { usage?: unknown }).usage;
-  if (direct && typeof direct === "object" && !Array.isArray(direct)) return direct as Record<string, unknown>;
-  if (typeof message.rawJson === "string") {
-    try {
-      const raw = JSON.parse(message.rawJson) as { usage?: unknown };
-      if (raw.usage && typeof raw.usage === "object" && !Array.isArray(raw.usage)) {
-        return raw.usage as Record<string, unknown>;
-      }
-    } catch {
-      return undefined;
-    }
-  }
-  return undefined;
-}
-
-/** Numeric fields on the runtime `usage` payload — accept both the
- *  camelCase keys the live wire frame ships (`totalTokens`, `outputTokens`,
- *  …) and the snake_case keys the persisted `data_json` carries, so the
- *  same projection works for both history and live updates. */
-function readUsageNumber(usage: Record<string, unknown> | undefined, ...keys: readonly string[]): number | undefined {
-  if (!usage) return undefined;
-  for (const key of keys) {
-    const value = usage[key];
-    if (typeof value === "number" && Number.isFinite(value)) return value;
-  }
-  return undefined;
-}
-
-function toolCallResultText(tool: Record<string, unknown>): string | undefined {
-  const value =
-    tool.tool_call_result_data ??
-    tool.toolCallResultData ??
-    tool.result ??
-    tool.output ??
-    tool.error;
-  if (typeof value === "string" && value.trim()) return value;
-  if (!value || typeof value !== "object") return undefined;
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return undefined;
-  }
-}
-
-function toolCallName(tool: Record<string, unknown>): string {
-  const value =
-    tool.tool_call_name ??
-    tool.toolCallName ??
-    tool.tool_name ??
-    tool.toolName ??
-    tool.name;
-  return typeof value === "string" && value.trim() ? value.trim() : "tool";
-}
-
-function toolCallLabel(tool: Record<string, unknown>): string {
-  const name = toolCallName(tool);
-  const normalized = name.toLowerCase();
-  const labels: Readonly<Record<string, string>> = {
-    bash: "执行命令",
-    shell: "执行命令",
-    execute: "执行命令",
-    execute_command: "执行命令",
-    read: "读取文件",
-    read_file: "读取文件",
-    write: "写入文件",
-    write_file: "写入文件",
-    edit: "编辑文件",
-    edit_file: "编辑文件",
-    str_replace: "编辑文件",
-    grep: "搜索文件",
-    find: "查找文件",
-    ls: "列出文件",
-    web: "访问网页",
-    web_search: "搜索网页",
-    webfetch: "访问网页",
-    web_fetch: "访问网页",
-    task: "调用子代理",
-  };
-  return labels[normalized] ?? name.replace(/[_-]+/gu, " ");
-}
-
-function toolCallInputText(tool: Record<string, unknown>): string | undefined {
-  const value =
-    tool.tool_call_args ??
-    tool.toolCallArgs ??
-    tool.tool_call_args_json ??
-    tool.toolCallArgsJson ??
-    tool.input ??
-    tool.args;
-  if (typeof value === "string" && value.trim()) return value;
-  if (!value || typeof value !== "object") return undefined;
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return undefined;
-  }
-}
-
-const WEBUI_EDIT_TOOL_LABELS: ReadonlySet<string> = new Set([
-  "写入文件",
-  "编辑文件",
-]);
-
-function isWebuiEditTool(tool: Record<string, unknown>): boolean {
-  return WEBUI_EDIT_TOOL_LABELS.has(toolCallLabel(tool));
-}
-
-/** Best-effort file name + +N/-N stat for an edit tool (desktop diff card). */
-function webuiEditFileStat(tool: Record<string, unknown>): {
-  readonly name?: string;
-  readonly added: number;
-  readonly deleted: number;
-} {
-  const input = toolCallInputText(tool) ?? "";
-  const result = toolCallResultText(tool) ?? "";
-  let path: unknown;
-  try {
-    const parsed: unknown = JSON.parse(input);
-    if (parsed && typeof parsed === "object") {
-      const record = parsed as Record<string, unknown>;
-      path = record.file_path ?? record.filePath ?? record.path ?? record.file;
-    }
-  } catch {
-    if (/^[\w./~-]+\.[\w]+$/u.test(input.trim())) path = input.trim();
-  }
-  const name =
-    typeof path === "string" && path.trim()
-      ? (path.split(/[\\/]/u).pop() ?? path.trim())
-      : undefined;
-  let added = 0;
-  let deleted = 0;
-  for (const line of result.split("\n")) {
-    if (line.startsWith("+++") || line.startsWith("---")) continue;
-    if (line.startsWith("+")) added += 1;
-    else if (line.startsWith("-")) deleted += 1;
-  }
-  return { ...(name ? { name } : {}), added, deleted };
-}
+// (tool helpers moved to ./projection/tool-projection.ts in W2)
 
 function WebuiToolRow({
   tool,
@@ -781,23 +397,6 @@ function WebuiToolRow({
     </details>
   );
 }
-
-export interface WebuiDiffState {
-  readonly view?: WebuiTurnDiffView;
-  readonly unsupported: boolean;
-  readonly busy: boolean;
-  readonly expanded: boolean;
-  readonly reviewing: boolean;
-}
-
-export type WebuiDiffStateAction =
-  | { readonly type: "loaded"; readonly view: WebuiTurnDiffView }
-  | { readonly type: "unsupported" }
-  | { readonly type: "begin-mutation" }
-  | { readonly type: "mutation-succeeded"; readonly view: WebuiTurnDiffView }
-  | { readonly type: "mutation-failed" }
-  | { readonly type: "toggle-expanded" }
-  | { readonly type: "toggle-review" };
 
 export const initialWebuiDiffState: WebuiDiffState = {
   unsupported: false,
@@ -1110,14 +709,7 @@ export function WebuiToolResults({
   );
 }
 
-function webuiActivitySummary(tools: readonly Record<string, unknown>[]): string {
-  const labels = tools.map(toolCallLabel);
-  if (labels.every((label) => label === "执行命令")) return `执行 ${tools.length} 条命令`;
-  if (labels.every((label) => label === "读取文件")) return `查看 ${tools.length} 个文件`;
-  if (labels.every((label) => label === "编辑文件" || label === "写入文件"))
-    return `编辑 ${tools.length} 个文件`;
-  return `执行 ${tools.length} 个操作`;
-}
+// (webuiActivitySummary moved to ./projection/tool-projection.ts in W2)
 
 /** Desktop activity-group: a 16px activity header and a timeline body.
  *  Desktop defaults to collapsed; the WebUI's previous `open` default is
@@ -2771,129 +2363,7 @@ export function WebuiSessionList({
  * answer. Exported because it is the contract the transcript's markup depends
  * on.
  */
-export function groupWebuiTranscriptItems(
-  items: readonly WebuiTranscriptItem[],
-): {
-  messageId: string;
-  turnId?: string;
-  items: WebuiTranscriptItem[];
-  totalRequestDurationMs?: number;
-  totalOutputTokens?: number;
-  /** Wall-clock turn duration derived from message timestamps: the oldest
-   *  `user` timestamp in the same turn (across group boundaries) to the
-   *  newest `assistant` timestamp. The runtime stores no per-turn wall-clock,
-   *  so this is the only way to surface the real "共执行 N 分 M 秒" value
-   *  when `usage.request_duration_ms` is absent. Skipped when fewer than two
-   *  timestamps are visible so we never report 0 seconds for a turn we can't
-   *  actually measure. */
-  wallClockDurationMs?: number;
-}[] {
-  type Group = {
-    messageId: string;
-    turnId?: string;
-    items: WebuiTranscriptItem[];
-    totalRequestDurationMs?: number;
-    totalOutputTokens?: number;
-    assistantMaxTimestamp?: number;
-  };
-  // The user and assistant blocks live in different groups (the renderer
-  // opens its own block for every user line). To compute a wall-clock span
-  // across the user prompt and the assistant reply, remember the smallest
-  // user timestamp we have seen per turn key, then look it up when the
-  // matching assistant block lands. Keyed by turnId when present, falling
-  // back to queryKey and finally messageId for unkeyed cases.
-  const userStartByTurn = new Map<string, number>();
-  const turnKeyFor = (item: WebuiTranscriptItem): string =>
-    item.turnId ?? item.messageId;
-  for (const item of items) {
-    if (
-      item.kind === "user" &&
-      typeof item.timestamp === "number" &&
-      Number.isFinite(item.timestamp)
-    ) {
-      const key = turnKeyFor(item);
-      const current = userStartByTurn.get(key);
-      if (current === undefined || item.timestamp < current) {
-        userStartByTurn.set(key, item.timestamp);
-      }
-    }
-  }
-  // Track which messageIds have already had their `usage.outputTokens`
-  // counted in the current group. `projectWebuiMessage` emits one transcript
-  // item per part (thinking / tool / text) for every assistant message, and
-  // every part carries the same `usage` blob. Without dedupe we would
-  // multiply the per-message token count by the number of parts and report
-  // a rate that's off by the part count (33 messages with thinking+tool+
-  // answer would count each message's output three times).
-  const countedMessages = new Set<string>();
-  const out: Group[] = [];
-  const addUsage = (group: Group, item: WebuiTranscriptItem): void => {
-    if (item.kind === "user" || item.kind === "questionnaire_response") return;
-    // Capture wall-clock timestamps only on assistant items so the duration
-    // spans the user prompt → final assistant frame, not random inter-tool
-    // frames. `timestamp` is the runtime-stamped `createdAtMs` on the wire.
-    if (typeof item.timestamp === "number" && Number.isFinite(item.timestamp)) {
-      group.assistantMaxTimestamp = Math.max(
-        group.assistantMaxTimestamp ?? Number.NEGATIVE_INFINITY,
-        item.timestamp,
-      );
-    }
-    // Dedupe by messageId: each underlying message contributes its usage
-    // exactly once, regardless of how many parts `projectWebuiMessage`
-    // emitted for it.
-    if (countedMessages.has(item.messageId)) return;
-    countedMessages.add(item.messageId);
-    const usage = item.usage;
-    const tokens = readUsageNumber(usage, "outputTokens", "output_tokens");
-    if (typeof tokens === "number") {
-      group.totalOutputTokens = (group.totalOutputTokens ?? 0) + tokens;
-    }
-  };
-  for (const item of items) {
-    const last = out[out.length - 1];
-    // A user line always opens its own block; everything else that follows
-    // merges into the open assistant block — the server splits one reply
-    // across several msg_ids (one per tool round) and desktop renders the
-    // whole turn as a single disclosure, not one block per msg_id.
-    const lastIsUser = last?.items[0]?.kind === "user";
-    const joinsOpenBlock =
-      last && ((!lastIsUser && item.kind !== "user") || last.messageId === item.messageId);
-    if (joinsOpenBlock && last) {
-      last.items.push(item);
-      // The runtime answers a turn diff only for the turn key, so carry it on
-      // the group: the first message of the block already knows its turn.
-      if (!last.turnId && item.turnId) last.turnId = item.turnId;
-      addUsage(last, item);
-    } else {
-      const group: Group = {
-        messageId: item.messageId,
-        ...(item.turnId ? { turnId: item.turnId } : {}),
-        items: [item],
-      };
-      countedMessages.clear();
-      addUsage(group, item);
-      out.push(group);
-    }
-  }
-  return out.map((group) => {
-    const { assistantMaxTimestamp, ...rest } = group;
-    const userStart = userStartByTurn.get(group.turnId ?? group.messageId);
-    if (
-      typeof userStart === "number" &&
-      typeof assistantMaxTimestamp === "number" &&
-      assistantMaxTimestamp > userStart
-    ) {
-      const wallClockDurationMs = assistantMaxTimestamp - userStart;
-      // Only surface the duration when it is meaningful (≥ 1s). A single
-      // timestamp or sub-second gap would otherwise render as "共执行 0 秒"
-      // and break the Desktop parity contract.
-      if (wallClockDurationMs >= 1000) {
-        return { ...rest, wallClockDurationMs };
-      }
-    }
-    return rest;
-  });
-}
+// (groupWebuiTranscriptItems moved to ./projection/transcript-projection.ts in W2)
 
 type WebuiMessageActionCapabilities = {
   readonly fork?: boolean;
@@ -2934,66 +2404,7 @@ export function scheduleWebuiCopiedReset(
   schedule(() => setCopied(false), 1_200);
 }
 
-export function buildWebuiRewindRequest(
-  id: string,
-  userMessageId: string,
-  clientRequestId: string,
-  rewindTurnDiff: boolean,
-): WebuiRewindSessionRequest {
-  return { id, userMessageId, clientRequestId, rewindTurnDiff };
-}
-
-export function buildWebuiEditRequest(
-  id: string,
-  userMessageId: string,
-  clientRequestId: string,
-  content: string,
-): WebuiEditSessionMessageRequest | undefined {
-  const trimmed = content.trim();
-  return trimmed ? { id, userMessageId, clientRequestId, content: trimmed } : undefined;
-}
-
-export function buildWebuiForkRequest(args: {
-  readonly id: string;
-  readonly assistantMessageId?: string;
-  readonly clientRequestId: string;
-  readonly title?: string;
-  readonly useSuggestedTitle: boolean;
-  readonly createIsolatedWorktree: boolean;
-}): WebuiForkSessionRequest {
-  const title = args.title?.trim();
-  return {
-    id: args.id,
-    ...(args.assistantMessageId ? { assistantMessageId: args.assistantMessageId } : {}),
-    clientRequestId: args.clientRequestId,
-    ...(title ? { title } : {}),
-    useSuggestedTitle: args.useSuggestedTitle,
-    createIsolatedWorktree: args.createIsolatedWorktree,
-  };
-}
-
-export function buildWebuiMessageForkRequest(
-  id: string,
-  assistantMessageId: string,
-  clientRequestId: string,
-  title: string,
-): WebuiForkSessionRequest {
-  return buildWebuiForkRequest({
-    id,
-    assistantMessageId,
-    clientRequestId,
-    title,
-    useSuggestedTitle: !title.trim(),
-    createIsolatedWorktree: false,
-  });
-}
-
-function webuiClientRequestId(prefix: string): string {
-  const random = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  return `${prefix}-${random}`;
-}
+// (action-request builders moved to ./projection/action-requests.ts in W2)
 
 export function WebuiMessageActionButton({
   testId,
@@ -3628,357 +3039,21 @@ function RailRow({
  * stream. The shell test drives this function end-to-end and asserts
  * the resulting state matches the reachable outcomes.
  */
-export interface WebuiComposerSubmitArgs {
-  readonly sessionId?: string;
-  readonly draft: string;
-  readonly sending: boolean;
-  readonly deps: WebuiStreamLoopDeps;
-  readonly enqueueMessage?: WebuiClientMessageEnqueuer;
-  /** Create the first session silently when New Task has no selected session. */
-  readonly createSession?: WebuiClientSessionCreator;
-  readonly createSessionWorkspaceDir?: string;
-  readonly teamModeOff?: boolean;
-}
+// (WebuiComposerSubmitArgs, WebuiComposerSubmitHandlers, buildWebuiComposerHandlers,
+//  submitWebuiComposerTurn moved to ./projection/composer-state.ts in W2)
 
-export interface WebuiComposerSubmitHandlers {
-  readonly setStream: (
-    update: (current: WebuiStreamState) => WebuiStreamState,
-  ) => void;
-  readonly setSending: (sending: boolean) => void;
-  readonly onDraftChange: (next: string) => void;
-  readonly onNeedsSession?: (draft: string) => void;
-  readonly onSessionCreated?: (sessionId: string) => void;
-  readonly onQueued?: () => void;
-}
+// (eventSessionId, pendingPermissionFromEvent, questionnaireFromEvent, replacePermission
+//  moved to ./projection/transcript-projection.ts in W2)
 
-/**
- * Assemble the React-state setters the submit handler needs into the
- * shape `submitWebuiComposerTurn` accepts. The component in this file
- * calls this once per render with the setters it derives from
- * `useState`, then hands the result to `submitWebuiComposerTurn`. The
- * helper is a single-line pass-through by design — its job is to make
- * the assembly a named unit that a test can drive, so a regression
- * that drops, swaps, or ignores a field is caught by a failing
- * assertion. The shell test
- * `webui-shell.test.ts > "buildWebuiComposerHandlers passes every
- * field through unchanged"` walks each field and asserts identity,
- * which would die if a future change confused `setStream` with
- * `setSending`.
- *
- * Note that this covers the helper itself, not the component's call
- * into it. The component's `submit = async (event) => { ... await
- * submitWebuiComposerTurn(args, buildWebuiComposerHandlers({...})) }`
- * line is verified by inspection only — no DOM environment exists,
- * and source-text assertions are not allowed in this project.
- */
-export function buildWebuiComposerHandlers(args: {
-  readonly setStream: WebuiComposerSubmitHandlers["setStream"];
-  readonly setSending: WebuiComposerSubmitHandlers["setSending"];
-  readonly onDraftChange: WebuiComposerSubmitHandlers["onDraftChange"];
-  readonly onNeedsSession?: WebuiComposerSubmitHandlers["onNeedsSession"];
-  readonly onSessionCreated?: WebuiComposerSubmitHandlers["onSessionCreated"];
-  readonly onQueued?: WebuiComposerSubmitHandlers["onQueued"];
-}): WebuiComposerSubmitHandlers {
-  return {
-    setStream: args.setStream,
-    setSending: args.setSending,
-    onDraftChange: args.onDraftChange,
-    onNeedsSession: args.onNeedsSession,
-    onSessionCreated: args.onSessionCreated,
-    onQueued: args.onQueued,
-  };
-}
+// (optionIdsForStep moved to ./projection/questionnaire-state.ts in W2)
 
-export async function submitWebuiComposerTurn(
-  args: WebuiComposerSubmitArgs,
-  handlers: WebuiComposerSubmitHandlers,
-): Promise<void> {
-  const message = args.draft.trim();
-  if (!message || (!args.deps.sendMessage && !args.enqueueMessage)) return;
-  let sessionId = args.sessionId;
-  if (!sessionId) {
-    // No workspace is fine: the harness falls back to the default workspace
-    // (desktop's 不需要项目 / default-directory flows). Only bail when the
-    // session creator itself is not wired — that used to swallow the send
-    // silently whenever the folder pill was unset.
-    if (!args.createSession) {
-      handlers.onNeedsSession?.(args.draft);
-      return;
-    }
-    try {
-      const result = await args.createSession({
-        name: "main",
-        workspaceDir: args.createSessionWorkspaceDir,
-        teamModeOff: args.teamModeOff,
-      });
-      sessionId = createdSessionId(result);
-      if (!sessionId)
-        throw new Error("createSession response did not include a session id");
-      // Seed the live state on the current (home) key first: setSelected
-      // has not flushed yet, so a later write would land on a stale key and
-      // drop the turn clock. onSessionCreated then migrates this state into
-      // the new session key. The user's line comes from the server's
-      // replayed `msg-user-*` frame — no second renderer.
-      handlers.setStream(() => ({
-        ...initialWebuiStreamState,
-        phase: "streaming",
-        processingStartedAtMs: Date.now(),
-      }));
-      // Enter the session view as soon as the session exists. Waiting for
-      // the stream to finish kept the welcome hero on screen while the
-      // first turn rendered underneath it (the first message showed on
-      // the new-task page until the reply completed).
-      handlers.onSessionCreated?.(sessionId);
-    } catch (error) {
-      handlers.setStream((current) => ({
-        ...current,
-        refusal: error instanceof Error ? error.message : String(error),
-      }));
-      return;
-    }
-  }
-  if (args.sending) {
-    if (!args.enqueueMessage) return;
-    try {
-      await args.enqueueMessage({ id: sessionId, content: message });
-      handlers.onDraftChange("");
-      handlers.onQueued?.();
-    } catch (error) {
-      handlers.setStream((current) => ({
-        ...current,
-        refusal: error instanceof Error ? error.message : String(error),
-      }));
-    }
-    return;
-  }
-  if (!args.deps.sendMessage) return;
-  handlers.setSending(true);
-  handlers.onDraftChange("");
-  // Initialise the reducer state via the live `setStream`. The
-  // production binding goes through `buildWebuiStreamLoopSink`
-  // unconditionally — there is no test-only override; the seam
-  // coverage comes from the helper test and the production-path
-  // test that drives this function end-to-end.
-  handlers.setStream((current) => ({
-    ...initialWebuiStreamState,
-    phase: "streaming",
-    processingStartedAtMs: Date.now(),
-  }));
-  try {
-    await runWebuiStreamLoop(
-      args.deps,
-      { sessionId, message },
-      buildWebuiStreamLoopSink(handlers.setStream),
-    );
-  } finally {
-    handlers.setSending(false);
-  }
-}
+// (sortWebuiQuestionnaireOptions, canAdvanceWebuiQuestionnaireStep,
+//  toggleWebuiQuestionnaireOption, buildWebuiQuestionnaireAnswers
+//  moved to ./projection/questionnaire-state.ts in W2)
 
-function eventSessionId(event: WebuiRuntimeEvent): string | undefined {
-  const value = event.payload.sessionId ?? event.payload.session_id;
-  return typeof value === "string" ? value : undefined;
-}
-
-function pendingPermissionFromEvent(
-  event: WebuiRuntimeEvent,
-): WebuiPendingPermission | undefined {
-  const payload = event.payload;
-  if (
-    typeof payload.requestId !== "string" ||
-    typeof payload.sessionId !== "string" ||
-    typeof payload.agentName !== "string" ||
-    typeof payload.toolName !== "string" ||
-    !Array.isArray(payload.ruleContents) ||
-    !payload.ruleContents.every((item) => typeof item === "string") ||
-    typeof payload.reason !== "string" ||
-    typeof payload.allowAlwaysSupported !== "boolean" ||
-    typeof payload.createdAt !== "number"
-  )
-    return undefined;
-  return {
-    requestId: payload.requestId,
-    sessionId: payload.sessionId,
-    agentName: payload.agentName,
-    toolName: payload.toolName,
-    ruleContents: payload.ruleContents,
-    ...(typeof payload.toolInput === "string"
-      ? { toolInput: payload.toolInput }
-      : {}),
-    ...(typeof payload.toolDescription === "string"
-      ? { toolDescription: payload.toolDescription }
-      : {}),
-    reason: payload.reason,
-    allowAlwaysSupported: payload.allowAlwaysSupported,
-    createdAt: payload.createdAt,
-  };
-}
-
-function questionnaireFromEvent(
-  event: WebuiRuntimeEvent,
-): WebuiQuestionnaireRequest | undefined {
-  const value = event.payload.request;
-  if (!value || typeof value !== "object" || Array.isArray(value))
-    return undefined;
-  const request = value as Partial<WebuiQuestionnaireRequest>;
-  if (
-    typeof request.id !== "string" ||
-    typeof request.schemaVersion !== "number" ||
-    !Array.isArray(request.steps)
-  )
-    return undefined;
-  return request as WebuiQuestionnaireRequest;
-}
-
-function replacePermission(
-  current: readonly WebuiPendingPermission[],
-  next: WebuiPendingPermission,
-): readonly WebuiPendingPermission[] {
-  return [
-    ...current.filter((permission) => permission.requestId !== next.requestId),
-    next,
-  ];
-}
-
-function optionIdsForStep(
-  selections: Readonly<Record<string, readonly string[]>>,
-  stepId: string,
-): readonly string[] {
-  return selections[stepId] ?? [];
-}
-
-export function sortWebuiQuestionnaireOptions(
-  options: readonly import("../server/port.js").WebuiQuestionnaireOption[],
-): readonly import("../server/port.js").WebuiQuestionnaireOption[] {
-  return [...options].sort(
-    (left, right) => Number(right.recommended === true) - Number(left.recommended === true),
-  );
-}
-
-export function canAdvanceWebuiQuestionnaireStep(
-  step: import("../server/port.js").WebuiQuestionnaireStep | undefined,
-  selected: readonly string[],
-  selectedOther: boolean,
-  otherText: string,
-): boolean {
-  if (!step || !step.required) return true;
-  if (selectedOther) return Boolean(otherText.trim());
-  return selected.length > 0;
-}
-
-export function toggleWebuiQuestionnaireOption(
-  selected: readonly string[],
-  optionId: string,
-  multiple: boolean,
-): readonly string[] {
-  if (!multiple) return [optionId];
-  return selected.includes(optionId)
-    ? selected.filter((id) => id !== optionId)
-    : [...selected, optionId];
-}
-
-/**
- * Convert the interaction panel's controlled fields into the harness answer
- * shape. Keeping this projection outside the JSX makes the important
- * `allowOther` path effect-testable without pretending a server-side render
- * exercised browser input events.
- */
-export function buildWebuiQuestionnaireAnswers(
-  request: WebuiQuestionnaireRequest,
-  selections: Readonly<Record<string, readonly string[]>>,
-  otherSelections: Readonly<Record<string, boolean>>,
-  otherTexts: Readonly<Record<string, string>>,
-): readonly WebuiQuestionnaireAnswer[] {
-  return request.steps.map((step) => {
-    const selectedOther = otherSelections[step.id] === true;
-    return {
-      stepId: step.id,
-      selectedOptionIds: optionIdsForStep(selections, step.id),
-      ...(selectedOther
-        ? {
-            selectedOther: true,
-            otherText: otherTexts[step.id] ?? "",
-          }
-        : {}),
-    };
-  });
-}
-
-export function projectWebuiThreadGoalMessage(
-  eventType: string,
-  goal: WebuiGoal,
-): WebuiStreamMessage | undefined {
-  if (
-    eventType !== "thread_goal.objective_updated" &&
-    eventType !== "thread_goal.objective_steering" &&
-    eventType !== "thread_goal.updated"
-  )
-    return undefined;
-  return {
-    id: `thread-goal-${goal.goalId}`,
-    answer: goal.objective,
-    thinking: "",
-    role: "user",
-    timestamp: goal.updatedAt,
-    isGoal: true,
-  };
-}
-
-export const WEBUI_GOAL_STATUS_COPY: Record<WebuiGoalStatus | "updated", string> = {
-  active: "进行中",
-  paused: "已停止",
-  blocked: "受阻",
-  complete: "已完成",
-  budget_limited: "已达上限",
-  usage_limited: "服务商受限",
-  updated: "已更新",
-};
-
-export const WEBUI_GOAL_WAIT_COPY: Record<string, string> = {
-  questionnaire: "等待你回答问题",
-  permission: "等待你确认权限",
-  plan: "等待 Plan 流程结束",
-  required_background: "等待后台任务完成",
-  automation_owner_conflict: "等待自动任务结束",
-  dependency_unavailable: "等待依赖恢复",
-  verification: "等待验证完成",
-  unknown: "等待运行条件满足",
-};
-
-function formatWebuiGoalDuration(seconds: number): string {
-  const value = Number.isFinite(seconds) ? Math.max(0, Math.floor(seconds)) : 0;
-  const hours = Math.floor(value / 3600);
-  const minutes = Math.floor((value % 3600) / 60);
-  const rest = value % 60;
-  if (hours > 0) return `${hours}h${minutes > 0 ? `${minutes}min` : ""}`;
-  if (minutes > 0) return `${minutes}min${rest > 0 ? `${rest}s` : ""}`;
-  return `${rest}s`;
-}
-
-export type WebuiGoalPatchBuildResult =
-  | { readonly ok: true; readonly patch: { readonly objective: string; readonly tokenBudget: number | null } }
-  | { readonly ok: false; readonly error: string };
-
-export function buildWebuiGoalEditPatch(
-  objective: string,
-  budget: string,
-): WebuiGoalPatchBuildResult {
-  const text = objective.trim();
-  if (!text) return { ok: false, error: "目标内容不能为空" };
-  const trimmedBudget = budget.trim();
-  const parsedBudget = trimmedBudget
-    ? Number(trimmedBudget.replace(/k$/iu, "000").replace(/m$/iu, "000000"))
-    : null;
-  if (trimmedBudget && (parsedBudget === null || !Number.isInteger(parsedBudget) || parsedBudget <= 0))
-    return { ok: false, error: "预算值无效：请填正整数、K/M 后缀,或留空以取消上限。" };
-  return { ok: true, patch: { objective: text, tokenBudget: parsedBudget } };
-}
-
-export function buildWebuiGoalStatusPatch(
-  status: WebuiGoalStatus,
-): { readonly status: WebuiGoalStatus } {
-  return { status };
-}
+// (projectWebuiThreadGoalMessage, WEBUI_GOAL_STATUS_COPY, WEBUI_GOAL_WAIT_COPY,
+//  formatWebuiGoalDuration, WebuiGoalPatchBuildResult, buildWebuiGoalEditPatch,
+//  buildWebuiGoalStatusPatch moved to ./projection/goal-state.ts in W2)
 
 export function WebuiGoalBanner({
   goal,

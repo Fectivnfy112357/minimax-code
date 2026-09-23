@@ -3,7 +3,7 @@ import {
   groupTurnMessages,
   projectMessageParts,
   stripQuestionnaireResponse,
-} from "../../src/client/message-parts.js";
+} from "../../src/client/projection/message-parts.js";
 
 describe("Desktop message parts projection", () => {
   it("keeps thinking, text, and tool calls in Desktop order", () => {

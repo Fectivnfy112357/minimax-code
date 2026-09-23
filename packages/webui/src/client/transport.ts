@@ -22,6 +22,7 @@ import type {
   WebuiRuntimeEvent,
   WebuiStreamFrame,
   WebuiVersionInfo,
+  WebuiTerminalFrame,
   WebuiGetSessionDiffRequest,
   WebuiGetSessionDiffResult,
   WebuiGetTurnDiffRequest,
@@ -115,7 +116,7 @@ export function createWebuiTransport({
   listTerminals: () => Promise<readonly Record<string, unknown>[]>;
   writeTerminal: (request: { readonly terminalId: string; readonly data: string }) => Promise<{ readonly success: boolean }>;
   disposeTerminal: (request: { readonly terminalId: string }) => Promise<{ readonly success: boolean }>;
-  watchTerminal: (request: { readonly terminalId: string }, onFrame: (frame: { readonly terminalId: string; readonly data: string; readonly exited: boolean }) => void) => () => void;
+  watchTerminal: (request: { readonly terminalId: string }, onFrame: (frame: WebuiTerminalFrame) => void) => () => void;
   createSession: (
     request: WebuiClientCreateSessionRequest,
   ) => Promise<WebuiClientCreateSessionResult>;
@@ -376,7 +377,7 @@ export function createWebuiTransport({
     };
   }
 
-  function watchTerminal(requestBody: { readonly terminalId: string }, onFrame: (frame: { readonly terminalId: string; readonly data: string; readonly exited: boolean }) => void): () => void {
+  function watchTerminal(requestBody: { readonly terminalId: string }, onFrame: (frame: WebuiTerminalFrame) => void): () => void {
     let stopped = false;
     const ws = new webSocket(websocketUrl());
     const requestId = crypto.randomUUID();
@@ -385,7 +386,7 @@ export function createWebuiTransport({
       if (stopped) return;
       let frame: WireFrame;
       try { frame = JSON.parse(String(event.data)) as WireFrame; } catch { return; }
-      if (frame.requestId === requestId && frame.kind === "event" && frame.body && typeof frame.body === "object") onFrame(frame.body as { terminalId: string; data: string; exited: boolean });
+      if (frame.requestId === requestId && frame.kind === "event" && frame.body && typeof frame.body === "object") onFrame(frame.body as WebuiTerminalFrame);
     });
     return () => { stopped = true; ws.close(); };
   }

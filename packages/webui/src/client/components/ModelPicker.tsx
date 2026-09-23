@@ -36,26 +36,13 @@ import {
 } from "react";
 
 import { WebuiIconChevronDown } from "../icons.js";
+import type {
+  WebuiModelPickerDraft,
+  WebuiModelPickerEntry,
+} from "../contracts.js";
 
-export interface WebuiModelPickerEntry {
-  readonly providerId: string;
-  readonly modelId: string;
-  readonly displayName?: string;
-  readonly variant?: string;
-  readonly supportedVariants?: readonly string[];
-  readonly effortOptions?: readonly string[];
-  readonly contextWindowOptions?: readonly number[];
-  readonly contextWindowOptionHints?: Readonly<Record<string, string>>;
-  readonly contextLimit?: number;
-  readonly thinkingConfig?: { readonly mode?: string };
-  readonly thinking?: { readonly effort?: string };
-  readonly [key: string]: unknown;
-}
-
-export interface WebuiModelPickerDraft {
-  readonly variant?: string;
-  readonly contextLimit?: number;
-}
+// Re-export so existing importers keep their import path stable.
+export type { WebuiModelPickerDraft, WebuiModelPickerEntry };
 
 export interface ModelPickerProps {
   readonly models: readonly WebuiModelPickerEntry[];

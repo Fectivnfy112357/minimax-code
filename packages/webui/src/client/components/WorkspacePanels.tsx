@@ -12,7 +12,7 @@ import {
   projectWebuiWorkspaceHistory,
   type WebuiWorkspaceSubagent,
   type WebuiWorkspaceTodo,
-} from "../workspace-progress.js";
+} from "../projection/workspace-progress.js";
 import { WebuiIconCheck, WebuiIconChevronDown, WebuiIconChevronLeft, WebuiIconClose, WebuiIconFile, WebuiIconFolder, WebuiIconGlobe, WebuiIconRunLocation, WebuiIconSidebarToggle } from "../icons.js";
 
 export type WebuiTodo = WebuiWorkspaceTodo;

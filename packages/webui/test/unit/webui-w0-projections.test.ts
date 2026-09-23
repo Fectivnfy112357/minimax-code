@@ -18,7 +18,7 @@ import {
   reduceWebuiWorkspaceProgressEvent,
   webuiWorkspaceSubagentStatus,
   type WebuiWorkspaceProgressState,
-} from "../../src/client/workspace-progress.js";
+} from "../../src/client/projection/workspace-progress.js";
 import type { WebuiClientMessage } from "../../src/client/app.js";
 
 function message(value: Record<string, unknown>): WebuiClientMessage {

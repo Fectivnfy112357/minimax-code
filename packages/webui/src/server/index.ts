@@ -2,17 +2,8 @@
 // binds loopback, refuses
 // foreign Host / Origin headers and missing per-start credentials, answers
 // the version query, and shuts down in the order the assembly checklist
-// step 13 requires. Source ends at `WEBUI_FOUNDATION_VERSION` so the
-// standalone CLI build never bundles the server module (it is its own
-// entry in `scripts/build-webui.mjs`).
-
-import {
-  WEBUI_FOUNDATION_VERSION,
-  type WebuiFoundationVersion,
-} from "../shared/placeholder.js";
-
-export const WEBUI_SERVER_VERSION: WebuiFoundationVersion =
-  WEBUI_FOUNDATION_VERSION;
+// step 13 requires. The standalone CLI build never bundles the server
+// module (it is its own entry in `scripts/build-webui.mjs`).
 
 export {
   WebuiService,
