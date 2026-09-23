@@ -468,9 +468,9 @@ export function WebuiDiffCard({
   readonly changeSetId?: string;
   readonly initialView?: WebuiTurnDiffView;
   readonly initialState?: Partial<WebuiDiffState>;
-  readonly getTurnDiff?: (request: WebuiGetTurnDiffRequest) => Promise<WebuiGetTurnDiffResult>;
-  readonly revertTurnDiff?: (request: WebuiRevertTurnDiffRequest) => Promise<WebuiRevertTurnDiffResult>;
-  readonly reapplyTurnDiff?: (request: WebuiReapplyTurnDiffRequest) => Promise<WebuiReapplyTurnDiffResult>;
+  readonly getTurnDiff?: WebuiTransport["getTurnDiff"];
+  readonly revertTurnDiff?: WebuiTransport["revertTurnDiff"];
+  readonly reapplyTurnDiff?: WebuiTransport["reapplyTurnDiff"];
 }): ReactElement | null {
   const [diffState, setDiffState] = useState<WebuiDiffState>(() => ({
     ...initialWebuiDiffState,
@@ -967,9 +967,9 @@ function WebuiAssistantBody({
   readonly turnId?: string;
   readonly changeSetId?: string;
   readonly initialDiff?: WebuiTurnDiffView;
-  readonly getTurnDiff?: (request: WebuiGetTurnDiffRequest) => Promise<WebuiGetTurnDiffResult>;
-  readonly revertTurnDiff?: (request: WebuiRevertTurnDiffRequest) => Promise<WebuiRevertTurnDiffResult>;
-  readonly reapplyTurnDiff?: (request: WebuiReapplyTurnDiffRequest) => Promise<WebuiReapplyTurnDiffResult>;
+  readonly getTurnDiff?: WebuiTransport["getTurnDiff"];
+  readonly revertTurnDiff?: WebuiTransport["revertTurnDiff"];
+  readonly reapplyTurnDiff?: WebuiTransport["reapplyTurnDiff"];
   readonly thinking?: string;
   readonly thinkingDurationMs?: number;
   readonly processingStartedAtMs?: number;
@@ -1094,17 +1094,17 @@ export function MessageItem({
   readonly turnId?: string;
   readonly changeSetId?: string;
   readonly initialDiff?: WebuiTurnDiffView;
-  readonly getTurnDiff?: (request: WebuiGetTurnDiffRequest) => Promise<WebuiGetTurnDiffResult>;
-  readonly revertTurnDiff?: (request: WebuiRevertTurnDiffRequest) => Promise<WebuiRevertTurnDiffResult>;
-  readonly reapplyTurnDiff?: (request: WebuiReapplyTurnDiffRequest) => Promise<WebuiReapplyTurnDiffResult>;
+  readonly getTurnDiff?: WebuiTransport["getTurnDiff"];
+  readonly revertTurnDiff?: WebuiTransport["revertTurnDiff"];
+  readonly reapplyTurnDiff?: WebuiTransport["reapplyTurnDiff"];
   readonly actions?: WebuiMessageActionCapabilities;
   readonly timestamp?: number;
   readonly isGoal?: boolean;
-  readonly getSessionForkOptions?: (request: WebuiGetSessionForkOptionsRequest) => Promise<WebuiGetSessionForkOptionsResult>;
-  readonly forkSession?: (request: WebuiForkSessionRequest) => Promise<WebuiForkSessionResult>;
-  readonly getSessionRewindPreview?: (request: WebuiGetSessionRewindPreviewRequest) => Promise<WebuiGetSessionRewindPreviewResult>;
-  readonly rewindSession?: (request: WebuiRewindSessionRequest) => Promise<WebuiRewindSessionResult>;
-  readonly editSessionMessage?: (request: WebuiEditSessionMessageRequest) => Promise<WebuiEditSessionMessageResult>;
+  readonly getSessionForkOptions?: WebuiTransport["getSessionForkOptions"];
+  readonly forkSession?: WebuiTransport["forkSession"];
+  readonly getSessionRewindPreview?: WebuiTransport["getSessionRewindPreview"];
+  readonly rewindSession?: WebuiTransport["rewindSession"];
+  readonly editSessionMessage?: WebuiTransport["editSessionMessage"];
   readonly onMutationComplete?: () => void;
   readonly userText?: string;
   readonly thinking?: string;
@@ -2636,14 +2636,14 @@ export function WebuiSessionTranscript({
   readonly sessionId: string;
   readonly loadMessages: WebuiClientMessageLoader;
   readonly initialMessages?: WebuiClientMessagePage;
-  readonly getTurnDiff?: (request: WebuiGetTurnDiffRequest) => Promise<WebuiGetTurnDiffResult>;
-  readonly revertTurnDiff?: (request: WebuiRevertTurnDiffRequest) => Promise<WebuiRevertTurnDiffResult>;
-  readonly reapplyTurnDiff?: (request: WebuiReapplyTurnDiffRequest) => Promise<WebuiReapplyTurnDiffResult>;
-  readonly getSessionForkOptions?: (request: WebuiGetSessionForkOptionsRequest) => Promise<WebuiGetSessionForkOptionsResult>;
-  readonly forkSession?: (request: WebuiForkSessionRequest) => Promise<WebuiForkSessionResult>;
-  readonly getSessionRewindPreview?: (request: WebuiGetSessionRewindPreviewRequest) => Promise<WebuiGetSessionRewindPreviewResult>;
-  readonly rewindSession?: (request: WebuiRewindSessionRequest) => Promise<WebuiRewindSessionResult>;
-  readonly editSessionMessage?: (request: WebuiEditSessionMessageRequest) => Promise<WebuiEditSessionMessageResult>;
+  readonly getTurnDiff?: WebuiTransport["getTurnDiff"];
+  readonly revertTurnDiff?: WebuiTransport["revertTurnDiff"];
+  readonly reapplyTurnDiff?: WebuiTransport["reapplyTurnDiff"];
+  readonly getSessionForkOptions?: WebuiTransport["getSessionForkOptions"];
+  readonly forkSession?: WebuiTransport["forkSession"];
+  readonly getSessionRewindPreview?: WebuiTransport["getSessionRewindPreview"];
+  readonly rewindSession?: WebuiTransport["rewindSession"];
+  readonly editSessionMessage?: WebuiTransport["editSessionMessage"];
 }): ReactElement {
   const [page, setPage] = useState<WebuiClientMessagePage>(
     () => initialMessages ?? {},
@@ -2956,8 +2956,8 @@ export function WebuiGoalBanner({
   interactionBlocked = false,
 }: {
   readonly goal?: WebuiGoal;
-  readonly patchGoal?: (request: WebuiGoalPatchRequest) => Promise<WebuiGoal>;
-  readonly clearGoal?: (request: WebuiGoalSessionRequest) => Promise<{ readonly success: boolean }>;
+  readonly patchGoal?: WebuiTransport["patchGoal"];
+  readonly clearGoal?: WebuiTransport["clearGoal"];
   readonly onReplace?: () => void;
   readonly isGenerating?: boolean;
   readonly interactionBlocked?: boolean;
@@ -3462,19 +3462,19 @@ function WebuiComposer({
   readonly sendMessage?: WebuiClientMessageSender;
   readonly enqueueMessage?: WebuiClientMessageEnqueuer;
   readonly resumeSession?: WebuiClientSessionResumer;
-  readonly loadMessages?: WebuiClientMessageLoader;
-  readonly getTurnDiff?: (request: WebuiGetTurnDiffRequest) => Promise<WebuiGetTurnDiffResult>;
-  readonly revertTurnDiff?: (request: WebuiRevertTurnDiffRequest) => Promise<WebuiRevertTurnDiffResult>;
-  readonly reapplyTurnDiff?: (request: WebuiReapplyTurnDiffRequest) => Promise<WebuiReapplyTurnDiffResult>;
-  readonly getSessionForkOptions?: (request: WebuiGetSessionForkOptionsRequest) => Promise<WebuiGetSessionForkOptionsResult>;
-  readonly forkSession?: (request: WebuiForkSessionRequest) => Promise<WebuiForkSessionResult>;
-  readonly getSessionRewindPreview?: (request: WebuiGetSessionRewindPreviewRequest) => Promise<WebuiGetSessionRewindPreviewResult>;
-  readonly rewindSession?: (request: WebuiRewindSessionRequest) => Promise<WebuiRewindSessionResult>;
-  readonly editSessionMessage?: (request: WebuiEditSessionMessageRequest) => Promise<WebuiEditSessionMessageResult>;
+  readonly loadMessages?: WebuiTransport["loadMessages"];
+  readonly getTurnDiff?: WebuiTransport["getTurnDiff"];
+  readonly revertTurnDiff?: WebuiTransport["revertTurnDiff"];
+  readonly reapplyTurnDiff?: WebuiTransport["reapplyTurnDiff"];
+  readonly getSessionForkOptions?: WebuiTransport["getSessionForkOptions"];
+  readonly forkSession?: WebuiTransport["forkSession"];
+  readonly getSessionRewindPreview?: WebuiTransport["getSessionRewindPreview"];
+  readonly rewindSession?: WebuiTransport["rewindSession"];
+  readonly editSessionMessage?: WebuiTransport["editSessionMessage"];
   readonly getGoal?: (request: WebuiGoalSessionRequest) => Promise<WebuiGoal | undefined>;
   readonly createGoal?: (request: WebuiGoalCreateRequest) => Promise<WebuiGoal>;
-  readonly patchGoal?: (request: WebuiGoalPatchRequest) => Promise<WebuiGoal>;
-  readonly clearGoal?: (request: WebuiGoalSessionRequest) => Promise<{ readonly success: boolean }>;
+  readonly patchGoal?: WebuiTransport["patchGoal"];
+  readonly clearGoal?: WebuiTransport["clearGoal"];
   readonly isGoalEnabled?: () => Promise<WebuiGoalEnabledResult>;
   readonly watchEvents?: WebuiClientEventWatcher;
   readonly listPendingPermissions?: () => Promise<{ readonly requests: readonly WebuiPendingPermission[] }>;
