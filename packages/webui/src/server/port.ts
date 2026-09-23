@@ -172,6 +172,205 @@ export interface WebuiMessagesResult {
   readonly usage?: Record<string, unknown>;
 }
 
+export interface WebuiFileDiffInfoView {
+  readonly file: string;
+  readonly additions: number;
+  readonly deletions: number;
+  readonly status?: string;
+  readonly diff?: string;
+  readonly patch?: Record<string, unknown>;
+}
+
+export interface WebuiTurnDiffView {
+  readonly fileChanges?: readonly WebuiFileDiffInfoView[];
+  readonly sourceMessageId?: string;
+  readonly changeSetId?: string;
+  readonly status?: string;
+  readonly revertedAt?: number;
+  readonly canUndo?: boolean;
+  readonly canReapply?: boolean;
+}
+
+export interface WebuiGetSessionDiffRequest {
+  readonly id: string;
+  readonly messageId?: string;
+}
+
+export interface WebuiGetSessionDiffResult {
+  readonly diffs?: readonly WebuiFileDiffInfoView[];
+  readonly changeSetId?: string;
+}
+
+export interface WebuiGetTurnDiffRequest {
+  readonly id: string;
+  readonly assistantMessageId?: string;
+  readonly turnId?: string;
+  readonly changeSetId?: string;
+}
+
+export interface WebuiGetTurnDiffResult extends WebuiTurnDiffView {}
+
+export interface WebuiRevertTurnDiffRequest extends WebuiGetTurnDiffRequest {}
+export interface WebuiRevertTurnDiffResult {
+  readonly success?: boolean;
+  readonly error?: string;
+  readonly turnDiff?: WebuiTurnDiffView;
+}
+
+export interface WebuiReapplyTurnDiffRequest extends WebuiGetTurnDiffRequest {}
+export interface WebuiReapplyTurnDiffResult extends WebuiTurnDiffView {
+  readonly success: boolean;
+  readonly error?: string;
+}
+
+export interface WebuiGetSessionForkOptionsRequest {
+  readonly id: string;
+  readonly assistantMessageId?: string;
+}
+
+export interface WebuiGetSessionForkOptionsResult {
+  readonly canFork: boolean;
+  readonly unavailableReason?: string;
+  readonly suggestedTitle?: string;
+  readonly nextForkOrdinal?: number;
+  readonly sourceTitle?: string;
+  readonly worktreeVisible: boolean;
+  readonly worktreeEligible: boolean;
+  readonly worktreeUnavailableReason?: string;
+}
+
+export interface WebuiForkSessionRequest {
+  readonly id: string;
+  readonly assistantMessageId?: string;
+  readonly clientRequestId: string;
+  readonly title?: string;
+  readonly useSuggestedTitle: boolean;
+  readonly createIsolatedWorktree: boolean;
+}
+
+export interface WebuiForkSessionResult {
+  readonly session?: WebuiSessionInfo;
+  readonly forkOriginMessageId?: string;
+  readonly sourceDisplayMessageId?: string;
+  readonly displayRevision?: string;
+  readonly historyRevision?: string;
+}
+
+export interface WebuiGetSessionRewindPreviewRequest {
+  readonly id: string;
+  readonly userMessageId: string;
+}
+
+export interface WebuiRewindPreviewFile {
+  readonly filePath: string;
+  readonly action: string;
+  readonly skipped: boolean;
+}
+
+export interface WebuiRewindPreviewTurn {
+  readonly turnId: string;
+  readonly files: readonly WebuiRewindPreviewFile[];
+}
+
+export interface WebuiGetSessionRewindPreviewResult {
+  readonly turns: readonly WebuiRewindPreviewTurn[];
+}
+
+export interface WebuiRewindSessionRequest {
+  readonly id: string;
+  readonly userMessageId: string;
+  readonly clientRequestId: string;
+  readonly rewindTurnDiff?: boolean;
+}
+
+export interface WebuiRewindSessionResult {
+  readonly rewound: boolean;
+  readonly displayRevision?: string;
+  readonly historyRevision?: string;
+  readonly deletedMessageIds?: readonly string[];
+  readonly turnDiffRewind?: {
+    readonly status: string;
+    readonly revertedTurnIds?: readonly string[];
+    readonly errorCode?: string;
+  };
+}
+
+export interface WebuiEditSessionMessageRequest {
+  readonly id: string;
+  readonly userMessageId: string;
+  readonly clientRequestId: string;
+  readonly content: string;
+  readonly attachments?: readonly Record<string, unknown>[];
+  readonly rewindTurnDiff?: boolean;
+}
+
+export interface WebuiEditSessionMessageResult {
+  readonly rewound: boolean;
+  readonly turnId?: string;
+  readonly userMessageId?: string;
+  readonly displayRevision?: string;
+  readonly historyRevision?: string;
+  readonly deletedMessageIds?: readonly string[];
+}
+
+export type WebuiGoalStatus =
+  | "active"
+  | "paused"
+  | "blocked"
+  | "complete"
+  | "budget_limited"
+  | "usage_limited";
+
+export type WebuiGoalWaitReason =
+  | "questionnaire"
+  | "permission"
+  | "plan"
+  | "required_background"
+  | "automation_owner_conflict"
+  | "dependency_unavailable"
+  | "verification"
+  | "unknown";
+
+export interface WebuiGoal {
+  readonly goalId: string;
+  readonly sessionId: string;
+  readonly objective: string;
+  readonly status: WebuiGoalStatus;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+  readonly tokensUsed: number;
+  readonly turnsUsed: number;
+  readonly timeUsedSeconds: number;
+  readonly tokenBudget: number | null;
+  readonly statusReason: string | null;
+  readonly hasKickoffAttachments?: boolean;
+  readonly executionWait?: {
+    readonly reason: WebuiGoalWaitReason;
+    readonly sinceMs: number;
+  } | null;
+}
+
+export interface WebuiGoalSessionRequest {
+  readonly sessionId: string;
+}
+
+export interface WebuiGoalCreateRequest {
+  readonly sessionId: string;
+  readonly objective: string;
+  readonly tokenBudget?: number | null;
+}
+
+export interface WebuiGoalPatchRequest {
+  readonly sessionId: string;
+  readonly status?: WebuiGoalStatus;
+  readonly objective?: string;
+  readonly tokenBudget?: number | null;
+}
+
+export interface WebuiGoalEnabledResult {
+  readonly enabled: boolean;
+}
+
 export interface WebuiWorkspaceFile {
   readonly path: string;
   readonly name: string;
@@ -466,6 +665,20 @@ export interface WebuiHarnessPort {
     request: WebuiSessionLookupRequest,
   ): Promise<WebuiSessionLookupResult>;
   getMessages(request: WebuiMessagesRequest): Promise<WebuiMessagesResult>;
+  getSessionDiff?(request: WebuiGetSessionDiffRequest): Promise<WebuiGetSessionDiffResult>;
+  getTurnDiff?(request: WebuiGetTurnDiffRequest): Promise<WebuiGetTurnDiffResult>;
+  revertTurnDiff?(request: WebuiRevertTurnDiffRequest): Promise<WebuiRevertTurnDiffResult>;
+  reapplyTurnDiff?(request: WebuiReapplyTurnDiffRequest): Promise<WebuiReapplyTurnDiffResult>;
+  getSessionForkOptions?(request: WebuiGetSessionForkOptionsRequest): Promise<WebuiGetSessionForkOptionsResult>;
+  forkSession?(request: WebuiForkSessionRequest): Promise<WebuiForkSessionResult>;
+  getSessionRewindPreview?(request: WebuiGetSessionRewindPreviewRequest): Promise<WebuiGetSessionRewindPreviewResult>;
+  rewindSession?(request: WebuiRewindSessionRequest): Promise<WebuiRewindSessionResult>;
+  editSessionMessage?(request: WebuiEditSessionMessageRequest): Promise<WebuiEditSessionMessageResult>;
+  isGoalEnabled?(): Promise<WebuiGoalEnabledResult>;
+  getGoal?(request: WebuiGoalSessionRequest): Promise<WebuiGoal | undefined>;
+  createGoal?(request: WebuiGoalCreateRequest): Promise<WebuiGoal>;
+  patchGoal?(request: WebuiGoalPatchRequest): Promise<WebuiGoal>;
+  clearGoal?(request: WebuiGoalSessionRequest): Promise<{ readonly success: boolean }>;
   listWorkspaceFileTree?(request: { readonly workspaceDir: string; readonly path?: string }): Promise<readonly WebuiWorkspaceFile[]>;
   readWorkspaceFile?(request: { readonly workspaceDir: string; readonly path: string }): Promise<WebuiWorkspaceFileContent>;
   getWorkspaceEnvironment?(request: { readonly workspaceDir: string }): Promise<WebuiWorkspaceEnvironment>;

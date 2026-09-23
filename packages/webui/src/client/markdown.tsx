@@ -209,7 +209,7 @@ export function WebuiMarkdown({
     tokens = [{ type: "text", raw: source, text: source }];
   }
   return (
-    <div data-webui-markdown="true" className="webui-markdown">
+    <div data-webui-markdown="true" className="matrix-markdown webui-markdown">
       {blocks(tokens)}
     </div>
   );
