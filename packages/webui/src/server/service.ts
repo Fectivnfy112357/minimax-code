@@ -168,8 +168,6 @@ export class WebuiService {
       getTurnDiff: (request) => this.port.getTurnDiff?.(request) ?? Promise.reject(new Error("turn diff is unavailable")),
       revertTurnDiff: (request) => this.port.revertTurnDiff?.(request) ?? Promise.reject(new Error("turn diff revert is unavailable")),
       reapplyTurnDiff: (request) => this.port.reapplyTurnDiff?.(request) ?? Promise.reject(new Error("turn diff reapply is unavailable")),
-      getSessionForkOptions: (request) => this.port.getSessionForkOptions?.(request) ?? Promise.reject(new Error("session fork is unavailable")),
-      forkSession: (request) => this.port.forkSession?.(request) ?? Promise.reject(new Error("session fork is unavailable")),
       getSessionRewindPreview: (request) => this.port.getSessionRewindPreview?.(request) ?? Promise.reject(new Error("session rewind preview is unavailable")),
       rewindSession: (request) => this.port.rewindSession?.(request) ?? Promise.reject(new Error("session rewind is unavailable")),
       editSessionMessage: (request) => this.port.editSessionMessage?.(request) ?? Promise.reject(new Error("message editing is unavailable")),

@@ -1270,8 +1270,6 @@ export interface WebuiClientFoundationAppProps {
   readonly getTurnDiff?: (request: WebuiGetTurnDiffRequest) => Promise<WebuiGetTurnDiffResult>;
   readonly revertTurnDiff?: (request: WebuiRevertTurnDiffRequest) => Promise<WebuiRevertTurnDiffResult>;
   readonly reapplyTurnDiff?: (request: WebuiReapplyTurnDiffRequest) => Promise<WebuiReapplyTurnDiffResult>;
-  readonly getSessionForkOptions?: (request: import("../server/port.js").WebuiGetSessionForkOptionsRequest) => Promise<import("../server/port.js").WebuiGetSessionForkOptionsResult>;
-  readonly forkSession?: (request: import("../server/port.js").WebuiForkSessionRequest) => Promise<import("../server/port.js").WebuiForkSessionResult>;
   readonly getSessionRewindPreview?: (request: import("../server/port.js").WebuiGetSessionRewindPreviewRequest) => Promise<import("../server/port.js").WebuiGetSessionRewindPreviewResult>;
   readonly rewindSession?: (request: import("../server/port.js").WebuiRewindSessionRequest) => Promise<import("../server/port.js").WebuiRewindSessionResult>;
   readonly editSessionMessage?: (request: import("../server/port.js").WebuiEditSessionMessageRequest) => Promise<import("../server/port.js").WebuiEditSessionMessageResult>;
@@ -4672,8 +4670,6 @@ export function WebuiClientFoundationApp({
   getTurnDiff,
   revertTurnDiff,
   reapplyTurnDiff,
-  getSessionForkOptions,
-  forkSession,
   getSessionRewindPreview,
   rewindSession,
   editSessionMessage,

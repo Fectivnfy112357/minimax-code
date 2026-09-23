@@ -97,8 +97,6 @@ export function createWebuiTransport({
   getTurnDiff: (request: WebuiGetTurnDiffRequest) => Promise<WebuiGetTurnDiffResult>;
   revertTurnDiff: (request: WebuiRevertTurnDiffRequest) => Promise<WebuiRevertTurnDiffResult>;
   reapplyTurnDiff: (request: WebuiReapplyTurnDiffRequest) => Promise<WebuiReapplyTurnDiffResult>;
-  getSessionForkOptions: (request: WebuiGetSessionForkOptionsRequest) => Promise<WebuiGetSessionForkOptionsResult>;
-  forkSession: (request: WebuiForkSessionRequest) => Promise<WebuiForkSessionResult>;
   getSessionRewindPreview: (request: WebuiGetSessionRewindPreviewRequest) => Promise<WebuiGetSessionRewindPreviewResult>;
   rewindSession: (request: WebuiRewindSessionRequest) => Promise<WebuiRewindSessionResult>;
   editSessionMessage: (request: WebuiEditSessionMessageRequest) => Promise<WebuiEditSessionMessageResult>;
@@ -421,8 +419,6 @@ export function createWebuiTransport({
     getTurnDiff: (body) => request("getTurnDiff", body),
     revertTurnDiff: (body) => request("revertTurnDiff", body),
     reapplyTurnDiff: (body) => request("reapplyTurnDiff", body),
-    getSessionForkOptions: (body) => request("getSessionForkOptions", body),
-    forkSession: (body) => request("forkSession", body),
     getSessionRewindPreview: (body) => request("getSessionRewindPreview", body),
     rewindSession: (body) => request("rewindSession", body),
     editSessionMessage: (body) => request("editSessionMessage", body),

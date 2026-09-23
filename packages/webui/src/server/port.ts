@@ -669,8 +669,6 @@ export interface WebuiHarnessPort {
   getTurnDiff?(request: WebuiGetTurnDiffRequest): Promise<WebuiGetTurnDiffResult>;
   revertTurnDiff?(request: WebuiRevertTurnDiffRequest): Promise<WebuiRevertTurnDiffResult>;
   reapplyTurnDiff?(request: WebuiReapplyTurnDiffRequest): Promise<WebuiReapplyTurnDiffResult>;
-  getSessionForkOptions?(request: WebuiGetSessionForkOptionsRequest): Promise<WebuiGetSessionForkOptionsResult>;
-  forkSession?(request: WebuiForkSessionRequest): Promise<WebuiForkSessionResult>;
   getSessionRewindPreview?(request: WebuiGetSessionRewindPreviewRequest): Promise<WebuiGetSessionRewindPreviewResult>;
   rewindSession?(request: WebuiRewindSessionRequest): Promise<WebuiRewindSessionResult>;
   editSessionMessage?(request: WebuiEditSessionMessageRequest): Promise<WebuiEditSessionMessageResult>;

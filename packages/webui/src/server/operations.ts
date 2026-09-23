@@ -106,8 +106,6 @@ const GET_SESSION_DIFF_OPERATION_NAME = "getSessionDiff" as const;
 const GET_TURN_DIFF_OPERATION_NAME = "getTurnDiff" as const;
 const REVERT_TURN_DIFF_OPERATION_NAME = "revertTurnDiff" as const;
 const REAPPLY_TURN_DIFF_OPERATION_NAME = "reapplyTurnDiff" as const;
-const GET_SESSION_FORK_OPTIONS_OPERATION_NAME = "getSessionForkOptions" as const;
-const FORK_SESSION_OPERATION_NAME = "forkSession" as const;
 const GET_SESSION_REWIND_PREVIEW_OPERATION_NAME = "getSessionRewindPreview" as const;
 const REWIND_SESSION_OPERATION_NAME = "rewindSession" as const;
 const EDIT_SESSION_MESSAGE_OPERATION_NAME = "editSessionMessage" as const;
@@ -638,38 +636,6 @@ function validateBooleanField(
     ? { ok: false, code: WebuiErrorCode.invalidBody, message: `${operation} ${key} must be a boolean` }
     : undefined;
 }
-
-export const getSessionForkOptionsOperation: WebuiOperation<
-  WebuiGetSessionForkOptionsRequest,
-  WebuiGetSessionForkOptionsResult
-> = {
-  name: GET_SESSION_FORK_OPTIONS_OPERATION_NAME,
-  validate: (body) => {
-    const result = validateConversationMutationBody(GET_SESSION_FORK_OPTIONS_OPERATION_NAME, body, ["id"]);
-    if (!result.ok) return result as WebuiOperationValidation<WebuiGetSessionForkOptionsRequest>;
-    if (result.body.assistantMessageId !== undefined && typeof result.body.assistantMessageId !== "string")
-      return { ok: false, code: WebuiErrorCode.invalidBody, message: "assistantMessageId must be a string" };
-    return { ok: true, body: result.body as unknown as WebuiGetSessionForkOptionsRequest };
-  },
-};
-
-export const forkSessionOperation: WebuiOperation<WebuiForkSessionRequest, WebuiForkSessionResult> = {
-  name: FORK_SESSION_OPERATION_NAME,
-  validate: (body) => {
-    const result = validateConversationMutationBody(FORK_SESSION_OPERATION_NAME, body, ["id", "clientRequestId"]);
-    if (!result.ok) return result as WebuiOperationValidation<WebuiForkSessionRequest>;
-    for (const key of ["assistantMessageId", "title"])
-      if (result.body[key] !== undefined && typeof result.body[key] !== "string")
-        return { ok: false, code: WebuiErrorCode.invalidBody, message: `${key} must be a string` };
-    for (const key of ["useSuggestedTitle", "createIsolatedWorktree"]) {
-      const error = validateBooleanField(FORK_SESSION_OPERATION_NAME, result.body, key);
-      if (error) return error as WebuiOperationValidation<WebuiForkSessionRequest>;
-    }
-    if (typeof result.body.useSuggestedTitle !== "boolean" || typeof result.body.createIsolatedWorktree !== "boolean")
-      return { ok: false, code: WebuiErrorCode.invalidBody, message: "forkSession body requires title flags" };
-    return { ok: true, body: result.body as unknown as WebuiForkSessionRequest };
-  },
-};
 
 export const getSessionRewindPreviewOperation: WebuiOperation<WebuiGetSessionRewindPreviewRequest, WebuiGetSessionRewindPreviewResult> = {
   name: GET_SESSION_REWIND_PREVIEW_OPERATION_NAME,
@@ -1551,8 +1517,6 @@ export function createOperationRegistry(
     | "getTurnDiff"
     | "revertTurnDiff"
     | "reapplyTurnDiff"
-    | "getSessionForkOptions"
-    | "forkSession"
     | "getSessionRewindPreview"
     | "rewindSession"
     | "editSessionMessage"
@@ -1809,9 +1773,7 @@ export function createOperationRegistry(
       handle: async (_context, body) => ({ body: await port.reapplyTurnDiff!(body) }),
     });
   }
-  if (port.getSessionForkOptions && port.forkSession && port.getSessionRewindPreview && port.rewindSession && port.editSessionMessage) {
-    registerOperation(registry, { operation: getSessionForkOptionsOperation, handle: async (_context, body) => ({ body: await port.getSessionForkOptions!(body) }) });
-    registerOperation(registry, { operation: forkSessionOperation, handle: async (_context, body) => ({ body: await port.forkSession!(body) }) });
+  if (port.getSessionRewindPreview && port.rewindSession && port.editSessionMessage) {
     registerOperation(registry, { operation: getSessionRewindPreviewOperation, handle: async (_context, body) => ({ body: await port.getSessionRewindPreview!(body) }) });
     registerOperation(registry, { operation: rewindSessionOperation, handle: async (_context, body) => ({ body: await port.rewindSession!(body) }) });
     registerOperation(registry, { operation: editSessionMessageOperation, handle: async (_context, body) => ({ body: await port.editSessionMessage!(body) }) });

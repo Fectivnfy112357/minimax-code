@@ -364,16 +364,6 @@ export function createHarnessPortFromHost(
         throw new Error("runtime host does not expose the CLI service");
       return host.cliService.reapplyTurnDiff(request, {});
     },
-    async getSessionForkOptions(request) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.getSessionForkOptions(request, {});
-    },
-    async forkSession(request) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.forkSession(request, {});
-    },
     async getSessionRewindPreview(request) {
       if (!host.cliService)
         throw new Error("runtime host does not expose the CLI service");
