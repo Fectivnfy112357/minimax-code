@@ -74,7 +74,7 @@ import {
   runWebuiStreamLoop,
   type WebuiStreamLoopSink,
 } from "../../src/client/stream-loop.js";
-import { createSessionOperation } from "../../src/server/operations.js";
+import { createSessionOperation } from "../../src/server/operation/operations.js";
 import {
   initialWebuiStreamState,
   reduceWebuiStreamFrame,

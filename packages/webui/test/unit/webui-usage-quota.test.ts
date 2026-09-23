@@ -17,7 +17,7 @@ import {
   readQuotaWindow,
   readVideoQuota,
 } from "../../src/server/usage-quota.js";
-import { getUsageQuotaOperation } from "../../src/server/operations.js";
+import { getUsageQuotaOperation } from "../../src/server/operation/operations.js";
 import {
   UsagePanel,
   formatUsageResetLabel,

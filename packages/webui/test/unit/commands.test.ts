@@ -9,7 +9,7 @@ import {
   listSessionsOperation,
   listSkillsOperation,
   runCommandOperation,
-} from "../../src/server/operations.js";
+} from "../../src/server/operation/operations.js";
 
 describe("WebUI command adapter", () => {
   it("returns the six-command catalogue for help", async () => {

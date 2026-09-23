@@ -23,7 +23,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import {
   createOperationRegistry,
   type WebuiOperationRegistryEntry,
-} from "./operations.js";
+} from "./operation/operations.js";
 import {
   createWebuiCredential,
   credentialMatches,

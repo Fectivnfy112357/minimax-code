@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { WebuiErrorCode } from "../../src/server/envelope.js";
-import { forkSessionOperation } from "../../src/server/operations.js";
+import { forkSessionOperation } from "../../src/server/operation/operations.js";
 
 const validBody = {
   id: "session-1",

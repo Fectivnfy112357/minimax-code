@@ -28,7 +28,7 @@ export {
   type WebuiOperationRegistryEntry,
   type WebuiOperationRegistration,
   type WebuiOperationResult,
-} from "./operations.js";
+} from "./operation/operations.js";
 export {
   createWebuiCredential,
   credentialMatches,

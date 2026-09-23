@@ -11,7 +11,7 @@ import {
 import {
   getSigninPanelOperation,
   claimSigninOperation,
-} from "../../src/server/operations.js";
+} from "../../src/server/operation/operations.js";
 import { SigninCard } from "../../src/client/components/UserMenu.js";
 
 const PANEL = {

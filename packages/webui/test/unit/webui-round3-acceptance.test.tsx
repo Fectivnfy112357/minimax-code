@@ -50,7 +50,7 @@ import {
   getTurnDiffOperation,
   reapplyTurnDiffOperation,
   revertTurnDiffOperation,
-} from "../../src/server/operations.js";
+} from "../../src/server/operation/operations.js";
 import { type WebuiGoal, type WebuiQuestionnaireRequest, type WebuiTurnDiffView } from "../../src/server/port.js";
 import { WebuiErrorCode } from "../../src/server/envelope.js";
 
