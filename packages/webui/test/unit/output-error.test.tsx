@@ -80,6 +80,7 @@ describe("OutputError", () => {
       }),
     );
     expect(html).toContain('data-testid="llm-retry-notice"');
+    expect(html).toContain("fail");
   });
 
   it("passes through role and aria-live", () => {
@@ -97,15 +98,23 @@ describe("OutputError", () => {
 
   it("forwards onRetry invocations through the button click handler", () => {
     const onRetry = vi.fn();
+    let retryClick: (() => void) | undefined;
     const html = renderToStaticMarkup(
       createElement(OutputError, {
         variant: "output_error",
         text: "失败",
         onRetry,
+        renderRetryButton: ({ onClick, label }: { onClick: () => void; label: React.ReactNode }) => {
+          retryClick = onClick;
+          return createElement("button", { type: "button", "data-testid": "test-retry" }, label);
+        },
+      } as React.ComponentProps<typeof OutputError> & {
+        renderRetryButton: (params: { onClick: () => void; label: React.ReactNode }) => React.ReactNode;
       }),
     );
-    // SSR markup: callbacks are wired by React at hydration time. We just
-    // verify the element exists for the runtime binding.
-    expect(html).toContain('data-testid="output-error-retry"');
+    expect(html).toContain('data-testid="test-retry"');
+    expect(retryClick).toBeTypeOf("function");
+    retryClick!();
+    expect(onRetry).toHaveBeenCalledOnce();
   });
 });

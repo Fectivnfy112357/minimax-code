@@ -1,6 +1,6 @@
 // Unit tests for the Phase-6 MessageAttachments transcription.
 
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -40,6 +40,10 @@ describe("MessageAttachments", () => {
     expect(html).toContain('data-testid="message-attachment-image"');
     expect(html).toContain('data-testid="message-attachment-image-img"');
     expect(html).toContain('data-testid="message-attachment-file"');
+    expect(html).toContain('src="https://example.test/diagram.png"');
+    expect(html).toContain('src="https://example.test/second.png"');
+    expect(html).toContain("report.pdf");
+    expect(html).toContain("2 KB");
   });
 
   it("renders a single image with no wrapping flex container", () => {
@@ -48,7 +52,7 @@ describe("MessageAttachments", () => {
         attachments: [baseAttachments[0]!],
       }),
     );
-    expect(html).toContain('data-testid="message-attachment-image"');
+    expect(html).toContain('alt="diagram.png"');
     // When only one image is present, the desktop does NOT wrap in
     // `flex flex-wrap gap-2` (see line 1562).
     expect(html).not.toContain("flex flex-wrap gap-2");
@@ -61,6 +65,8 @@ describe("MessageAttachments", () => {
       }),
     );
     expect(html).toContain("flex flex-wrap gap-2");
+    expect(html).toContain('src="https://example.test/diagram.png"');
+    expect(html).toContain('src="https://example.test/second.png"');
   });
 
   it("falls back to the placeholder when src is missing", () => {
@@ -87,15 +93,4 @@ describe("MessageAttachments", () => {
     expect(html).toBe("");
   });
 
-  it("calls onPreview for image clicks (event wired by hydration)", () => {
-    const onPreview = vi.fn();
-    const html = renderToStaticMarkup(
-      createElement(MessageAttachments, {
-        attachments: [baseAttachments[0]!],
-        onPreview,
-      }),
-    );
-    // SSR markup only — the actual click is wired at hydration time.
-    expect(html).toContain('data-testid="message-attachment-image"');
-  });
 });

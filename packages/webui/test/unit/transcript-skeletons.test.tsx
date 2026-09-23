@@ -26,7 +26,9 @@ describe("TranscriptSkeletons", () => {
     const html = renderToStaticMarkup(createElement(ChatSkeleton));
     // Eight 22px bars in the primary block, four 24px bars in the secondary
     // block (Desktop `i` array has 8 entries, `l` array has 4).
-    expect(countByClass(html, "animate-shimmer")).toBeGreaterThanOrEqual(12);
+    expect(countByClass(html, "animate-shimmer")).toBe(13);
+    expect((html.match(/height:22px/g) ?? []).length).toBe(8);
+    expect((html.match(/height:24px/g) ?? []).length).toBe(4);
   });
 
   it("GreetingSkeleton uses the rounded-40 avatar instead of the user bubble", () => {

@@ -80,7 +80,9 @@ describe("ActivityIndicator markup (desktop parity)", () => {
 
   it("defaults the container to 27px when no pulse sizes are supplied", () => {
     const html = renderToStaticMarkup(createElement(ActivityIndicator, {}));
-    expect(html).toContain('width:27px');
+    expect(html).toContain(
+      'style="width:27px;height:27px;min-width:27px;min-height:27px"',
+    );
   });
 
   it("concatenates the className prop onto the desktop container", () => {

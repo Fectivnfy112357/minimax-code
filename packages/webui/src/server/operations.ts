@@ -1411,10 +1411,13 @@ export const forkSessionOperation: WebuiOperation<import("./port.js").WebuiForkS
     const clientRequestId = typeof candidate.clientRequestId === "string" ? candidate.clientRequestId.trim() : "";
     if (!id || !clientRequestId || typeof candidate.useSuggestedTitle !== "boolean" || typeof candidate.createIsolatedWorktree !== "boolean")
       return { ok: false, code: WebuiErrorCode.invalidBody, message: "forkSession requires id, clientRequestId, useSuggestedTitle, and createIsolatedWorktree" };
+    const assistantMessageId = candidate.assistantMessageId;
+    if (assistantMessageId !== undefined && (typeof assistantMessageId !== "string" || !assistantMessageId.trim()))
+      return { ok: false, code: WebuiErrorCode.invalidBody, message: "assistantMessageId must be a non-empty string" };
     const title = candidate.title === undefined ? undefined : typeof candidate.title === "string" ? candidate.title.trim() : "";
     if (candidate.title !== undefined && !title)
       return { ok: false, code: WebuiErrorCode.invalidBody, message: "forkSession title must not be empty" };
-    return { ok: true, body: { id, clientRequestId, useSuggestedTitle: candidate.useSuggestedTitle, createIsolatedWorktree: candidate.createIsolatedWorktree, ...(title ? { title } : {}) } };
+    return { ok: true, body: { id, ...(typeof assistantMessageId === "string" ? { assistantMessageId: assistantMessageId.trim() } : {}), clientRequestId, useSuggestedTitle: candidate.useSuggestedTitle, createIsolatedWorktree: candidate.createIsolatedWorktree, ...(title ? { title } : {}) } };
   },
 };
 export const listUserModelProvidersOperation: WebuiOperation<undefined, readonly Record<string, unknown>[]> = { name: LIST_USER_MODEL_PROVIDERS_OPERATION_NAME, validate: (body) => body === undefined ? { ok: true, body: undefined } : { ok: false, code: WebuiErrorCode.invalidBody, message: `${LIST_USER_MODEL_PROVIDERS_OPERATION_NAME} does not accept a body` } };

@@ -180,6 +180,7 @@
       "packages/webui/test/unit/webui-usage-quota.test.ts",
       "packages/webui/test/unit/webui-checkin.test.ts",
       "packages/webui/test/unit/message-parts.test.ts",
+      "packages/webui/test/unit/fork-session-operation.test.ts",
       "packages/webui/test/unit/activity-indicator.test.tsx",
       "packages/webui/test/unit/turn-navigator.test.tsx",
       "packages/webui/test/unit/output-error.test.tsx",

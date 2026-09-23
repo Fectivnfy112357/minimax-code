@@ -5,7 +5,7 @@
 // `data-mode` / `data-hidden` flags the parent uses to drive the strip
 // visibility. The brief lists 17 testids; this file covers them all.
 
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -87,17 +87,6 @@ describe("TurnNavigator", () => {
       createElement(TurnNavigator, { turns: baseTurns, preview: null }),
     );
     expect(html).not.toContain('data-testid="message-turn-navigator-preview"');
-  });
-
-  it("calls onTickActivate with the turn id and the click event", () => {
-    const onTickActivate = vi.fn();
-    const html = renderToStaticMarkup(
-      createElement(TurnNavigator, { turns: baseTurns, onTickActivate }),
-    );
-    // SSR markup only; confirm the callback would fire — the function is
-    // wired by the integration session. We assert here that the prop is
-    // referenced (i.e. accepted) without runtime error.
-    expect(html).toContain('data-turn-id="turn-1"');
   });
 
   it("reflects the hidden flag on the root element", () => {

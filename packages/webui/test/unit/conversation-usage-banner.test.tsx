@@ -70,22 +70,31 @@ describe("ConversationUsageBanner", () => {
       }),
     );
     expect(html).toContain("将在稍后重置");
-    // Intl.DateTimeFormat output is locale-dependent; assert the text node
-    // includes the source phrase followed by some non-empty suffix.
-    expect(html.length).toBeGreaterThan(20);
+    expect(html).toMatch(/将在稍后重置 [^<]+/);
   });
 
   it("calls onAction with the action kind when the integrator wires it", () => {
     const onAction = vi.fn();
-    renderToStaticMarkup(
+    let actionClick: (() => void) | undefined;
+    const html = renderToStaticMarkup(
       createElement(ConversationUsageBanner, {
         notice: baseNotice,
         messageText: "…",
         onAction,
+        renderActionButton: ({ kind, label, onClick, testId }: {
+          kind: "subscribe_plan" | "buy_credits" | "upgrade_plan";
+          label: string;
+          onClick: () => void;
+          testId: string;
+        }) => {
+          if (kind === "subscribe_plan") actionClick = onClick;
+          return createElement("button", { type: "button", "data-testid": testId }, label);
+        },
       }),
     );
-    // SSR only; the click is bound at hydration time. We assert that the
-    // node exists for runtime binding.
-    expect(true).toBe(true);
+    expect(html).toContain('data-testid="conversation-usage-action-subscribe_plan"');
+    expect(actionClick).toBeTypeOf("function");
+    actionClick!();
+    expect(onAction).toHaveBeenCalledWith("subscribe_plan");
   });
 });
