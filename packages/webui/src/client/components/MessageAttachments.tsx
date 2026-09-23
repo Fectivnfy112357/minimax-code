@@ -24,20 +24,14 @@
 
 import { useEffect, useState, type KeyboardEvent, type MouseEvent } from "react";
 
-export type MessageAttachmentType = "image" | "file";
-
-export interface MessageAttachment {
-  id: string;
-  type: MessageAttachmentType;
-  file_name: string;
-  file_path?: string;
-  preview_url?: string;
-  desktop_path?: string;
-  mime_type?: string;
-  file_size?: number;
-  /** Pre-resolved absolute URL the WebUI should render. */
-  src?: string;
-}
+// The attachment shape lives in contracts.ts (so projection/message-projection.ts
+// can return it without importing the React component). Re-export it under the
+// historical name so every existing importer keeps its path unchanged.
+import type {
+  WebuiMessageAttachment as MessageAttachment,
+  WebuiMessageAttachmentType as MessageAttachmentType,
+} from "../contracts.js";
+export type { MessageAttachment, MessageAttachmentType };
 
 export interface MessageAttachmentsProps {
   attachments: readonly MessageAttachment[];

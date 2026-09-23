@@ -230,6 +230,10 @@ export function projectWebuiMessage(
   const answerItems: WebuiTranscriptItem[] = [];
   const questionnaireItems: WebuiTranscriptItem[] = [];
   const attachments = projectMessageAttachments(message.attachments);
+  // Pull the raw message-level usage (matches `TokenUsage` from agent-core).
+  // The message-parts projector already strips the questionnaire XML block
+  // before producing text parts, so the user bubble never surfaces raw
+  // `<questionnaire-response>` markup.
   const messageUsage = readMessageUsage(message);
   for (const part of projectMessageParts(message)) {
     const turn = message.turnId ? { turnId: message.turnId } : {};
@@ -276,11 +280,16 @@ export function projectWebuiMessage(
         ...(message.timestamp !== undefined ? { timestamp: message.timestamp } : {}),
       });
   }
+  // The pure parts layer preserves Desktop's source order. The legacy
+  // transcript item contract renders the process disclosure before markdown,
+  // so keep that public projection order stable for existing callers.
   const output = [...thinkingItems, ...toolItems, ...answerItems, ...questionnaireItems];
   const diff = readMessageDiff(message);
   if (diff && output.length > 0) {
     const last = output.length - 1;
     const lastItem = output[last];
+    // The questionnaire response kind intentionally never carries a diff — its
+    // text payload records the user's answers, not a tool call summary.
     if (
       lastItem &&
       (lastItem.kind === "user" ||

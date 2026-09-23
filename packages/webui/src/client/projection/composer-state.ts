@@ -160,8 +160,17 @@ export async function submitWebuiComposerTurn(
   }
 }
 
-function createdSessionId(
+/** Extract a non-blank session id from the `createSession` result.
+ *
+ * The runtime returns the id in two places — top-level or under `session` —
+ * and either field can be missing, blank, or padded with whitespace.
+ * `submitWebuiComposerTurn` later uses this as the live session key, so the
+ * `.trim()` + `|| undefined` matters: a `"   "` session id would
+ * `!sessionId`-branch off cleanly under `??` but skip the trim and pass the
+ * whitespace into the runtime. Match the historical semantics.
+ */
+export function createdSessionId(
   result: WebuiClientCreateSessionResult,
 ): string | undefined {
-  return result.sessionId ?? result.session?.sessionId;
+  return result.sessionId?.trim() || result.session?.sessionId?.trim() || undefined;
 }

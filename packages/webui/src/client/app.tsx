@@ -228,6 +228,7 @@ import {
 import {
   buildWebuiComposerHandlers,
   submitWebuiComposerTurn,
+  createdSessionId,
 } from "./projection/composer-state.js";
 import type {
   WebuiClientMessage,
@@ -337,6 +338,7 @@ export {
 export {
   buildWebuiComposerHandlers,
   submitWebuiComposerTurn,
+  createdSessionId,
 } from "./projection/composer-state.js";
 
 // (WebuiClientMessage, WebuiClientSession, page/loader types,
@@ -1558,13 +1560,7 @@ function useSessionRuntimeState(sessionId: string | undefined): {
   };
 }
 
-export function createdSessionId(
-  result: WebuiClientCreateSessionResult,
-): string | undefined {
-  return (
-    result.sessionId?.trim() || result.session?.sessionId?.trim() || undefined
-  );
-}
+// (createdSessionId moved to ./projection/composer-state.ts in W2)
 
 function sessionLabel(session: WebuiClientSession): string {
   return session.title?.trim() || session.agentName || session.sessionId;
