@@ -17,12 +17,12 @@ export interface WebuiOperationStreamResult {
   readonly stream: WebuiSendMessageResult | WebuiWatchEventsResult;
 }
 
-export type WebuiOperationHandler<Body> = (
+export type WebuiOperationHandler<Body, ResultBody = Body> = (
   context: WebuiOperationContext,
-  body: unknown,
+  body: Body,
 ) =>
-  | Promise<WebuiOperationResult<Body> | WebuiOperationStreamResult>
-  | WebuiOperationResult<Body>
+  | Promise<WebuiOperationResult<ResultBody> | WebuiOperationStreamResult>
+  | WebuiOperationResult<ResultBody>
   | WebuiOperationStreamResult;
 
 export interface WebuiOperation<Body = unknown, ResultBody = Body> {

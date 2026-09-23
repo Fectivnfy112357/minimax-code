@@ -5,8 +5,23 @@ import {
   projectSessionStream,
   projectUsage,
 } from "./projections/index.js";
-import type { WebuiOperationHandler } from "./operation-contract.js";
+import type {
+  WebuiOperationHandler,
+  WebuiOperationValidation,
+} from "./operation-contract.js";
 import type { WebuiTerminalManager } from "./terminal.js";
+
+type OperationModule = typeof import("./operations.js");
+type OperationDescriptorName = Exclude<
+  Extract<keyof OperationModule, `${string}Operation`>,
+  "registerOperation"
+>;
+type OperationBody<DescriptorName extends OperationDescriptorName> =
+  OperationModule[DescriptorName] extends {
+    readonly validate: (body: unknown) => WebuiOperationValidation<infer Body>;
+  }
+    ? Body
+    : never;
 
 export type WebuiOperationPort = Pick<
   WebuiHarnessPort,
@@ -75,7 +90,11 @@ export type WebuiOperationPort = Pick<
   | "invalidateAuth"
 >;
 
-export type WebuiOperationHandlers = Record<string, WebuiOperationHandler<unknown>>;
+export type WebuiOperationHandlers = {
+  [DescriptorName in OperationDescriptorName as DescriptorName extends `${infer Name}Operation`
+    ? Name
+    : never]: WebuiOperationHandler<OperationBody<DescriptorName>, unknown>;
+};
 
 export function createOperationHandlers(
   port: WebuiOperationPort,
@@ -83,7 +102,7 @@ export function createOperationHandlers(
 ): WebuiOperationHandlers {
   const handlers: WebuiOperationHandlers = {
     createSession: async (_context, body) => ({
-      body: await port.createSession(body as never),
+      body: await port.createSession(body),
     }),
     listWorkspaceFileTree: async (_context, body) => ({
       body: await port.listWorkspaceFileTree!(body as never) as unknown as Record<string, unknown>,
@@ -129,35 +148,35 @@ export function createOperationHandlers(
         ) as unknown as AsyncIterable<Record<string, unknown>>,
       },
     }),
-    archiveSession: async (_context, body) => ({ body: await port.archiveSession(body as never) }),
-    deleteSession: async (_context, body) => ({ body: await port.deleteSession(body as never) }),
-    updateSession: async (_context, body) => ({ body: await port.updateSession(body as never) }),
-    getSessionForkOptions: async (_context, body) => ({ body: await port.getSessionForkOptions(body as never) }),
-    forkSession: async (_context, body) => ({ body: await port.forkSession(body as never) }),
-    abortSession: async (_context, body) => ({ body: await port.abortSession(body as never) }),
-    listQueueMessages: async (_context, body) => ({ body: await port.listQueueMessages(body as never) }),
-    deleteQueueItem: async (_context, body) => ({ body: await port.deleteQueueItem(body as never) }),
-    listModels: async (_context, body) => ({ body: await port.listModels(body as never) }),
-    selectModel: async (_context, body) => ({ body: await port.selectModel(body as never) }),
-    listSkills: async (_context, body) => ({ body: await port.listSkills(body as never) }),
-    getSessionUsage: async (_context, body) => ({ body: await port.getSessionUsage(body as never) }),
-    getUsageQuota: async (_context, body) => ({ body: await port.getUsageQuota(body as never) }),
+    archiveSession: async (_context, body) => ({ body: await port.archiveSession(body) }),
+    deleteSession: async (_context, body) => ({ body: await port.deleteSession(body) }),
+    updateSession: async (_context, body) => ({ body: await port.updateSession(body) }),
+    getSessionForkOptions: async (_context, body) => ({ body: await port.getSessionForkOptions(body) }),
+    forkSession: async (_context, body) => ({ body: await port.forkSession(body) }),
+    abortSession: async (_context, body) => ({ body: await port.abortSession(body) }),
+    listQueueMessages: async (_context, body) => ({ body: await port.listQueueMessages(body) }),
+    deleteQueueItem: async (_context, body) => ({ body: await port.deleteQueueItem(body) }),
+    listModels: async (_context, body) => ({ body: await port.listModels(body) }),
+    selectModel: async (_context, body) => ({ body: await port.selectModel(body) }),
+    listSkills: async (_context, body) => ({ body: await port.listSkills(body) }),
+    getSessionUsage: async (_context, body) => ({ body: await port.getSessionUsage(body) }),
+    getUsageQuota: async (_context, body) => ({ body: await port.getUsageQuota(body) }),
     getSigninPanel: async () => ({ body: await port.getSigninPanel() }),
     claimSignin: async () => ({ body: await port.claimSignin() }),
-    getAccountStatus: async (_context, body) => ({ body: await port.getAccountStatus(body as never) }),
+    getAccountStatus: async (_context, body) => ({ body: await port.getAccountStatus(body) }),
     listUserModelProviders: async () => ({ body: await port.listUserModelProviders() }),
-    createUserModelProvider: async (_context, body) => ({ body: await port.createUserModelProvider(body as never) }),
-    updateUserModelProvider: async (_context, body) => ({ body: await port.updateUserModelProvider(body as never) }),
+    createUserModelProvider: async (_context, body) => ({ body: await port.createUserModelProvider(body) }),
+    updateUserModelProvider: async (_context, body) => ({ body: await port.updateUserModelProvider(body) }),
     deleteUserModelProvider: async (_context, body) => ({ body: await port.deleteUserModelProvider((body as Record<string, unknown>).providerId as string) }),
     testUserModelProvider: async (_context, body) => ({ body: await port.testUserModelProvider((body as Record<string, unknown>).providerId as string) }),
-    testUserModel: async (_context, body) => ({ body: await port.testUserModel(body as never) }),
-    discoverUserModelsCandidate: async (_context, body) => ({ body: await port.discoverUserModelsCandidate(body as never) }),
-    saveUserModelProviderCandidate: async (_context, body) => ({ body: await port.saveUserModelProviderCandidate(body as never) }),
+    testUserModel: async (_context, body) => ({ body: await port.testUserModel(body) }),
+    discoverUserModelsCandidate: async (_context, body) => ({ body: await port.discoverUserModelsCandidate(body) }),
+    saveUserModelProviderCandidate: async (_context, body) => ({ body: await port.saveUserModelProviderCandidate(body) }),
     listProviderPresets: async () => ({ body: await port.listProviderPresets() }),
     getMiniMaxApiKeyStatus: async () => ({ body: await port.getMiniMaxApiKeyStatus() }),
-    upsertMiniMaxApiKey: async (_context, body) => ({ body: await port.upsertMiniMaxApiKey(body as never) }),
+    upsertMiniMaxApiKey: async (_context, body) => ({ body: await port.upsertMiniMaxApiKey(body) }),
     getCodexOAuthStatus: async () => ({ body: await port.getCodexOAuthStatus() }),
-    runCommand: async (_context, body) => ({ body: await runWebuiCommand(port, body as never) }),
+    runCommand: async (_context, body) => ({ body: await runWebuiCommand(port, body) }),
     signOut: async () => {
       if (!port.invalidateAuth) throw new Error("auth invalidation is unavailable");
       await port.invalidateAuth();
@@ -167,14 +186,14 @@ export function createOperationHandlers(
       stream: { ok: true, source: port.watchEvents(context.signal) },
     }),
     listPendingPermissions: async () => ({ body: await port.listPendingPermissions() }),
-    getPendingQuestionnaire: async (_context, body) => ({ body: await port.getPendingQuestionnaire(body as never) }),
-    replyPermission: async (_context, body) => ({ body: await port.replyPermission(body as never) }),
-    replyQuestionnaire: async (_context, body) => ({ body: await port.replyQuestionnaire(body as never) }),
-    dismissQuestionnaire: async (_context, body) => ({ body: await port.dismissQuestionnaire(body as never) }),
+    getPendingQuestionnaire: async (_context, body) => ({ body: await port.getPendingQuestionnaire(body) }),
+    replyPermission: async (_context, body) => ({ body: await port.replyPermission(body) }),
+    replyQuestionnaire: async (_context, body) => ({ body: await port.replyQuestionnaire(body) }),
+    dismissQuestionnaire: async (_context, body) => ({ body: await port.dismissQuestionnaire(body) }),
     version: () => ({ body: port.version() }),
-    getSession: async (_context, body) => ({ body: await port.getSession(body as never) }),
+    getSession: async (_context, body) => ({ body: await port.getSession(body) }),
     getMessages: async (_context, body) => {
-      const result = await port.getMessages(body as never);
+      const result = await port.getMessages(body);
       const messages = result.messages ?? [];
       const turnId =
         [...messages].reverse().find((message) => message.turnId)?.turnId ?? "";
@@ -193,31 +212,31 @@ export function createOperationHandlers(
         },
       };
     },
-    getSessionDiff: async (_context, body) => ({ body: await port.getSessionDiff!(body as never) }),
-    getTurnDiff: async (_context, body) => ({ body: await port.getTurnDiff!(body as never) }),
-    revertTurnDiff: async (_context, body) => ({ body: await port.revertTurnDiff!(body as never) }),
-    reapplyTurnDiff: async (_context, body) => ({ body: await port.reapplyTurnDiff!(body as never) }),
-    getSessionRewindPreview: async (_context, body) => ({ body: await port.getSessionRewindPreview!(body as never) }),
-    rewindSession: async (_context, body) => ({ body: await port.rewindSession!(body as never) }),
-    editSessionMessage: async (_context, body) => ({ body: await port.editSessionMessage!(body as never) }),
+    getSessionDiff: async (_context, body) => ({ body: await port.getSessionDiff!(body) }),
+    getTurnDiff: async (_context, body) => ({ body: await port.getTurnDiff!(body) }),
+    revertTurnDiff: async (_context, body) => ({ body: await port.revertTurnDiff!(body) }),
+    reapplyTurnDiff: async (_context, body) => ({ body: await port.reapplyTurnDiff!(body) }),
+    getSessionRewindPreview: async (_context, body) => ({ body: await port.getSessionRewindPreview!(body) }),
+    rewindSession: async (_context, body) => ({ body: await port.rewindSession!(body) }),
+    editSessionMessage: async (_context, body) => ({ body: await port.editSessionMessage!(body) }),
     isGoalEnabled: async () => ({ body: await port.isGoalEnabled!() }),
-    getGoal: async (_context, body) => ({ body: await port.getGoal!(body as never) }),
-    createGoal: async (_context, body) => ({ body: await port.createGoal!(body as never) }),
-    patchGoal: async (_context, body) => ({ body: await port.patchGoal!(body as never) }),
-    clearGoal: async (_context, body) => ({ body: await port.clearGoal!(body as never) }),
-    listSessions: async (_context, body) => ({ body: await port.listSessions(body as never) }),
-    getSessionTree: async (_context, body) => ({ body: await port.getSessionTree(body as never) }),
+    getGoal: async (_context, body) => ({ body: await port.getGoal!(body) }),
+    createGoal: async (_context, body) => ({ body: await port.createGoal!(body) }),
+    patchGoal: async (_context, body) => ({ body: await port.patchGoal!(body) }),
+    clearGoal: async (_context, body) => ({ body: await port.clearGoal!(body) }),
+    listSessions: async (_context, body) => ({ body: await port.listSessions(body) }),
+    getSessionTree: async (_context, body) => ({ body: await port.getSessionTree(body) }),
     sendMessage: async (context, body) => {
-      const stream = await port.sendMessage(body as never, context.signal);
+      const stream = await port.sendMessage(body, context.signal);
       return {
         stream: stream.ok
           ? { ...stream, source: projectSessionStream(stream.source) }
           : stream,
       };
     },
-    enqueueMessage: async (_context, body) => ({ body: await port.enqueueMessage(body as never) }),
+    enqueueMessage: async (_context, body) => ({ body: await port.enqueueMessage(body) }),
     resumeSession: async (context, body) => {
-      const stream = await port.resumeSession(body as never, context.signal);
+      const stream = await port.resumeSession(body, context.signal);
       return {
         stream: stream.ok
           ? { ...stream, source: projectSessionStream(stream.source) }
