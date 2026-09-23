@@ -52,13 +52,11 @@ import type {
   WebuiGoalPatchRequest,
   WebuiGoalEnabledResult,
 } from "./port.js";
-import { runWebuiCommand } from "./commands/runner.js";
-import {
-  projectContextSnapshot,
-  projectSessionStream,
-  projectUsage,
-} from "./projections/index.js";
 import type { WebuiTerminalManager } from "./terminal.js";
+import {
+  createOperationHandlers,
+  type WebuiOperationPort,
+} from "./operation-handlers.js";
 import {
   invalidBody,
   requireNonEmptyString,
@@ -1451,332 +1449,99 @@ export const signOutOperation: WebuiOperation<Record<string, never>, { readonly 
 };
 
 export function createOperationRegistry(
-  port: Pick<
-    WebuiHarnessPort,
-    | "version"
-    | "listSessions"
-    | "getSessionTree"
-    | "archiveSession"
-    | "deleteSession"
-    | "updateSession"
-    | "getSessionForkOptions"
-    | "forkSession"
-    | "createSession"
-    | "getSession"
-    | "getMessages"
-    | "getSessionDiff"
-    | "getTurnDiff"
-    | "revertTurnDiff"
-    | "reapplyTurnDiff"
-    | "getSessionRewindPreview"
-    | "rewindSession"
-    | "editSessionMessage"
-    | "isGoalEnabled"
-    | "getGoal"
-    | "createGoal"
-    | "patchGoal"
-    | "clearGoal"
-    | "listWorkspaceFileTree"
-    | "readWorkspaceFile"
-    | "getWorkspaceEnvironment"
-    | "mutateWorkspaceGit"
-    | "readCanvas"
-    | "applyCanvas"
-    | "sendMessage"
-    | "enqueueMessage"
-    | "resumeSession"
-    | "watchEvents"
-    | "listPendingPermissions"
-    | "getPendingQuestionnaire"
-    | "replyPermission"
-    | "replyQuestionnaire"
-    | "dismissQuestionnaire"
-    | "abortSession"
-    | "listQueueMessages"
-    | "deleteQueueItem"
-    | "listModels"
-    | "selectModel"
-    | "listSkills"
-    | "getSessionUsage"
-    | "getUsageQuota"
-    | "getSigninPanel"
-    | "claimSignin"
-    | "getAccountStatus"
-    | "listUserModelProviders"
-    | "createUserModelProvider"
-    | "updateUserModelProvider"
-    | "deleteUserModelProvider"
-    | "testUserModelProvider"
-    | "testUserModel"
-    | "discoverUserModelsCandidate"
-    | "saveUserModelProviderCandidate"
-    | "listProviderPresets"
-    | "getMiniMaxApiKeyStatus"
-    | "upsertMiniMaxApiKey"
-    | "getCodexOAuthStatus"
-    | "requestCompaction"
-    | "invalidateAuth"
-  >,
+  port: WebuiOperationPort,
   terminal?: WebuiTerminalManager,
 ): ReadonlyMap<string, WebuiOperationRegistryEntry> {
   const registry = new Map<string, WebuiOperationRegistryEntry>();
+  const handlers = createOperationHandlers(port, terminal);
   registerOperation(registry, {
     operation: createSessionOperation,
-    handle: async (_context, body) => ({
-      body: await port.createSession(body),
-    }),
+    handle: handlers.createSession!,
   });
   if (port.listWorkspaceFileTree && port.readWorkspaceFile && port.readCanvas && port.applyCanvas) {
-    registerOperation(registry, { operation: listWorkspaceFileTreeOperation, handle: async (_context, body) => ({ body: await port.listWorkspaceFileTree!(body as never) as unknown as Record<string, unknown> }) });
-    registerOperation(registry, { operation: readWorkspaceFileOperation, handle: async (_context, body) => ({ body: await port.readWorkspaceFile!(body as never) as unknown as Record<string, unknown> }) });
-    registerOperation(registry, { operation: readCanvasOperation, handle: async (_context, body) => ({ body: await port.readCanvas!(body as never) as unknown as Record<string, unknown> }) });
-    registerOperation(registry, { operation: applyCanvasOperation, handle: async (_context, body) => ({ body: await port.applyCanvas!(body as never) as unknown as Record<string, unknown> }) });
+    registerOperation(registry, { operation: listWorkspaceFileTreeOperation, handle: handlers.listWorkspaceFileTree! });
+    registerOperation(registry, { operation: readWorkspaceFileOperation, handle: handlers.readWorkspaceFile! });
+    registerOperation(registry, { operation: readCanvasOperation, handle: handlers.readCanvas! });
+    registerOperation(registry, { operation: applyCanvasOperation, handle: handlers.applyCanvas! });
   }
   if (port.getWorkspaceEnvironment) {
-    registerOperation(registry, { operation: getWorkspaceEnvironmentOperation, handle: async (_context, body) => ({ body: await port.getWorkspaceEnvironment!(body as never) as unknown as Record<string, unknown> }) });
+    registerOperation(registry, { operation: getWorkspaceEnvironmentOperation, handle: handlers.getWorkspaceEnvironment! });
   }
   if (port.mutateWorkspaceGit) {
-    registerOperation(registry, { operation: mutateWorkspaceGitOperation, handle: async (_context, body) => ({ body: await port.mutateWorkspaceGit!(body as never) }) });
+    registerOperation(registry, { operation: mutateWorkspaceGitOperation, handle: handlers.mutateWorkspaceGit! });
   }
   if (terminal) {
-    registerOperation(registry, { operation: createTerminalOperation, handle: async (_context, body) => ({ body: terminal.create(String(body.workspaceDir ?? process.cwd())) }) });
-    registerOperation(registry, { operation: listTerminalsOperation, handle: async () => ({ body: terminal.list() as unknown as Record<string, unknown> }) });
-    registerOperation(registry, { operation: writeTerminalOperation, handle: async (_context, body) => ({ body: terminal.write(String(body.terminalId), String(body.data ?? "")) }) });
-    registerOperation(registry, { operation: resizeTerminalOperation, handle: async (_context, body) => ({ body: terminal.resize(String(body.terminalId), Number(body.cols), Number(body.rows)) }) });
-    registerOperation(registry, { operation: disposeTerminalOperation, handle: async (_context, body) => ({ body: terminal.dispose(String(body.terminalId)) }) });
-    registerOperation(registry, { operation: watchTerminalOperation, handle: (_context, body) => ({ stream: { ok: true, source: terminal.watch(String(body.terminalId), _context.signal) as unknown as AsyncIterable<Record<string, unknown>> } }) });
+    registerOperation(registry, { operation: createTerminalOperation, handle: handlers.createTerminal! });
+    registerOperation(registry, { operation: listTerminalsOperation, handle: handlers.listTerminals! });
+    registerOperation(registry, { operation: writeTerminalOperation, handle: handlers.writeTerminal! });
+    registerOperation(registry, { operation: resizeTerminalOperation, handle: handlers.resizeTerminal! });
+    registerOperation(registry, { operation: disposeTerminalOperation, handle: handlers.disposeTerminal! });
+    registerOperation(registry, { operation: watchTerminalOperation, handle: handlers.watchTerminal! });
   }
-  registerOperation(registry, { operation: archiveSessionOperation, handle: async (_context, body) => ({ body: await port.archiveSession(body) }) });
-  registerOperation(registry, { operation: deleteSessionOperation, handle: async (_context, body) => ({ body: await port.deleteSession(body) }) });
-  registerOperation(registry, { operation: updateSessionOperation, handle: async (_context, body) => ({ body: await port.updateSession(body) }) });
-  registerOperation(registry, { operation: getSessionForkOptionsOperation, handle: async (_context, body) => ({ body: await port.getSessionForkOptions(body) }) });
-  registerOperation(registry, { operation: forkSessionOperation, handle: async (_context, body) => ({ body: await port.forkSession(body) }) });
-  registerOperation(registry, {
-    operation: abortSessionOperation,
-    handle: async (_context, body) => ({ body: await port.abortSession(body) }),
-  });
-  registerOperation(registry, {
-    operation: listQueueMessagesOperation,
-    handle: async (_context, body) => ({
-      body: await port.listQueueMessages(body),
-    }),
-  });
-  registerOperation(registry, {
-    operation: deleteQueueItemOperation,
-    handle: async (_context, body) => ({
-      body: await port.deleteQueueItem(body),
-    }),
-  });
-  registerOperation(registry, {
-    operation: listModelsOperation,
-    handle: async (_context, body) => ({ body: await port.listModels(body) }),
-  });
-  registerOperation(registry, {
-    operation: selectModelOperation,
-    handle: async (_context, body) => ({ body: await port.selectModel(body) }),
-  });
-  registerOperation(registry, {
-    operation: listSkillsOperation,
-    handle: async (_context, body) => ({
-      body: await port.listSkills(body),
-    }),
-  });
-  registerOperation(registry, {
-    operation: getSessionUsageOperation,
-    handle: async (_context, body) => ({
-      body: await port.getSessionUsage(body),
-    }),
-  });
-  registerOperation(registry, {
-    operation: getUsageQuotaOperation,
-    handle: async (_context, body) => ({
-      body: await port.getUsageQuota(body),
-    }),
-  });
-  registerOperation(registry, {
-    operation: getSigninPanelOperation,
-    handle: async () => ({ body: await port.getSigninPanel() }),
-  });
-  registerOperation(registry, {
-    operation: claimSigninOperation,
-    handle: async () => ({ body: await port.claimSignin() }),
-  });
-  registerOperation(registry, {
-    operation: getAccountStatusOperation,
-    handle: async (_context, body) => ({
-      body: await port.getAccountStatus(body),
-    }),
-  });
-  registerOperation(registry, { operation: listUserModelProvidersOperation, handle: async () => ({ body: await port.listUserModelProviders() }) });
-  registerOperation(registry, { operation: createUserModelProviderOperation, handle: async (_context, body) => ({ body: await port.createUserModelProvider(body) }) });
-  registerOperation(registry, { operation: updateUserModelProviderOperation, handle: async (_context, body) => ({ body: await port.updateUserModelProvider(body) }) });
-  registerOperation(registry, { operation: deleteUserModelProviderOperation, handle: async (_context, body) => ({ body: await port.deleteUserModelProvider(body.providerId) }) });
-  registerOperation(registry, { operation: testUserModelProviderOperation, handle: async (_context, body) => ({ body: await port.testUserModelProvider(body.providerId) }) });
-  registerOperation(registry, { operation: testUserModelOperation, handle: async (_context, body) => ({ body: await port.testUserModel(body) }) });
-  registerOperation(registry, { operation: discoverUserModelsCandidateOperation, handle: async (_context, body) => ({ body: await port.discoverUserModelsCandidate(body) }) });
-  registerOperation(registry, { operation: saveUserModelProviderCandidateOperation, handle: async (_context, body) => ({ body: await port.saveUserModelProviderCandidate(body) }) });
-  registerOperation(registry, { operation: listProviderPresetsOperation, handle: async () => ({ body: await port.listProviderPresets() }) });
-  registerOperation(registry, { operation: getMiniMaxApiKeyStatusOperation, handle: async () => ({ body: await port.getMiniMaxApiKeyStatus() }) });
-  registerOperation(registry, { operation: upsertMiniMaxApiKeyOperation, handle: async (_context, body) => ({ body: await port.upsertMiniMaxApiKey(body) }) });
-  registerOperation(registry, { operation: getCodexOAuthStatusOperation, handle: async () => ({ body: await port.getCodexOAuthStatus() }) });
-  registerOperation(registry, {
-    operation: runCommandOperation,
-    handle: async (_context, body) => ({ body: await runWebuiCommand(port, body) }),
-  });
-  registerOperation(registry, {
-    operation: signOutOperation,
-    handle: async () => {
-      if (!port.invalidateAuth) throw new Error("auth invalidation is unavailable");
-      await port.invalidateAuth();
-      return { body: { success: true as const } };
-    },
-  });
-  registerOperation(registry, {
-    operation: watchEventsOperation,
-    handle: (context) => ({
-      stream: {
-        ok: true,
-        source: port.watchEvents(context.signal),
-      },
-    }),
-  });
-  registerOperation(registry, {
-    operation: listPendingPermissionsOperation,
-    handle: async () => ({ body: await port.listPendingPermissions() }),
-  });
-  registerOperation(registry, {
-    operation: getPendingQuestionnaireOperation,
-    handle: async (_context, body) => ({
-      body: await port.getPendingQuestionnaire(body),
-    }),
-  });
-  registerOperation(registry, {
-    operation: replyPermissionOperation,
-    handle: async (_context, body) => ({
-      body: await port.replyPermission(body),
-    }),
-  });
-  registerOperation(registry, {
-    operation: replyQuestionnaireOperation,
-    handle: async (_context, body) => ({
-      body: await port.replyQuestionnaire(body),
-    }),
-  });
-  registerOperation(registry, {
-    operation: dismissQuestionnaireOperation,
-    handle: async (_context, body) => ({
-      body: await port.dismissQuestionnaire(body),
-    }),
-  });
-  registerOperation(registry, {
-    operation: versionOperation,
-    handle: () => ({
-      body: port.version(),
-    }),
-  });
-  registerOperation(registry, {
-    operation: getSessionOperation,
-    handle: async (_context, body) => ({ body: await port.getSession(body) }),
-  });
-  registerOperation(registry, {
-    operation: getMessagesOperation,
-    handle: async (_context, body) => {
-      const result = await port.getMessages(body);
-      const messages = result.messages ?? [];
-      const turnId =
-        [...messages].reverse().find((message) => message.turnId)?.turnId ?? "";
-      return {
-        body: {
-          ...result,
-          contextSnapshot: projectContextSnapshot({
-            active: false,
-            messages: messages.map((message) => ({
-              kind: message.kind,
-              timestamp: message.timestamp,
-              rawJson: JSON.stringify(message),
-            })),
-          }) as unknown as Record<string, unknown>,
-          usage: projectUsage(messages, turnId),
-        },
-      };
-    },
-  });
-  if (
-    port.getSessionDiff &&
-    port.getTurnDiff &&
-    port.revertTurnDiff &&
-    port.reapplyTurnDiff
-  ) {
-    registerOperation(registry, {
-      operation: getSessionDiffOperation,
-      handle: async (_context, body) => ({ body: await port.getSessionDiff!(body) }),
-    });
-    registerOperation(registry, {
-      operation: getTurnDiffOperation,
-      handle: async (_context, body) => ({ body: await port.getTurnDiff!(body) }),
-    });
-    registerOperation(registry, {
-      operation: revertTurnDiffOperation,
-      handle: async (_context, body) => ({ body: await port.revertTurnDiff!(body) }),
-    });
-    registerOperation(registry, {
-      operation: reapplyTurnDiffOperation,
-      handle: async (_context, body) => ({ body: await port.reapplyTurnDiff!(body) }),
-    });
+  registerOperation(registry, { operation: archiveSessionOperation, handle: handlers.archiveSession! });
+  registerOperation(registry, { operation: deleteSessionOperation, handle: handlers.deleteSession! });
+  registerOperation(registry, { operation: updateSessionOperation, handle: handlers.updateSession! });
+  registerOperation(registry, { operation: getSessionForkOptionsOperation, handle: handlers.getSessionForkOptions! });
+  registerOperation(registry, { operation: forkSessionOperation, handle: handlers.forkSession! });
+  registerOperation(registry, { operation: abortSessionOperation, handle: handlers.abortSession! });
+  registerOperation(registry, { operation: listQueueMessagesOperation, handle: handlers.listQueueMessages! });
+  registerOperation(registry, { operation: deleteQueueItemOperation, handle: handlers.deleteQueueItem! });
+  registerOperation(registry, { operation: listModelsOperation, handle: handlers.listModels! });
+  registerOperation(registry, { operation: selectModelOperation, handle: handlers.selectModel! });
+  registerOperation(registry, { operation: listSkillsOperation, handle: handlers.listSkills! });
+  registerOperation(registry, { operation: getSessionUsageOperation, handle: handlers.getSessionUsage! });
+  registerOperation(registry, { operation: getUsageQuotaOperation, handle: handlers.getUsageQuota! });
+  registerOperation(registry, { operation: getSigninPanelOperation, handle: handlers.getSigninPanel! });
+  registerOperation(registry, { operation: claimSigninOperation, handle: handlers.claimSignin! });
+  registerOperation(registry, { operation: getAccountStatusOperation, handle: handlers.getAccountStatus! });
+  registerOperation(registry, { operation: listUserModelProvidersOperation, handle: handlers.listUserModelProviders! });
+  registerOperation(registry, { operation: createUserModelProviderOperation, handle: handlers.createUserModelProvider! });
+  registerOperation(registry, { operation: updateUserModelProviderOperation, handle: handlers.updateUserModelProvider! });
+  registerOperation(registry, { operation: deleteUserModelProviderOperation, handle: handlers.deleteUserModelProvider! });
+  registerOperation(registry, { operation: testUserModelProviderOperation, handle: handlers.testUserModelProvider! });
+  registerOperation(registry, { operation: testUserModelOperation, handle: handlers.testUserModel! });
+  registerOperation(registry, { operation: discoverUserModelsCandidateOperation, handle: handlers.discoverUserModelsCandidate! });
+  registerOperation(registry, { operation: saveUserModelProviderCandidateOperation, handle: handlers.saveUserModelProviderCandidate! });
+  registerOperation(registry, { operation: listProviderPresetsOperation, handle: handlers.listProviderPresets! });
+  registerOperation(registry, { operation: getMiniMaxApiKeyStatusOperation, handle: handlers.getMiniMaxApiKeyStatus! });
+  registerOperation(registry, { operation: upsertMiniMaxApiKeyOperation, handle: handlers.upsertMiniMaxApiKey! });
+  registerOperation(registry, { operation: getCodexOAuthStatusOperation, handle: handlers.getCodexOAuthStatus! });
+  registerOperation(registry, { operation: runCommandOperation, handle: handlers.runCommand! });
+  registerOperation(registry, { operation: signOutOperation, handle: handlers.signOut! });
+  registerOperation(registry, { operation: watchEventsOperation, handle: handlers.watchEvents! });
+  registerOperation(registry, { operation: listPendingPermissionsOperation, handle: handlers.listPendingPermissions! });
+  registerOperation(registry, { operation: getPendingQuestionnaireOperation, handle: handlers.getPendingQuestionnaire! });
+  registerOperation(registry, { operation: replyPermissionOperation, handle: handlers.replyPermission! });
+  registerOperation(registry, { operation: replyQuestionnaireOperation, handle: handlers.replyQuestionnaire! });
+  registerOperation(registry, { operation: dismissQuestionnaireOperation, handle: handlers.dismissQuestionnaire! });
+  registerOperation(registry, { operation: versionOperation, handle: handlers.version! });
+  registerOperation(registry, { operation: getSessionOperation, handle: handlers.getSession! });
+  registerOperation(registry, { operation: getMessagesOperation, handle: handlers.getMessages! });
+  if (port.getSessionDiff && port.getTurnDiff && port.revertTurnDiff && port.reapplyTurnDiff) {
+    registerOperation(registry, { operation: getSessionDiffOperation, handle: handlers.getSessionDiff! });
+    registerOperation(registry, { operation: getTurnDiffOperation, handle: handlers.getTurnDiff! });
+    registerOperation(registry, { operation: revertTurnDiffOperation, handle: handlers.revertTurnDiff! });
+    registerOperation(registry, { operation: reapplyTurnDiffOperation, handle: handlers.reapplyTurnDiff! });
   }
   if (port.getSessionRewindPreview && port.rewindSession && port.editSessionMessage) {
-    registerOperation(registry, { operation: getSessionRewindPreviewOperation, handle: async (_context, body) => ({ body: await port.getSessionRewindPreview!(body) }) });
-    registerOperation(registry, { operation: rewindSessionOperation, handle: async (_context, body) => ({ body: await port.rewindSession!(body) }) });
-    registerOperation(registry, { operation: editSessionMessageOperation, handle: async (_context, body) => ({ body: await port.editSessionMessage!(body) }) });
+    registerOperation(registry, { operation: getSessionRewindPreviewOperation, handle: handlers.getSessionRewindPreview! });
+    registerOperation(registry, { operation: rewindSessionOperation, handle: handlers.rewindSession! });
+    registerOperation(registry, { operation: editSessionMessageOperation, handle: handlers.editSessionMessage! });
   }
   if (port.isGoalEnabled && port.getGoal && port.createGoal && port.patchGoal && port.clearGoal) {
-    registerOperation(registry, { operation: isGoalEnabledOperation, handle: async () => ({ body: await port.isGoalEnabled!() }) });
-    registerOperation(registry, { operation: getGoalOperation, handle: async (_context, body) => ({ body: await port.getGoal!(body) }) });
-    registerOperation(registry, { operation: createGoalOperation, handle: async (_context, body) => ({ body: await port.createGoal!(body) }) });
-    registerOperation(registry, { operation: patchGoalOperation, handle: async (_context, body) => ({ body: await port.patchGoal!(body) }) });
-    registerOperation(registry, { operation: clearGoalOperation, handle: async (_context, body) => ({ body: await port.clearGoal!(body) }) });
+    registerOperation(registry, { operation: isGoalEnabledOperation, handle: handlers.isGoalEnabled! });
+    registerOperation(registry, { operation: getGoalOperation, handle: handlers.getGoal! });
+    registerOperation(registry, { operation: createGoalOperation, handle: handlers.createGoal! });
+    registerOperation(registry, { operation: patchGoalOperation, handle: handlers.patchGoal! });
+    registerOperation(registry, { operation: clearGoalOperation, handle: handlers.clearGoal! });
   }
-  registerOperation(registry, {
-    operation: listSessionsOperation,
-    handle: async (_context, body) => ({ body: await port.listSessions(body) }),
-  });
-  registerOperation(registry, {
-    operation: getSessionTreeOperation,
-    handle: async (_context, body) => ({
-      body: await port.getSessionTree(body),
-    }),
-  });
-  registerOperation(registry, {
-    operation: sendMessageOperation,
-    handle: async (context, body) => {
-      const stream = await port.sendMessage(body, context.signal);
-      return {
-        stream: stream.ok
-          ? { ...stream, source: projectSessionStream(stream.source) }
-          : stream,
-      };
-    },
-  });
-  registerOperation(registry, {
-    operation: enqueueMessageOperation,
-    handle: async (_context, body) => ({
-      body: await port.enqueueMessage(body),
-    }),
-  });
-  registerOperation(registry, {
-    operation: resumeSessionOperation,
-    handle: async (context, body) => {
-      const stream = await port.resumeSession(body, context.signal);
-      return {
-        stream: stream.ok
-          ? { ...stream, source: projectSessionStream(stream.source) }
-          : stream,
-      };
-    },
-  });
+  registerOperation(registry, { operation: listSessionsOperation, handle: handlers.listSessions! });
+  registerOperation(registry, { operation: getSessionTreeOperation, handle: handlers.getSessionTree! });
+  registerOperation(registry, { operation: sendMessageOperation, handle: handlers.sendMessage! });
+  registerOperation(registry, { operation: enqueueMessageOperation, handle: handlers.enqueueMessage! });
+  registerOperation(registry, { operation: resumeSessionOperation, handle: handlers.resumeSession! });
   return registry;
 }
-
 /**
  * Registers one operation. Throws if the operation is missing a
  * `validate` function or the validator rejects everything by default;
