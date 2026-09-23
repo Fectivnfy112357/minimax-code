@@ -25,7 +25,7 @@ import {
   migrateSessionRuntimeState,
   readSessionRuntimeState,
   updateSessionRuntimeState,
-} from "../../src/client/app.js";
+} from "../../src/client/session-runtime-store.js";
 import { initialWebuiStreamState } from "../../src/client/stream.js";
 
 /** `HOME_SESSION_RUNTIME_KEY` is not exported; this is the literal at `app.tsx:1878`. */

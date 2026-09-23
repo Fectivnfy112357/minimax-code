@@ -39,16 +39,18 @@ import {
   groupWebuiSessionsByWorkspace,
   placeWebuiContextMenu,
   projectWebuiMessage,
-  migrateSessionRuntimeState,
-  readSessionRuntimeState,
   readSessionIdFromHash,
   sessionHash,
   sortWebuiProjectSessionIds,
   submitWebuiComposerTurn,
   subscribeToSessionHash,
-  updateSessionRuntimeState,
   webuiModelOptionValue,
 } from "../../src/client/app.js";
+import {
+  migrateSessionRuntimeState,
+  readSessionRuntimeState,
+  updateSessionRuntimeState,
+} from "../../src/client/session-runtime-store.js";
 import {
   buildWebuiStreamLoopSink,
   runWebuiStreamLoop,

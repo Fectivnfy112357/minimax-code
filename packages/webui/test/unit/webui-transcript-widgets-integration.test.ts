@@ -13,7 +13,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { WebuiClientFoundationApp } from "../../src/client/app.js";
 import type { WebuiClientMessage } from "../../src/client/app.js";
-import { updateSessionRuntimeState } from "../../src/client/app.js";
+import { updateSessionRuntimeState } from "../../src/client/session-runtime-store.js";
 import type { WebuiUsageQuotaResult } from "../../src/server/port.js";
 
 const SESSION_ID = "session-widgets";

@@ -3442,6 +3442,7 @@
     "packages/webui/src/client/projection/transcript-projection.ts",
     "packages/webui/src/client/projection/workspace-progress.ts",
     "packages/webui/src/client/router.ts",
+    "packages/webui/src/client/session-runtime-store.ts",
     "packages/webui/src/client/slash-palette.ts",
     "packages/webui/src/client/stream-instrumentation.ts",
     "packages/webui/src/client/stream-loop.ts",
