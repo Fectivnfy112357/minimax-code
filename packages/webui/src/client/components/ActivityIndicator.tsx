@@ -150,6 +150,9 @@ export const DEFAULT_THINKING_PHRASES: ThinkingPhraseSet = {
 };
 
 export const DEFAULT_THINKING_PHRASE_FALLBACK = "思考中…";
+export const DEFAULT_THINKING_PHRASE_START_DELAY_MIN_MS = 2000;
+export const DEFAULT_THINKING_PHRASE_START_DELAY_MAX_MS = 3000;
+export const DEFAULT_THINKING_PHRASE_ROTATION_INTERVAL_MS = 3500;
 
 export interface ThinkingPhraseRotationOptions {
   phraseRootKey?: string;
@@ -158,6 +161,7 @@ export interface ThinkingPhraseRotationOptions {
   rotationIntervalMs?: number;
   phrases?: ThinkingPhraseSet;
   fallback?: string;
+  random?: () => number;
 }
 
 interface WeightedPhraseBucket {
@@ -183,11 +187,12 @@ export function bucketPhrases(phrases: ThinkingPhraseSet): WeightedPhraseBucket[
 export function pickWeightedPhrase(
   buckets: readonly WeightedPhraseBucket[],
   previous: string | null,
+  random: () => number = Math.random,
 ): string | null {
   if (buckets.length === 0) return null;
   const totalWeight = buckets.reduce((sum, bucket) => sum + bucket.weight, 0);
   if (totalWeight <= 0) return null;
-  let threshold = Math.random() * totalWeight;
+  let threshold = random() * totalWeight;
   let chosen: WeightedPhraseBucket | null = null;
   for (const bucket of buckets) {
     threshold -= bucket.weight;
@@ -207,7 +212,19 @@ export function pickWeightedPhrase(
     const filtered = pool.filter((entry) => entry !== previous);
     if (filtered.length > 0) candidates = filtered;
   }
-  return candidates[Math.floor(Math.random() * candidates.length)] ?? null;
+  return candidates[Math.floor(random() * candidates.length)] ?? null;
+}
+
+export function computeThinkingPhraseStartDelay(
+  startMinMs: number,
+  startMaxMs: number,
+  random: () => number = Math.random,
+): number {
+  return startMinMs + random() * Math.max(0, startMaxMs - startMinMs);
+}
+
+export function shouldPlayActivityIndicator(prefersReducedMotion: boolean): boolean {
+  return !prefersReducedMotion;
 }
 
 function useThinkingPhrase(
@@ -215,9 +232,10 @@ function useThinkingPhrase(
   options: ThinkingPhraseRotationOptions = {},
 ): string | null {
   const phrases = options.phrases ?? DEFAULT_THINKING_PHRASES;
-  const startMin = options.startDelayMinMs ?? 2000;
-  const startMax = options.startDelayMaxMs ?? 3000;
-  const interval = options.rotationIntervalMs ?? 3500;
+  const startMin = options.startDelayMinMs ?? DEFAULT_THINKING_PHRASE_START_DELAY_MIN_MS;
+  const startMax = options.startDelayMaxMs ?? DEFAULT_THINKING_PHRASE_START_DELAY_MAX_MS;
+  const interval = options.rotationIntervalMs ?? DEFAULT_THINKING_PHRASE_ROTATION_INTERVAL_MS;
+  const random = options.random ?? Math.random;
   const [value, setValue] = useState<string | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -235,13 +253,13 @@ function useThinkingPhrase(
 
     const tick = () => {
       if (cancelled) return;
-      const next = pickWeightedPhrase(buckets, previous);
+      const next = pickWeightedPhrase(buckets, previous, random);
       previous = next;
       setValue(next);
       timeoutRef.current = setTimeout(tick, interval);
     };
 
-    const startDelay = startMin + Math.random() * Math.max(0, startMax - startMin);
+    const startDelay = computeThinkingPhraseStartDelay(startMin, startMax, random);
     timeoutRef.current = setTimeout(tick, startDelay);
 
     return () => {
@@ -251,7 +269,7 @@ function useThinkingPhrase(
         timeoutRef.current = null;
       }
     };
-  }, [active, phrases, startMin, startMax, interval]);
+  }, [active, phrases, startMin, startMax, interval, random]);
 
   return value;
 }
@@ -310,7 +328,7 @@ export function ActivityIndicator(props: ActivityIndicatorProps): React.JSX.Elem
       return undefined;
     }
     const mql = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const sync = () => setPlay(!mql.matches);
+    const sync = () => setPlay(shouldPlayActivityIndicator(mql.matches));
     sync();
     mql.addEventListener("change", sync);
     return () => mql.removeEventListener("change", sync);

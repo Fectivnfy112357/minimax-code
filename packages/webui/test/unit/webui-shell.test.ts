@@ -860,6 +860,7 @@ describe("WebUI shell — desktop anatomy", () => {
       createElement(WebuiSessionTranscript, {
         sessionId: "s",
         loadMessages: async () => ({ messages: [], hasMore: false }),
+        initialMessages: { messages: [], hasMore: false },
       }),
     );
     expect(transcript).toMatch(/p-spacing_/u);
