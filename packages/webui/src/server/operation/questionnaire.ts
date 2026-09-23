@@ -1,5 +1,5 @@
 import { WebuiErrorCode } from "../envelope.js";
-import type { WebuiOperation } from "../operation-contract.js";
+import type { WebuiOperation } from "./operation-contract.js";
 import type {
   WebuiInteractionReplyResult,
   WebuiPermissionDecision,

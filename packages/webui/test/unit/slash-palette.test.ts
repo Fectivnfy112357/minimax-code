@@ -126,7 +126,8 @@ describe("WebUI slash palette — runtime narrowing", () => {
   });
 
   it("WEBUI_RUN_COMMAND_NAMES matches the server-side validation list", () => {
-    // The harness port validation list lives in operations.ts; keep the
+    // The harness port validation list lives in
+    // src/server/operation/provider.ts; keep the
     // client literal union aligned so the narrowing never lies.
     expect([...WEBUI_RUN_COMMAND_NAMES].sort()).toEqual(
       ["compact", "help", "model", "new", "status", "usage"],

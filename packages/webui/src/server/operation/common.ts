@@ -1,6 +1,6 @@
 import { WebuiErrorCode } from "../envelope.js";
-import { requireNonEmptyString, requireRecord } from "../operation-contract.js";
-import type { WebuiOperationValidation } from "../operation-contract.js";
+import { requireNonEmptyString, requireRecord } from "./operation-contract.js";
+import type { WebuiOperationValidation } from "./operation-contract.js";
 import type {
   WebuiPermissionDecision,
   WebuiSessionLookupRequest,

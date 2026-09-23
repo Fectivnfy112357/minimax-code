@@ -5,8 +5,8 @@ import {
   invalidBody,
   requireNonEmptyString,
   requireRecord,
-} from "../operation-contract.js";
-import type { WebuiOperation, WebuiOperationValidation } from "../operation-contract.js";
+} from "./operation-contract.js";
+import type { WebuiOperation, WebuiOperationValidation } from "./operation-contract.js";
 import type {
   WebuiCreateSessionRequest,
   WebuiCreateSessionResult,

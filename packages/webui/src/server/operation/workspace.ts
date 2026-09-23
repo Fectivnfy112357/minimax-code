@@ -1,5 +1,5 @@
 import { WebuiErrorCode } from "../envelope.js";
-import type { WebuiOperation, WebuiOperationValidation } from "../operation-contract.js";
+import type { WebuiOperation, WebuiOperationValidation } from "./operation-contract.js";
 import type { WebuiWorkspaceGitMutationRequest } from "../port.js";
 import { validateObjectBody } from "./common.js";
 import { LIST_WORKSPACE_FILE_TREE_OPERATION_NAME, READ_WORKSPACE_FILE_OPERATION_NAME, GET_WORKSPACE_ENVIRONMENT_OPERATION_NAME, MUTATE_WORKSPACE_GIT_OPERATION_NAME, READ_CANVAS_OPERATION_NAME, APPLY_CANVAS_OPERATION_NAME, CREATE_TERMINAL_OPERATION_NAME, LIST_TERMINALS_OPERATION_NAME, WRITE_TERMINAL_OPERATION_NAME, RESIZE_TERMINAL_OPERATION_NAME, DISPOSE_TERMINAL_OPERATION_NAME, WATCH_TERMINAL_OPERATION_NAME } from "./names.js";

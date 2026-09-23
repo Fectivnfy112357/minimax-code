@@ -8,7 +8,7 @@ import {
 import type {
   WebuiOperationHandler,
   WebuiOperationValidation,
-} from "../operation-contract.js";
+} from "./operation-contract.js";
 import type { WebuiTerminalManager } from "../terminal.js";
 
 type OperationModule = typeof import("./operations.js");
