@@ -157,7 +157,6 @@ import type {
 import {
   initialWebuiWorkspaceProgress,
   projectWebuiWorkspaceHistory,
-  reduceWebuiWorkspaceProgressEvent,
   webuiWorkspaceSubagentStatus,
   type WebuiWorkspaceProgressState,
   type WebuiWorkspaceSubagent,
@@ -196,10 +195,6 @@ import {
 } from "./projection/tool-projection.js";
 import {
   groupWebuiTranscriptItems,
-  eventSessionId,
-  pendingPermissionFromEvent,
-  questionnaireFromEvent,
-  replacePermission,
 } from "./projection/transcript-projection.js";
 import {
   webuiClientRequestId,
@@ -223,13 +218,16 @@ import {
   buildWebuiGoalStatusPatch,
   WEBUI_GOAL_STATUS_COPY,
   WEBUI_GOAL_WAIT_COPY,
-  projectWebuiThreadGoalMessage,
 } from "./projection/goal-state.js";
 import {
   buildWebuiComposerHandlers,
   submitWebuiComposerTurn,
   createdSessionId,
 } from "./projection/composer-state.js";
+import {
+  applyWebuiEffectCommands,
+  reduceWebuiEffect,
+} from "./projection/effect-reducer.js";
 import type {
   WebuiClientMessage,
   WebuiClientSession,
@@ -3666,115 +3664,39 @@ function WebuiComposer({
           error instanceof Error ? error.message : String(error),
         );
     });
-    const unsubscribe = watchEvents?.(
-      (event) => {
-        if (eventSessionId(event) !== sessionId) return;
-        setStream((current) => ({
-          ...current,
-          workspaceProgress: reduceWebuiWorkspaceProgressEvent(
-            current.workspaceProgress,
-            { type: event.type, ...event.payload },
-            sessionId,
-          ),
-        }));
-        if (event.type === "session.start") {
-          setSending(true);
-          setStream((current) => ({ ...current, phase: "streaming" }));
-          return;
-        }
-        if (
-          event.type === "session.finish" ||
-          event.type === "session.abort" ||
-          event.type === "session.error"
-        ) {
-          setSending(false);
-          setStream((current) => ({
-            ...current,
-            phase: "done",
-            status:
-              event.type === "session.finish"
-                ? "finished"
-                : event.type === "session.abort"
-                  ? "aborted"
-                  : "error",
-            ...(typeof event.payload.error === "string"
-              ? { refusal: event.payload.error }
-              : {}),
-          }));
-          return;
-        }
-        if (event.type === "session.queue.updated") {
+    // The 14-event / 8-effect runtime protocol used to live as an inline
+    // closure here (W2 commit 2 extracted the pure decision into
+    // `reduceWebuiEffect`; this rewrite actually wires the reducer +
+    // executor into the effect). Behaviour matches the original line-for-
+    // line: same order of setter calls, same exception swallowing on
+    // `refreshPending`, same `cancelled` guard around `refreshPending`'s
+    // post-await writes.
+    const unsubscribe = watchEvents?.((event) => {
+      const commands = reduceWebuiEffect(
+        {
+          stream,
+          permissions,
+          questionnaire,
+          goal,
+        },
+        event,
+        sessionId,
+      ).commands;
+      applyWebuiEffectCommands(commands, {
+        // The original closure called `refreshPending()` unconditionally
+        // and let its own `if (cancelled) return;` guard drop post-await
+        // writes. The executor only owns the catch-swallow — we don't
+        // add a second `cancelled` gate here.
+        refreshPending: () => {
           void refreshPending().catch(() => undefined);
-          return;
-        }
-        if (event.type === "permission.ask") {
-          const permission = pendingPermissionFromEvent(event);
-          if (permission) {
-            setPermissions((current) => replacePermission(current, permission));
-            setStream((current) => ({ ...current, phase: "waiting" }));
-          }
-          return;
-        }
-        if (event.type === "permission.resolved") {
-          const requestId = event.payload.requestId;
-          if (typeof requestId === "string")
-            setPermissions((current) =>
-              current.filter(
-                (permission) => permission.requestId !== requestId,
-              ),
-            );
-          setStream((current) => ({ ...current, phase: "streaming" }));
-          return;
-        }
-        if (event.type === "questionnaire.ask") {
-          const request = questionnaireFromEvent(event);
-          if (request) {
-            setQuestionnaire(request);
-            setStream((current) => ({ ...current, phase: "waiting" }));
-          }
-          return;
-        }
-        if (
-          event.type === "thread_goal.objective_updated" ||
-          event.type === "thread_goal.objective_steering" ||
-          event.type === "thread_goal.updated"
-        ) {
-          const nextGoal = event.payload.goal;
-          if (nextGoal && typeof nextGoal === "object") {
-            const projectedGoal = nextGoal as WebuiGoal;
-            setGoal(projectedGoal);
-            setStream((current) => {
-              const message = projectWebuiThreadGoalMessage(event.type, projectedGoal);
-              if (!message) return current;
-              const messageId = message.id;
-              const existing = current.messages.findIndex((item) => item.id === messageId);
-              if (existing < 0)
-                return { ...current, messages: [...current.messages, message] };
-              const messages = [...current.messages];
-              messages[existing] = message;
-              return { ...current, messages };
-            });
-          }
-          return;
-        }
-        if (event.type === "thread_goal.cleared") {
-          setGoal(undefined);
-          return;
-        }
-        if (
-          event.type === "questionnaire.dismiss" ||
-          event.type === "questionnaire.superseded"
-        ) {
-          const requestId = event.payload.requestId;
-          if (typeof requestId === "string")
-            setQuestionnaire((current) =>
-              current?.id === requestId ? undefined : current,
-            );
-          setStream((current) => ({ ...current, phase: "streaming" }));
-        }
-      },
-      () => void refreshPending().catch(() => undefined),
-    );
+        },
+        setSending,
+        setStream,
+        setPermissions,
+        setQuestionnaire,
+        setGoal,
+      });
+    });
     return () => {
       cancelled = true;
       unsubscribe?.();

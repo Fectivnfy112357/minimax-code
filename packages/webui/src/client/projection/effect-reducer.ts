@@ -1,29 +1,50 @@
 // Effect reducer — extract the runtime-event switch from the
 // `WebuiClientFoundationApp` component effect into a pure function.
 //
-// `app.tsx`'s `watchEvents` callback is currently an inline closure that
-// closes over `sessionId`, `setStream`, `setSending`, `setPermissions`,
-// `setQuestionnaire`, `setGoal`, and `refreshPending`. The closure does two
-// things: (a) reduce workspace progress against every event, and (b)
-// dispatch on `event.type` to write a sequence of state changes and
-// optionally kick off the async refresh. This module factors out the
-// pure decision — `(state, event) → { state, commands }` — so a test can
-// drive the production protocol without standing up a DOM.
+// `app.tsx`'s `watchEvents` callback is an inline closure that closes over
+// `sessionId`, `setStream`, `setSending`, `setPermissions`,
+// `setQuestionnaire`, `setGoal`, and `refreshPending`. The closure does
+// two things: (a) guard on the event's target session, and (b) dispatch
+// on `event.type` to write a sequence of state changes and optionally
+// kick off the async refresh. This module factors out the pure decision —
+// `(state, event) → { state, commands }` — so a test can drive the
+// production protocol without standing up a DOM.
 //
-// The component effect becomes a thin executor that walks the returned
-// commands in order. Three present-day behaviours that look like bugs are
-// intentionally preserved here, because the runtime actually relies on them
-// (and tests will fail if they get "fixed"):
-
-//   1. `permission.resolved` with a non-string `requestId` STILL emits a
-//      `setStream{phase:"streaming"}` command. The filter branch is a
-//      no-op, but the stream-write is unconditional.
-//   2. `questionnaire.dismiss`/`superseded` with a non-matching id keeps
-//      the current questionnaire AND STILL emits a
-//      `setStream{phase:"streaming"}` command.
-//   3. Every event reduces workspace progress FIRST, then dispatches on
-//      type. The reducer below mirrors this order so command traces are
-//      stable regardless of payload shape.
+// ## Design contract (W2.9)
+//
+//   1. The **session guard is the first thing** the reducer does. If
+//      `eventSessionId(event) !== sessionId`, the reducer returns
+//      `{ state, commands: [] }` — same object identity on the state,
+//      no workspace progress touched. (The original closure's
+//      `if (eventSessionId(event) !== sessionId) return;` ran before any
+//      state write; the W0 inventory wrote it the other way around and
+//      we faithfully implemented that mistake. The inventory is corrected
+//      in place; this reducer now matches the original.)
+//   2. Workspace progress is **the first command** whenever the guard
+//      passes. Every dispatched branch — including the `default` arm for
+//      unknown event types — produces a `set-stream` command that
+//      patches the new `workspaceProgress` first. The host executor walks
+//      the command list in order; the first command is therefore the
+//      progress write.
+//
+//      We do NOT short-circuit "value didn't change, skip the command".
+//      The original closure built a fresh object on every event and
+//      always called `setStream`; the reducer mirrors that. Skipping here
+//      would also break the "command list = host setter trace" contract.
+//   3. Three present-day behaviours that look like bugs are intentionally
+//      preserved because the runtime relies on them:
+//
+//        a. `permission.resolved` with a non-string `requestId` STILL
+//           emits `set-stream{phase:"streaming"}`. The permissions filter
+//           is skipped, but the stream write is unconditional.
+//        b. `questionnaire.dismiss`/`superseded` with a non-matching id
+//           keeps the current questionnaire AND STILL emits
+//           `set-stream{phase:"streaming"}`. The `set-questionnaire`
+//           command is still pushed with a no-op patch, so the trace
+//           matches what the original closure did.
+//        c. `session.finish`/`abort`/`error` write `refusal` only when
+//           `payload.error` is a string; other shapes leave `refusal`
+//           alone.
 
 import type {
   WebuiGoal,
@@ -40,6 +61,7 @@ import {
 import {
   initialWebuiWorkspaceProgress,
   reduceWebuiWorkspaceProgressEvent,
+  type WebuiWorkspaceProgressState,
 } from "./workspace-progress.js";
 import type { WebuiStreamState } from "../stream.js";
 import { projectWebuiThreadGoalMessage } from "./goal-state.js";
@@ -56,8 +78,9 @@ export interface WebuiEffectState {
   readonly goal: WebuiGoal | undefined;
 }
 
-/** One side effect the host executor must perform in order. The host owns
- *  the actual `setState` calls; the reducer only describes what to do. */
+/** One side effect the host executor must perform in order. The host
+ *  walks the list in order; each command is a 1-to-1 trace of a setter
+ *  call (or, for `refresh-pending`, a `void` async kick). */
 export type WebuiEffectCommand =
   | { readonly type: "refresh-pending" }
   | { readonly type: "set-sending"; readonly sending: boolean }
@@ -84,7 +107,7 @@ export interface WebuiEffectResult {
   readonly commands: readonly WebuiEffectCommand[];
 }
 
-/** Initial state for tests + the `cancelled = true` effect-cleared path. */
+/** Initial state for tests and the `cancelled = true` effect-cleared path. */
 export function initialWebuiEffectState(
   stream: WebuiStreamState,
 ): WebuiEffectState {
@@ -101,45 +124,44 @@ export function initialWebuiEffectState(
  * commands the host should run.
  *
  * `sessionId` is passed in by the host (the host already knows the
- * active session from its own state). Events whose `payload.sessionId`
- * does not match are ignored. Workspace progress is reduced first, then
- * the per-type dispatch runs — see the module-level comment for the three
- * quirks this order preserves.
+ * active session from its own state). The session guard runs first;
+ * events not addressed to this session return the input state with an
+ * empty command list and zero progress writes. See the module-level
+ * contract for the order in which state writes happen.
  */
 export function reduceWebuiEffect(
   state: WebuiEffectState,
   event: WebuiRuntimeEvent,
   sessionId: string,
 ): WebuiEffectResult {
-  // Every event unconditionally reduces workspace progress; only per-session
-  // events are gated by the sessionId check below. The progress state lives
-  // on the stream slice — that's where `app.tsx` reads it from.
+  // (1) Session guard runs FIRST. Anything not addressed to the active
+  // session is dropped wholesale — no progress write, no commands,
+  // exact same state object. This matches `app.tsx:3671` in the original
+  // closure; the W0 inventory wrote the order the other way around and
+  // we are correcting it here.
+  if (eventSessionId(event) !== sessionId) {
+    return { state, commands: [] };
+  }
+
+  // (2) Compute the next workspace progress. The reducer is unconditional
+  // — unknown event types still get reduced, even if no observable change
+  // comes out. This is what the host closure did (it called the reducer
+  // before the type dispatch).
   const nextWorkspaceProgress = reduceWebuiWorkspaceProgressEvent(
     state.stream.workspaceProgress,
     { type: event.type, ...event.payload },
     sessionId,
   );
 
-  // Per-session gate. Events not addressed to this session are ignored
-  // entirely (no state change, no commands) — this matches `app.tsx:3671`.
-  // Workspace progress still rides along.
-  if (eventSessionId(event) !== sessionId) {
-    if (nextWorkspaceProgress === state.stream.workspaceProgress) {
-      return { state, commands: [] };
-    }
-    return {
-      state: {
-        ...state,
-        stream: {
-          ...state.stream,
-          workspaceProgress: nextWorkspaceProgress,
-        },
-      },
-      commands: [],
-    };
-  }
-
-  const commands: WebuiEffectCommand[] = [];
+  // (3) Build the command list. The first command is ALWAYS the progress
+  // write — this is what lets trace 9 prove "progress first, then
+  // dispatch" without the previous "same final state" weakness.
+  const commands: WebuiEffectCommand[] = [
+    {
+      type: "set-stream",
+      patch: (current) => ({ ...current, workspaceProgress: nextWorkspaceProgress }),
+    },
+  ];
 
   switch (event.type) {
     case "session.start": {
@@ -161,7 +183,8 @@ export function reduceWebuiEffect(
             ? "aborted"
             : "error";
       // `refusal` is written only when `payload.error` is a string — matches
-      // `app.tsx:3700-3702`. Other shapes (object, number, undefined) leave
+      // the original closure's `typeof event.payload.error === "string"`
+      // conditional. Other shapes (object, number, undefined) leave
       // `refusal` untouched.
       const refusalPatch = (current: WebuiStreamState): WebuiStreamState => {
         const nextState: WebuiStreamState = {
@@ -193,7 +216,8 @@ export function reduceWebuiEffect(
         });
       }
       // When the payload is malformed the closure used to be a no-op
-      // (no setPermissions, no setStream) — preserve that.
+      // for the permission+stream writes — only the progress command
+      // remains. The trace 4 assertion now expects this exactly.
       break;
     }
     case "permission.resolved": {
@@ -205,10 +229,11 @@ export function reduceWebuiEffect(
             current.filter((permission) => permission.requestId !== requestId),
         });
       }
-      // Unconditional setStream{phase:"streaming"} — preserved verbatim from
-      // `app.tsx:3726`. This is the load-bearing "filter is no-op, but stream
-      // still flips" behaviour: a non-string `requestId` reaches this point
-      // and the panel must come back to streaming regardless.
+      // Unconditional setStream{phase:"streaming"} — preserved verbatim
+      // from the original closure. This is the load-bearing "filter is
+      // no-op, but stream still flips" behaviour: a non-string
+      // `requestId` reaches this point and the panel must come back to
+      // streaming regardless.
       commands.push({
         type: "set-stream",
         patch: (current) => ({ ...current, phase: "streaming" }),
@@ -265,10 +290,10 @@ export function reduceWebuiEffect(
     case "questionnaire.dismiss":
     case "questionnaire.superseded": {
       const requestId = event.payload.requestId;
-      // The closure always invokes setQuestionnaire with the patch
-      // function when `requestId` is a string — even if the patch ends up
-      // a no-op for non-matching ids. We mirror that: the command list
-      // still carries a `set-questionnaire` so the trace matches `app.tsx`.
+      // The closure always invoked setQuestionnaire with the patch
+      // function when `requestId` is a string — even when the patch ends
+      // up a no-op for non-matching ids. We mirror that: the command list
+      // still carries a `set-questionnaire` so the trace matches.
       if (typeof requestId === "string") {
         commands.push({
           type: "set-questionnaire",
@@ -276,10 +301,10 @@ export function reduceWebuiEffect(
             current?.id === requestId ? undefined : current,
         });
       }
-      // Unconditional setStream{phase:"streaming"} — preserved verbatim
-      // from `app.tsx:3773`. A non-matching id keeps the current
-      // questionnaire AND the stream still flips to streaming; this is
-      // the second load-bearing quirk.
+      // Unconditional setStream{phase:"streaming"} — preserved verbatim.
+      // A non-matching id keeps the current questionnaire AND the
+      // stream still flips to streaming; this is the second load-bearing
+      // quirk.
       commands.push({
         type: "set-stream",
         patch: (current) => ({ ...current, phase: "streaming" }),
@@ -287,25 +312,29 @@ export function reduceWebuiEffect(
       break;
     }
     default:
-      // Unknown event types get workspace-progress reduced (above) but
-      // produce no state writes or commands.
+      // Unknown event types fall through with just the progress command.
       break;
   }
 
   return {
-    state: applyAllCommands(state, commands, nextWorkspaceProgress),
-    commands: dedupeSetSending(commands),
+    state: applyAllCommands(state, commands),
+    commands,
   };
 }
 
 /** Apply every command's patch in order to derive the final state. The
- *  host will do the same thing for its own `setState` reducers;
- *  pre-computing it here keeps the reducer pure and lets tests assert both
- *  the command list AND the resulting state. */
+ *  host executor does the same against its real React setters; running
+ *  it here keeps the reducer pure and lets tests assert both the command
+ *  list AND the resulting state in lockstep.
+ *
+ *  IMPORTANT: the progress patch comes from `commands[0]`, so this loop
+ *  is what materialises `workspaceProgress` into the returned state.
+ *  There is no separate `stream: { ...stream, workspaceProgress }`
+ *  override — that would split "commands" from "state" and break the
+ *  single-source-of-truth contract. */
 function applyAllCommands(
   state: WebuiEffectState,
   commands: readonly WebuiEffectCommand[],
-  workspaceProgress: WebuiEffectState["stream"]["workspaceProgress"],
 ): WebuiEffectState {
   let stream = state.stream;
   let permissions = state.permissions;
@@ -318,33 +347,79 @@ function applyAllCommands(
       questionnaire = cmd.patch(questionnaire);
     else if (cmd.type === "set-goal") goal = cmd.goal;
   }
-  return {
-    stream: { ...stream, workspaceProgress },
-    permissions,
-    questionnaire,
-    goal,
-  };
+  return { stream, permissions, questionnaire, goal };
 }
 
-/** `set-sending(true)` followed by `set-sending(false)` collapses to just
- *  the final value. This matches the host's `setSending(sending)` which
- *  only retains the latest call, and lets the command trace stay short. */
-function dedupeSetSending(
+/* --------------------------------------------------------------------------
+ * Effect executor
+ *
+ * Walks a `WebuiEffectCommand[]` against a bag of host handlers. This is
+ * the production glue between the pure reducer and the React setters.
+ *
+ * Contract:
+ *   - `set-stream` / `set-permissions` / `set-questionnaire` are patch
+ *     commands; we call `handlers.setX(cmd.patch)` exactly the way the
+ *     host's `useState` setters expect (functional updater form).
+ *     `questionnaire.ask` deliberately carries a `() => request` patch
+ *     (passing a value would be equivalent under React 18+, but the
+ *     "command list = setter call trace" contract needs every command
+ *     to land on the same shape).
+ *   - `set-sending` / `set-goal` are value commands; pass the value
+ *     directly (`setGoal(undefined)` / `setSending(true)`).
+ *   - `refresh-pending` is `void refreshPending().catch(() => undefined)`
+ *     in the original closure. We swallow the rejection here too so
+ *     `void` does not turn into an unhandled rejection.
+ *   - Commands are walked in array order, no reordering.
+ * ------------------------------------------------------------------------ */
+
+export interface WebuiEffectHandlers {
+  readonly refreshPending: () => void | Promise<unknown>;
+  readonly setSending: (sending: boolean) => void;
+  readonly setStream: (patch: (current: WebuiStreamState) => WebuiStreamState) => void;
+  readonly setPermissions: (
+    patch: (
+      current: readonly WebuiPendingPermission[],
+    ) => readonly WebuiPendingPermission[],
+  ) => void;
+  readonly setQuestionnaire: (
+    patch: (
+      current: WebuiQuestionnaireRequest | undefined,
+    ) => WebuiQuestionnaireRequest | undefined,
+  ) => void;
+  readonly setGoal: (goal: WebuiGoal | undefined) => void;
+}
+
+export function applyWebuiEffectCommands(
   commands: readonly WebuiEffectCommand[],
-): readonly WebuiEffectCommand[] {
-  const out: WebuiEffectCommand[] = [];
-  let lastSending: boolean | undefined;
+  handlers: WebuiEffectHandlers,
+): void {
   for (const cmd of commands) {
-    if (cmd.type === "set-sending") {
-      lastSending = cmd.sending;
-      continue;
+    switch (cmd.type) {
+      case "refresh-pending":
+        // The original closure wrote `void refreshPending().catch(...)`
+        // — swallow rejections so this Promise doesn't surface as
+        // unhandled. `handlers.refreshPending` returns `void |
+        // Promise<unknown>`; if it returns a promise we attach the
+        // catch, otherwise we drop it on the floor.
+        Promise.resolve(handlers.refreshPending()).catch(() => undefined);
+        break;
+      case "set-sending":
+        handlers.setSending(cmd.sending);
+        break;
+      case "set-stream":
+        handlers.setStream(cmd.patch);
+        break;
+      case "set-permissions":
+        handlers.setPermissions(cmd.patch);
+        break;
+      case "set-questionnaire":
+        handlers.setQuestionnaire(cmd.patch);
+        break;
+      case "set-goal":
+        handlers.setGoal(cmd.goal);
+        break;
     }
-    out.push(cmd);
   }
-  if (lastSending !== undefined) {
-    out.unshift({ type: "set-sending", sending: lastSending });
-  }
-  return out;
 }
 
 // `initialWebuiWorkspaceProgress` is re-exported only because a few tests
