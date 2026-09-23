@@ -27,6 +27,10 @@ export interface WebuiStreamMessage {
   readonly timestamp?: number;
   readonly isGoal?: boolean;
   readonly toolCalls?: readonly Record<string, unknown>[];
+  /** Runtime-reported `TokenUsage` (with `request_duration_ms` / `output_tokens`)
+   *  from the agent_message wire frame. The WebUI uses it to render the
+   *  Desktop-style "共执行 N 分 M 秒 · {rate} token/s" row. */
+  readonly usage?: Record<string, unknown>;
   /** The server replays the user's own line as a `msg-user-*` frame; it
    * renders as the right-aligned bubble instead of an assistant body. */
   readonly role?: "user";
@@ -107,10 +111,23 @@ function messageId(value: Record<string, unknown>): string {
 }
 
 function toolCalls(value: Record<string, unknown>): readonly Record<string, unknown>[] | undefined {
-  const raw = value.tool_calls ?? value.toolCalls;
-  if (!Array.isArray(raw)) return undefined;
-  const calls = raw.filter(record);
-  return calls.length > 0 ? calls : undefined;
+  const direct = value.tool_calls ?? value.toolCalls;
+  if (Array.isArray(direct)) return direct as readonly Record<string, unknown>[];
+  return undefined;
+}
+
+function usageRecord(value: Record<string, unknown>): Record<string, unknown> | undefined {
+  // Live wire frames may carry `usage` at the top level (the `agent_message`
+  // envelope) or under `data.usage`. The persisted DB stores it on the
+  // message itself. Accept any of the three layouts.
+  const direct = value.usage ?? value.Usage;
+  if (direct && typeof direct === "object" && !Array.isArray(direct)) return direct as Record<string, unknown>;
+  const data = record(value.data);
+  if (data) {
+    const nested = data.usage ?? data.Usage;
+    if (nested && typeof nested === "object" && !Array.isArray(nested)) return nested as Record<string, unknown>;
+  }
+  return undefined;
 }
 
 function upsertMessage(
@@ -126,6 +143,7 @@ function upsertMessage(
     "thinking",
   ]);
   const calls = toolCalls(value);
+  const usage = usageRecord(value);
   const index = messages.findIndex((message) => message.id === id);
   if (index < 0)
     return [
@@ -135,12 +153,14 @@ function upsertMessage(
         answer,
         thinking,
         ...(calls ? { toolCalls: calls } : {}),
+        ...(usage ? { usage } : {}),
         ...(id.startsWith("msg-user-") ? ({ role: "user" } as const) : {}),
       },
     ];
   if (
     !chunk &&
     !calls &&
+    !usage &&
     messages[index]!.answer === answer &&
     messages[index]!.thinking === thinking
   )
@@ -157,6 +177,7 @@ function upsertMessage(
     ...(calls || messages[index]!.toolCalls
       ? { toolCalls: calls ?? messages[index]!.toolCalls }
       : {}),
+    ...(usage || messages[index]!.usage ? { usage: usage ?? messages[index]!.usage } : {}),
     ...(messages[index]!.role ? { role: messages[index]!.role } : {}),
     ...(messages[index]!.timestamp !== undefined
       ? { timestamp: messages[index]!.timestamp }

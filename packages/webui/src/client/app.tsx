@@ -34,8 +34,10 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { WebuiMarkdown } from "./markdown.js";
-import { projectMessageParts } from "./message-parts.js";
+import { projectMessageParts, stripQuestionnaireResponse } from "./message-parts.js";
+import type { WebuiQuestionnaireResponseSummary } from "./message-parts.js";
 import {
+  WebuiIconActivity,
   WebuiIconAttach,
   WebuiIconBell,
   WebuiIconBrand,
@@ -58,6 +60,16 @@ import {
   WebuiIconContextPin,
   WebuiIconContextRename,
   WebuiIconContextTrash,
+  WebuiIconMessageCopy,
+  WebuiIconMessageCopied,
+  WebuiIconMessageDislikeOff,
+  WebuiIconMessageDislikeOn,
+  WebuiIconMessageEdit,
+  WebuiIconMessageEditUser,
+  WebuiIconMessageFork,
+  WebuiIconMessageLikeOff,
+  WebuiIconMessageLikeOn,
+  WebuiIconMessageRewind,
 } from "./icons.js";
 import { ArchonShell } from "./components/ArchonShell.js";
 import { Composer } from "./components/Composer.js";
@@ -336,21 +348,33 @@ export type WebuiTranscriptItem =
       readonly kind: "user" | "assistant" | "thinking";
       readonly text: string;
       readonly messageId: string;
+      /** Turn the message belongs to: the key the runtime accepts for a turn diff. */
+      readonly turnId?: string;
       readonly durationMs?: number;
       readonly diff?: WebuiTurnDiffView;
       readonly actions?: { readonly fork?: boolean; readonly rewind?: boolean; readonly edit?: boolean };
       readonly timestamp?: number;
       readonly isGoal?: boolean;
       readonly attachments?: readonly MessageAttachment[];
+      readonly usage?: Record<string, unknown>;
     }
   | {
       readonly kind: "tool";
       readonly messageId: string;
+      readonly turnId?: string;
       readonly tools: readonly Record<string, unknown>[];
       readonly diff?: WebuiTurnDiffView;
       readonly actions?: { readonly fork?: boolean; readonly rewind?: boolean; readonly edit?: boolean };
       readonly timestamp?: number;
       readonly isGoal?: boolean;
+      readonly usage?: Record<string, unknown>;
+    }
+  | {
+      readonly kind: "questionnaire_response";
+      readonly messageId: string;
+      readonly turnId?: string;
+      readonly summary: WebuiQuestionnaireResponseSummary;
+      readonly timestamp?: number;
     };
 
 function recordValue(value: unknown): Record<string, unknown> | undefined {
@@ -508,26 +532,105 @@ export function projectWebuiMessage(
   const thinkingItems: WebuiTranscriptItem[] = [];
   const toolItems: WebuiTranscriptItem[] = [];
   const answerItems: WebuiTranscriptItem[] = [];
+  const questionnaireItems: WebuiTranscriptItem[] = [];
   const attachments = projectMessageAttachments(message.attachments);
+  // Pull the raw message-level usage (matches `TokenUsage` from agent-core).
+  // The message-parts projector already strips the questionnaire XML block
+  // before producing text parts, so the user bubble never surfaces raw
+  // `<questionnaire-response>` markup.
+  const messageUsage = readMessageUsage(message);
   for (const part of projectMessageParts(message)) {
+    const turn = message.turnId ? { turnId: message.turnId } : {};
     if (part.type === "thinking")
-      thinkingItems.push({ kind: "thinking", text: part.content, messageId: message.msgId, ...(part.durationMs !== undefined ? { durationMs: part.durationMs } : {}), ...(message.actions ? { actions: message.actions } : {}), ...(message.timestamp !== undefined ? { timestamp: message.timestamp } : {}), ...(attachments ? { attachments } : {}) });
+      thinkingItems.push({
+        kind: "thinking",
+        text: part.content,
+        messageId: message.msgId,
+        ...turn,
+        ...(part.durationMs !== undefined ? { durationMs: part.durationMs } : {}),
+        ...(message.actions ? { actions: message.actions } : {}),
+        ...(message.timestamp !== undefined ? { timestamp: message.timestamp } : {}),
+        ...(attachments ? { attachments } : {}),
+        ...(messageUsage ? { usage: messageUsage } : {}),
+      });
     else if (part.type === "text")
-      answerItems.push({ kind: message.role === "user" ? "user" : "assistant", text: part.content, messageId: message.msgId, ...(message.actions ? { actions: message.actions } : {}), ...(message.timestamp !== undefined ? { timestamp: message.timestamp } : {}), ...((message.source === "thread-goal" || message.kind === "goal") ? { isGoal: true } : {}), ...(attachments ? { attachments } : {}) });
+      answerItems.push({
+        kind: message.role === "user" ? "user" : "assistant",
+        text: part.content,
+        messageId: message.msgId,
+        ...turn,
+        ...(message.actions ? { actions: message.actions } : {}),
+        ...(message.timestamp !== undefined ? { timestamp: message.timestamp } : {}),
+        ...((message.source === "thread-goal" || message.kind === "goal") ? { isGoal: true } : {}),
+        ...(attachments ? { attachments } : {}),
+        ...(messageUsage ? { usage: messageUsage } : {}),
+      });
     else if (part.type === "tool_call")
-      toolItems.push({ kind: "tool", tools: [part.toolCall], messageId: message.msgId });
+      toolItems.push({
+        kind: "tool",
+        tools: [part.toolCall],
+        messageId: message.msgId,
+        ...turn,
+        ...(messageUsage ? { usage: messageUsage } : {}),
+      });
+    else if (part.type === "questionnaire_response")
+      questionnaireItems.push({
+        kind: "questionnaire_response",
+        messageId: message.msgId,
+        ...turn,
+        summary: part.summary,
+        ...(message.timestamp !== undefined ? { timestamp: message.timestamp } : {}),
+      });
   }
   // The pure parts layer preserves Desktop's source order. The legacy
   // transcript item contract renders the process disclosure before markdown,
   // so keep that public projection order stable for existing callers.
-  const output = [...thinkingItems, ...toolItems, ...answerItems];
+  const output = [...thinkingItems, ...toolItems, ...answerItems, ...questionnaireItems];
   const diff = readMessageDiff(message);
   if (diff && output.length > 0) {
     const last = output.length - 1;
     const lastItem = output[last];
-    if (lastItem) output[last] = { ...lastItem, diff };
+    // The questionnaire response kind intentionally never carries a diff — its
+    // text payload records the user's answers, not a tool call summary.
+    if (
+      lastItem &&
+      (lastItem.kind === "user" ||
+        lastItem.kind === "assistant" ||
+        lastItem.kind === "thinking" ||
+        lastItem.kind === "tool")
+    )
+      output[last] = { ...lastItem, diff };
   }
   return output;
+}
+
+function readMessageUsage(message: WebuiClientMessage): Record<string, unknown> | undefined {
+  const direct = (message as { usage?: unknown }).usage;
+  if (direct && typeof direct === "object" && !Array.isArray(direct)) return direct as Record<string, unknown>;
+  if (typeof message.rawJson === "string") {
+    try {
+      const raw = JSON.parse(message.rawJson) as { usage?: unknown };
+      if (raw.usage && typeof raw.usage === "object" && !Array.isArray(raw.usage)) {
+        return raw.usage as Record<string, unknown>;
+      }
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+/** Numeric fields on the runtime `usage` payload — accept both the
+ *  camelCase keys the live wire frame ships (`totalTokens`, `outputTokens`,
+ *  …) and the snake_case keys the persisted `data_json` carries, so the
+ *  same projection works for both history and live updates. */
+function readUsageNumber(usage: Record<string, unknown> | undefined, ...keys: readonly string[]): number | undefined {
+  if (!usage) return undefined;
+  for (const key of keys) {
+    const value = usage[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+  }
+  return undefined;
 }
 
 function toolCallResultText(tool: Record<string, unknown>): string | undefined {
@@ -773,10 +876,14 @@ export function WebuiDiffCard({
   const { view, unsupported, busy, expanded, reviewing } = diffState;
   const request = useMemo<WebuiGetTurnDiffRequest | undefined>(() => {
     if (!sessionId || !getTurnDiff) return undefined;
+    // The runtime keys a turn diff by the turn: an `assistantMessageId` is
+    // answered only for the turn's LAST assistant message, and any other
+    // message of the same turn yields an empty file list (it also wins over
+    // `turnId` when both are sent). The rendered group is keyed by its first
+    // message, so ask by turn whenever the group knows one.
     return {
       id: sessionId,
-      ...(assistantMessageId ? { assistantMessageId } : {}),
-      ...(turnId ? { turnId } : {}),
+      ...(turnId ? { turnId } : assistantMessageId ? { assistantMessageId } : {}),
       ...(changeSetId ? { changeSetId } : {}),
     };
   }, [assistantMessageId, changeSetId, getTurnDiff, sessionId, turnId]);
@@ -839,6 +946,12 @@ export function WebuiDiffCard({
   const totalAdded = files.reduce((sum, file) => sum + file.additions, 0);
   const totalDeleted = files.reduce((sum, file) => sum + file.deletions, 0);
   const reverted = view.status === "reverted";
+  const basenameOf = (path: string): string => {
+    if (!path) return "";
+    const normalized = path.replace(/\\/g, "/");
+    const idx = normalized.lastIndexOf("/");
+    return idx === -1 ? normalized : normalized.slice(idx + 1);
+  };
   return (
     <div
       className="webui-diff-card"
@@ -850,19 +963,22 @@ export function WebuiDiffCard({
       <div className="webui-diff-header">
         <span className="webui-diff-icon" aria-hidden="true"><WebuiIconFile /></span>
         <span className="webui-diff-header-title">{`已编辑 ${files.length} 个文件`}</span>
-        <span className="webui-diff-header-stats">
+        <span className="webui-diff-header-stats" data-webui-diff-stats="true">
           <span className="webui-diff-add">{`+${totalAdded}`}</span>
-          <span className="webui-diff-del">{`-${totalDeleted}`}</span>
+          {/* Desktop's diff card hides the deletion badge when no lines
+           * were removed from the change set — keeping the row additions-only
+           * avoids the misleading "+{n}-0" stat the WebUI used to render. */}
+          {totalDeleted > 0 ? <span className="webui-diff-del">{`-${totalDeleted}`}</span> : null}
         </span>
       </div>
       <ul className="webui-diff-files">
         {shown.map((file) => (
-          <li className="webui-diff-file" key={file.file}>
+          <li className="webui-diff-file" key={file.file} data-webui-diff-file="true" data-file-path={file.file}>
             <WebuiIconFile className="webui-diff-file-icon" />
-            <span className="webui-diff-file-name">{file.file}</span>
-            <span className="webui-diff-file-stats">
+            <span className="webui-diff-file-name" title={file.file}>{basenameOf(file.file)}</span>
+            <span className="webui-diff-file-stats" data-webui-diff-file-stats="true">
               <span className="webui-diff-add">{`+${file.additions}`}</span>
-              <span className="webui-diff-del">{`-${file.deletions}`}</span>
+              {file.deletions > 0 ? <span className="webui-diff-del">{`-${file.deletions}`}</span> : null}
             </span>
           </li>
         ))}
@@ -1003,19 +1119,29 @@ function webuiActivitySummary(tools: readonly Record<string, unknown>[]): string
   return `执行 ${tools.length} 个操作`;
 }
 
-/** Desktop activity-group: a 16px activity header and a timeline body. */
+/** Desktop activity-group: a 16px activity header and a timeline body.
+ *  Desktop defaults to collapsed; the WebUI's previous `open` default is
+ *  preserved only when the turn is still streaming so the user can see the
+ *  running tool calls. */
 export function WebuiActivityGroup({
   tools,
   authoritativeDiffAvailable = false,
+  streaming = false,
 }: {
   readonly tools: readonly Record<string, unknown>[];
   readonly authoritativeDiffAvailable?: boolean;
+  readonly streaming?: boolean;
 }): ReactElement | null {
   if (tools.length === 0) return null;
   return (
-    <details className="activity-group" data-testid="activity-group" open>
+    <details
+      className="activity-group"
+      data-testid="activity-group"
+      data-streaming={streaming ? "true" : undefined}
+      open={streaming}
+    >
       <summary className="activity-group-header">
-        <span className="activity-group-icon" aria-hidden="true">✦</span>
+        <WebuiIconActivity className="activity-group-icon" />
         <span className="activity-group-summary">{webuiActivitySummary(tools)}</span>
         <WebuiIconChevronDown className="activity-group-chevron" />
       </summary>
@@ -1032,10 +1158,27 @@ export function WebuiActivityGroup({
 export function WebuiTurnProcess({
   active,
   startedAtMs,
+  endedAtMs,
+  tokenCount,
+  requestDurationMs,
+  wallClockDurationMs,
   children,
 }: {
   readonly active: boolean;
   readonly startedAtMs?: number;
+  readonly endedAtMs?: number;
+  /** Approximate token count streamed during the turn. Used to derive the
+   *  Desktop-style "output rate" (`{N} token/s`) when the turn has finished. */
+  readonly tokenCount?: number;
+  /** Wall-clock duration of the turn measured by the runtime
+   *  (`usage.request_duration_ms`). When this is present it wins over the
+   *  wall-clock fallback for finished turns. */
+  readonly requestDurationMs?: number;
+  /** Wall-clock duration computed from message timestamps (oldest user →
+   *  newest assistant inside the turn). Used when neither the runtime nor
+   *  `startedAtMs` give us a number — this is the only honest signal the
+   *  runtime hands us, so render its real value rather than guess. */
+  readonly wallClockDurationMs?: number;
   readonly children: ReactElement;
 }): ReactElement {
   const [expanded, setExpanded] = useState(active);
@@ -1045,13 +1188,54 @@ export function WebuiTurnProcess({
     const timer = setInterval(() => forceTick((value) => value + 1), 1000);
     return () => clearInterval(timer);
   }, [active]);
+  // Priority for finished turns:
+  //   1. `requestDurationMs` from the runtime usage block
+  //   2. `wallClockDurationMs` from the message timestamp span
+  //   3. fall back to "0 秒" so we never lie about elapsed time
+  // Live turns tick from `startedAtMs` → now.
   const seconds =
     typeof startedAtMs === "number"
-      ? Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000))
+      ? Math.max(
+          0,
+          Math.floor(
+            ((active
+              ? Date.now()
+              : typeof requestDurationMs === "number"
+                ? startedAtMs + requestDurationMs
+                : endedAtMs ?? Date.now()) -
+              startedAtMs) /
+              1000,
+          ),
+        )
+      : typeof requestDurationMs === "number"
+        ? Math.floor(requestDurationMs / 1000)
+        : typeof wallClockDurationMs === "number"
+          ? Math.floor(wallClockDurationMs / 1000)
+          : undefined;
+  // Desktop renders the wall-clock duration as "M 分 N 秒" / "N 秒".
+  const durationLabel =
+    typeof seconds === "number"
+      ? seconds >= 60
+        ? `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`
+        : `${seconds} 秒`
       : undefined;
-  const summary = active
-    ? `已执行 ${seconds ?? 0} 秒`
-    : `共执行 ${seconds ?? 0} 秒`;
+  const outputRateLabel =
+    !active &&
+    typeof seconds === "number" &&
+    seconds > 0 &&
+    typeof tokenCount === "number" &&
+    tokenCount > 0
+      ? `${Math.round(tokenCount / seconds)} token/s`
+      : undefined;
+  const summary = durationLabel
+    ? active
+      ? `已执行 ${durationLabel}`
+      : outputRateLabel
+        ? `共执行 ${durationLabel} · ${outputRateLabel}`
+        : `共执行 ${durationLabel}`
+    : active
+      ? "已执行 0 秒"
+      : "共执行 0 秒";
   return (
     <section className="pt-2" data-testid="turn-process-disclosure">
       <div className="flex min-w-0 flex-wrap items-center gap-x-2" data-testid="turn-process-summary">
@@ -1060,9 +1244,10 @@ export function WebuiTurnProcess({
           className="group/turn-process text-activity-body-small flex items-center gap-1 py-1 text-center text-sm font-normal leading-5 tracking-normal text-text_label_tertiary_default transition-colors hover:text-text_label_tertiary_hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border_accent"
           aria-expanded={expanded}
           data-testid="turn-process-trigger"
+          data-summary-text={summary}
           onClick={() => setExpanded((value) => !value)}
         >
-          <span>{summary}</span>
+          <span data-testid="turn-process-summary-text">{summary}</span>
           <span
             data-testid="turn-process-chevron"
             className={`-ml-1 inline-flex h-4 w-4 shrink-0 items-center justify-center text-icon_interaction_tertiary_default transition-transform duration-200 ease-out motion-reduce:transition-none group-hover/turn-process:text-icon_interaction_tertiary_hover ${expanded ? "rotate-90" : ""}`}
@@ -1070,6 +1255,14 @@ export function WebuiTurnProcess({
             <WebuiIconChevronDown className="size-4" />
           </span>
         </button>
+        {!active && outputRateLabel ? (
+          <span
+            className="text-text_default_tertiary text-size_12"
+            data-testid="turn-output-rate"
+          >
+            {`输出速度 : ${outputRateLabel}`}
+          </span>
+        ) : null}
       </div>
       <div className="mt-2 border-b-[0.5px] border-border_default" data-testid="turn-process-separator" aria-hidden="true" />
       {expanded ? (
@@ -1163,6 +1356,9 @@ function WebuiAssistantBody({
   thinking,
   thinkingDurationMs,
   processingStartedAtMs,
+  totalRequestDurationMs,
+  totalOutputTokens,
+  wallClockDurationMs,
   tools,
   answers,
   attachments,
@@ -1180,6 +1376,15 @@ function WebuiAssistantBody({
   readonly thinking?: string;
   readonly thinkingDurationMs?: number;
   readonly processingStartedAtMs?: number;
+  /** Sum of `usage.requestDurationMs` across the turn's assistant messages
+   *  when the runtime reports it. Falls back to `wallClockDurationMs`. */
+  readonly totalRequestDurationMs?: number;
+  /** Sum of `usage.outputTokens` across the turn's assistant messages. */
+  readonly totalOutputTokens?: number;
+  /** Wall-clock duration computed from message timestamps inside the turn
+   *  (oldest user → newest assistant). Used when the runtime doesn't emit
+   *  a per-request duration. */
+  readonly wallClockDurationMs?: number;
   readonly tools?: readonly Record<string, unknown>[];
   readonly answers: readonly string[];
   readonly attachments?: readonly MessageAttachment[];
@@ -1194,6 +1399,16 @@ function WebuiAssistantBody({
         <WebuiTurnProcess
           active={streaming}
           startedAtMs={processingStartedAtMs}
+          {...(!streaming && totalRequestDurationMs !== undefined
+            ? { endedAtMs: (processingStartedAtMs ?? 0) + totalRequestDurationMs }
+            : {})}
+          tokenCount={
+            !streaming && typeof totalOutputTokens === "number"
+              ? totalOutputTokens
+              : answers.reduce((sum, answer) => sum + answer.length, 0)
+          }
+          requestDurationMs={totalRequestDurationMs}
+          wallClockDurationMs={wallClockDurationMs}
         >
           <div className="activity-group-content">
             {thinking ? (
@@ -1204,10 +1419,21 @@ function WebuiAssistantBody({
                 processingStartedAtMs={processingStartedAtMs}
               />
             ) : null}
-            {tools?.length ? <WebuiActivityGroup tools={tools} authoritativeDiffAvailable={Boolean(getTurnDiff)} /> : null}
+            {tools?.length ? <WebuiActivityGroup tools={tools} authoritativeDiffAvailable={Boolean(getTurnDiff)} streaming={streaming} /> : null}
           </div>
         </WebuiTurnProcess>
       ) : null}
+      {answers.map((answer, index) => (
+        <div
+          key={`${messageId}-answer-${index}`}
+          className="webui-assistant-answer"
+          data-webui-message-kind="assistant"
+        >
+          <WebuiMarkdown source={answer} />
+        </div>
+      ))}
+      {/* Desktop places the diff card after the assistant body so the
+       * edited-files summary sits at the end of the message. */}
       <WebuiDiffCard
         sessionId={sessionId}
         assistantMessageId={assistantMessageId ?? messageId}
@@ -1218,15 +1444,6 @@ function WebuiAssistantBody({
         revertTurnDiff={revertTurnDiff}
         reapplyTurnDiff={reapplyTurnDiff}
       />
-      {answers.map((answer, index) => (
-        <div
-          key={`${messageId}-answer-${index}`}
-          className="webui-assistant-answer"
-          data-webui-message-kind="assistant"
-        >
-          <WebuiMarkdown source={answer} />
-        </div>
-      ))}
       {attachments?.length ? (
         <MessageAttachments attachments={attachments} />
       ) : null}
@@ -1259,6 +1476,9 @@ export function MessageItem({
   rewindSession,
   editSessionMessage,
   onMutationComplete,
+  totalRequestDurationMs,
+  totalOutputTokens,
+  wallClockDurationMs,
   userText,
   thinking,
   thinkingDurationMs,
@@ -1299,6 +1519,9 @@ export function MessageItem({
   readonly streaming?: boolean;
   readonly streamMessageId?: string;
   readonly messageRootId?: string;
+  readonly totalRequestDurationMs?: number;
+  readonly totalOutputTokens?: number;
+  readonly wallClockDurationMs?: number;
 }): ReactElement {
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState(userText ?? "");
@@ -1366,6 +1589,7 @@ export function MessageItem({
     onRewind: role === "user" ? openRewind : undefined,
     onEdit: role === "user" ? () => { setEditText(userText ?? ""); setEditing(true); } : undefined,
     onFork: role === "assistant" ? openFork : undefined,
+    timestamp,
   };
   if (role === "user") {
     return (
@@ -1435,6 +1659,9 @@ export function MessageItem({
         attachments={attachments}
         streaming={streaming}
         processingStartedAtMs={processingStartedAtMs}
+        totalRequestDurationMs={totalRequestDurationMs}
+        totalOutputTokens={totalOutputTokens}
+        wallClockDurationMs={wallClockDurationMs}
       />
       <WebuiMessageActions {...actionProps} />
       {forkOpen ? <div className="webui-message-dialog" role="dialog" aria-modal="true" data-testid="fork-dialog"><div className="webui-message-dialog-surface"><h3>复制为新会话</h3><p>{forkOptions?.unavailableReason ?? "保留当前上下文，在新会话中继续"}</p><input aria-label="会话名称" value={forkTitle} onChange={(event) => setForkTitle(event.target.value)} placeholder="使用简短且不同的名称，便于识别" disabled={forkOptions?.canFork === false} /><div className="webui-message-dialog-actions"><button type="button" onClick={() => setForkOpen(false)} disabled={mutationBusy}>取消</button><button type="button" onClick={confirmFork} disabled={mutationBusy || forkOptions?.canFork === false}>复制并进入</button></div></div></div> : null}
@@ -2546,8 +2773,82 @@ export function WebuiSessionList({
  */
 export function groupWebuiTranscriptItems(
   items: readonly WebuiTranscriptItem[],
-): { messageId: string; items: WebuiTranscriptItem[] }[] {
-  const out: { messageId: string; items: WebuiTranscriptItem[] }[] = [];
+): {
+  messageId: string;
+  turnId?: string;
+  items: WebuiTranscriptItem[];
+  totalRequestDurationMs?: number;
+  totalOutputTokens?: number;
+  /** Wall-clock turn duration derived from message timestamps: the oldest
+   *  `user` timestamp in the same turn (across group boundaries) to the
+   *  newest `assistant` timestamp. The runtime stores no per-turn wall-clock,
+   *  so this is the only way to surface the real "共执行 N 分 M 秒" value
+   *  when `usage.request_duration_ms` is absent. Skipped when fewer than two
+   *  timestamps are visible so we never report 0 seconds for a turn we can't
+   *  actually measure. */
+  wallClockDurationMs?: number;
+}[] {
+  type Group = {
+    messageId: string;
+    turnId?: string;
+    items: WebuiTranscriptItem[];
+    totalRequestDurationMs?: number;
+    totalOutputTokens?: number;
+    assistantMaxTimestamp?: number;
+  };
+  // The user and assistant blocks live in different groups (the renderer
+  // opens its own block for every user line). To compute a wall-clock span
+  // across the user prompt and the assistant reply, remember the smallest
+  // user timestamp we have seen per turn key, then look it up when the
+  // matching assistant block lands. Keyed by turnId when present, falling
+  // back to queryKey and finally messageId for unkeyed cases.
+  const userStartByTurn = new Map<string, number>();
+  const turnKeyFor = (item: WebuiTranscriptItem): string =>
+    item.turnId ?? item.messageId;
+  for (const item of items) {
+    if (
+      item.kind === "user" &&
+      typeof item.timestamp === "number" &&
+      Number.isFinite(item.timestamp)
+    ) {
+      const key = turnKeyFor(item);
+      const current = userStartByTurn.get(key);
+      if (current === undefined || item.timestamp < current) {
+        userStartByTurn.set(key, item.timestamp);
+      }
+    }
+  }
+  // Track which messageIds have already had their `usage.outputTokens`
+  // counted in the current group. `projectWebuiMessage` emits one transcript
+  // item per part (thinking / tool / text) for every assistant message, and
+  // every part carries the same `usage` blob. Without dedupe we would
+  // multiply the per-message token count by the number of parts and report
+  // a rate that's off by the part count (33 messages with thinking+tool+
+  // answer would count each message's output three times).
+  const countedMessages = new Set<string>();
+  const out: Group[] = [];
+  const addUsage = (group: Group, item: WebuiTranscriptItem): void => {
+    if (item.kind === "user" || item.kind === "questionnaire_response") return;
+    // Capture wall-clock timestamps only on assistant items so the duration
+    // spans the user prompt → final assistant frame, not random inter-tool
+    // frames. `timestamp` is the runtime-stamped `createdAtMs` on the wire.
+    if (typeof item.timestamp === "number" && Number.isFinite(item.timestamp)) {
+      group.assistantMaxTimestamp = Math.max(
+        group.assistantMaxTimestamp ?? Number.NEGATIVE_INFINITY,
+        item.timestamp,
+      );
+    }
+    // Dedupe by messageId: each underlying message contributes its usage
+    // exactly once, regardless of how many parts `projectWebuiMessage`
+    // emitted for it.
+    if (countedMessages.has(item.messageId)) return;
+    countedMessages.add(item.messageId);
+    const usage = item.usage;
+    const tokens = readUsageNumber(usage, "outputTokens", "output_tokens");
+    if (typeof tokens === "number") {
+      group.totalOutputTokens = (group.totalOutputTokens ?? 0) + tokens;
+    }
+  };
   for (const item of items) {
     const last = out[out.length - 1];
     // A user line always opens its own block; everything else that follows
@@ -2555,11 +2856,43 @@ export function groupWebuiTranscriptItems(
     // across several msg_ids (one per tool round) and desktop renders the
     // whole turn as a single disclosure, not one block per msg_id.
     const lastIsUser = last?.items[0]?.kind === "user";
-    if (last && !lastIsUser && item.kind !== "user") last.items.push(item);
-    else if (last && last.messageId === item.messageId) last.items.push(item);
-    else out.push({ messageId: item.messageId, items: [item] });
+    const joinsOpenBlock =
+      last && ((!lastIsUser && item.kind !== "user") || last.messageId === item.messageId);
+    if (joinsOpenBlock && last) {
+      last.items.push(item);
+      // The runtime answers a turn diff only for the turn key, so carry it on
+      // the group: the first message of the block already knows its turn.
+      if (!last.turnId && item.turnId) last.turnId = item.turnId;
+      addUsage(last, item);
+    } else {
+      const group: Group = {
+        messageId: item.messageId,
+        ...(item.turnId ? { turnId: item.turnId } : {}),
+        items: [item],
+      };
+      countedMessages.clear();
+      addUsage(group, item);
+      out.push(group);
+    }
   }
-  return out;
+  return out.map((group) => {
+    const { assistantMaxTimestamp, ...rest } = group;
+    const userStart = userStartByTurn.get(group.turnId ?? group.messageId);
+    if (
+      typeof userStart === "number" &&
+      typeof assistantMaxTimestamp === "number" &&
+      assistantMaxTimestamp > userStart
+    ) {
+      const wallClockDurationMs = assistantMaxTimestamp - userStart;
+      // Only surface the duration when it is meaningful (≥ 1s). A single
+      // timestamp or sub-second gap would otherwise render as "共执行 0 秒"
+      // and break the Desktop parity contract.
+      if (wallClockDurationMs >= 1000) {
+        return { ...rest, wallClockDurationMs };
+      }
+    }
+    return rest;
+  });
 }
 
 type WebuiMessageActionCapabilities = {
@@ -2665,25 +2998,32 @@ function webuiClientRequestId(prefix: string): string {
 export function WebuiMessageActionButton({
   testId,
   label,
+  icon,
   onClick,
   disabled = false,
+  active,
 }: {
   readonly testId: string;
   readonly label: string;
+  /** The desktop's action row is glyph-only: a 26px square holding a 16–18px icon. */
+  readonly icon: ReactElement;
   readonly onClick: () => void;
   readonly disabled?: boolean;
+  /** Selection state for the feedback toggles; the desktop paints the active glyph differently. */
+  readonly active?: boolean;
 }): ReactElement {
   return (
     <button
       type="button"
-      className="webui-message-action"
+      className={`webui-message-action${active ? " webui-message-action-active" : ""}`}
       data-testid={testId}
       aria-label={label}
       title={label}
+      {...(active === undefined ? {} : { "aria-pressed": active })}
       disabled={disabled}
       onClick={onClick}
     >
-      {label}
+      {icon}
     </button>
   );
 }
@@ -2701,6 +3041,8 @@ export function WebuiFeedbackActions({
         <WebuiMessageActionButton
           testId="message-feedback-like-action"
           label="赞"
+          icon={value === "like" ? <WebuiIconMessageLikeOn size={18} /> : <WebuiIconMessageLikeOff size={18} />}
+          active={value === "like"}
           onClick={() => onChange(toggleWebuiFeedback(value, "like"))}
         />
       </span>
@@ -2708,11 +3050,22 @@ export function WebuiFeedbackActions({
         <WebuiMessageActionButton
           testId="message-feedback-dislike-action"
           label="踩"
+          icon={value === "dislike" ? <WebuiIconMessageDislikeOn size={18} /> : <WebuiIconMessageDislikeOff size={18} />}
+          active={value === "dislike"}
           onClick={() => onChange(toggleWebuiFeedback(value, "dislike"))}
         />
       </span>
     </span>
   );
+}
+
+/** Desktop timestamp format for the action row: `9月22日, 22:37`. */
+export function formatWebuiMessageTimestamp(value?: number): string | undefined {
+  if (value === undefined || !Number.isFinite(value)) return undefined;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return undefined;
+  const pad = (input: number) => String(input).padStart(2, "0");
+  return `${date.getMonth() + 1}月${date.getDate()}日, ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 export function WebuiMessageActions({
@@ -2723,6 +3076,7 @@ export function WebuiMessageActions({
   onRewind,
   onEdit,
   onFork,
+  timestamp,
 }: {
   readonly role: "user" | "assistant";
   readonly messageId: string;
@@ -2731,6 +3085,8 @@ export function WebuiMessageActions({
   readonly onRewind?: () => void;
   readonly onEdit?: () => void;
   readonly onFork?: () => void;
+  /** Epoch ms; the desktop prints it inside the action row. */
+  readonly timestamp?: number;
 }): ReactElement {
   const [copied, setCopied] = useState(false);
   const [feedback, setFeedback] = useState<"like" | "dislike">();
@@ -2763,44 +3119,160 @@ export function WebuiMessageActions({
       setCopied(false);
     }
   };
+  const timestampLabel = formatWebuiMessageTimestamp(timestamp);
+  const copyIcon = copied ? <WebuiIconMessageCopied size={18} /> : <WebuiIconMessageCopy size={18} />;
   return (
     <div
       className={`webui-message-actions ${role === "user" ? "webui-user-message-actions" : ""}`}
       data-testid={role === "user" ? "user-message-actions" : "message-actions"}
       data-message-id={messageId}
     >
-      {role === "assistant" || copyText ? (
-        <WebuiMessageActionButton
-          testId={role === "user" ? "user-message-copy-button" : "message-copy-button"}
-          label={copied ? "已复制" : "复制"}
-          onClick={() => void copy()}
-        />
-      ) : null}
-      {actions?.rewind && onRewind ? (
-        <WebuiMessageActionButton
-          testId={role === "user" ? "user-message-rewind-button" : "message-rewind-button"}
-          label="回退"
-          onClick={onRewind}
-        />
-      ) : null}
-      {(actions?.edit ?? actions?.rewind) && onEdit ? (
-        <WebuiMessageActionButton
-          testId={role === "user" ? "user-message-edit-button" : "message-edit-button"}
-          label="编辑"
-          onClick={onEdit}
-        />
-      ) : null}
-      {role === "assistant" ? (
-        <WebuiFeedbackActions value={feedback} onChange={setFeedback} />
-      ) : null}
-      {actions?.fork && onFork ? (
-        <WebuiMessageActionButton
-          testId="message-fork-button"
-          label="复制为新会话"
-          onClick={onFork}
-        />
-      ) : null}
+      {role === "user" ? (
+        <>
+          {timestampLabel ? (
+            <span className="webui-message-timestamp" data-testid="user-message-timestamp">{timestampLabel}</span>
+          ) : null}
+          {actions?.rewind && onRewind ? (
+            <WebuiMessageActionButton testId="user-message-rewind-button" label="回退" icon={<WebuiIconMessageRewind size={18} />} onClick={onRewind} />
+          ) : null}
+          {(actions?.edit ?? actions?.rewind) && onEdit ? (
+            <WebuiMessageActionButton testId="user-message-edit-button" label="编辑" icon={<WebuiIconMessageEditUser size={18} />} onClick={onEdit} />
+          ) : null}
+          {copyText ? (
+            <WebuiMessageActionButton testId="user-message-copy-button" label={copied ? "已复制" : "复制"} icon={copyIcon} onClick={() => void copy()} />
+          ) : null}
+        </>
+      ) : (
+        <>
+          <WebuiMessageActionButton testId="message-copy-button" label={copied ? "已复制" : "复制"} icon={copyIcon} onClick={() => void copy()} />
+          {actions?.rewind && onRewind ? (
+            <WebuiMessageActionButton testId="message-rewind-button" label="回退" icon={<WebuiIconMessageRewind size={16} />} onClick={onRewind} />
+          ) : null}
+          {(actions?.edit ?? actions?.rewind) && onEdit ? (
+            <WebuiMessageActionButton testId="message-edit-button" label="编辑" icon={<WebuiIconMessageEdit size={16} />} onClick={onEdit} />
+          ) : null}
+          <WebuiFeedbackActions value={feedback} onChange={setFeedback} />
+          {actions?.fork && onFork ? (
+            <WebuiMessageActionButton testId="message-fork-button" label="复制为新会话" icon={<WebuiIconMessageFork size={18} />} onClick={onFork} />
+          ) : null}
+          {timestampLabel ? (
+            <span className="webui-message-timestamp" data-testid="message-timestamp">{timestampLabel}</span>
+          ) : null}
+        </>
+      )}
     </div>
+  );
+}
+
+/**
+ * Historical questionnaire-response projection. Once the user submits a
+ * questionnaire we render the question and the recorded answers inside the
+ * conversation so a rewinded session still remembers what the user picked.
+ */
+export function WebuiQuestionnaireResponse({
+  messageId,
+  summary,
+  timestamp,
+}: {
+  readonly messageId: string;
+  readonly summary: WebuiQuestionnaireResponseSummary;
+  readonly timestamp?: number;
+}): ReactElement {
+  const { requestId, answers } = summary;
+  return (
+    <article
+      className="webui-questionnaire-history flex w-full max-w-[80%] flex-col gap-2 rounded-[16px] border border-border_default bg-bg_grouped_secondary_elevated p-3"
+      data-webui-questionnaire-history="true"
+      data-message-id={messageId}
+      data-webui-questionnaire-request={requestId}
+      data-testid={`questionnaire-history-${requestId}`}
+    >
+      <header className="flex flex-col gap-1">
+        <span
+          className="text-text_default_secondary text-size_12"
+          data-testid="questionnaire-history-label"
+        >
+          问卷回答
+        </span>
+        <dl
+          className="webui-questionnaire-history-meta flex flex-wrap gap-x-3 gap-y-1 text-text_default_tertiary text-size_12"
+          data-testid="questionnaire-history-meta"
+        >
+          <div data-testid="questionnaire-history-meta-requestId">
+            <dt className="inline">requestId: </dt>
+            <dd className="inline font-mono">{requestId || "(未提供)"}</dd>
+          </div>
+          {summary.schemaVersion ? (
+            <div data-testid="questionnaire-history-meta-schema">
+              <dt className="inline">schemaVersion: </dt>
+              <dd className="inline font-mono">{summary.schemaVersion}</dd>
+            </div>
+          ) : null}
+          {summary.submittedAt ? (
+            <div data-testid="questionnaire-history-meta-submitted">
+              <dt className="inline">submittedAt: </dt>
+              <dd className="inline font-mono">{summary.submittedAt}</dd>
+            </div>
+          ) : null}
+          {summary.mode ? (
+            <div data-testid="questionnaire-history-meta-mode">
+              <dt className="inline">mode: </dt>
+              <dd className="inline font-mono">{summary.mode}</dd>
+            </div>
+          ) : null}
+          {summary.source ? (
+            <div data-testid="questionnaire-history-meta-source">
+              <dt className="inline">source: </dt>
+              <dd className="inline font-mono">{summary.source}</dd>
+            </div>
+          ) : null}
+          {summary.featureKey ? (
+            <div data-testid="questionnaire-history-meta-feature-key">
+              <dt className="inline">featureKey: </dt>
+              <dd className="inline font-mono">{summary.featureKey}</dd>
+            </div>
+          ) : null}
+        </dl>
+      </header>
+      <ul
+        className="webui-questionnaire-history-answers flex flex-col gap-2"
+        data-testid="questionnaire-history-answers"
+      >
+        {answers.map((answer, index) => (
+          <li
+            key={`${requestId}-${index}`}
+            className="webui-questionnaire-history-answer flex flex-col gap-1 text-size_14"
+            data-testid={`questionnaire-history-answer-${index}`}
+          >
+            <strong
+              className="text-text_default_primary"
+              data-testid={`questionnaire-history-answer-${index}-question`}
+            >
+              {answer.question}
+            </strong>
+            <ul className="flex flex-col gap-1 pl-4">
+              {answer.labels.map((label, labelIndex) => (
+                <li
+                  key={`${requestId}-${index}-${labelIndex}`}
+                  className="webui-questionnaire-history-label flex items-start gap-2 list-disc text-text_default_secondary"
+                  data-testid={`questionnaire-history-answer-${index}-label-${labelIndex}`}
+                >
+                  <span>{label}</span>
+                </li>
+              ))}
+            </ul>
+          </li>
+        ))}
+      </ul>
+      {typeof timestamp === "number" ? (
+        <span
+          className="text-text_default_tertiary text-size_12"
+          data-testid="questionnaire-history-timestamp"
+        >
+          {formatWebuiMessageTimestamp(timestamp)}
+        </span>
+      ) : null}
+    </article>
   );
 }
 
@@ -2920,13 +3392,21 @@ export function WebuiSessionTranscript({
   // follows it counts. The first assistant group is `active` while we have
   // nothing settled; the last is `running` while streaming is live.
   const turns = useMemo<readonly TurnSummary[]>(() => {
-    return groups
-      .filter((group) => group.items.some((item) => item.kind === "assistant"))
-      .map((group) => ({
-        id: group.messageId,
-        state: "default",
-      }));
-  }, [groups]);
+    const assistantGroups = groups.filter((group) =>
+      group.items.some((item) => item.kind === "assistant"),
+    );
+    if (assistantGroups.length === 0) return [];
+    const lastIndex = assistantGroups.length - 1;
+    return assistantGroups.map((group, index) => ({
+      id: group.messageId,
+      state:
+        index === lastIndex && streamPhase === "streaming"
+          ? "running"
+          : index === 0
+            ? "active"
+            : "default",
+    }));
+  }, [groups, streamPhase]);
   const loadOlder =
     page.hasMore && page.nextCursor
       ? () => {
@@ -2982,13 +3462,32 @@ export function WebuiSessionTranscript({
             </button>
           </div>
         ) : null}
-        {groups.map((group) => {
+        {groups.flatMap((group) => {
           const userItem = group.items.find(
             (item): item is Extract<WebuiTranscriptItem, { text: string }> =>
               item.kind === "user",
           );
+          const questionnaireResponseItem = group.items.find(
+            (
+              item,
+            ): item is Extract<
+              WebuiTranscriptItem,
+              { kind: "questionnaire_response" }
+            > => item.kind === "questionnaire_response",
+          );
+          const result: ReactElement[] = [];
+          if (questionnaireResponseItem) {
+            result.push(
+              <WebuiQuestionnaireResponse
+                key={`${group.messageId}-questionnaire`}
+                messageId={group.messageId}
+                summary={questionnaireResponseItem.summary}
+                timestamp={questionnaireResponseItem.timestamp}
+              />,
+            );
+          }
           if (userItem)
-            return (
+            result.push(
               <MessageItem
                 key={group.messageId}
                 messageId={group.messageId}
@@ -3002,8 +3501,10 @@ export function WebuiSessionTranscript({
                 getSessionRewindPreview={getSessionRewindPreview}
                 rewindSession={rewindSession}
                 editSessionMessage={editSessionMessage}
-              />
+              />,
             );
+          if (result.length > 0) return result;
+          // Fall through to the assistant-group renderer below.
           const thinkingItems = group.items.filter(
             (item): item is Extract<WebuiTranscriptItem, { text: string }> =>
               item.kind === "thinking",
@@ -3022,7 +3523,9 @@ export function WebuiSessionTranscript({
           );
           const initialDiff = [...group.items]
             .reverse()
-            .find((item) => item.diff)?.diff;
+            .find((item): item is Extract<WebuiTranscriptItem, { diff?: WebuiTurnDiffView }> =>
+              "diff" in item,
+            )?.diff;
           return (
             <MessageItem
               key={group.messageId}
@@ -3030,11 +3533,14 @@ export function WebuiSessionTranscript({
               role="assistant"
               sessionId={sessionId}
               assistantMessageId={group.messageId}
+              {...(group.turnId ? { turnId: group.turnId } : {})}
               initialDiff={initialDiff}
               getTurnDiff={getTurnDiff}
               revertTurnDiff={revertTurnDiff}
               reapplyTurnDiff={reapplyTurnDiff}
-              actions={group.items.find((item) => item.actions)?.actions}
+              actions={group.items.find((item): item is Extract<WebuiTranscriptItem, { actions?: WebuiMessageActionCapabilities }> =>
+                "actions" in item,
+              )?.actions}
               getSessionForkOptions={getSessionForkOptions}
               forkSession={forkSession}
               getSessionRewindPreview={getSessionRewindPreview}
@@ -3049,6 +3555,9 @@ export function WebuiSessionTranscript({
               tools={tools.length > 0 ? tools : undefined}
               answers={answers.map((item) => item.text)}
               attachments={answers[0]?.attachments}
+              totalRequestDurationMs={group.totalRequestDurationMs}
+              totalOutputTokens={group.totalOutputTokens}
+              wallClockDurationMs={group.wallClockDurationMs}
             />
           );
         })}
@@ -4712,17 +5221,32 @@ function WebuiComposer({
         >
           {stream.messages
             .filter((message) => message.role === "user")
-            .map((message) => (
-              <MessageItem
-                key={message.id}
-                messageId={message.id}
-                role="user"
-                userText={message.answer}
-                timestamp={message.timestamp}
-                isGoal={message.isGoal}
-                streamMessageId={message.id}
-              />
-            ))}
+            .flatMap((message) => {
+              const stripped = stripQuestionnaireResponse(message.answer);
+              const items: ReactElement[] = [];
+              if (stripped.questionnaire) {
+                items.push(
+                  <WebuiQuestionnaireResponse
+                    key={`${message.id}-questionnaire`}
+                    messageId={message.id}
+                    summary={stripped.questionnaire}
+                    timestamp={message.timestamp}
+                  />,
+                );
+              }
+              items.push(
+                <MessageItem
+                  key={message.id}
+                  messageId={message.id}
+                  role="user"
+                  userText={stripped.content}
+                  timestamp={message.timestamp}
+                  isGoal={message.isGoal}
+                  streamMessageId={message.id}
+                />,
+              );
+              return items;
+            })}
           {stream.phase === "reconnecting" ? (
             <MessagePassiveLoadingPlaceholder label="重连中…" />
           ) : null}
@@ -4758,6 +5282,23 @@ function WebuiComposer({
             const answers = assistant
               .map((message) => message.answer)
               .filter((value) => value.trim());
+            // Aggregate the runtime-measured `usage` across every assistant
+            // frame the live column has seen so the Desktop-style "共执行 N
+            // 分 M 秒 · {rate} token/s" row renders with real numbers.
+            const totalRequestDurationMs = assistant.reduce((sum, message) => {
+              const usage = message.usage;
+              const value = readUsageNumber(usage, "requestDurationMs", "request_duration_ms");
+              return typeof value === "number" && Number.isFinite(value)
+                ? sum + value
+                : sum;
+            }, 0);
+            const totalOutputTokens = assistant.reduce((sum, message) => {
+              const usage = message.usage;
+              const value = readUsageNumber(usage, "outputTokens", "output_tokens");
+              return typeof value === "number" && Number.isFinite(value)
+                ? sum + value
+                : sum;
+            }, 0);
             // One turn, one block: the server splits a reply across several
             // `msg_id`s (one per tool round) and each carries its own
             // thinking — desktop shows a single disclosure for the whole
@@ -4779,6 +5320,12 @@ function WebuiComposer({
                   answers={answers}
                   streaming={stream.phase === "streaming"}
                   processingStartedAtMs={stream.processingStartedAtMs}
+                  totalRequestDurationMs={
+                    totalRequestDurationMs > 0 ? totalRequestDurationMs : undefined
+                  }
+                  totalOutputTokens={
+                    totalOutputTokens > 0 ? totalOutputTokens : undefined
+                  }
                 />
                 {stream.phase === "streaming" && answers.length === 0 && !thinking.trim() ? (
                   <ActivityIndicator />
@@ -4823,8 +5370,9 @@ function WebuiComposer({
 
       <div
         ref={composerRegionRef}
-        className={`relative ${sessionLayout ? "mt-0" : "mt-8"} w-full`}
+        className={`relative ${sessionLayout ? "mt-0 webui-session-composer-overlay" : "mt-8"} w-full`}
         data-webui-composer-region="true"
+        data-webui-session-composer-overlay={sessionLayout ? "true" : undefined}
       >
         <form onSubmit={submit} data-webui-composer="true" className="w-full">
           <div className="message-input-home-container flex flex-col items-center gap-1.5 rounded-[20px] bg-bg_default_scrim pb-2">

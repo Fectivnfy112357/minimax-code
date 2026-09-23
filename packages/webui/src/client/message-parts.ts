@@ -16,6 +16,10 @@ export interface WebuiMessageForParts {
   readonly thinkingDurationMs?: number;
   readonly toolCalls?: readonly Record<string, unknown>[];
   readonly communicationInfosJson?: unknown;
+  /** Per-message token usage (matches `TokenUsage` from agent-core). Used to
+   *  compute the Desktop-style output rate and turn duration for historical
+   *  messages. */
+  readonly usage?: Record<string, unknown>;
 }
 
 export interface WebuiAgentJoinedPart {
@@ -54,12 +58,21 @@ export type WebuiMessagePart =
       readonly id: string;
       readonly type: "delegation";
       readonly message: WebuiDelegationPart;
+    }
+  | {
+      readonly id: string;
+      readonly type: "questionnaire_response";
+      readonly summary: WebuiQuestionnaireResponseSummary;
     };
 
 export interface WebuiTurnMessageGroup {
   readonly key: string;
   readonly messages: readonly WebuiMessageForParts[];
   readonly parts: readonly WebuiMessagePart[];
+  /** Sum of `usage.requestDurationMs` across all messages of the group. */
+  readonly totalRequestDurationMs?: number;
+  /** Sum of `usage.outputTokens` across all messages of the group. */
+  readonly totalOutputTokens?: number;
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -110,7 +123,7 @@ function projectSyntheticParts(
   message: WebuiMessageForParts,
 ): WebuiMessagePart[] {
   const parts: WebuiMessagePart[] = [];
-  for (const info of parseCommunicationInfos(message.communicationInfosJson)) {
+  for (const [infoIndex, info] of parseCommunicationInfos(message.communicationInfosJson).entries()) {
     const type = eventType(info);
     const data = eventData(info);
     if (type === "session.spawned") {
@@ -137,6 +150,53 @@ function projectSyntheticParts(
         type: "delegation",
         message: data ?? {},
       });
+    } else if (type === "questionnaire.response" || type === "questionnaire_response") {
+      const requestId =
+        stringValue(data, "requestId", "request_id", "id") ??
+        `${message.msgId}-${infoIndex}`;
+      const schemaVersion =
+        stringValue(data, "schemaVersion", "schema_version");
+      const submittedAt = stringValue(data, "submittedAt", "submitted_at");
+      const mode = stringValue(data, "mode");
+      const source =
+        stringValue(data, "responseSource", "source") ?? stringValue(data, "source");
+      const featureKey = stringValue(data, "featureKey", "feature_key");
+      const rawAnswers =
+        (Array.isArray(data?.answers)
+          ? data?.answers
+          : Array.isArray(data?.selections)
+            ? data?.selections
+            : []) ?? [];
+      const labels: string[] = [];
+      for (const entry of rawAnswers as readonly unknown[]) {
+        if (typeof entry === "string" && entry.trim()) {
+          labels.push(entry);
+          continue;
+        }
+        const item = record(entry);
+        if (!item) continue;
+        const label =
+          stringValue(item, "label", "value", "text", "optionLabel") ?? "";
+        if (label) labels.push(label);
+      }
+      const question =
+        stringValue(data, "question", "title", "prompt") ?? "Questionnaire";
+      const pairs: WebuiQuestionnaireResponseAnswer[] = labels.length > 0
+        ? [{ question, labels }]
+        : [{ question: "Questionnaire", labels: ["(未选择)"] }];
+      parts.push({
+        id: `questionnaire-response-${message.msgId}-${infoIndex}`,
+        type: "questionnaire_response",
+        summary: {
+          requestId,
+          ...(schemaVersion ? { schemaVersion } : {}),
+          ...(submittedAt ? { submittedAt } : {}),
+          ...(mode ? { mode } : {}),
+          ...(source ? { source } : {}),
+          ...(featureKey ? { featureKey } : {}),
+          answers: pairs,
+        },
+      });
     }
   }
   return parts;
@@ -157,11 +217,19 @@ export function projectMessageParts(
         : {}),
     });
   }
-  if (message.msgContent?.trim()) {
+  const strippedContent = stripQuestionnaireResponse(message.msgContent ?? "");
+  if (strippedContent.content.trim()) {
     parts.push({
       id: "text",
       type: "text",
-      content: message.msgContent,
+      content: strippedContent.content,
+    });
+  }
+  if (strippedContent.questionnaire) {
+    parts.push({
+      id: `questionnaire-response-${message.msgId}`,
+      type: "questionnaire_response",
+      summary: strippedContent.questionnaire,
     });
   }
   for (const [index, toolCall] of (message.toolCalls ?? []).entries()) {
@@ -172,6 +240,199 @@ export function projectMessageParts(
     parts.push({ id: toolId, type: "tool_call", toolCall });
   }
   return [...parts, ...projectSyntheticParts(message)];
+}
+
+/**
+ * Strip a `<questionnaire-response>…</questionnaire-response>` block from the
+ * visible user message and return both the cleaned text and a parsed
+ * `questionnaire_response` record. The runtime serializes the user's reply as
+ * the XML payload followed by the human-readable Q/A summary; without this
+ * strip the bubble would surface the raw XML to the reader.
+ */
+export interface StrippedQuestionnaire {
+  readonly content: string;
+  readonly questionnaire?: WebuiQuestionnaireResponseSummary;
+}
+
+export interface WebuiQuestionnaireResponseAnswer {
+  /** The question text from the trailing `Q:` line, when available. */
+  readonly question: string;
+  /** One human-readable label per answer; for multi-select responses we
+   *  keep every option the user chose in order, joined by the renderer. */
+  readonly labels: readonly string[];
+}
+
+export interface WebuiQuestionnaireResponseSummary {
+  readonly requestId: string;
+  readonly schemaVersion?: string;
+  readonly submittedAt?: string;
+  readonly mode?: string;
+  readonly source?: string;
+  readonly featureKey?: string;
+  readonly answers: readonly WebuiQuestionnaireResponseAnswer[];
+}
+
+const QUESTIONNAIRE_RESPONSE_BLOCK = /<questionnaire-response>[\s\S]*?<\/questionnaire-response>/g;
+
+export function stripQuestionnaireResponse(text: string): StrippedQuestionnaire {
+  if (!text) return { content: "" };
+  let extracted: WebuiQuestionnaireResponseSummary | undefined;
+  let cleaned = text;
+  let match: RegExpExecArray | null;
+  QUESTIONNAIRE_RESPONSE_BLOCK.lastIndex = 0;
+  while ((match = QUESTIONNAIRE_RESPONSE_BLOCK.exec(text)) !== null) {
+    const block = match[0];
+    const matchIndex = match.index ?? 0;
+    if (!extracted) extracted = parseQuestionnaireResponsePayload(text, block, matchIndex);
+    cleaned = cleaned.replace(block, "");
+  }
+  cleaned = cleaned.replace(/^\s*\n+/, "").replace(/\n+\s*$/, "");
+  return extracted ? { content: cleaned, questionnaire: extracted } : { content: cleaned };
+}
+
+/**
+ * Parse a `<questionnaire-response>` block together with the trailing
+ * `Q:` / `A:` text that the runtime appends after `</questionnaire-response>`.
+ *
+ * Earlier the helper only received the matched XML block and never saw the
+ * trailing Q/A lines, so the rendered card had to fall back to raw markup.
+ * Now we receive the full source string and the block's match offset, so we
+ * can locate the trailing text, prefer its human-readable question text, and
+ * still pull `requestId` / `schemaVersion` / `submittedAt` / `mode` /
+ * `responseSource` / `featureKey` from the XML.
+ */
+function parseQuestionnaireResponsePayload(
+  fullText: string,
+  block: string,
+  matchIndex: number,
+): WebuiQuestionnaireResponseSummary {
+  const requestId =
+    extractXmlElement(block, "requestId") ?? extractXmlElement(block, "request_id") ?? "";
+  const schemaVersion = extractXmlElement(block, "schemaVersion");
+  const submittedAt = extractXmlElement(block, "submittedAt");
+  const mode = extractXmlElement(block, "mode");
+  const source =
+    extractXmlElement(block, "responseSource") ?? extractXmlElement(block, "source");
+  const featureKey = extractXmlElement(block, "featureKey");
+
+  const trailingText = fullText.slice(matchIndex + block.length);
+  const trailing = parseTrailingQuestionnaireLines(trailingText);
+
+  // Fall back to the XML `<answer>` blocks when the trailing text is empty
+  // (older payloads) or when the trailing text didn't pair up cleanly.
+  const answers: WebuiQuestionnaireResponseAnswer[] =
+    trailing && trailing.pairs.length > 0
+      ? [...trailing.pairs]
+      : extractAnswerPairsFromXml(block);
+  if (answers.length === 0) {
+    answers.push({ question: "Questionnaire", labels: ["(未选择)"] });
+  }
+  return {
+    requestId,
+    ...(schemaVersion ? { schemaVersion } : {}),
+    ...(submittedAt ? { submittedAt } : {}),
+    ...(mode ? { mode } : {}),
+    ...(source ? { source } : {}),
+    ...(featureKey ? { featureKey } : {}),
+    answers,
+  };
+}
+
+interface TrailingQuestionnaire {
+  readonly pairs: readonly WebuiQuestionnaireResponseAnswer[];
+}
+
+/**
+ * Parse the `Q:` / `A:` lines that follow the `</questionnaire-response>`
+ * closing tag. The runtime emits one pair per question and uses two-space
+ * trailing whitespace to mark a soft break, so the formatter output reads
+ * as Markdown prose. We treat each `Q:` line as the start of a new pair
+ * and accumulate `A:` lines until the next `Q:` (or end of input).
+ */
+function parseTrailingQuestionnaireLines(text: string): TrailingQuestionnaire | undefined {
+  const trimmed = text.replace(/^\s*\n+/, "").trim();
+  if (!trimmed) return undefined;
+  const lines = trimmed.split(/\r?\n/);
+  const pairs: WebuiQuestionnaireResponseAnswer[] = [];
+  let current: WebuiQuestionnaireResponseAnswer | undefined;
+  for (const raw of lines) {
+    const line = raw.replace(/\s+$/, "").replace(/^  $/, "").trim();
+    if (!line) continue;
+    if (line.startsWith("Q:")) {
+      if (current) pairs.push(current);
+      current = { question: line.replace(/^Q:\s*/, "").trim(), labels: [] };
+    } else if (line.startsWith("A:")) {
+      const label = line.replace(/^A:\s*/, "").trim();
+      if (!label) continue;
+      if (current) {
+        current = { ...current, labels: [...current.labels, label] };
+      } else {
+        // `A:` line without a preceding `Q:` — synthesize a placeholder
+        // question so we never surface an empty pair.
+        current = { question: "Questionnaire", labels: [label] };
+      }
+    } else if (current && current.labels.length > 0) {
+      // Continuation of the previous A: line — fold it in so multi-line
+      // answers (Markdown tables, code blocks) keep their structure.
+      const last = current.labels[current.labels.length - 1];
+      current = { ...current, labels: [...current.labels.slice(0, -1), `${last}\n${line}`] };
+    }
+  }
+  if (current) pairs.push(current);
+  return pairs.length > 0 ? { pairs } : undefined;
+}
+
+/**
+ * Walk the `<answer>` blocks inside the XML and build a question/answer pair
+ * per step. The XML only carries the option IDs (`<item>id</item>`), so the
+ * rendered label is the ID itself — the renderer tags these as step ids so
+ * the reader can tell apart option IDs from human-readable labels.
+ */
+function extractAnswerPairsFromXml(block: string): WebuiQuestionnaireResponseAnswer[] {
+  const pairs: WebuiQuestionnaireResponseAnswer[] = [];
+  const answerRegex = /<answer>([\s\S]*?)<\/answer>/g;
+  let match: RegExpExecArray | null;
+  while ((match = answerRegex.exec(block)) !== null) {
+    const inner = match[1] ?? "";
+    const stepId = extractXmlElement(inner, "stepId") ?? "step";
+    if (/<skipped>\s*true\s*<\/skipped>/i.test(inner)) {
+      pairs.push({ question: stepId, labels: ["(已跳过)"] });
+      continue;
+    }
+    const optionRegex = /<item>([\s\S]*?)<\/item>/g;
+    const labels: string[] = [];
+    let optionMatch: RegExpExecArray | null;
+    while ((optionMatch = optionRegex.exec(inner)) !== null) {
+      const label = unescapeXml((optionMatch[1] ?? "").trim());
+      if (label) labels.push(label);
+    }
+    const otherTextMatch = /<otherText>([\s\S]*?)<\/otherText>/i.exec(inner);
+    if (otherTextMatch) {
+      const otherText = unescapeXml((otherTextMatch[1] ?? "").trim());
+      if (otherText) labels.push(`其他: ${otherText}`);
+    }
+    pairs.push({
+      question: stepId,
+      labels: labels.length > 0 ? labels : ["(未选择)"],
+    });
+  }
+  return pairs;
+}
+
+function extractXmlElement(block: string, tag: string): string | undefined {
+  const regex = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`);
+  const match = regex.exec(block);
+  if (!match) return undefined;
+  return unescapeXml((match[1] ?? "").trim());
+}
+
+function unescapeXml(text: string): string {
+  return text
+    .replace(/&apos;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&gt;/g, ">")
+    .replace(/&lt;/g, "<")
+    .replace(/&amp;/g, "&");
 }
 
 function turnKey(message: WebuiMessageForParts): string {
@@ -210,11 +471,18 @@ export function groupTurnMessages(
   for (const message of messages) {
     const key = turnKey(message);
     const current = groups.at(-1);
+    const summary = summarizeMessageUsage(message);
     if (!current || current.key !== key) {
       groups.push({
         key,
         messages: [message],
         parts: projectMessageParts(message),
+        ...(summary.requestDurationMs !== undefined
+          ? { totalRequestDurationMs: summary.requestDurationMs }
+          : {}),
+        ...(summary.outputTokens !== undefined
+          ? { totalOutputTokens: summary.outputTokens }
+          : {}),
       });
       continue;
     }
@@ -228,7 +496,43 @@ export function groupTurnMessages(
       ...current,
       messages: [...current.messages, message],
       parts: [...current.parts, ...nextParts],
+      ...(summary.requestDurationMs !== undefined || current.totalRequestDurationMs !== undefined
+        ? {
+            totalRequestDurationMs:
+              (current.totalRequestDurationMs ?? 0) + (summary.requestDurationMs ?? 0),
+          }
+        : {}),
+      ...(summary.outputTokens !== undefined || current.totalOutputTokens !== undefined
+        ? {
+            totalOutputTokens:
+              (current.totalOutputTokens ?? 0) + (summary.outputTokens ?? 0),
+          }
+        : {}),
     };
   }
   return groups;
+}
+
+function summarizeMessageUsage(message: WebuiMessageForParts): {
+  readonly requestDurationMs?: number;
+  readonly outputTokens?: number;
+} {
+  const usage = message.usage;
+  if (!usage) return {};
+  const requestDurationMs =
+    typeof usage.request_duration_ms === "number"
+      ? usage.request_duration_ms
+      : typeof usage.requestDurationMs === "number"
+        ? usage.requestDurationMs
+        : undefined;
+  const outputTokens =
+    typeof usage.output_tokens === "number"
+      ? usage.output_tokens
+      : typeof usage.outputTokens === "number"
+        ? usage.outputTokens
+        : undefined;
+  return {
+    ...(typeof requestDurationMs === "number" ? { requestDurationMs } : {}),
+    ...(typeof outputTokens === "number" ? { outputTokens } : {}),
+  };
 }

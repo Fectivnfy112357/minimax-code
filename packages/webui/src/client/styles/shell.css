@@ -1073,8 +1073,34 @@
     overscroll-behavior: contain;
   }
 
+  /* Desktop composer overlays the bottom of the session reading column. The
+   * transcript reserves `padding-bottom` equal to the composer's reserved slot
+   * so the latest message never hides under the overlay. */
+  .webui-session-layout .webui-session-composer-overlay {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    padding: 0 24px 16px;
+    background: linear-gradient(
+      to top,
+      var(--bg_default_primary) 0%,
+      var(--bg_default_primary) 60%,
+      rgb(0 0 0 / 0%) 100%
+    );
+    pointer-events: none;
+  }
+  .webui-session-layout .webui-session-composer-overlay > * {
+    pointer-events: auto;
+  }
+  .webui-session-layout .webui-session-transcript-scroll {
+    padding-bottom: 168px;
+  }
+
   /* The user's turn: a 16px-radius bubble on the grouped-tertiary surface,
-   * right-aligned, capped at 80% of the reading column, body capped at 240px. */
+   * right-aligned, capped at 80% of the reading column, body capped at 240px.
+   * Desktop reads 15px/24px for the user body. */
   .webui-user-bubble {
     max-width: 80%;
     padding: var(--spacing_8) var(--spacing_12);
@@ -1084,8 +1110,8 @@
   }
   .webui-user-text {
     margin: 0;
-    font-size: 14px;
-    line-height: 22px;
+    font-size: 15px;
+    line-height: 24px;
     letter-spacing: 0;
     white-space: pre-wrap;
     overflow-wrap: break-word;
@@ -1094,6 +1120,14 @@
   .webui-user-text-clamp {
     max-height: 240px;
     overflow: hidden;
+  }
+
+  /* Desktop inline editor stretches across the whole reading column (736px),
+   * not the user bubble's 80%. */
+  .webui-user-inline-editor {
+    width: 100%;
+    max-width: 736px;
+    margin-left: auto;
   }
 
   /* The assistant's process disclosure: a summary line, a hairline, and the
@@ -1163,12 +1197,12 @@
     align-items: center;
     gap: var(--spacing_8);
     cursor: pointer;
-    color: var(--text_default_tertiary);
-    font-size: 14px;
-    line-height: 22px;
+    color: var(--text_default_secondary);
+    font-size: 12px;
+    line-height: 16px;
     transition: color 120ms ease;
   }
-  .activity-group-header:hover { color: var(--text_default_secondary); }
+  .activity-group-header:hover { color: var(--text_default_primary); }
   .activity-group-icon {
     display: inline-flex;
     width: 16px;
@@ -1176,6 +1210,7 @@
     flex: 0 0 16px;
     align-items: center;
     justify-content: center;
+    color: var(--text_default_secondary);
     font-size: 16px;
     line-height: 16px;
   }
@@ -1183,13 +1218,16 @@
   .activity-group-chevron {
     width: 16px;
     height: 16px;
+    color: var(--text_default_tertiary);
     transition: transform 200ms ease-out;
   }
+  /* Default state on Desktop is collapsed; the WebUI's previous open default
+   * is preserved as the override below. */
   .activity-group[open] .activity-group-chevron { transform: rotate(90deg); }
   .activity-group-body {
     position: relative;
     margin-top: var(--spacing_8);
-    padding-left: 16px;
+    padding-left: 24px;
   }
   .timeline-spine {
     position: absolute;
@@ -1203,7 +1241,7 @@
   .timeline-connector { margin-left: 7.5px; height: 8px; width: 1px; background: var(--border_light); }
   .activity-group-content { min-width: 0; }
 
-  .text-activity-body-small { font-size: 14px; line-height: 20px; }
+  .text-activity-body-small { font-size: 12px; line-height: 16px; }
   .webui-thinking-chevron,
   .webui-tool-chevron {
     width: 14px;
@@ -2323,7 +2361,9 @@
     overflow: hidden;
     border: 0.5px solid var(--border_default);
     border-radius: 12px;
-    background: var(--bg_default_secondary);
+    /* Desktop's diff card sits inside the reading column and inherits the
+     * grouped surface tint through `transparent`. */
+    background: transparent;
   }
 
   .webui-diff-card--neutral {
@@ -2437,7 +2477,6 @@
 
   .webui-diff-card .webui-tool-list {
     padding: 4px 8px;
-    border-top: 1px solid var(--border_default);
   }
 
   .webui-diff-actions {
@@ -2499,12 +2538,38 @@
   .webui-message-actions {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 6px;
     min-height: 28px;
     margin-top: 4px;
     color: var(--text_default_tertiary);
+    font-size: 13px;
+    line-height: 19.5px;
     opacity: 0;
     transition: opacity 120ms ease;
+  }
+
+  /* The action row is glyph-only; the desktop keeps a 26px square per control and
+     paints the revealed state on the row, not on each button. */
+  .webui-message-action:hover:not(:disabled) {
+    background: var(--bg_interaction_tertiary_hover);
+  }
+
+  .webui-message-action svg {
+    display: block;
+  }
+
+  .webui-user-message-actions {
+    justify-content: flex-end;
+  }
+
+  /* Desktop timestamps sit inside the action row: trailing on an assistant
+     message, leading (right-aligned) on a user message. */
+  .webui-message-timestamp {
+    font-size: 13px;
+    line-height: 19.5px;
+    color: var(--text_default_tertiary);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
   }
 
   .webui-message:hover .webui-message-actions,
@@ -2514,13 +2579,15 @@
 
   .webui-message-action {
     display: inline-flex;
-    min-width: 28px;
-    min-height: 28px;
+    width: 26px;
+    height: 26px;
+    min-width: 26px;
+    min-height: 26px;
     align-items: center;
     justify-content: center;
-    padding: 0 6px;
+    border-radius: 8px;
+    padding: 0;
     border: 0;
-    border-radius: 7px;
     background: transparent;
     color: inherit;
     font-size: 12px;

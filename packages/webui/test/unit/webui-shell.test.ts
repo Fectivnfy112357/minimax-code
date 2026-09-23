@@ -352,6 +352,167 @@ describe("WebUI shell", () => {
     expect(groupWebuiTranscriptItems([])).toEqual([]);
   });
 
+  it("computes the wall-clock turn duration from user/assistant timestamps that live in different groups", () => {
+    // Bug A regression: the user bubble opens its own group, then the assistant
+    // block is a separate group. The duration has to span across both groups
+    // via the shared `turnId`, not stay zero because they never share a block.
+    const userItems = projectWebuiMessage({
+      msgId: "u-1",
+      role: "user",
+      msgContent: "问题",
+      turnId: "turn_04c6c7fe",
+      timestamp: 1790087735738,
+    });
+    const assistantItems = projectWebuiMessage({
+      msgId: "a-1",
+      role: "assistant",
+      msgContent: "回答",
+      turnId: "turn_04c6c7fe",
+      timestamp: 1790088159203,
+    });
+    const groups = groupWebuiTranscriptItems([...userItems, ...assistantItems]);
+    expect(groups).toHaveLength(2);
+    expect(groups[0]?.messageId).toBe("u-1");
+    expect(groups[1]?.messageId).toBe("a-1");
+    expect(groups[1]?.wallClockDurationMs).toBe(1790088159203 - 1790087735738);
+    expect(groups[1]?.wallClockDurationMs).toBe(423465);
+  });
+
+  it("counts each assistant message's outputTokens exactly once when thinking+tool+answer all carry the same usage blob", () => {
+    // Regression for the duplicate-counting bug: `projectWebuiMessage`
+    // emits one transcript item per part (thinking / tool / answer) for
+    // every assistant message, and every part carries the same `usage`.
+    // The aggregator must dedupe by messageId so a message with thinking
+    // + tool + answer contributes its tokens once, not three times.
+    const groups = groupWebuiTranscriptItems([
+      ...projectWebuiMessage({
+        msgId: "u-1",
+        role: "user",
+        msgContent: "做",
+        turnId: "turn-A",
+        timestamp: 1000,
+      }),
+      ...projectWebuiMessage({
+        msgId: "a-1",
+        role: "assistant",
+        thinkingContent: "先想",
+        toolCalls: [{ name: "read" }],
+        msgContent: "中间",
+        turnId: "turn-A",
+        timestamp: 2000,
+        usage: { outputTokens: 100 },
+      }),
+      ...projectWebuiMessage({
+        msgId: "a-2",
+        role: "assistant",
+        msgContent: "结尾",
+        turnId: "turn-A",
+        timestamp: 3000,
+        usage: { outputTokens: 250 },
+      }),
+    ]);
+    // Adjacent assistant items share a single block; the user line opens
+    // its own block. Two groups total.
+    expect(groups).toHaveLength(2);
+    // a-1 emits 3 parts (thinking, tool, answer), each with usage.outputTokens=100
+    // a-2 emits 1 part (answer) with usage.outputTokens=250
+    // Total unique: 100 + 250 = 350 (not 100*3 + 250 = 550).
+    expect(groups[1]?.totalOutputTokens).toBe(350);
+  });
+
+  it("matches the Desktop rate (outputTokens / wallClockDurationMs) after dedup", () => {
+    // Replays the target session: user ts=1790087735738, assistant ts=1790088159203,
+    // 33 assistant messages, sum(outputTokens)=18411.
+    //   18411 / (1790088159203 - 1790087735738) = 43.5 token/s
+    // WebUI's dedupe must yield 18411, not the ×3 inflated value.
+    const items: ReturnType<typeof projectWebuiMessage> = [];
+    items.push(
+      ...projectWebuiMessage({
+        msgId: "u-target",
+        role: "user",
+        msgContent: "do",
+        turnId: "turn_04c6c7fe",
+        timestamp: 1790087735738,
+      }),
+    );
+    // Build 33 assistant messages, each contributing 18411 / 33 ≈ 557.9 output
+    // tokens. The exact distribution doesn't matter for dedup; what matters
+    // is that every message also has thinking + tool parts so the dedupe
+    // path runs. The final message lands on the real wall-clock end
+    // (1790088159203) so the duration is 423465ms exactly.
+    const tokensPerMessage = Math.round(18411 / 33);
+    const span = 423465;
+    const step = Math.floor(span / 33);
+    for (let i = 0; i < 33; i++) {
+      const ts =
+        i === 32
+          ? 1790088159203
+          : 1790087735738 + (i + 1) * step;
+      items.push(
+        ...projectWebuiMessage({
+          msgId: `a-target-${i}`,
+          role: "assistant",
+          thinkingContent: "think",
+          toolCalls: [{ name: "bash" }],
+          msgContent: "answer",
+          turnId: "turn_04c6c7fe",
+          timestamp: ts,
+          usage: { outputTokens: tokensPerMessage },
+        }),
+      );
+    }
+    const groups = groupWebuiTranscriptItems(items);
+    // Find the single assistant group.
+    const assistantGroup = groups.find(
+      (g) => g.items[0]?.kind !== "user",
+    );
+    expect(assistantGroup?.wallClockDurationMs).toBe(423465);
+    // Allow off-by-one from the per-message rounding (33 * tokensPerMessage).
+    expect(assistantGroup?.totalOutputTokens).toBeGreaterThanOrEqual(18411 - 33);
+    expect(assistantGroup?.totalOutputTokens).toBeLessThanOrEqual(18411 + 33);
+  });
+
+  it("scopes the wall-clock duration to the same turnId so turns never bleed into each other", () => {
+    const groups = groupWebuiTranscriptItems([
+      ...projectWebuiMessage({
+        msgId: "u-1",
+        role: "user",
+        msgContent: "one",
+        turnId: "turn-A",
+        timestamp: 100,
+      }),
+      ...projectWebuiMessage({
+        msgId: "a-1",
+        role: "assistant",
+        msgContent: "first answer",
+        turnId: "turn-A",
+        timestamp: 2146 + 100,
+      }),
+      ...projectWebuiMessage({
+        msgId: "u-2",
+        role: "user",
+        msgContent: "two",
+        turnId: "turn-B",
+        timestamp: 5000,
+      }),
+      ...projectWebuiMessage({
+        msgId: "a-2",
+        role: "assistant",
+        msgContent: "second answer",
+        turnId: "turn-B",
+        timestamp: 5000 + 1422,
+      }),
+    ]);
+    expect(groups).toHaveLength(4);
+    expect(groups[1]?.turnId).toBe("turn-A");
+    expect(groups[1]?.wallClockDurationMs).toBe(2146);
+    expect(groups[3]?.turnId).toBe("turn-B");
+    expect(groups[3]?.wallClockDurationMs).toBe(1422);
+    // The end of turn-A is 2246ms but turn-B starts at 5000ms; if we
+    // accidentally bled across turns, the duration would be ≥ 5000ms.
+    expect(groups[1]?.wallClockDurationMs).toBeLessThan(5000);
+  });
+
   it("keeps the conversation's reading column and message chrome in the markup", () => {
     const html = renderToStaticMarkup(
       createElement(WebuiSessionTranscript, {
