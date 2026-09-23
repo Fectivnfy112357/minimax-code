@@ -465,6 +465,24 @@ describe("WebUI shell", () => {
     );
   });
 
+  it("keeps subagent sessions visibly nested under their parent session", () => {
+    const styles = readFileSync(
+      new URL("../../src/client/styles/shell.css", import.meta.url),
+      "utf8",
+    );
+    const childListRule = styles.match(
+      /\.webui-project-child-session-list\s*\{([^}]*)\}/u,
+    );
+    const childCardRule = styles.match(
+      /\.webui-project-child-session-card\s*\{([^}]*)\}/u,
+    );
+    expect(childListRule, "child session list rule is missing").not.toBeNull();
+    expect(childListRule![1]).toMatch(/gap:\s*2px/u);
+    expect(childCardRule, "child session card rule is missing").not.toBeNull();
+    expect(childCardRule![1]).toMatch(/height:\s*30px/u);
+    expect(childCardRule![1]).toMatch(/padding-left:\s*34px/u);
+  });
+
   it("reacts to hashchange so navigation selects a different transcript without reload", () => {
     const originalWindow = globalThis.window;
     let hash = "#session=first";

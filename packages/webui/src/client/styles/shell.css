@@ -324,6 +324,32 @@
     background-color: var(--bg_interaction_tertiary_hover);
   }
 
+  /* Subagent rows retain the desktop's nested-session geometry: a compact
+   * 30px row, 2px spacing between siblings, and a 34px leading indent that
+   * makes the parent/child relationship visible without changing the data
+   * projection. */
+  .webui-project-child-session-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .webui-project-child-session-card {
+    display: flex;
+    width: 100%;
+    height: 30px;
+    align-items: center;
+    gap: var(--spacing_8);
+    border-radius: var(--radius_8);
+    padding-left: 34px;
+    padding-right: 2px;
+    text-align: left;
+    transition: background-color 120ms ease;
+  }
+  .webui-project-child-session-card:hover,
+  .webui-project-child-session-card[data-webui-session-active="true"] {
+    background-color: var(--bg_interaction_tertiary_hover);
+  }
+
   /* The "load more" row under the session list. */
   .webui-rail-more {
     display: flex;
