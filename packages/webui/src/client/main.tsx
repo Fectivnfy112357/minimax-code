@@ -50,4 +50,3 @@ root.render(
   currentRoute === "onboarding" ? <OnboardingSteps onComplete={() => { location.href = "/archon"; }} /> :
   currentRoute === "404" ? <NotFound /> : <ArchonPage>{app}</ArchonPage>,
 );
-

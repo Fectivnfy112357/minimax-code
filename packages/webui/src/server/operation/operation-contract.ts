@@ -83,4 +83,3 @@ export interface WebuiOperationRegistration<Body = unknown, ResultBody = Body> {
     | WebuiOperationResult<ResultBody>
     | WebuiOperationStreamResult;
 }
-

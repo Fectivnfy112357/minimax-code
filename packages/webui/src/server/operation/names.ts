@@ -69,4 +69,3 @@ export const LIST_PROVIDER_PRESETS_OPERATION_NAME = "listProviderPresets" as con
 export const GET_MINIMAX_API_KEY_STATUS_OPERATION_NAME = "getMiniMaxApiKeyStatus" as const;
 export const UPSERT_MINIMAX_API_KEY_OPERATION_NAME = "upsertMiniMaxApiKey" as const;
 export const GET_CODEX_OAUTH_STATUS_OPERATION_NAME = "getCodexOAuthStatus" as const;
-
