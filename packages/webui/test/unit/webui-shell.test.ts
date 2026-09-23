@@ -56,7 +56,7 @@ import {
   reduceWebuiStreamFrame,
   type WebuiStreamState,
 } from "../../src/client/stream.js";
-import { projectWebuiTodos, WebuiProgressPanel, WebuiWorkspacePanel } from "../../src/client/components/WorkspacePanels.js";
+import { projectWebuiTodos, WebuiProgressPanel, WebuiWorkspaceOverview, WebuiWorkspacePanel, WebuiWorkspacePanelControls } from "../../src/client/components/WorkspacePanels.js";
 import type {
   WebuiClientMessageLoader,
   WebuiClientMessageSender,
@@ -110,8 +110,23 @@ describe("WebUI shell", () => {
     expect(markup).toContain("查看文件");
     expect(markup).toContain("画布");
     expect(markup).toContain("终端");
+    expect(markup).not.toContain('data-webui-progress-panel="true"');
     expect(markup).not.toContain("浏览器");
     expect(markup).not.toContain("Mini App");
+  });
+
+  it("keeps the desktop environment/progress card separate from the file panel", () => {
+    const overview = renderToStaticMarkup(createElement(WebuiWorkspaceOverview, { workspaceDir: "/tmp/project", todos: [] }));
+    expect(overview).toContain('data-testid="workspace-section-group"');
+    expect(overview).toContain("环境信息");
+    expect(overview).toContain("进度");
+    expect(overview).toContain("跟踪较长任务的进度");
+    expect(overview).toContain('data-webui-placeholder-chrome="environment-变更"');
+
+    const controls = renderToStaticMarkup(createElement(WebuiWorkspacePanelControls, { filePanelOpen: false, workspaceOpen: true, onOpenFiles: () => undefined, onToggleWorkspace: () => undefined }));
+    expect(controls).toContain('aria-label="打开文件"');
+    expect(controls).toContain('aria-label="工作区"');
+    expect(controls).toContain('aria-label="浏览器"');
   });
 
   it("renders completed, in-progress, and pending progress rows in SSR", () => {
