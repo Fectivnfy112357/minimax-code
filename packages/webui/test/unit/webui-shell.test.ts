@@ -451,6 +451,20 @@ describe("WebUI shell", () => {
     expect(html).not.toContain('data-webui-session-list="true"');
   });
 
+  it("leaves a visible gap before the first session under an expanded project", () => {
+    const styles = readFileSync(
+      new URL("../../src/client/styles/shell.css", import.meta.url),
+      "utf8",
+    );
+    const projectSessionsRule = styles.match(
+      /\.webui-project-session-list\s*\{([^}]*)\}/u,
+    );
+    expect(projectSessionsRule, "project session list rule is missing").not.toBeNull();
+    expect(projectSessionsRule![1]).toMatch(
+      /padding:\s*1px\s+0\s+var\(--spacing_4\)\s+var\(--spacing_20\)/u,
+    );
+  });
+
   it("reacts to hashchange so navigation selects a different transcript without reload", () => {
     const originalWindow = globalThis.window;
     let hash = "#session=first";
