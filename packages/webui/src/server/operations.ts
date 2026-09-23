@@ -19,6 +19,8 @@ import type {
   WebuiSessionLookupRequest,
   WebuiSessionLookupResult,
   WebuiSessionListRequest,
+  WebuiSessionTreeRequest,
+  WebuiSessionTreePage,
   WebuiCreateSessionRequest,
   WebuiCreateSessionResult,
   WebuiSendMessageRequest,
@@ -74,6 +76,7 @@ export type WebuiOperationValidation<Body> =
 
 const VERSION_OPERATION_NAME = "version" as const;
 const LIST_SESSIONS_OPERATION_NAME = "listSessions" as const;
+const GET_SESSION_TREE_OPERATION_NAME = "getSessionTree" as const;
 const CREATE_SESSION_OPERATION_NAME = "createSession" as const;
 const GET_SESSION_OPERATION_NAME = "getSession" as const;
 const GET_MESSAGES_OPERATION_NAME = "getMessages" as const;
@@ -197,6 +200,72 @@ export const listSessionsOperation: WebuiOperation<
 > = {
   name: LIST_SESSIONS_OPERATION_NAME,
   validate: validateListSessionsRequestBody,
+};
+
+function validateGetSessionTreeRequestBody(
+  body: unknown,
+): WebuiOperationValidation<WebuiSessionTreeRequest> {
+  if (body === null || typeof body !== "object" || Array.isArray(body))
+    return {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: "getSessionTree body must be an object",
+    };
+  const candidate = body as Record<string, unknown>;
+  if (typeof candidate.name !== "string" || candidate.name.trim() === "")
+    return {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: "getSessionTree body requires a non-empty name",
+    };
+  if (
+    candidate.limit !== undefined &&
+    (!Number.isInteger(candidate.limit) || (candidate.limit as number) < 0)
+  )
+    return {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: "limit must be a non-negative integer",
+    };
+  if (candidate.cursor !== undefined && typeof candidate.cursor !== "string")
+    return {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: "cursor must be a string",
+    };
+  for (const key of [
+    "includeArchived",
+    "onlyArchived",
+    "onlyCompressed",
+    "includeHidden",
+  ] as const) {
+    if (candidate[key] !== undefined && typeof candidate[key] !== "boolean")
+      return {
+        ok: false,
+        code: WebuiErrorCode.invalidBody,
+        message: `${key} must be a boolean`,
+      };
+  }
+  for (const key of [
+    "includePurposePrefix",
+    "excludePurposePrefix",
+  ] as const) {
+    if (candidate[key] !== undefined && typeof candidate[key] !== "string")
+      return {
+        ok: false,
+        code: WebuiErrorCode.invalidBody,
+        message: `${key} must be a string`,
+      };
+  }
+  return { ok: true, body: candidate as unknown as WebuiSessionTreeRequest };
+}
+
+export const getSessionTreeOperation: WebuiOperation<
+  WebuiSessionTreeRequest,
+  WebuiSessionTreePage
+> = {
+  name: GET_SESSION_TREE_OPERATION_NAME,
+  validate: validateGetSessionTreeRequestBody,
 };
 
 function validateCreateSessionRequestBody(
@@ -1187,6 +1256,7 @@ export function createOperationRegistry(
     WebuiHarnessPort,
     | "version"
     | "listSessions"
+    | "getSessionTree"
     | "archiveSession"
     | "deleteSession"
     | "createSession"
@@ -1417,6 +1487,12 @@ export function createOperationRegistry(
   registerOperation(registry, {
     operation: listSessionsOperation,
     handle: async (_context, body) => ({ body: await port.listSessions(body) }),
+  });
+  registerOperation(registry, {
+    operation: getSessionTreeOperation,
+    handle: async (_context, body) => ({
+      body: await port.getSessionTree(body),
+    }),
   });
   registerOperation(registry, {
     operation: sendMessageOperation,

@@ -7,6 +7,8 @@ import type {
   WebuiClientSessionLoader,
   WebuiClientSessionPage,
   WebuiClientSessionResumer,
+  WebuiClientSessionTreeLoader,
+  WebuiClientSessionTreePage,
 } from "./app.js";
 import type {
   WebuiInteractionReplyResult,
@@ -61,6 +63,7 @@ export function createWebuiTransport({
 }: WebuiTransportOptions): {
   version: () => Promise<WebuiVersionInfo>;
   loadSessions: WebuiClientSessionLoader;
+  loadSessionTree: WebuiClientSessionTreeLoader;
   listArchivedSessions: () => Promise<WebuiClientSessionPage>;
   archiveSession: (request: { readonly id: string }) => Promise<{ readonly success?: boolean }>;
   deleteSession: (request: { readonly id: string }) => Promise<{ readonly success?: boolean }>;
@@ -355,6 +358,12 @@ export function createWebuiTransport({
     loadSessions: (cursor) =>
       request<WebuiClientSessionPage>("listSessions", {
         name: "main",
+        ...(cursor ? { cursor } : {}),
+      }),
+    loadSessionTree: (cursor) =>
+      request<WebuiClientSessionTreePage>("getSessionTree", {
+        name: "main",
+        limit: 50,
         ...(cursor ? { cursor } : {}),
       }),
     listArchivedSessions: () => request<WebuiClientSessionPage>("listSessions", { name: "main", includeArchived: true, onlyArchived: true }),

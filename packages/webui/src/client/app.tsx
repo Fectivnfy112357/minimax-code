@@ -116,6 +116,21 @@ export interface WebuiClientSessionPage {
   readonly nextCursor?: string;
 }
 
+export interface WebuiClientSessionTreeNode {
+  readonly session: WebuiClientSession;
+  readonly childSessions: readonly WebuiClientSession[];
+}
+
+export interface WebuiClientSessionTreePage {
+  readonly sessions: readonly WebuiClientSessionTreeNode[];
+  readonly hasMore: boolean;
+  readonly nextCursor?: string;
+}
+
+export type WebuiClientSessionTreeLoader = (
+  cursor?: string,
+) => Promise<WebuiClientSessionTreePage>;
+
 export type WebuiClientSessionLoader = (
   cursor?: string,
 ) => Promise<WebuiClientSessionPage>;
@@ -621,6 +636,7 @@ export interface WebuiClientFoundationAppProps {
   readonly listArchivedSessions?: () => Promise<WebuiClientSessionPage>;
   readonly sessionPage?: WebuiClientSessionPage;
   readonly loadSessions?: WebuiClientSessionLoader;
+  readonly loadSessionTree?: WebuiClientSessionTreeLoader;
   readonly loadMessages?: WebuiClientMessageLoader;
   readonly listWorkspaceFileTree?: (request: { readonly workspaceDir: string; readonly path?: string }) => Promise<readonly import("../server/port.js").WebuiWorkspaceFile[]>;
   readonly readWorkspaceFile?: (request: { readonly workspaceDir: string; readonly path: string }) => Promise<import("../server/port.js").WebuiWorkspaceFileContent>;
@@ -1047,6 +1063,7 @@ export function groupWebuiSessionsByWorkspace(
  */
 export function WebuiProjectList({
   page,
+  treePage,
   loading,
   onLoadMore,
   selectedSessionId,
@@ -1055,6 +1072,7 @@ export function WebuiProjectList({
   error,
 }: {
   readonly page: WebuiClientSessionPage;
+  readonly treePage?: WebuiClientSessionTreePage;
   readonly loading: boolean;
   readonly onLoadMore?: () => void;
   readonly selectedSessionId?: string;
@@ -1062,6 +1080,19 @@ export function WebuiProjectList({
   readonly onProjectSelect?: (workspaceDir?: string) => void;
   readonly error?: string;
 }): ReactElement {
+  // Build a lookup from parent session id to its child sessions. When
+  // `treePage` is provided, this lets the rail render child sessions under
+  // each root — mirroring the desktop sidebar's parent/child grouping.
+  const childrenByParentId = useMemo(() => {
+    const map = new Map<string, readonly WebuiClientSession[]>();
+    if (!treePage) return map;
+    for (const node of treePage.sessions) {
+      if (node.childSessions.length > 0) {
+        map.set(node.session.sessionId, node.childSessions);
+      }
+    }
+    return map;
+  }, [treePage]);
   const projects = useMemo(
     () => groupWebuiSessionsByWorkspace(page.sessions),
     [page.sessions],
@@ -1145,6 +1176,7 @@ export function WebuiProjectList({
                     {project.sessionIds.map((sessionId) => {
                       const session = sessionsById.get(sessionId);
                       if (!session) return null;
+                      const children = childrenByParentId.get(session.sessionId) ?? [];
                       return (
                         <li key={session.sessionId}>
                           <a
@@ -1169,6 +1201,38 @@ export function WebuiProjectList({
                               {sessionTime(session.updatedAt)}
                             </time>
                           </a>
+                          {children.length > 0 ? (
+                            <ul
+                              className="webui-project-child-session-list"
+                              data-webui-project-child-sessions={session.sessionId}
+                            >
+                              {children.map((child) => (
+                                <li key={child.sessionId}>
+                                  <a
+                                    href={sessionHash(child.sessionId)}
+                                    data-webui-session-link={child.sessionId}
+                                    data-webui-session-child-of={session.sessionId}
+                                    data-webui-session-active={
+                                      child.sessionId === selectedSessionId
+                                        ? "true"
+                                        : "false"
+                                    }
+                                    className="webui-project-child-session-card text-text_default_primary"
+                                  >
+                                    <span className="min-w-0 flex-1 truncate">
+                                      {sessionLabel(child)}
+                                    </span>
+                                    <time
+                                      className="ml-2 flex-shrink-0 text-xs leading-4 text-text_default_tertiary"
+                                      dateTime={new Date(child.updatedAt).toISOString()}
+                                    >
+                                      {sessionTime(child.updatedAt)}
+                                    </time>
+                                  </a>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : null}
                         </li>
                       );
                     })}
@@ -3155,6 +3219,7 @@ export function WebuiClientFoundationApp({
   label,
   sessionPage,
   loadSessions,
+  loadSessionTree,
   listArchivedSessions,
   locationHash,
   loadMessages,
@@ -3216,18 +3281,38 @@ export function WebuiClientFoundationApp({
   const [page, setPage] = useState<WebuiClientSessionPage>(
     sessionPage ?? { sessions: [], hasMore: false },
   );
+  const [treePage, setTreePage] = useState<WebuiClientSessionTreePage>(
+    () => ({ sessions: [], hasMore: false }),
+  );
   const [loading, setLoading] = useState(false);
   const [selectedSessionId, setSelectedSessionId] =
     useSelectedSessionId(locationHash);
-  const selectedAgentName =
-    page.sessions.find((session) => session.sessionId === selectedSessionId)
-      ?.agentName ?? "main";
   const [draft, setDraft] = useState("");
   const [teamModeOff, setTeamModeOff] = useState(readTeamModeOff);
   const [teamModeChoices, setTeamModeChoices] =
     useState<TeamModeSessionChoices>(readTeamModeSessionChoices);
   const [pageError, setPageError] = useState<string | undefined>();
   const [progressTodos, setProgressTodos] = useState<readonly WebuiTodo[]>([]);
+  // Sessions visible to lookups: roots from the flat page plus any child
+  // sessions surfaced through the tree projection. Without the tree the
+  // flat list is the only source, matching the original behaviour.
+  const flatSessionsWithChildren = useMemo(() => {
+    if (treePage.sessions.length === 0) return page.sessions;
+    const seen = new Set(page.sessions.map((session) => session.sessionId));
+    const extras: WebuiClientSession[] = [];
+    for (const node of treePage.sessions) {
+      for (const child of node.childSessions) {
+        if (!seen.has(child.sessionId)) {
+          seen.add(child.sessionId);
+          extras.push(child);
+        }
+      }
+    }
+    return [...page.sessions, ...extras];
+  }, [page.sessions, treePage.sessions]);
+  const selectedAgentName =
+    flatSessionsWithChildren.find((session) => session.sessionId === selectedSessionId)
+      ?.agentName ?? "main";
   useEffect(() => {
     if (!selectedSessionId || !loadMessages) { setProgressTodos([]); return; }
     let cancelled = false;
@@ -3265,6 +3350,25 @@ export function WebuiClientFoundationApp({
       cancelled = true;
     };
   }, [loadSessions, sessionPage]);
+  // Tree projection (root + children) for the rail. Loaded in parallel with
+  // the flat session list — the flat list still drives selected-session
+  // lookups so the home workspace auto-fill keeps working, but the rail
+  // prefers this shape so sub-agent sessions under a root are visible.
+  useEffect(() => {
+    if (!loadSessionTree || sessionPage) return;
+    let cancelled = false;
+    void loadSessionTree()
+      .then((next) => {
+        if (!cancelled) setTreePage(next);
+      })
+      .catch(() => {
+        // Tree projection is optional; ignore failures so a runtime without
+        // child-session support does not break the flat-list rail.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [loadSessionTree, sessionPage]);
   const loadMore =
     loadSessions && page.hasMore
       ? () => {
@@ -3281,7 +3385,7 @@ export function WebuiClientFoundationApp({
         }
       : undefined;
   const homeMode = !selectedSessionId;
-  const selectedSession = page.sessions.find(
+  const selectedSession = flatSessionsWithChildren.find(
     (session) => session.sessionId === selectedSessionId,
   );
   const [newTaskWorkspaceDir, setNewTaskWorkspaceDir] = useState<string | undefined>(
@@ -3291,7 +3395,7 @@ export function WebuiClientFoundationApp({
       if (readNoProjectFlag()) return undefined;
       return (
         selectedSession?.workspaceDir ??
-        page.sessions.find((session) => session.workspaceDir)?.workspaceDir
+        flatSessionsWithChildren.find((session) => session.workspaceDir)?.workspaceDir
       );
     },
   );
@@ -3304,12 +3408,12 @@ export function WebuiClientFoundationApp({
     if (selectedSession?.workspaceDir) {
       setNewTaskWorkspaceDir(selectedSession.workspaceDir);
     } else if (!newTaskWorkspaceDir) {
-      const workspaceDir = page.sessions.find(
+      const workspaceDir = flatSessionsWithChildren.find(
         (session) => session.workspaceDir,
       )?.workspaceDir;
       if (workspaceDir) setNewTaskWorkspaceDir(workspaceDir);
     }
-  }, [newTaskWorkspaceDir, page.sessions, selectedSession?.workspaceDir]);
+  }, [newTaskWorkspaceDir, flatSessionsWithChildren, selectedSession?.workspaceDir]);
   // Single workspace-change entry point the composer calls. It records the
   // user's intent (cleared vs picked) so the auto-fill effect above stops
   // fighting us, and folds the no-project flag into localStorage.
@@ -3345,6 +3449,10 @@ export function WebuiClientFoundationApp({
         .catch((reason: unknown) =>
           setPageError(reason instanceof Error ? reason.message : String(reason)),
         );
+    if (loadSessionTree)
+      void loadSessionTree()
+        .then(setTreePage)
+        .catch(() => undefined);
     if (typeof window !== "undefined")
       window.history.replaceState(
         null,
@@ -3470,6 +3578,7 @@ export function WebuiClientFoundationApp({
 
                       <WebuiProjectList
                         page={page}
+                        treePage={treePage.sessions.length > 0 ? treePage : undefined}
                         loading={loading}
                         onLoadMore={loadMore}
                         selectedSessionId={selectedSessionId}

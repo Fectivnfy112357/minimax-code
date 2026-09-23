@@ -155,6 +155,7 @@ export class WebuiService {
         protocolVersion: this.port.version().protocolVersion,
       }),
       listSessions: (request) => this.port.listSessions(request),
+      getSessionTree: (request) => this.port.getSessionTree(request),
       archiveSession: (request) => this.port.archiveSession(request),
       deleteSession: (request) => this.port.deleteSession(request),
       createSession: (request) => this.port.createSession(request),

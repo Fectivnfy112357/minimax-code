@@ -55,6 +55,29 @@ export interface WebuiSessionPage {
   readonly nextCursor?: string;
 }
 
+export interface WebuiSessionTreeRequest {
+  readonly name: string;
+  readonly limit?: number;
+  readonly cursor?: string;
+  readonly includeArchived?: boolean;
+  readonly onlyArchived?: boolean;
+  readonly onlyCompressed?: boolean;
+  readonly includeHidden?: boolean;
+  readonly includePurposePrefix?: string;
+  readonly excludePurposePrefix?: string;
+}
+
+export interface WebuiSessionTreeNode {
+  readonly session: WebuiSessionListItem;
+  readonly childSessions: readonly WebuiSessionListItem[];
+}
+
+export interface WebuiSessionTreePage {
+  readonly sessions: readonly WebuiSessionTreeNode[];
+  readonly hasMore: boolean;
+  readonly nextCursor?: string;
+}
+
 export interface WebuiSessionLookupRequest {
   readonly id: string;
 }
@@ -396,6 +419,7 @@ export type WebuiRunCommandResult =
 export interface WebuiHarnessPort {
   version(): WebuiVersionInfo;
   listSessions(request: WebuiSessionListRequest): Promise<WebuiSessionPage>;
+  getSessionTree(request: WebuiSessionTreeRequest): Promise<WebuiSessionTreePage>;
   archiveSession(request: { readonly id: string }): Promise<{ readonly success?: boolean }>;
   deleteSession(request: { readonly id: string }): Promise<{ readonly success?: boolean }>;
   createSession(
