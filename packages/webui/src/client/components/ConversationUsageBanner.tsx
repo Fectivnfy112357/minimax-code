@@ -160,8 +160,8 @@ export function ConversationUsageBanner(props: ConversationUsageBannerProps): Re
     : "flex h-8 w-8 items-center justify-center rounded-lg text-icon_default_tertiary hover:bg-bg_interaction_tertiary_hover";
 
   const containerClass = mobileLayout
-    ? "relative mb-2 flex min-h-16 flex-col gap-3 rounded-2xl border-[0.5px] border-border_default bg-bg_grouped_secondary_elevated p-2 shadow-[0_0_20px_rgba(10,10,10,0.08)]"
-    : "mb-3 flex min-h-12 flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl border-[0.5px] border-border_default bg-bg_grouped_secondary_elevated px-4 py-2 shadow-[0_0_20px_rgba(10,10,10,0.08)]";
+    ? "relative mb-2 flex min-h-16 flex-col gap-3 rounded-2xl border-[0.5px] border-border_default bg-bg_grouped_secondary_elevated p-2 transcript-shadow-banner-soft"
+    : "mb-3 flex min-h-12 flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl border-[0.5px] border-border_default bg-bg_grouped_secondary_elevated px-4 py-2 transcript-shadow-banner-soft";
 
   const handleDismiss = (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();

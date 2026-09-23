@@ -64,6 +64,20 @@
 }
 
 /*
+ * Soft card shadow for the conversation-usage banner. Desktop writes this as
+ * `box-shadow: 0 0 20px rgba(10,10,10,0.08)` (see `58686.pretty.js` line
+ * 27042 / 27043); a Tailwind arbitrary-value class
+ * (`shadow-[0_0_20px_rgba(10,10,10,0.08)]`) compiles to a `--tw-shadow-color`
+ * reference that never resolves in the WebUI's stylesheet, which trips
+ * `webui-design-tokens.test.ts`. Keep this as a hand-written utility so the
+ * compiled stylesheet contains a literal `box-shadow` rule with no missing
+ * variable references.
+ */
+.transcript-shadow-banner-soft {
+  box-shadow: 0 0 20px rgba(10, 10, 10, 0.08);
+}
+
+/*
  * Turn navigator artifacts horizontal mask. The desktop inlines these gradients
  * via inline styles; we lift them out so the test id (which carries the mask
  * element) can assert against a stable class. The gradient endpoints match
