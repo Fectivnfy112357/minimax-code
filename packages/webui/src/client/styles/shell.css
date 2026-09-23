@@ -192,11 +192,11 @@
   @media (prefers-reduced-motion: reduce) { .webui-settings-content { animation: none; } .webui-settings-toggle span { transition: none; } }
   /* --------------------------------------------------------------- surfaces */
 
-  /* The rail: 274px, one step off the main surface, no border between them. */
+  /* The rail: 256px, one step off the main surface, no border between them. */
   .webui-rail {
     display: flex;
     flex-direction: column;
-    width: 274px;
+    width: 256px;
     background-color: var(--bg_default_scrim);
   }
 
@@ -296,16 +296,17 @@
     background-color: var(--bg_interaction_tertiary_hover);
     color: var(--text_default_primary);
   }
-  .webui-project-card[data-webui-project-active="true"] {
-    background-color: var(--bg_interaction_tertiary_selected);
-    color: var(--text_default_primary);
-  }
 
   .webui-project-session-list {
     display: flex;
     flex-direction: column;
     gap: 1px;
     padding: 1px 0 var(--spacing_4) var(--spacing_20);
+  }
+  .webui-project-session-card,
+  .webui-project-child-session-card {
+    font-size: var(--size_12);
+    line-height: var(--line_height_16);
   }
   .webui-project-session-card {
     display: flex;
@@ -315,8 +316,6 @@
     gap: var(--spacing_4);
     border-radius: var(--radius_8);
     padding: 0 var(--spacing_8);
-    font-size: var(--size_12);
-    line-height: var(--line_height_16);
     transition: background-color 120ms ease;
   }
   .webui-project-session-card:hover,
@@ -332,6 +331,7 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
+    padding-top: 1px;
   }
   .webui-project-child-session-card {
     display: flex;
@@ -359,8 +359,6 @@
     border-radius: var(--radius_8);
     padding-left: var(--spacing_8);
     padding-right: var(--spacing_8);
-    font-size: var(--size_12);
-    line-height: var(--line_height_16);
     text-align: left;
     transition: background-color 120ms ease;
   }

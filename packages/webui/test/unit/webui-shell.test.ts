@@ -361,7 +361,7 @@ describe("WebUI shell", () => {
     expect(html).toContain('data-webui-message-list="true"');
   });
 
-  it("renders newest sessions, formats epoch milliseconds, and falls back when title is absent", () => {
+  it("renders newest sessions without a competing timestamp and falls back when title is absent", () => {
     const html = renderToStaticMarkup(
       createElement(WebuiSessionList, {
         page: {
@@ -389,7 +389,7 @@ describe("WebUI shell", () => {
       html.indexOf("older-agent"),
     );
     expect(html).toContain("older-agent");
-    expect(html).toContain(new Date(2000).toLocaleString());
+    expect(html).not.toContain(new Date(2000).toLocaleString());
     expect(html).toContain('data-webui-session-list="true"');
     // The row's component class is on the anchor, which only exists once there
     // is a session to render.
@@ -447,8 +447,8 @@ describe("WebUI shell", () => {
     expect(html).toContain('data-webui-project-list="true"');
     expect(html).toContain("minimax-code");
     expect(html).toContain("未选项目");
-    expect(html).toContain('data-webui-project-active="true"');
     expect(html).not.toContain('data-webui-session-list="true"');
+    expect(html).not.toContain("<time");
   });
 
   it("leaves a visible gap before the first session under an expanded project", () => {
@@ -473,14 +473,27 @@ describe("WebUI shell", () => {
     const childListRule = styles.match(
       /\.webui-project-child-session-list\s*\{([^}]*)\}/u,
     );
-    const childCardRule = styles.match(
-      /\.webui-project-child-session-card\s*\{([^}]*)\}/u,
-    );
+    const childCardRule = [...styles.matchAll(
+      /\.webui-project-child-session-card\s*\{([^}]*)\}/gu,
+    )].find((match) => /height:\s*30px/u.test(match[1]));
     expect(childListRule, "child session list rule is missing").not.toBeNull();
     expect(childListRule![1]).toMatch(/gap:\s*2px/u);
+    expect(childListRule![1]).toMatch(/padding-top:\s*1px/u);
     expect(childCardRule, "child session card rule is missing").not.toBeNull();
     expect(childCardRule![1]).toMatch(/height:\s*30px/u);
     expect(childCardRule![1]).toMatch(/padding-left:\s*34px/u);
+    const sessionTypographyRule = styles.match(
+      /\.webui-project-session-card,\s*\.webui-project-child-session-card\s*\{([^}]*)\}/u,
+    );
+    expect(sessionTypographyRule, "shared session typography rule is missing").not.toBeNull();
+    expect(sessionTypographyRule![1]).toMatch(/font-size:\s*var\(--size_12\)/u);
+    expect(sessionTypographyRule![1]).toMatch(
+      /line-height:\s*var\(--line_height_16\)/u,
+    );
+    expect(styles).toMatch(/\.webui-project-card:hover\s*\{/u);
+    expect(styles).not.toMatch(
+      /\.webui-project-card\[data-webui-project-active="true"\]/u,
+    );
   });
 
   it("reacts to hashchange so navigation selects a different transcript without reload", () => {
@@ -563,9 +576,9 @@ describe("WebUI shell — desktop anatomy", () => {
   it("sizes and colours the rail the way the desktop does", () => {
     const html = renderShell();
 
-    // 274px fixed, one step off the main surface, and no border between the two.
-    expect(html).toMatch(/data-webui-rail-width="274"/u);
-    expect(html).toMatch(/w-\[274px\]/u);
+    // 256px fixed, one step off the main surface, and no border between the two.
+    expect(html).toMatch(/data-webui-rail-width="256"/u);
+    expect(html).toMatch(/w-\[256px\]/u);
     expect(html).toMatch(/bg-bg_default_scrim/u);
     // The main surface is the lightest step.
     expect(html).toMatch(/bg-bg_grouped_secondary/u);

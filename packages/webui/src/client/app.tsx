@@ -1009,10 +1009,6 @@ function pickWorkspaceDirectory(): Promise<string | undefined> {
   });
 }
 
-function sessionTime(timestamp: number): string {
-  return new Date(timestamp).toLocaleString();
-}
-
 function workspaceProjectName(workspaceDir?: string): string {
   const value = workspaceDir?.trim();
   if (!value) return "未选项目";
@@ -1076,7 +1072,6 @@ export function WebuiProjectList({
   loading,
   onLoadMore,
   selectedSessionId,
-  activeWorkspaceDir,
   onProjectSelect,
   error,
 }: {
@@ -1085,7 +1080,6 @@ export function WebuiProjectList({
   readonly loading: boolean;
   readonly onLoadMore?: () => void;
   readonly selectedSessionId?: string;
-  readonly activeWorkspaceDir?: string;
   readonly onProjectSelect?: (workspaceDir?: string) => void;
   readonly error?: string;
 }): ReactElement {
@@ -1149,9 +1143,6 @@ export function WebuiProjectList({
       ) : (
         <ul className="space-y-px" data-webui-project-list-items="true">
           {projects.map((project) => {
-            const active =
-              project.workspaceDir === activeWorkspaceDir ||
-              project.sessionIds.includes(selectedSessionId ?? "");
             const expanded = expandedProjects.has(project.key);
             return (
               <li key={project.key}>
@@ -1168,7 +1159,6 @@ export function WebuiProjectList({
                     });
                   }}
                   data-webui-project-link={project.key}
-                  data-webui-project-active={active ? "true" : "false"}
                   title={project.workspaceDir}
                   className="webui-project-card text-left text-text_default_secondary"
                 >
@@ -1201,14 +1191,6 @@ export function WebuiProjectList({
                             <span className="min-w-0 flex-1 truncate">
                               {sessionLabel(session)}
                             </span>
-                            <time
-                              className="ml-2 flex-shrink-0 text-xs leading-4 text-text_default_tertiary"
-                              dateTime={new Date(
-                                session.updatedAt,
-                              ).toISOString()}
-                            >
-                              {sessionTime(session.updatedAt)}
-                            </time>
                           </a>
                           {children.length > 0 ? (
                             <ul
@@ -1231,12 +1213,6 @@ export function WebuiProjectList({
                                     <span className="min-w-0 flex-1 truncate">
                                       {sessionLabel(child)}
                                     </span>
-                                    <time
-                                      className="ml-2 flex-shrink-0 text-xs leading-4 text-text_default_tertiary"
-                                      dateTime={new Date(child.updatedAt).toISOString()}
-                                    >
-                                      {sessionTime(child.updatedAt)}
-                                    </time>
                                   </a>
                                 </li>
                               ))}
@@ -1354,12 +1330,6 @@ export function WebuiSessionList({
                     Agent Team
                   </span>
                 ) : null}
-                <time
-                  className="ml-auto flex-shrink-0 text-xs leading-4 text-text_default_tertiary"
-                  dateTime={new Date(session.updatedAt).toISOString()}
-                >
-                  {sessionTime(session.updatedAt)}
-                </time>
               </a>
               {session.workspaceDir ? (
                 <div
@@ -3589,8 +3559,8 @@ export function WebuiClientFoundationApp({
             <aside
               aria-label="Primary navigation"
               data-webui-shell-region="rail"
-              data-webui-rail-width={railCollapsed ? "64" : "274"}
-              className={`webui-rail relative z-50 flex h-full select-none flex-col overflow-visible bg-bg_default_scrim ${railCollapsed ? "w-[64px]" : "w-[274px]"}`}
+              data-webui-rail-width={railCollapsed ? "64" : "256"}
+              className={`webui-rail relative z-50 flex h-full select-none flex-col overflow-visible bg-bg_default_scrim ${railCollapsed ? "w-[64px]" : "w-[256px]"}`}
             >
               {/* The desktop keeps the rail controls above the first navigation row. */}
               <div className="flex w-full flex-shrink-0 flex-col pb-3">
@@ -3650,7 +3620,6 @@ export function WebuiClientFoundationApp({
                         loading={loading}
                         onLoadMore={loadMore}
                         selectedSessionId={selectedSessionId}
-                        activeWorkspaceDir={newTaskWorkspaceDir}
                         onProjectSelect={setNewTaskWorkspaceDir}
                         error={pageError}
                       />
