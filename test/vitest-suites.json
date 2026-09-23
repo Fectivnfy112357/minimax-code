@@ -188,7 +188,11 @@
       "packages/webui/test/unit/transcript-skeletons.test.tsx",
       "packages/webui/test/unit/conversation-usage-banner.test.tsx",
       "packages/webui/test/unit/webui-transcript-widgets-integration.test.ts",
-      "packages/webui/test/unit/webui-round3-acceptance.test.tsx"
+      "packages/webui/test/unit/webui-round3-acceptance.test.tsx",
+      "packages/webui/test/unit/webui-w0-store-sequence.test.ts",
+      "packages/webui/test/unit/webui-w0-projections.test.ts",
+      "packages/webui/test/unit/webui-w0-ssr-fixtures.test.tsx",
+      "packages/webui/test/unit/webui-w0-css-structure.test.ts"
     ]
   }
 }
