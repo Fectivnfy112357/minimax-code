@@ -2441,4 +2441,282 @@
     cursor: default;
     opacity: 0.5;
   }
+
+  /* ===== Phase 5: message actions, goal banner, and questionnaire states ===== */
+  .webui-message-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 28px;
+    margin-top: 4px;
+    color: var(--text_default_tertiary);
+    opacity: 0;
+    transition: opacity 120ms ease;
+  }
+
+  .webui-message:hover .webui-message-actions,
+  .webui-message-actions:focus-within {
+    opacity: 1;
+  }
+
+  .webui-message-action {
+    display: inline-flex;
+    min-width: 28px;
+    min-height: 28px;
+    align-items: center;
+    justify-content: center;
+    padding: 0 6px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  .webui-message-action:hover:not(:disabled) {
+    background: var(--bg_interaction_tertiary_hover);
+    color: var(--text_default_primary);
+  }
+
+  .webui-message-action:disabled {
+    cursor: default;
+    opacity: 0.45;
+  }
+
+  .webui-message-feedback {
+    display: inline-flex;
+    gap: 2px;
+    margin-left: 2px;
+    padding-left: 4px;
+    border-left: 1px solid var(--border_default);
+  }
+
+  .webui-user-inline-editor,
+  .webui-message-dialog-surface,
+  .webui-rewind-dialog {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+    border: 0.5px solid var(--border_default);
+    border-radius: 12px;
+    background: var(--bg_default_secondary);
+    color: var(--text_default_primary);
+  }
+
+  .webui-user-inline-editor textarea,
+  .webui-message-dialog input,
+  .webui-goal-editor textarea,
+  .webui-goal-editor input {
+    width: 100%;
+    min-height: 36px;
+    padding: 8px 10px;
+    border: 1px solid var(--border_default);
+    border-radius: 8px;
+    background: var(--bg_default_primary);
+    color: var(--text_default_primary);
+    font: inherit;
+    resize: vertical;
+  }
+
+  .webui-inline-editor-actions,
+  .webui-message-dialog-actions,
+  .webui-goal-editor-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .webui-message-dialog {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: rgb(0 0 0 / 28%);
+  }
+
+  .webui-message-dialog-surface,
+  .webui-rewind-dialog {
+    width: min(520px, 100%);
+    max-height: min(640px, 90vh);
+    overflow: auto;
+  }
+
+  .webui-rewind-file-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 6px 0;
+    border-top: 1px solid var(--border_default);
+    color: var(--text_default_secondary);
+    font-size: 12px;
+  }
+
+  .webui-message-mutation-error,
+  .webui-goal-error {
+    margin: 4px 0 0;
+    color: var(--text_status_error);
+    font-size: 12px;
+  }
+
+  .webui-goal-banner {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+    margin-bottom: 8px;
+    padding: 10px 12px;
+    border: 0.5px solid var(--border_default);
+    border-radius: 12px;
+    background: var(--bg_default_secondary);
+  }
+
+  .webui-goal-banner-content-row,
+  .webui-goal-banner-objective-group,
+  .webui-goal-banner-actions-slot,
+  .webui-goal-usage {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .webui-goal-banner-content-row {
+    justify-content: space-between;
+  }
+
+  .webui-goal-banner-objective-group {
+    min-width: 0;
+  }
+
+  .webui-goal-banner-objective-group strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .webui-goal-objective {
+    min-width: 0;
+    overflow: hidden;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--text_default_secondary);
+    font: inherit;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .webui-goal-status,
+  .webui-goal-wait,
+  .webui-goal-usage,
+  .webui-goal-updated {
+    color: var(--text_default_secondary);
+    font-size: 12px;
+  }
+
+  .webui-goal-wait {
+    margin: 0;
+  }
+
+  .webui-goal-usage {
+    flex-wrap: wrap;
+  }
+
+  .webui-goal-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .webui-goal-confirm {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border: 0.5px solid var(--border_default);
+    border-radius: 10px;
+    background: var(--bg_default_secondary);
+    color: var(--text_default_primary);
+    font-size: 13px;
+  }
+
+  .webui-goal-confirm p {
+    width: 100%;
+    margin: 0;
+    color: var(--text_default_secondary);
+    font-size: 12px;
+  }
+
+  .webui-goal-completion-marker {
+    color: var(--text_status_success);
+    font-size: 12px;
+  }
+
+  .webui-questionnaire-progress,
+  .webui-questionnaire-countdown,
+  .webui-questionnaire-multi-hint {
+    color: var(--text_default_tertiary);
+    font-size: 12px;
+  }
+
+  .webui-questionnaire-progress {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+  }
+
+  .webui-questionnaire-progress button {
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  .webui-questionnaire-progress button:hover:not(:disabled) {
+    background: var(--bg_interaction_tertiary_hover);
+    color: var(--text_default_primary);
+  }
+
+  .webui-questionnaire-progress button:disabled {
+    cursor: default;
+    opacity: 0.45;
+  }
+
+  .webui-questionnaire-countdown {
+    align-self: flex-end;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .webui-questionnaire-multi-hint {
+    margin: 4px 8px;
+  }
+
+  .webui-goal-create {
+    align-self: flex-start;
+    min-height: 28px;
+    padding: 0 10px;
+    border: 1px solid var(--border_default);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text_default_secondary);
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .webui-message-actions {
+      transition: none;
+    }
+  }
 }

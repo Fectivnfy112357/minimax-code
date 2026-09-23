@@ -110,6 +110,34 @@ export interface WebuiAssembledHost {
       request: import("./port.js").WebuiReapplyTurnDiffRequest,
       context?: Record<string, never>,
     ): Promise<import("./port.js").WebuiReapplyTurnDiffResult>;
+    getSessionForkOptions(
+      request: import("./port.js").WebuiGetSessionForkOptionsRequest,
+      context?: Record<string, never>,
+    ): Promise<import("./port.js").WebuiGetSessionForkOptionsResult>;
+    forkSession(
+      request: import("./port.js").WebuiForkSessionRequest,
+      context?: Record<string, never>,
+    ): Promise<import("./port.js").WebuiForkSessionResult>;
+    getSessionRewindPreview(
+      request: import("./port.js").WebuiGetSessionRewindPreviewRequest,
+      context?: Record<string, never>,
+    ): Promise<import("./port.js").WebuiGetSessionRewindPreviewResult>;
+    rewindSession(
+      request: import("./port.js").WebuiRewindSessionRequest,
+      context?: Record<string, never>,
+    ): Promise<import("./port.js").WebuiRewindSessionResult>;
+    editSessionMessage(
+      request: import("./port.js").WebuiEditSessionMessageRequest,
+      context?: Record<string, never>,
+    ): Promise<import("./port.js").WebuiEditSessionMessageResult>;
+    isGoalEnabled(): boolean;
+    getGoal(sessionId: string): Promise<import("./port.js").WebuiGoal | undefined>;
+    createGoal(request: import("./port.js").WebuiGoalCreateRequest): Promise<import("./port.js").WebuiGoal>;
+    patchGoal(
+      sessionId: string,
+      patch: Omit<import("./port.js").WebuiGoalPatchRequest, "sessionId">,
+    ): Promise<import("./port.js").WebuiGoal>;
+    clearGoal(sessionId: string): Promise<boolean>;
     sendMessage(
       request: import("./port.js").WebuiSendMessageRequest,
       context?: { readonly signal?: AbortSignal },

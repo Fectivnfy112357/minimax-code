@@ -30,6 +30,20 @@ import type {
   WebuiRevertTurnDiffResult,
   WebuiReapplyTurnDiffRequest,
   WebuiReapplyTurnDiffResult,
+  WebuiGetSessionForkOptionsRequest,
+  WebuiGetSessionForkOptionsResult,
+  WebuiForkSessionRequest,
+  WebuiForkSessionResult,
+  WebuiGetSessionRewindPreviewRequest,
+  WebuiGetSessionRewindPreviewResult,
+  WebuiRewindSessionRequest,
+  WebuiRewindSessionResult,
+  WebuiEditSessionMessageRequest,
+  WebuiEditSessionMessageResult,
+  WebuiGoal,
+  WebuiGoalCreateRequest,
+  WebuiGoalPatchRequest,
+  WebuiGoalEnabledResult,
 } from "../server/port.js";
 
 type WireFrame = {
@@ -80,6 +94,16 @@ export function createWebuiTransport({
   getTurnDiff: (request: WebuiGetTurnDiffRequest) => Promise<WebuiGetTurnDiffResult>;
   revertTurnDiff: (request: WebuiRevertTurnDiffRequest) => Promise<WebuiRevertTurnDiffResult>;
   reapplyTurnDiff: (request: WebuiReapplyTurnDiffRequest) => Promise<WebuiReapplyTurnDiffResult>;
+  getSessionForkOptions: (request: WebuiGetSessionForkOptionsRequest) => Promise<WebuiGetSessionForkOptionsResult>;
+  forkSession: (request: WebuiForkSessionRequest) => Promise<WebuiForkSessionResult>;
+  getSessionRewindPreview: (request: WebuiGetSessionRewindPreviewRequest) => Promise<WebuiGetSessionRewindPreviewResult>;
+  rewindSession: (request: WebuiRewindSessionRequest) => Promise<WebuiRewindSessionResult>;
+  editSessionMessage: (request: WebuiEditSessionMessageRequest) => Promise<WebuiEditSessionMessageResult>;
+  isGoalEnabled: () => Promise<WebuiGoalEnabledResult>;
+  getGoal: (request: { readonly sessionId: string }) => Promise<WebuiGoal | undefined>;
+  createGoal: (request: WebuiGoalCreateRequest) => Promise<WebuiGoal>;
+  patchGoal: (request: WebuiGoalPatchRequest) => Promise<WebuiGoal>;
+  clearGoal: (request: { readonly sessionId: string }) => Promise<{ readonly success: boolean }>;
   listWorkspaceFileTree: (request: { readonly workspaceDir: string; readonly path?: string }) => Promise<readonly import("../server/port.js").WebuiWorkspaceFile[]>;
   readWorkspaceFile: (request: { readonly workspaceDir: string; readonly path: string }) => Promise<import("../server/port.js").WebuiWorkspaceFileContent>;
   getWorkspaceEnvironment: (request: { readonly workspaceDir: string }) => Promise<import("../server/port.js").WebuiWorkspaceEnvironment>;
@@ -391,6 +415,16 @@ export function createWebuiTransport({
     getTurnDiff: (body) => request("getTurnDiff", body),
     revertTurnDiff: (body) => request("revertTurnDiff", body),
     reapplyTurnDiff: (body) => request("reapplyTurnDiff", body),
+    getSessionForkOptions: (body) => request("getSessionForkOptions", body),
+    forkSession: (body) => request("forkSession", body),
+    getSessionRewindPreview: (body) => request("getSessionRewindPreview", body),
+    rewindSession: (body) => request("rewindSession", body),
+    editSessionMessage: (body) => request("editSessionMessage", body),
+    isGoalEnabled: () => request("isGoalEnabled", undefined),
+    getGoal: (body) => request("getGoal", body),
+    createGoal: (body) => request("createGoal", body),
+    patchGoal: (body) => request("patchGoal", body),
+    clearGoal: (body) => request("clearGoal", body),
     listWorkspaceFileTree: (body) => request("listWorkspaceFileTree", body),
     readWorkspaceFile: (body) => request("readWorkspaceFile", body),
     getWorkspaceEnvironment: (body) => request("getWorkspaceEnvironment", body),

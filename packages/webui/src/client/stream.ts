@@ -24,6 +24,8 @@ export interface WebuiStreamMessage {
   readonly id: string;
   readonly answer: string;
   readonly thinking: string;
+  readonly timestamp?: number;
+  readonly isGoal?: boolean;
   readonly toolCalls?: readonly Record<string, unknown>[];
   /** The server replays the user's own line as a `msg-user-*` frame; it
    * renders as the right-aligned bubble instead of an assistant body. */
@@ -156,6 +158,10 @@ function upsertMessage(
       ? { toolCalls: calls ?? messages[index]!.toolCalls }
       : {}),
     ...(messages[index]!.role ? { role: messages[index]!.role } : {}),
+    ...(messages[index]!.timestamp !== undefined
+      ? { timestamp: messages[index]!.timestamp }
+      : {}),
+    ...(messages[index]!.isGoal ? { isGoal: true } : {}),
   };
   return next;
 }

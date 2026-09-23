@@ -48,6 +48,19 @@ import type {
   WebuiRevertTurnDiffResult,
   WebuiReapplyTurnDiffRequest,
   WebuiReapplyTurnDiffResult,
+  WebuiGetSessionForkOptionsRequest,
+  WebuiGetSessionForkOptionsResult,
+  WebuiForkSessionRequest,
+  WebuiForkSessionResult,
+  WebuiGetSessionRewindPreviewRequest,
+  WebuiGetSessionRewindPreviewResult,
+  WebuiRewindSessionRequest,
+  WebuiRewindSessionResult,
+  WebuiEditSessionMessageRequest,
+  WebuiEditSessionMessageResult,
+  WebuiGoal,
+  WebuiGoalCreateRequest,
+  WebuiGoalPatchRequest,
 } from "./port.js";
 
 export interface WebuiRuntimeHostHandle {
@@ -113,6 +126,34 @@ export interface WebuiRuntimeHostHandle {
       request: WebuiReapplyTurnDiffRequest,
       context?: Record<string, never>,
     ): Promise<WebuiReapplyTurnDiffResult>;
+    getSessionForkOptions(
+      request: WebuiGetSessionForkOptionsRequest,
+      context?: Record<string, never>,
+    ): Promise<WebuiGetSessionForkOptionsResult>;
+    forkSession(
+      request: WebuiForkSessionRequest,
+      context?: Record<string, never>,
+    ): Promise<WebuiForkSessionResult>;
+    getSessionRewindPreview(
+      request: WebuiGetSessionRewindPreviewRequest,
+      context?: Record<string, never>,
+    ): Promise<WebuiGetSessionRewindPreviewResult>;
+    rewindSession(
+      request: WebuiRewindSessionRequest,
+      context?: Record<string, never>,
+    ): Promise<WebuiRewindSessionResult>;
+    editSessionMessage(
+      request: WebuiEditSessionMessageRequest,
+      context?: Record<string, never>,
+    ): Promise<WebuiEditSessionMessageResult>;
+    isGoalEnabled(): boolean;
+    getGoal(sessionId: string): Promise<WebuiGoal | undefined>;
+    createGoal(request: WebuiGoalCreateRequest): Promise<WebuiGoal>;
+    patchGoal(
+      sessionId: string,
+      patch: Omit<WebuiGoalPatchRequest, "sessionId">,
+    ): Promise<WebuiGoal>;
+    clearGoal(sessionId: string): Promise<boolean>;
     listWorkspaceFileTree?(request: { readonly workspaceDir: string; readonly path?: string }): Promise<readonly WebuiWorkspaceFile[]>;
     readWorkspaceFile?(request: { readonly workspaceDir: string; readonly path: string }): Promise<WebuiWorkspaceFileContent>;
     getWorkspaceGitEnvironment?(workspaceDir: string): Promise<{ readonly metadata: Record<string, unknown>; readonly changes: Record<string, unknown> }>;
@@ -295,6 +336,57 @@ export function createHarnessPortFromHost(
       if (!host.cliService)
         throw new Error("runtime host does not expose the CLI service");
       return host.cliService.reapplyTurnDiff(request, {});
+    },
+    async getSessionForkOptions(request) {
+      if (!host.cliService)
+        throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.getSessionForkOptions(request, {});
+    },
+    async forkSession(request) {
+      if (!host.cliService)
+        throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.forkSession(request, {});
+    },
+    async getSessionRewindPreview(request) {
+      if (!host.cliService)
+        throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.getSessionRewindPreview(request, {});
+    },
+    async rewindSession(request) {
+      if (!host.cliService)
+        throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.rewindSession(request, {});
+    },
+    async editSessionMessage(request) {
+      if (!host.cliService)
+        throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.editSessionMessage(request, {});
+    },
+    async isGoalEnabled() {
+      if (!host.cliService)
+        throw new Error("runtime host does not expose the CLI service");
+      return { enabled: host.cliService.isGoalEnabled() };
+    },
+    async getGoal(request) {
+      if (!host.cliService)
+        throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.getGoal(request.sessionId);
+    },
+    async createGoal(request) {
+      if (!host.cliService)
+        throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.createGoal(request);
+    },
+    async patchGoal(request) {
+      if (!host.cliService)
+        throw new Error("runtime host does not expose the CLI service");
+      const { sessionId, ...patch } = request;
+      return host.cliService.patchGoal(sessionId, patch);
+    },
+    async clearGoal(request) {
+      if (!host.cliService)
+        throw new Error("runtime host does not expose the CLI service");
+      return { success: await host.cliService.clearGoal(request.sessionId) };
     },
     async listWorkspaceFileTree(request) {
       if (!host.cliService) throw new Error("runtime host does not expose the CLI service");

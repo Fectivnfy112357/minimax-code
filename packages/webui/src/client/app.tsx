@@ -96,6 +96,18 @@ import type {
   WebuiRevertTurnDiffResult,
   WebuiReapplyTurnDiffRequest,
   WebuiReapplyTurnDiffResult,
+  WebuiGetSessionForkOptionsRequest,
+  WebuiGetSessionForkOptionsResult,
+  WebuiForkSessionRequest,
+  WebuiForkSessionResult,
+  WebuiGetSessionRewindPreviewRequest,
+  WebuiGetSessionRewindPreviewResult,
+  WebuiRewindSessionRequest,
+  WebuiRewindSessionResult,
+  WebuiEditSessionMessageRequest,
+  WebuiEditSessionMessageResult,
+  WebuiGoal,
+  WebuiGoalStatus,
 } from "../server/port.js";
 import {
   initialWebuiWorkspaceProgress,
@@ -126,6 +138,7 @@ export interface WebuiClientMessage {
   readonly actions?: {
     readonly fork?: boolean;
     readonly rewind?: boolean;
+    readonly edit?: boolean;
   };
   readonly forkOrigin?: Record<string, unknown>;
   readonly originJson?: string;
@@ -291,12 +304,18 @@ export type WebuiTranscriptItem =
       readonly messageId: string;
       readonly durationMs?: number;
       readonly diff?: WebuiTurnDiffView;
+      readonly actions?: { readonly fork?: boolean; readonly rewind?: boolean; readonly edit?: boolean };
+      readonly timestamp?: number;
+      readonly isGoal?: boolean;
     }
   | {
       readonly kind: "tool";
       readonly messageId: string;
       readonly tools: readonly Record<string, unknown>[];
       readonly diff?: WebuiTurnDiffView;
+      readonly actions?: { readonly fork?: boolean; readonly rewind?: boolean; readonly edit?: boolean };
+      readonly timestamp?: number;
+      readonly isGoal?: boolean;
     };
 
 function recordValue(value: unknown): Record<string, unknown> | undefined {
@@ -368,9 +387,9 @@ export function projectWebuiMessage(
   const answerItems: WebuiTranscriptItem[] = [];
   for (const part of projectMessageParts(message)) {
     if (part.type === "thinking")
-      thinkingItems.push({ kind: "thinking", text: part.content, messageId: message.msgId, ...(part.durationMs !== undefined ? { durationMs: part.durationMs } : {}) });
+      thinkingItems.push({ kind: "thinking", text: part.content, messageId: message.msgId, ...(part.durationMs !== undefined ? { durationMs: part.durationMs } : {}), ...(message.actions ? { actions: message.actions } : {}), ...(message.timestamp !== undefined ? { timestamp: message.timestamp } : {}) });
     else if (part.type === "text")
-      answerItems.push({ kind: message.role === "user" ? "user" : "assistant", text: part.content, messageId: message.msgId });
+      answerItems.push({ kind: message.role === "user" ? "user" : "assistant", text: part.content, messageId: message.msgId, ...(message.actions ? { actions: message.actions } : {}), ...(message.timestamp !== undefined ? { timestamp: message.timestamp } : {}), ...((message.source === "thread-goal" || message.kind === "goal") ? { isGoal: true } : {}) });
     else if (part.type === "tool_call")
       toolItems.push({ kind: "tool", tools: [part.toolCall], messageId: message.msgId });
   }
@@ -1032,6 +1051,15 @@ export function MessageItem({
   getTurnDiff,
   revertTurnDiff,
   reapplyTurnDiff,
+  actions,
+  timestamp,
+  isGoal = false,
+  getSessionForkOptions,
+  forkSession,
+  getSessionRewindPreview,
+  rewindSession,
+  editSessionMessage,
+  onMutationComplete,
   userText,
   thinking,
   thinkingDurationMs,
@@ -1052,6 +1080,15 @@ export function MessageItem({
   readonly getTurnDiff?: (request: WebuiGetTurnDiffRequest) => Promise<WebuiGetTurnDiffResult>;
   readonly revertTurnDiff?: (request: WebuiRevertTurnDiffRequest) => Promise<WebuiRevertTurnDiffResult>;
   readonly reapplyTurnDiff?: (request: WebuiReapplyTurnDiffRequest) => Promise<WebuiReapplyTurnDiffResult>;
+  readonly actions?: WebuiMessageActionCapabilities;
+  readonly timestamp?: number;
+  readonly isGoal?: boolean;
+  readonly getSessionForkOptions?: WebuiClientFoundationAppProps["getSessionForkOptions"];
+  readonly forkSession?: WebuiClientFoundationAppProps["forkSession"];
+  readonly getSessionRewindPreview?: WebuiClientFoundationAppProps["getSessionRewindPreview"];
+  readonly rewindSession?: WebuiClientFoundationAppProps["rewindSession"];
+  readonly editSessionMessage?: WebuiClientFoundationAppProps["editSessionMessage"];
+  readonly onMutationComplete?: () => void;
   readonly userText?: string;
   readonly thinking?: string;
   readonly thinkingDurationMs?: number;
@@ -1062,6 +1099,71 @@ export function MessageItem({
   readonly streamMessageId?: string;
   readonly messageRootId?: string;
 }): ReactElement {
+  const [editing, setEditing] = useState(false);
+  const [editText, setEditText] = useState(userText ?? "");
+  const [rewindOpen, setRewindOpen] = useState(false);
+  const [rewindPreview, setRewindPreview] = useState<WebuiGetSessionRewindPreviewResult>();
+  const [rewindLoading, setRewindLoading] = useState(false);
+  const [mutationBusy, setMutationBusy] = useState(false);
+  const [mutationError, setMutationError] = useState<string>();
+  const [forkTitle, setForkTitle] = useState("");
+  const [forkOpen, setForkOpen] = useState(false);
+  const [forkOptions, setForkOptions] = useState<WebuiGetSessionForkOptionsResult>();
+  const openRewind = () => {
+    setRewindOpen(true);
+    setRewindPreview(undefined);
+    setMutationError(undefined);
+    if (!sessionId || !getSessionRewindPreview) return;
+    setRewindLoading(true);
+    void getSessionRewindPreview({ id: sessionId, userMessageId: messageId })
+      .then(setRewindPreview)
+      .catch((error: unknown) => setMutationError(error instanceof Error ? error.message : String(error)))
+      .finally(() => setRewindLoading(false));
+  };
+  const confirmRewind = (rewindTurnDiff: boolean) => {
+    if (!sessionId || !rewindSession) return;
+    setMutationBusy(true);
+    void rewindSession({ id: sessionId, userMessageId: messageId, clientRequestId: webuiClientRequestId("rewind"), rewindTurnDiff })
+      .then(() => { setRewindOpen(false); onMutationComplete?.(); })
+      .catch((error: unknown) => setMutationError(error instanceof Error ? error.message : String(error)))
+      .finally(() => setMutationBusy(false));
+  };
+  const submitEdit = () => {
+    if (!sessionId || !editSessionMessage || !editText.trim()) return;
+    setMutationBusy(true);
+    void editSessionMessage({ id: sessionId, userMessageId: messageId, clientRequestId: webuiClientRequestId("edit"), content: editText.trim() })
+      .then(() => { setEditing(false); onMutationComplete?.(); })
+      .catch((error: unknown) => setMutationError(error instanceof Error ? error.message : String(error)))
+      .finally(() => setMutationBusy(false));
+  };
+  const confirmFork = () => {
+    if (!sessionId || !forkSession || forkOptions?.canFork === false) return;
+    setMutationBusy(true);
+    void forkSession({ id: sessionId, assistantMessageId: messageId, clientRequestId: webuiClientRequestId("fork"), ...(forkTitle.trim() ? { title: forkTitle.trim() } : {}), useSuggestedTitle: !forkTitle.trim(), createIsolatedWorktree: false })
+      .then(() => { setForkOpen(false); onMutationComplete?.(); })
+      .catch((error: unknown) => setMutationError(error instanceof Error ? error.message : String(error)))
+      .finally(() => setMutationBusy(false));
+  };
+  const openFork = () => {
+    setForkOpen(true);
+    setForkOptions(undefined);
+    if (!sessionId || !getSessionForkOptions) return;
+    void getSessionForkOptions({ id: sessionId, assistantMessageId: messageId })
+      .then((nextOptions) => {
+        setForkOptions(nextOptions);
+        if (nextOptions.suggestedTitle) setForkTitle(nextOptions.suggestedTitle);
+      })
+      .catch((error: unknown) => setMutationError(error instanceof Error ? error.message : String(error)));
+  };
+  const actionProps = {
+    role,
+    messageId,
+    copyText: role === "user" ? userText ?? "" : answers?.join("\n\n") ?? "",
+    actions,
+    onRewind: role === "user" ? openRewind : undefined,
+    onEdit: role === "user" ? () => { setEditText(userText ?? ""); setEditing(true); } : undefined,
+    onFork: role === "assistant" ? openFork : undefined,
+  };
   if (role === "user") {
     return (
       <div
@@ -1072,10 +1174,17 @@ export function MessageItem({
         data-testid="message-item"
         data-role="user"
         data-message-id={messageId}
+        data-webui-goal-message={isGoal ? "true" : undefined}
+        data-message-timestamp={timestamp}
       >
         <div className="flex w-full justify-end">
           <div className="flex w-full flex-col items-end gap-spacing_8">
-            <div
+            {editing ? (
+              <div className="webui-user-inline-editor" data-testid="user-message-inline-editor">
+                <textarea aria-label="编辑" value={editText} onChange={(event) => setEditText(event.target.value)} autoFocus />
+                <div className="webui-inline-editor-actions"><button type="button" onClick={() => setEditing(false)} disabled={mutationBusy}>取消</button><button type="button" onClick={submitEdit} disabled={mutationBusy || !editText.trim()}>发送</button></div>
+              </div>
+            ) : <div
               className="webui-user-bubble bg-bg_grouped_tertiary rounded-[16px] px-3 py-2 max-w-[80%]"
               data-webui-user-bubble="true"
             >
@@ -1088,7 +1197,9 @@ export function MessageItem({
                   <span>{userText ?? ""}</span>
                 </p>
               </div>
-            </div>
+            </div>}
+            {!editing ? <WebuiMessageActions {...actionProps} /> : null}
+            {rewindOpen ? <WebuiRewindDialog messageId={messageId} preview={rewindPreview} loading={rewindLoading} error={mutationError} busy={mutationBusy} onClose={() => setRewindOpen(false)} onConfirm={confirmRewind} /> : null}
           </div>
         </div>
       </div>
@@ -1121,6 +1232,9 @@ export function MessageItem({
         streaming={streaming}
         processingStartedAtMs={processingStartedAtMs}
       />
+      <WebuiMessageActions {...actionProps} />
+      {forkOpen ? <div className="webui-message-dialog" role="dialog" aria-modal="true" data-testid="fork-dialog"><div className="webui-message-dialog-surface"><h3>复制为新会话</h3><p>{forkOptions?.unavailableReason ?? "保留当前上下文，在新会话中继续"}</p><input aria-label="会话名称" value={forkTitle} onChange={(event) => setForkTitle(event.target.value)} placeholder="使用简短且不同的名称，便于识别" disabled={forkOptions?.canFork === false} /><div className="webui-message-dialog-actions"><button type="button" onClick={() => setForkOpen(false)} disabled={mutationBusy}>取消</button><button type="button" onClick={confirmFork} disabled={mutationBusy || forkOptions?.canFork === false}>复制并进入</button></div></div></div> : null}
+      {mutationError && !rewindOpen && !forkOpen ? <p role="alert" className="webui-message-mutation-error">{mutationError}</p> : null}
     </div>
   );
 }
@@ -1137,6 +1251,16 @@ export interface WebuiClientFoundationAppProps {
   readonly getTurnDiff?: (request: WebuiGetTurnDiffRequest) => Promise<WebuiGetTurnDiffResult>;
   readonly revertTurnDiff?: (request: WebuiRevertTurnDiffRequest) => Promise<WebuiRevertTurnDiffResult>;
   readonly reapplyTurnDiff?: (request: WebuiReapplyTurnDiffRequest) => Promise<WebuiReapplyTurnDiffResult>;
+  readonly getSessionForkOptions?: (request: import("../server/port.js").WebuiGetSessionForkOptionsRequest) => Promise<import("../server/port.js").WebuiGetSessionForkOptionsResult>;
+  readonly forkSession?: (request: import("../server/port.js").WebuiForkSessionRequest) => Promise<import("../server/port.js").WebuiForkSessionResult>;
+  readonly getSessionRewindPreview?: (request: import("../server/port.js").WebuiGetSessionRewindPreviewRequest) => Promise<import("../server/port.js").WebuiGetSessionRewindPreviewResult>;
+  readonly rewindSession?: (request: import("../server/port.js").WebuiRewindSessionRequest) => Promise<import("../server/port.js").WebuiRewindSessionResult>;
+  readonly editSessionMessage?: (request: import("../server/port.js").WebuiEditSessionMessageRequest) => Promise<import("../server/port.js").WebuiEditSessionMessageResult>;
+  readonly isGoalEnabled?: () => Promise<import("../server/port.js").WebuiGoalEnabledResult>;
+  readonly getGoal?: (request: { readonly sessionId: string }) => Promise<import("../server/port.js").WebuiGoal | undefined>;
+  readonly createGoal?: (request: import("../server/port.js").WebuiGoalCreateRequest) => Promise<import("../server/port.js").WebuiGoal>;
+  readonly patchGoal?: (request: import("../server/port.js").WebuiGoalPatchRequest) => Promise<import("../server/port.js").WebuiGoal>;
+  readonly clearGoal?: (request: { readonly sessionId: string }) => Promise<{ readonly success: boolean }>;
   readonly listWorkspaceFileTree?: (request: { readonly workspaceDir: string; readonly path?: string }) => Promise<readonly import("../server/port.js").WebuiWorkspaceFile[]>;
   readonly readWorkspaceFile?: (request: { readonly workspaceDir: string; readonly path: string }) => Promise<import("../server/port.js").WebuiWorkspaceFileContent>;
   readonly getWorkspaceEnvironment?: (request: { readonly workspaceDir: string }) => Promise<import("../server/port.js").WebuiWorkspaceEnvironment>;
@@ -1873,18 +1997,215 @@ export function groupWebuiTranscriptItems(
   return out;
 }
 
+type WebuiMessageActionCapabilities = {
+  readonly fork?: boolean;
+  readonly rewind?: boolean;
+  readonly edit?: boolean;
+};
+
+function webuiClientRequestId(prefix: string): string {
+  const random = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `${prefix}-${random}`;
+}
+
+function WebuiMessageActionButton({
+  testId,
+  label,
+  onClick,
+  disabled = false,
+}: {
+  readonly testId: string;
+  readonly label: string;
+  readonly onClick: () => void;
+  readonly disabled?: boolean;
+}): ReactElement {
+  return (
+    <button
+      type="button"
+      className="webui-message-action"
+      data-testid={testId}
+      aria-label={label}
+      title={label}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {label}
+    </button>
+  );
+}
+
+function WebuiFeedbackActions({
+  value,
+  onChange,
+}: {
+  readonly value?: "like" | "dislike";
+  readonly onChange: (value: "like" | "dislike") => void;
+}): ReactElement {
+  return (
+    <span className="webui-message-feedback" data-testid="message-feedback-actions">
+      <span data-testid="message-feedback-like">
+        <WebuiMessageActionButton
+          testId="message-feedback-like-action"
+          label="赞"
+          onClick={() => onChange(value === "like" ? "dislike" : "like")}
+        />
+      </span>
+      <span data-testid="message-feedback-dislike">
+        <WebuiMessageActionButton
+          testId="message-feedback-dislike-action"
+          label="踩"
+          onClick={() => onChange(value === "dislike" ? "like" : "dislike")}
+        />
+      </span>
+    </span>
+  );
+}
+
+function WebuiMessageActions({
+  role,
+  messageId,
+  copyText,
+  actions,
+  onRewind,
+  onEdit,
+  onFork,
+}: {
+  readonly role: "user" | "assistant";
+  readonly messageId: string;
+  readonly copyText: string;
+  readonly actions?: WebuiMessageActionCapabilities;
+  readonly onRewind?: () => void;
+  readonly onEdit?: () => void;
+  readonly onFork?: () => void;
+}): ReactElement {
+  const [copied, setCopied] = useState(false);
+  const [feedback, setFeedback] = useState<"like" | "dislike">();
+  const copy = async () => {
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard)
+        await navigator.clipboard.writeText(copyText);
+      else if (typeof document !== "undefined") {
+        const area = document.createElement("textarea");
+        area.value = copyText;
+        area.style.position = "fixed";
+        area.style.opacity = "0";
+        document.body.appendChild(area);
+        area.select();
+        document.execCommand("copy");
+        area.remove();
+      }
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1_200);
+    } catch {
+      setCopied(false);
+    }
+  };
+  return (
+    <div
+      className={`webui-message-actions ${role === "user" ? "webui-user-message-actions" : ""}`}
+      data-testid={role === "user" ? "user-message-actions" : "message-actions"}
+      data-message-id={messageId}
+    >
+      {role === "assistant" || copyText ? (
+        <WebuiMessageActionButton
+          testId={role === "user" ? "user-message-copy-button" : "message-copy-button"}
+          label={copied ? "已复制" : "复制"}
+          onClick={() => void copy()}
+        />
+      ) : null}
+      {actions?.rewind && onRewind ? (
+        <WebuiMessageActionButton
+          testId={role === "user" ? "user-message-rewind-button" : "message-rewind-button"}
+          label="回退"
+          onClick={onRewind}
+        />
+      ) : null}
+      {(actions?.edit ?? actions?.rewind) && onEdit ? (
+        <WebuiMessageActionButton
+          testId={role === "user" ? "user-message-edit-button" : "message-edit-button"}
+          label="编辑"
+          onClick={onEdit}
+        />
+      ) : null}
+      {role === "assistant" ? (
+        <WebuiFeedbackActions value={feedback} onChange={setFeedback} />
+      ) : null}
+      {actions?.fork && onFork ? (
+        <WebuiMessageActionButton
+          testId="message-fork-button"
+          label="复制为新会话"
+          onClick={onFork}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function WebuiRewindDialog({
+  messageId,
+  preview,
+  loading,
+  error,
+  busy,
+  onClose,
+  onConfirm,
+}: {
+  readonly messageId: string;
+  readonly preview?: WebuiGetSessionRewindPreviewResult;
+  readonly loading: boolean;
+  readonly error?: string;
+  readonly busy: boolean;
+  readonly onClose: () => void;
+  readonly onConfirm: (rewindTurnDiff: boolean) => void;
+}): ReactElement {
+  const files = preview?.turns.flatMap((turn) => turn.files) ?? [];
+  const turns = preview?.turns.length ?? 1;
+  return (
+    <div className="webui-message-dialog" role="dialog" aria-modal="true" data-testid="rewind-preview-dialog" data-message-id={messageId}>
+      <div className="webui-message-dialog-surface">
+        <h3>{"回退"}</h3>
+        <p>{files.length > 0 ? `${turns} 轮对话将会回退 · ${files.length} 个文件将被修改。` : `${turns} 轮对话将会回退，不涉及任何文件改动。`}</p>
+        <section data-testid="rewind-preview-files">
+          <h4>受影响的文件改动</h4>
+          {loading ? <p>正在检查当前文件…</p> : null}
+          {!loading && error ? <p role="alert">暂时无法读取文件预览，仍可选择仅回退对话。</p> : null}
+          {!loading && !error && files.length === 0 ? <p>没有受影响的文件改动。</p> : null}
+          {files.map((file) => <div key={`${file.filePath}-${file.action}`} className="webui-rewind-file-row"><span>{file.filePath}</span><span>{file.skipped ? "跳过" : file.action}</span></div>)}
+        </section>
+        <div className="webui-message-dialog-actions">
+          <button type="button" onClick={onClose} disabled={busy}>取消</button>
+          <button type="button" onClick={() => onConfirm(false)} disabled={busy} data-testid="rewind-confirm-only">仅回退对话</button>
+          {files.length > 0 ? <button type="button" onClick={() => onConfirm(true)} disabled={busy} data-testid="rewind-confirm-with-files">回退对话和文件</button> : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function WebuiSessionTranscript({
   sessionId,
   loadMessages,
   getTurnDiff,
   revertTurnDiff,
   reapplyTurnDiff,
+  getSessionForkOptions,
+  forkSession,
+  getSessionRewindPreview,
+  rewindSession,
+  editSessionMessage,
 }: {
   readonly sessionId: string;
   readonly loadMessages: WebuiClientMessageLoader;
   readonly getTurnDiff?: WebuiClientFoundationAppProps["getTurnDiff"];
   readonly revertTurnDiff?: WebuiClientFoundationAppProps["revertTurnDiff"];
   readonly reapplyTurnDiff?: WebuiClientFoundationAppProps["reapplyTurnDiff"];
+  readonly getSessionForkOptions?: WebuiClientFoundationAppProps["getSessionForkOptions"];
+  readonly forkSession?: WebuiClientFoundationAppProps["forkSession"];
+  readonly getSessionRewindPreview?: WebuiClientFoundationAppProps["getSessionRewindPreview"];
+  readonly rewindSession?: WebuiClientFoundationAppProps["rewindSession"];
+  readonly editSessionMessage?: WebuiClientFoundationAppProps["editSessionMessage"];
 }): ReactElement {
   const [page, setPage] = useState<WebuiClientMessagePage>({});
   const [loading, setLoading] = useState(false);
@@ -1995,6 +2316,14 @@ export function WebuiSessionTranscript({
                 messageId={group.messageId}
                 role="user"
                 userText={userItem.text}
+                actions={userItem.actions}
+                timestamp={userItem.timestamp}
+                isGoal={userItem.isGoal}
+                getSessionForkOptions={getSessionForkOptions}
+                forkSession={forkSession}
+                getSessionRewindPreview={getSessionRewindPreview}
+                rewindSession={rewindSession}
+                editSessionMessage={editSessionMessage}
               />
             );
           const thinkingItems = group.items.filter(
@@ -2027,6 +2356,12 @@ export function WebuiSessionTranscript({
               getTurnDiff={getTurnDiff}
               revertTurnDiff={revertTurnDiff}
               reapplyTurnDiff={reapplyTurnDiff}
+              actions={group.items.find((item) => item.actions)?.actions}
+              getSessionForkOptions={getSessionForkOptions}
+              forkSession={forkSession}
+              getSessionRewindPreview={getSessionRewindPreview}
+              rewindSession={rewindSession}
+              editSessionMessage={editSessionMessage}
               thinking={
                 thinkingItems.length > 0
                   ? thinkingItems.map((item) => item.text).join("\n\n")
@@ -2347,6 +2682,132 @@ export function buildWebuiQuestionnaireAnswers(
   });
 }
 
+const WEBUI_GOAL_STATUS_COPY: Record<WebuiGoalStatus | "updated", string> = {
+  active: "进行中",
+  paused: "已停止",
+  blocked: "受阻",
+  complete: "已完成",
+  budget_limited: "已达上限",
+  usage_limited: "服务商受限",
+  updated: "已更新",
+};
+
+const WEBUI_GOAL_WAIT_COPY: Record<string, string> = {
+  questionnaire: "等待你回答问题",
+  permission: "等待你确认权限",
+  plan: "等待 Plan 流程结束",
+  required_background: "等待后台任务完成",
+  automation_owner_conflict: "等待自动任务结束",
+  dependency_unavailable: "等待依赖恢复",
+  verification: "等待验证完成",
+  unknown: "等待运行条件满足",
+};
+
+function formatWebuiGoalDuration(seconds: number): string {
+  const value = Number.isFinite(seconds) ? Math.max(0, Math.floor(seconds)) : 0;
+  const hours = Math.floor(value / 3600);
+  const minutes = Math.floor((value % 3600) / 60);
+  const rest = value % 60;
+  if (hours > 0) return `${hours}h${minutes > 0 ? `${minutes}min` : ""}`;
+  if (minutes > 0) return `${minutes}min${rest > 0 ? `${rest}s` : ""}`;
+  return `${rest}s`;
+}
+
+export function WebuiGoalBanner({
+  goal,
+  patchGoal,
+  clearGoal,
+  onReplace,
+  isGenerating = false,
+  interactionBlocked = false,
+}: {
+  readonly goal?: WebuiGoal;
+  readonly patchGoal?: WebuiClientFoundationAppProps["patchGoal"];
+  readonly clearGoal?: WebuiClientFoundationAppProps["clearGoal"];
+  readonly onReplace?: () => void;
+  readonly isGenerating?: boolean;
+  readonly interactionBlocked?: boolean;
+}): ReactElement | null {
+  const [editing, setEditing] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [objective, setObjective] = useState(goal?.objective ?? "");
+  const [budget, setBudget] = useState(goal?.tokenBudget ? String(goal.tokenBudget) : "");
+  const [updated, setUpdated] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  useEffect(() => {
+    setObjective(goal?.objective ?? "");
+    setBudget(goal?.tokenBudget ? String(goal.tokenBudget) : "");
+    if (!goal) setEditing(false);
+  }, [goal?.goalId, goal?.objective, goal?.tokenBudget]);
+  useEffect(() => {
+    if (!goal || goal.status !== "active" || goal.executionWait) {
+      setElapsedSeconds(0);
+      return undefined;
+    }
+    const update = () => setElapsedSeconds(Math.max(0, Math.floor((Date.now() - goal.updatedAt) / 1000)));
+    update();
+    const timer = window.setInterval(update, 1_000);
+    return () => window.clearInterval(timer);
+  }, [goal]);
+  if (!goal) return null;
+  const status = updated ? "updated" : goal.status;
+  const submitPatch = (patch: { status?: WebuiGoalStatus; objective?: string; tokenBudget?: number | null }) => {
+    if (!patchGoal) return;
+    setBusy(true);
+    setError(undefined);
+    void patchGoal({ sessionId: goal.sessionId, ...patch })
+      .then(() => { setUpdated(true); setEditing(false); window.setTimeout(() => setUpdated(false), 2_400); })
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)))
+      .finally(() => setBusy(false));
+  };
+  const saveEdit = () => {
+    const text = objective.trim();
+    if (!text) { setError("目标内容不能为空"); return; }
+    const trimmedBudget = budget.trim();
+    const parsedBudget = trimmedBudget ? Number(trimmedBudget.replace(/k$/iu, "000").replace(/m$/iu, "000000")) : null;
+    if (trimmedBudget && (parsedBudget === null || !Number.isInteger(parsedBudget) || parsedBudget <= 0)) { setError("预算值无效：请填正整数、K/M 后缀,或留空以取消上限。"); return; }
+    submitPatch({ objective: text, tokenBudget: parsedBudget });
+  };
+  const clear = () => {
+    if (!clearGoal) return;
+    setBusy(true);
+    void clearGoal({ sessionId: goal.sessionId })
+      .then(() => setConfirmClear(false))
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <section className="webui-goal-banner" data-testid="thread-goal-banner" data-goal-status={status} role="status" aria-live="polite">
+      <div className="webui-goal-banner-content-row" data-testid="thread-goal-banner-content-row">
+        <div className="webui-goal-banner-objective-group" data-testid="thread-goal-banner-objective-group">
+          <span aria-hidden="true">🎯</span>
+          <button type="button" className="webui-goal-objective" data-testid="thread-goal-banner-objective" aria-expanded={false} title={goal.objective}>{goal.objective}</button>
+          <span className="webui-goal-status" data-testid="thread-goal-banner-status">{WEBUI_GOAL_STATUS_COPY[status]}</span>
+        </div>
+        <div className="webui-goal-banner-actions-slot" data-testid="thread-goal-banner-actions-slot">
+          {goal.status === "blocked" ? <button type="button" data-testid="thread-goal-banner-resume" onClick={() => submitPatch({ status: "active" })} disabled={busy || interactionBlocked}>继续</button> : null}
+          {goal.status === "paused" || goal.status === "usage_limited" ? <button type="button" data-testid="thread-goal-banner-resume" onClick={() => submitPatch({ status: "active" })} disabled={busy || interactionBlocked}>继续</button> : null}
+          {goal.status === "active" && !goal.executionWait ? <button type="button" data-testid="thread-goal-banner-pause" onClick={() => submitPatch({ status: "paused" })} disabled={busy || interactionBlocked}>暂停</button> : null}
+          <button type="button" data-testid="thread-goal-banner-edit-button" onClick={() => setEditing((value) => !value)} disabled={busy || interactionBlocked || (goal.status === "complete")}>编辑</button>
+          {onReplace ? <button type="button" data-testid="thread-goal-banner-replace-button" onClick={onReplace} disabled={busy || interactionBlocked}>替换目标</button> : null}
+          {goal.status !== "complete" ? <button type="button" data-testid="thread-goal-banner-clear" onClick={() => setConfirmClear(true)} disabled={busy || interactionBlocked}>清除目标</button> : <button type="button" data-testid="thread-goal-banner-close" onClick={() => setConfirmClear(true)} disabled={busy}>关闭</button>}
+        </div>
+      </div>
+      {goal.executionWait ? <div className="webui-goal-wait" data-testid="thread-goal-wait">{WEBUI_GOAL_WAIT_COPY[goal.executionWait.reason] ?? WEBUI_GOAL_WAIT_COPY.unknown}</div> : null}
+      <div className="webui-goal-usage" data-testid="thread-goal-usage"><span data-testid="thread-goal-tokens-used">{goal.tokensUsed} tokens</span><span data-testid="thread-goal-turns-used">{goal.turnsUsed} 轮</span><span data-testid="thread-goal-timer">{formatWebuiGoalDuration(goal.timeUsedSeconds + elapsedSeconds)}</span></div>
+      {goal.status === "budget_limited" ? <p data-testid="thread-goal-banner-budget-guide">创建新目标后继续</p> : null}
+      {goal.status === "usage_limited" ? <p data-testid="thread-goal-usage-guide">服务商额度恢复后可继续</p> : null}
+      {goal.status === "complete" ? <span data-testid="thread-goal-completion-marker" className="webui-goal-completion-marker">目标已完成</span> : null}
+      {editing ? <div className="webui-goal-editor" data-testid="goal-editor"><textarea data-testid="thread-goal-banner-edit-input" value={objective} onChange={(event) => setObjective(event.target.value)} placeholder="更新目标内容" /><input data-testid="thread-goal-banner-budget-input" value={budget} onChange={(event) => setBudget(event.target.value)} placeholder="Token 预算 — 例如 50K、200000；留空表示取消" /><div><button type="button" data-testid="thread-goal-banner-cancel-edit" onClick={() => setEditing(false)} disabled={busy}>取消</button><button type="button" data-testid="thread-goal-banner-save" onClick={saveEdit} disabled={busy}>保存</button></div></div> : null}
+      {confirmClear ? <div className="webui-goal-confirm" data-testid="goal-clear-confirm"><strong>删除目标？</strong><p>删除目标后，目标模式会关闭，转为普通模式继续。</p><button type="button" onClick={() => setConfirmClear(false)} disabled={busy}>取消</button><button type="button" data-testid="goal-clear-confirm-confirm" onClick={clear} disabled={busy}>删除</button></div> : null}
+      {error ? <p role="alert" data-testid="thread-goal-error">{error}</p> : null}
+      {isGenerating ? <span data-testid="thread-goal-generating" aria-hidden="true" /> : null}
+    </section>
+  );
+}
+
 export function WebuiInteractionPanel({
   sessionId,
   permissions,
@@ -2380,14 +2841,33 @@ export function WebuiInteractionPanel({
     {},
   );
   const [submitting, setSubmitting] = useState(false);
+  const [currentStep, setCurrentStep] = useState(0);
+  const [remainingSeconds, setRemainingSeconds] = useState<number>();
   useEffect(() => {
     setSelections({});
     setOtherSelections({});
     setOtherTexts({});
+    setCurrentStep(0);
   }, [questionnaire?.id]);
+  useEffect(() => {
+    if (!questionnaire?.expiresAt) {
+      setRemainingSeconds(undefined);
+      return undefined;
+    }
+    const update = () => setRemainingSeconds(Math.max(0, Math.ceil((questionnaire.expiresAt! - Date.now()) / 1000)));
+    update();
+    const timer = window.setInterval(update, 1_000);
+    return () => window.clearInterval(timer);
+  }, [questionnaire?.expiresAt]);
   const visiblePermissions = permissions.filter(
     (permission) => permission.sessionId === sessionId,
   );
+  const activeStep = questionnaire?.steps[currentStep];
+  const activeSelected = activeStep ? optionIdsForStep(selections, activeStep.id) : [];
+  const activeOther = activeStep ? otherSelections[activeStep.id] === true : false;
+  const activeStepValid = !activeStep || !activeStep.required || activeOther
+    ? !activeStep || !activeStep.required || !activeOther || Boolean((otherTexts[activeStep.id] ?? "").trim())
+    : activeSelected.length > 0;
   return (
     <div
       className="mt-3 flex w-full flex-col gap-3"
@@ -2438,11 +2918,12 @@ export function WebuiInteractionPanel({
       ))}
       {questionnaire ? (
         <article
-          className="webui-card flex flex-col gap-3 p-spacing_16"
+          className="webui-card flex max-h-[60vh] flex-col gap-3 overflow-hidden rounded-[20px] border-[0.5px] border-border_default bg-bg_grouped_secondary_elevated p-spacing_16"
+          data-testid="questionnaire-composer"
           data-webui-questionnaire-request={questionnaire.id}
           aria-label={questionnaire.title ?? "Questionnaire"}
         >
-          <div className="webui-questionnaire-header">
+          <header className="webui-questionnaire-header">
             <strong
               className="text-size_16"
               data-webui-questionnaire-title="true"
@@ -2455,6 +2936,7 @@ export function WebuiInteractionPanel({
               type="button"
               aria-label="关闭问卷"
               data-webui-dismiss-questionnaire="true"
+              data-testid="questionnaire-close"
               className="webui-questionnaire-close"
               disabled={submitting}
               onClick={() => {
@@ -2466,29 +2948,34 @@ export function WebuiInteractionPanel({
             >
               ×
             </button>
-          </div>
+            {questionnaire.steps.length > 1 && questionnaire.presentation.showProgress ? (
+              <span className="webui-questionnaire-progress" data-testid="questionnaire-progress" aria-label={`${currentStep + 1}/${questionnaire.steps.length}`}>
+                <button type="button" data-testid="questionnaire-progress-prev" aria-label="上一步" onClick={() => setCurrentStep((value) => Math.max(0, value - 1))} disabled={submitting || !questionnaire.presentation.allowBackNavigation || currentStep === 0}>‹</button>
+                <span>{currentStep + 1}/{questionnaire.steps.length}</span>
+                <button type="button" data-testid="questionnaire-progress-next" aria-label="下一步" onClick={() => setCurrentStep((value) => Math.min(questionnaire.steps.length - 1, value + 1))} disabled={submitting || currentStep >= questionnaire.steps.length - 1}>›</button>
+              </span>
+            ) : null}
+          </header>
           <p
             className="webui-questionnaire-sub"
             data-webui-questionnaire-waiting="true"
           >
             智能体需要你的回答
           </p>
-          {questionnaire.steps.length > 1 ? (
-            <p className="webui-questionnaire-steps-meta">
-              {`共 ${questionnaire.steps.length} 步`}
-            </p>
-          ) : null}
-          {questionnaire.steps.map((step) => {
+          {remainingSeconds !== undefined ? <span className="webui-questionnaire-countdown" data-testid="questionnaire-auto-reply-countdown" title={`将在 ${remainingSeconds} 秒后自动提交`}>⏱ {remainingSeconds}s</span> : null}
+          <div data-testid="questionnaire-composer-body">
+          {questionnaire.steps.slice(currentStep, currentStep + 1).map((step) => {
             const selected = optionIdsForStep(selections, step.id);
             const selectedOther = otherSelections[step.id] === true;
             const multiple =
               step.selectionMode === 1 ||
               (step.selectionMode as unknown) === "multiple";
             return (
-              <fieldset key={step.id} className="mb-4">
+              <fieldset key={step.id} className="mb-4" data-testid={`questionnaire-step-${step.id}`}>
                 <legend
                   className="text-size_14 font-weight_medium"
                   data-webui-questionnaire-question="true"
+                  data-testid={`questionnaire-step-title-${step.id}`}
                 >
                   {step.question}
                 </legend>
@@ -2501,7 +2988,8 @@ export function WebuiInteractionPanel({
                   className="webui-questionnaire-options"
                   role={multiple ? "group" : "presentation"}
                 >
-                {(step.options ?? []).map((option, optionIndex) => {
+                {multiple ? <span className="webui-questionnaire-multi-hint" data-testid={`questionnaire-multi-hint-${step.id}`}>可多选</span> : null}
+                {(step.options ?? []).slice().sort((left, right) => Number(right.recommended === true) - Number(left.recommended === true)).map((option, optionIndex) => {
                   const checked = selected.includes(option.id);
                   return (
                     <label
@@ -2615,17 +3103,25 @@ export function WebuiInteractionPanel({
               </fieldset>
             );
           })}
+          {activeStep && (activeStep.options?.length ?? 0) === 0 && !activeStep.allowOther ? (
+            <p className="text-text_default_secondary text-size_12" data-testid="questionnaire-composer-empty">
+              当前步骤没有可选项。
+            </p>
+          ) : null}
+          </div>
           <div className="flex flex-wrap gap-2">
+            {questionnaire.steps.length > 1 && currentStep > 0 ? <button type="button" className="webui-button-secondary text-size_14" disabled={submitting} data-testid="questionnaire-back" onClick={() => setCurrentStep((value) => Math.max(0, value - 1))}>上一步</button> : null}
+            {questionnaire.steps.length > 1 && currentStep < questionnaire.steps.length - 1 ? <button type="button" className="webui-button-primary text-size_14" disabled={submitting || !activeStepValid} data-testid="questionnaire-next" onClick={() => setCurrentStep((value) => Math.min(questionnaire.steps.length - 1, value + 1))}>下一步</button> : null}
             <button
               type="button"
               className="webui-button-primary text-size_14"
               disabled={
                 submitting ||
-                questionnaire.steps.some((step) => {
-                  if (!step.required) return false;
+                currentStep < questionnaire.steps.length - 1 || !questionnaire.steps.every((step) => {
+                  if (!step.required) return true;
                   if (otherSelections[step.id] === true)
-                    return !(otherTexts[step.id] ?? "").trim();
-                  return optionIdsForStep(selections, step.id).length === 0;
+                    return Boolean((otherTexts[step.id] ?? "").trim());
+                  return optionIdsForStep(selections, step.id).length > 0;
                 })
               }
               onClick={() => {
@@ -2659,8 +3155,8 @@ export function WebuiInteractionPanel({
           </div>
         </article>
       ) : null}
-      {interactionError ? (
-        <p role="alert" className="text-text_default_secondary text-size_12">
+          {interactionError ? (
+        <p role="alert" data-testid="questionnaire-error" className="text-text_default_secondary text-size_12">
           Unable to answer interaction: {interactionError}
         </p>
       ) : null}
@@ -2685,6 +3181,16 @@ function WebuiComposer({
   getTurnDiff,
   revertTurnDiff,
   reapplyTurnDiff,
+  getSessionForkOptions,
+  forkSession,
+  getSessionRewindPreview,
+  rewindSession,
+  editSessionMessage,
+  getGoal,
+  createGoal,
+  patchGoal,
+  clearGoal,
+  isGoalEnabled,
   watchEvents,
   listPendingPermissions,
   getPendingQuestionnaire,
@@ -2726,6 +3232,16 @@ function WebuiComposer({
   readonly getTurnDiff?: WebuiClientFoundationAppProps["getTurnDiff"];
   readonly revertTurnDiff?: WebuiClientFoundationAppProps["revertTurnDiff"];
   readonly reapplyTurnDiff?: WebuiClientFoundationAppProps["reapplyTurnDiff"];
+  readonly getSessionForkOptions?: WebuiClientFoundationAppProps["getSessionForkOptions"];
+  readonly forkSession?: WebuiClientFoundationAppProps["forkSession"];
+  readonly getSessionRewindPreview?: WebuiClientFoundationAppProps["getSessionRewindPreview"];
+  readonly rewindSession?: WebuiClientFoundationAppProps["rewindSession"];
+  readonly editSessionMessage?: WebuiClientFoundationAppProps["editSessionMessage"];
+  readonly getGoal?: WebuiClientFoundationAppProps["getGoal"];
+  readonly createGoal?: WebuiClientFoundationAppProps["createGoal"];
+  readonly patchGoal?: WebuiClientFoundationAppProps["patchGoal"];
+  readonly clearGoal?: WebuiClientFoundationAppProps["clearGoal"];
+  readonly isGoalEnabled?: WebuiClientFoundationAppProps["isGoalEnabled"];
   readonly watchEvents?: WebuiClientEventWatcher;
   readonly listPendingPermissions?: WebuiClientFoundationAppProps["listPendingPermissions"];
   readonly getPendingQuestionnaire?: WebuiClientFoundationAppProps["getPendingQuestionnaire"];
@@ -2759,6 +3275,9 @@ function WebuiComposer({
   >([]);
   const [questionnaire, setQuestionnaire] =
     useState<WebuiQuestionnaireRequest>();
+  const [goal, setGoal] = useState<WebuiGoal>();
+  const [goalEnabled, setGoalEnabled] = useState(true);
+  const [replaceObjective, setReplaceObjective] = useState<string>();
   const [interactionError, setInteractionError] = useState<string>();
   const [queueItems, setQueueItems] = useState<readonly WebuiQueueItem[]>([]);
   const [queuePaused, setQueuePaused] = useState(false);
@@ -2877,6 +3396,35 @@ function WebuiComposer({
           }
           return;
         }
+        if (event.type === "thread_goal.updated") {
+          const nextGoal = event.payload.goal;
+          if (nextGoal && typeof nextGoal === "object") {
+            const projectedGoal = nextGoal as WebuiGoal;
+            setGoal(projectedGoal);
+            setStream((current) => {
+              const messageId = `thread-goal-${projectedGoal.goalId}`;
+              const message = {
+                id: messageId,
+                answer: projectedGoal.objective,
+                thinking: "",
+                role: "user" as const,
+                timestamp: projectedGoal.updatedAt,
+                isGoal: true,
+              };
+              const existing = current.messages.findIndex((item) => item.id === messageId);
+              if (existing < 0)
+                return { ...current, messages: [...current.messages, message] };
+              const messages = [...current.messages];
+              messages[existing] = message;
+              return { ...current, messages };
+            });
+          }
+          return;
+        }
+        if (event.type === "thread_goal.cleared") {
+          setGoal(undefined);
+          return;
+        }
         if (
           event.type === "questionnaire.dismiss" ||
           event.type === "questionnaire.superseded"
@@ -2903,6 +3451,36 @@ function WebuiComposer({
     sessionId,
     watchEvents,
   ]);
+
+  useEffect(() => {
+    if (!isGoalEnabled) {
+      setGoalEnabled(true);
+      return undefined;
+    }
+    let cancelled = false;
+    void isGoalEnabled()
+      .then((result) => { if (!cancelled) setGoalEnabled(result.enabled); })
+      .catch(() => { if (!cancelled) setGoalEnabled(false); });
+    return () => { cancelled = true; };
+  }, [isGoalEnabled]);
+
+  useEffect(() => {
+    if (!sessionId || !getGoal || !goalEnabled) {
+      setGoal(undefined);
+      return undefined;
+    }
+    let cancelled = false;
+    void getGoal({ sessionId })
+      .then((nextGoal) => {
+        if (!cancelled) setGoal(nextGoal);
+      })
+      .catch(() => {
+        if (!cancelled) setGoal(undefined);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [getGoal, goalEnabled, sessionId]);
 
   useEffect(() => {
     if (!listModels && !getAccountStatus) return undefined;
@@ -3281,12 +3859,38 @@ function WebuiComposer({
       handlers,
     );
   };
+  const createGoalFromPrompt = () => {
+    if (!sessionId || !createGoal || typeof window === "undefined") return;
+    const objective = window.prompt("描述你想完成的目标")?.trim();
+    if (!objective) return;
+    if (goal) {
+      setReplaceObjective(objective);
+      return;
+    }
+    void createGoal({ sessionId, objective })
+      .then(setGoal)
+      .catch((error: unknown) => setInteractionError(error instanceof Error ? error.message : String(error)));
+  };
+  const confirmGoalReplacement = async () => {
+    if (!sessionId || !replaceObjective || !createGoal || !clearGoal) return;
+    try {
+      await clearGoal({ sessionId });
+      const nextGoal = await createGoal({ sessionId, objective: replaceObjective });
+      setGoal(nextGoal);
+      setReplaceObjective(undefined);
+    } catch (error) {
+      setInteractionError(error instanceof Error ? error.message : String(error));
+    }
+  };
   return (
     <section
       aria-label="Compose message"
       className={`w-full ${sessionLayout ? "webui-session-composer" : ""}`}
       data-webui-session-composer={sessionLayout ? "true" : undefined}
     >
+      {sessionId && goalEnabled && goal ? <WebuiGoalBanner goal={goal} patchGoal={patchGoal} clearGoal={clearGoal} onReplace={createGoalFromPrompt} interactionBlocked={Boolean(questionnaire || permissions.length > 0)} /> : null}
+      {sessionId && goalEnabled && !goal && createGoal ? <button type="button" className="webui-goal-create" data-testid="thread-goal-create" onClick={createGoalFromPrompt}>设置目标</button> : null}
+      {replaceObjective ? <div className="webui-goal-confirm" data-testid="goal-replace-confirm" role="dialog"><strong>替换当前目标？</strong><p>用本次文字和注释替换已保存的目标。</p><button type="button" onClick={() => setReplaceObjective(undefined)}>取消</button><button type="button" data-testid="goal-replace-confirm-confirm" onClick={() => void confirmGoalReplacement()}>替换目标</button></div> : null}
       {sessionId ? (
         <WebuiInteractionPanel
           sessionId={sessionId}
@@ -3358,6 +3962,8 @@ function WebuiComposer({
                 messageId={message.id}
                 role="user"
                 userText={message.answer}
+                timestamp={message.timestamp}
+                isGoal={message.isGoal}
                 streamMessageId={message.id}
               />
             ))}
@@ -3694,6 +4300,16 @@ export function WebuiClientFoundationApp({
   getTurnDiff,
   revertTurnDiff,
   reapplyTurnDiff,
+  getSessionForkOptions,
+  forkSession,
+  getSessionRewindPreview,
+  rewindSession,
+  editSessionMessage,
+  isGoalEnabled,
+  getGoal,
+  createGoal,
+  patchGoal,
+  clearGoal,
   createSession,
   sendMessage,
   enqueueMessage,
@@ -4232,6 +4848,16 @@ export function WebuiClientFoundationApp({
                     getTurnDiff={getTurnDiff}
                     revertTurnDiff={revertTurnDiff}
                     reapplyTurnDiff={reapplyTurnDiff}
+                    getSessionForkOptions={getSessionForkOptions}
+                    forkSession={forkSession}
+                    getSessionRewindPreview={getSessionRewindPreview}
+                    rewindSession={rewindSession}
+                    editSessionMessage={editSessionMessage}
+                    getGoal={getGoal}
+                    createGoal={createGoal}
+                    patchGoal={patchGoal}
+                    clearGoal={clearGoal}
+                    isGoalEnabled={isGoalEnabled}
                     watchEvents={watchEvents}
                     listPendingPermissions={listPendingPermissions}
                     getPendingQuestionnaire={getPendingQuestionnaire}
@@ -4275,7 +4901,12 @@ export function WebuiClientFoundationApp({
                       getTurnDiff={getTurnDiff}
                       revertTurnDiff={revertTurnDiff}
                       reapplyTurnDiff={reapplyTurnDiff}
-                    />
+                      getSessionForkOptions={getSessionForkOptions}
+                      forkSession={forkSession}
+                      getSessionRewindPreview={getSessionRewindPreview}
+                      rewindSession={rewindSession}
+                      editSessionMessage={editSessionMessage}
+            />
                     </Transcript>
                   ) : null}
                 </div>
