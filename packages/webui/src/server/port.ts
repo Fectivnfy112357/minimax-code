@@ -138,6 +138,57 @@ export interface WebuiMessagesResult {
   readonly usage?: Record<string, unknown>;
 }
 
+export interface WebuiFileDiffInfoView {
+  readonly file: string;
+  readonly additions: number;
+  readonly deletions: number;
+  readonly status?: string;
+  readonly diff?: string;
+  readonly patch?: Record<string, unknown>;
+}
+
+export interface WebuiTurnDiffView {
+  readonly fileChanges?: readonly WebuiFileDiffInfoView[];
+  readonly sourceMessageId?: string;
+  readonly changeSetId?: string;
+  readonly status?: string;
+  readonly revertedAt?: number;
+  readonly canUndo?: boolean;
+  readonly canReapply?: boolean;
+}
+
+export interface WebuiGetSessionDiffRequest {
+  readonly id: string;
+  readonly messageId?: string;
+}
+
+export interface WebuiGetSessionDiffResult {
+  readonly diffs?: readonly WebuiFileDiffInfoView[];
+  readonly changeSetId?: string;
+}
+
+export interface WebuiGetTurnDiffRequest {
+  readonly id: string;
+  readonly assistantMessageId?: string;
+  readonly turnId?: string;
+  readonly changeSetId?: string;
+}
+
+export interface WebuiGetTurnDiffResult extends WebuiTurnDiffView {}
+
+export interface WebuiRevertTurnDiffRequest extends WebuiGetTurnDiffRequest {}
+export interface WebuiRevertTurnDiffResult {
+  readonly success?: boolean;
+  readonly error?: string;
+  readonly turnDiff?: WebuiTurnDiffView;
+}
+
+export interface WebuiReapplyTurnDiffRequest extends WebuiGetTurnDiffRequest {}
+export interface WebuiReapplyTurnDiffResult extends WebuiTurnDiffView {
+  readonly success: boolean;
+  readonly error?: string;
+}
+
 export interface WebuiWorkspaceFile {
   readonly path: string;
   readonly name: string;
@@ -429,6 +480,10 @@ export interface WebuiHarnessPort {
     request: WebuiSessionLookupRequest,
   ): Promise<WebuiSessionLookupResult>;
   getMessages(request: WebuiMessagesRequest): Promise<WebuiMessagesResult>;
+  getSessionDiff?(request: WebuiGetSessionDiffRequest): Promise<WebuiGetSessionDiffResult>;
+  getTurnDiff?(request: WebuiGetTurnDiffRequest): Promise<WebuiGetTurnDiffResult>;
+  revertTurnDiff?(request: WebuiRevertTurnDiffRequest): Promise<WebuiRevertTurnDiffResult>;
+  reapplyTurnDiff?(request: WebuiReapplyTurnDiffRequest): Promise<WebuiReapplyTurnDiffResult>;
   listWorkspaceFileTree?(request: { readonly workspaceDir: string; readonly path?: string }): Promise<readonly WebuiWorkspaceFile[]>;
   readWorkspaceFile?(request: { readonly workspaceDir: string; readonly path: string }): Promise<WebuiWorkspaceFileContent>;
   getWorkspaceEnvironment?(request: { readonly workspaceDir: string }): Promise<WebuiWorkspaceEnvironment>;

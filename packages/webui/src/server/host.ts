@@ -40,6 +40,14 @@ import type {
   WebuiWorkspaceGitMutationRequest,
   WebuiCanvasDocument,
   WebuiModelEntry,
+  WebuiGetSessionDiffRequest,
+  WebuiGetSessionDiffResult,
+  WebuiGetTurnDiffRequest,
+  WebuiGetTurnDiffResult,
+  WebuiRevertTurnDiffRequest,
+  WebuiRevertTurnDiffResult,
+  WebuiReapplyTurnDiffRequest,
+  WebuiReapplyTurnDiffResult,
 } from "./port.js";
 
 export interface WebuiRuntimeHostHandle {
@@ -89,6 +97,22 @@ export interface WebuiRuntimeHostHandle {
       request: import("./port.js").WebuiMessagesRequest,
       context?: Record<string, never>,
     ): Promise<import("./port.js").WebuiMessagesResult>;
+    getSessionDiff(
+      request: WebuiGetSessionDiffRequest,
+      context?: Record<string, never>,
+    ): Promise<WebuiGetSessionDiffResult>;
+    getTurnDiff(
+      request: WebuiGetTurnDiffRequest,
+      context?: Record<string, never>,
+    ): Promise<WebuiGetTurnDiffResult>;
+    revertTurnDiff(
+      request: WebuiRevertTurnDiffRequest,
+      context?: Record<string, never>,
+    ): Promise<WebuiRevertTurnDiffResult>;
+    reapplyTurnDiff(
+      request: WebuiReapplyTurnDiffRequest,
+      context?: Record<string, never>,
+    ): Promise<WebuiReapplyTurnDiffResult>;
     listWorkspaceFileTree?(request: { readonly workspaceDir: string; readonly path?: string }): Promise<readonly WebuiWorkspaceFile[]>;
     readWorkspaceFile?(request: { readonly workspaceDir: string; readonly path: string }): Promise<WebuiWorkspaceFileContent>;
     getWorkspaceGitEnvironment?(workspaceDir: string): Promise<{ readonly metadata: Record<string, unknown>; readonly changes: Record<string, unknown> }>;
@@ -251,6 +275,26 @@ export function createHarnessPortFromHost(
       if (!host.cliService)
         throw new Error("runtime host does not expose the CLI service");
       return host.cliService.getMessages(request, {});
+    },
+    async getSessionDiff(request) {
+      if (!host.cliService)
+        throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.getSessionDiff(request, {});
+    },
+    async getTurnDiff(request) {
+      if (!host.cliService)
+        throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.getTurnDiff(request, {});
+    },
+    async revertTurnDiff(request) {
+      if (!host.cliService)
+        throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.revertTurnDiff(request, {});
+    },
+    async reapplyTurnDiff(request) {
+      if (!host.cliService)
+        throw new Error("runtime host does not expose the CLI service");
+      return host.cliService.reapplyTurnDiff(request, {});
     },
     async listWorkspaceFileTree(request) {
       if (!host.cliService) throw new Error("runtime host does not expose the CLI service");

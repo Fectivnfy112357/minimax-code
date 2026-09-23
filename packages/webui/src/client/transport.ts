@@ -22,6 +22,14 @@ import type {
   WebuiRuntimeEvent,
   WebuiStreamFrame,
   WebuiVersionInfo,
+  WebuiGetSessionDiffRequest,
+  WebuiGetSessionDiffResult,
+  WebuiGetTurnDiffRequest,
+  WebuiGetTurnDiffResult,
+  WebuiRevertTurnDiffRequest,
+  WebuiRevertTurnDiffResult,
+  WebuiReapplyTurnDiffRequest,
+  WebuiReapplyTurnDiffResult,
 } from "../server/port.js";
 
 type WireFrame = {
@@ -68,6 +76,10 @@ export function createWebuiTransport({
   archiveSession: (request: { readonly id: string }) => Promise<{ readonly success?: boolean }>;
   deleteSession: (request: { readonly id: string }) => Promise<{ readonly success?: boolean }>;
   loadMessages: WebuiClientMessageLoader;
+  getSessionDiff: (request: WebuiGetSessionDiffRequest) => Promise<WebuiGetSessionDiffResult>;
+  getTurnDiff: (request: WebuiGetTurnDiffRequest) => Promise<WebuiGetTurnDiffResult>;
+  revertTurnDiff: (request: WebuiRevertTurnDiffRequest) => Promise<WebuiRevertTurnDiffResult>;
+  reapplyTurnDiff: (request: WebuiReapplyTurnDiffRequest) => Promise<WebuiReapplyTurnDiffResult>;
   listWorkspaceFileTree: (request: { readonly workspaceDir: string; readonly path?: string }) => Promise<readonly import("../server/port.js").WebuiWorkspaceFile[]>;
   readWorkspaceFile: (request: { readonly workspaceDir: string; readonly path: string }) => Promise<import("../server/port.js").WebuiWorkspaceFileContent>;
   getWorkspaceEnvironment: (request: { readonly workspaceDir: string }) => Promise<import("../server/port.js").WebuiWorkspaceEnvironment>;
@@ -375,6 +387,10 @@ export function createWebuiTransport({
         id,
         ...(before ? { before } : {}),
       }),
+    getSessionDiff: (body) => request("getSessionDiff", body),
+    getTurnDiff: (body) => request("getTurnDiff", body),
+    revertTurnDiff: (body) => request("revertTurnDiff", body),
+    reapplyTurnDiff: (body) => request("reapplyTurnDiff", body),
     listWorkspaceFileTree: (body) => request("listWorkspaceFileTree", body),
     readWorkspaceFile: (body) => request("readWorkspaceFile", body),
     getWorkspaceEnvironment: (body) => request("getWorkspaceEnvironment", body),

@@ -29,6 +29,14 @@ import type {
   WebuiPermissionDecision,
   WebuiQuestionnaireAnswer,
   WebuiWorkspaceGitMutationRequest,
+  WebuiGetSessionDiffRequest,
+  WebuiGetSessionDiffResult,
+  WebuiGetTurnDiffRequest,
+  WebuiGetTurnDiffResult,
+  WebuiRevertTurnDiffRequest,
+  WebuiRevertTurnDiffResult,
+  WebuiReapplyTurnDiffRequest,
+  WebuiReapplyTurnDiffResult,
 } from "./port.js";
 import { runWebuiCommand } from "./commands/runner.js";
 import {
@@ -80,6 +88,10 @@ const GET_SESSION_TREE_OPERATION_NAME = "getSessionTree" as const;
 const CREATE_SESSION_OPERATION_NAME = "createSession" as const;
 const GET_SESSION_OPERATION_NAME = "getSession" as const;
 const GET_MESSAGES_OPERATION_NAME = "getMessages" as const;
+const GET_SESSION_DIFF_OPERATION_NAME = "getSessionDiff" as const;
+const GET_TURN_DIFF_OPERATION_NAME = "getTurnDiff" as const;
+const REVERT_TURN_DIFF_OPERATION_NAME = "revertTurnDiff" as const;
+const REAPPLY_TURN_DIFF_OPERATION_NAME = "reapplyTurnDiff" as const;
 const LIST_WORKSPACE_FILE_TREE_OPERATION_NAME = "listWorkspaceFileTree" as const;
 const READ_WORKSPACE_FILE_OPERATION_NAME = "readWorkspaceFile" as const;
 const GET_WORKSPACE_ENVIRONMENT_OPERATION_NAME = "getWorkspaceEnvironment" as const;
@@ -516,6 +528,64 @@ export const getMessagesOperation: WebuiOperation<
 > = {
   name: GET_MESSAGES_OPERATION_NAME,
   validate: validateGetMessagesBody,
+};
+
+function validateDiffRequestBody<T>(
+  operation: string,
+  body: unknown,
+): WebuiOperationValidation<T> {
+  const result = validateObjectBody(operation, body);
+  if (!result.ok) return result as WebuiOperationValidation<T>;
+  if (typeof result.body.id !== "string" || !result.body.id.trim())
+    return {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: `${operation} body requires a non-empty id`,
+    };
+  for (const key of ["messageId", "assistantMessageId", "turnId", "changeSetId"])
+    if (result.body[key] !== undefined && typeof result.body[key] !== "string")
+      return {
+        ok: false,
+        code: WebuiErrorCode.invalidBody,
+        message: `${key} must be a string`,
+      };
+  return { ok: true, body: result.body as unknown as T };
+}
+
+export const getSessionDiffOperation: WebuiOperation<
+  WebuiGetSessionDiffRequest,
+  WebuiGetSessionDiffResult
+> = {
+  name: GET_SESSION_DIFF_OPERATION_NAME,
+  validate: (body) =>
+    validateDiffRequestBody<WebuiGetSessionDiffRequest>(GET_SESSION_DIFF_OPERATION_NAME, body),
+};
+
+export const getTurnDiffOperation: WebuiOperation<
+  WebuiGetTurnDiffRequest,
+  WebuiGetTurnDiffResult
+> = {
+  name: GET_TURN_DIFF_OPERATION_NAME,
+  validate: (body) =>
+    validateDiffRequestBody<WebuiGetTurnDiffRequest>(GET_TURN_DIFF_OPERATION_NAME, body),
+};
+
+export const revertTurnDiffOperation: WebuiOperation<
+  WebuiRevertTurnDiffRequest,
+  WebuiRevertTurnDiffResult
+> = {
+  name: REVERT_TURN_DIFF_OPERATION_NAME,
+  validate: (body) =>
+    validateDiffRequestBody<WebuiRevertTurnDiffRequest>(REVERT_TURN_DIFF_OPERATION_NAME, body),
+};
+
+export const reapplyTurnDiffOperation: WebuiOperation<
+  WebuiReapplyTurnDiffRequest,
+  WebuiReapplyTurnDiffResult
+> = {
+  name: REAPPLY_TURN_DIFF_OPERATION_NAME,
+  validate: (body) =>
+    validateDiffRequestBody<WebuiReapplyTurnDiffRequest>(REAPPLY_TURN_DIFF_OPERATION_NAME, body),
 };
 
 function validateSendMessageRequestBody(
@@ -1262,6 +1332,10 @@ export function createOperationRegistry(
     | "createSession"
     | "getSession"
     | "getMessages"
+    | "getSessionDiff"
+    | "getTurnDiff"
+    | "revertTurnDiff"
+    | "reapplyTurnDiff"
     | "listWorkspaceFileTree"
     | "readWorkspaceFile"
     | "getWorkspaceEnvironment"
@@ -1484,6 +1558,29 @@ export function createOperationRegistry(
       };
     },
   });
+  if (
+    port.getSessionDiff &&
+    port.getTurnDiff &&
+    port.revertTurnDiff &&
+    port.reapplyTurnDiff
+  ) {
+    registerOperation(registry, {
+      operation: getSessionDiffOperation,
+      handle: async (_context, body) => ({ body: await port.getSessionDiff!(body) }),
+    });
+    registerOperation(registry, {
+      operation: getTurnDiffOperation,
+      handle: async (_context, body) => ({ body: await port.getTurnDiff!(body) }),
+    });
+    registerOperation(registry, {
+      operation: revertTurnDiffOperation,
+      handle: async (_context, body) => ({ body: await port.revertTurnDiff!(body) }),
+    });
+    registerOperation(registry, {
+      operation: reapplyTurnDiffOperation,
+      handle: async (_context, body) => ({ body: await port.reapplyTurnDiff!(body) }),
+    });
+  }
   registerOperation(registry, {
     operation: listSessionsOperation,
     handle: async (_context, body) => ({ body: await port.listSessions(body) }),

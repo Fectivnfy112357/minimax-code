@@ -977,6 +977,18 @@
     margin-bottom: var(--spacing_16);
   }
 
+  /* Desktop message-item animation: message-appear .18s ease-out both. */
+  .message-animate-in {
+    animation: message-appear 0.18s ease-out both;
+  }
+  @keyframes message-appear {
+    from { opacity: 0; transform: translateY(2px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .message-animate-in { animation: none; }
+  }
+
   /* A session is a two-zone surface: the transcript owns the scroll position,
    * while the composer stays in the bottom zone. The DOM keeps the composer
    * close to the home surface markup, so the explicit order here is the seam
@@ -1019,8 +1031,8 @@
   }
   .webui-user-text {
     margin: 0;
-    font-size: 15px;
-    line-height: 24px;
+    font-size: 14px;
+    line-height: 22px;
     letter-spacing: 0;
     white-space: pre-wrap;
     overflow-wrap: break-word;
@@ -1082,6 +1094,63 @@
   .webui-tool-row-summary:hover {
     color: var(--text_default_secondary);
   }
+
+  .activity-group {
+    min-width: 0;
+    color: var(--text_default_tertiary);
+  }
+  .activity-group > summary {
+    list-style: none;
+  }
+  .activity-group > summary::-webkit-details-marker { display: none; }
+  .activity-group-header {
+    display: flex;
+    min-width: 0;
+    width: fit-content;
+    align-items: center;
+    gap: var(--spacing_8);
+    cursor: pointer;
+    color: var(--text_default_tertiary);
+    font-size: 14px;
+    line-height: 22px;
+    transition: color 120ms ease;
+  }
+  .activity-group-header:hover { color: var(--text_default_secondary); }
+  .activity-group-icon {
+    display: inline-flex;
+    width: 16px;
+    height: 16px;
+    flex: 0 0 16px;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    line-height: 16px;
+  }
+  .activity-group-summary { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .activity-group-chevron {
+    width: 16px;
+    height: 16px;
+    transition: transform 200ms ease-out;
+  }
+  .activity-group[open] .activity-group-chevron { transform: rotate(90deg); }
+  .activity-group-body {
+    position: relative;
+    margin-top: var(--spacing_8);
+    padding-left: 16px;
+  }
+  .timeline-spine {
+    position: absolute;
+    top: 18px;
+    bottom: 2px;
+    left: 7.5px;
+    width: 1px;
+    border-radius: 8px;
+    background: var(--border_light);
+  }
+  .timeline-connector { margin-left: 7.5px; height: 8px; width: 1px; background: var(--border_light); }
+  .activity-group-content { min-width: 0; }
+
+  .text-activity-body-small { font-size: 14px; line-height: 20px; }
   .webui-thinking-chevron,
   .webui-tool-chevron {
     width: 14px;
@@ -2199,9 +2268,38 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    border: 1px solid var(--border_default);
+    border: 0.5px solid var(--border_default);
     border-radius: 12px;
     background: var(--bg_default_secondary);
+  }
+
+  .webui-diff-card--neutral {
+    min-height: 48px;
+    justify-content: center;
+    gap: 4px;
+    padding: 8px 12px;
+  }
+
+  .webui-diff-neutral-copy {
+    color: var(--text_default_tertiary);
+    font-size: 12px;
+  }
+
+  .webui-diff-icon {
+    display: inline-flex;
+    width: 38px;
+    height: 38px;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    border-radius: 8px;
+    background: var(--bg_grouped_tertiary);
+    color: var(--text_default_secondary);
+  }
+
+  .webui-diff-icon svg {
+    width: 18px;
+    height: 18px;
   }
 
   .webui-diff-header {
@@ -2287,5 +2385,60 @@
   .webui-diff-card .webui-tool-list {
     padding: 4px 8px;
     border-top: 1px solid var(--border_default);
+  }
+
+  .webui-diff-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 8px 12px;
+  }
+
+  .webui-diff-review,
+  .webui-diff-revert,
+  .webui-diff-reapply {
+    min-height: 32px;
+    padding: 0 8px;
+    border-radius: 8px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  .webui-diff-review {
+    border: 0.5px solid var(--border_default);
+    background: transparent;
+    color: var(--text_default_primary);
+  }
+
+  .webui-diff-review-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px 12px;
+    border-top: 0.5px solid var(--border_default);
+    color: var(--text_default_secondary);
+    font-size: 12px;
+  }
+
+  .webui-diff-review-panel pre {
+    max-height: 240px;
+    margin: 6px 0 0;
+    overflow: auto;
+    white-space: pre-wrap;
+    color: var(--text_default_primary);
+  }
+
+  .webui-diff-revert,
+  .webui-diff-reapply {
+    border: 0;
+    background: var(--bg_interaction_tertiary_hover);
+    color: var(--text_default_primary);
+  }
+
+  .webui-diff-revert:disabled,
+  .webui-diff-reapply:disabled {
+    cursor: default;
+    opacity: 0.5;
   }
 }

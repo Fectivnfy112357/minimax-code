@@ -26,6 +26,10 @@ import type {
   GetLatestPlanReviewInput as GetLatestPlanReviewReq,
   GetMessagesInput as GetMessagesReq,
   GetMessagesResult as GetMessagesResp,
+  GetSessionDiffInput as GetSessionDiffReq,
+  GetSessionDiffResult as GetSessionDiffResp,
+  GetTurnDiffInput as GetTurnDiffReq,
+  GetTurnDiffResult as GetTurnDiffResp,
   GetQuestionnaireResult as GetQuestionnaireResp,
   GetPendingQuestionnaireInput as GetPendingQuestionnaireReq,
   GetPendingQuestionnaireResult as GetPendingQuestionnaireResp,
@@ -54,6 +58,10 @@ import type {
   ReorderQueueResult as ReorderQueueResp,
   RewindSessionInput as RewindSessionReq,
   RewindSessionResult as RewindSessionResp,
+  RevertTurnDiffInput as RevertTurnDiffReq,
+  RevertTurnDiffResult as RevertTurnDiffResp,
+  ReapplyTurnDiffInput as ReapplyTurnDiffReq,
+  ReapplyTurnDiffResult as ReapplyTurnDiffResp,
   RequestCompactionInput as RequestCompactionReq,
   RequestCompactionResult as RequestCompactionResp,
   MutatePluginInput as MutatePluginReq,
@@ -196,6 +204,34 @@ export class CliService {
     ctx: ProcessLocalContext = {},
   ): Promise<GetMessagesResp> {
     return this.options.applications.session.content.getMessages(ctx, req);
+  }
+
+  getSessionDiff(
+    req: GetSessionDiffReq,
+    ctx: ProcessLocalContext = {},
+  ): Promise<GetSessionDiffResp> {
+    return this.options.applications.session.diff.getSessionDiff(ctx, req);
+  }
+
+  getTurnDiff(
+    req: GetTurnDiffReq,
+    ctx: ProcessLocalContext = {},
+  ): Promise<GetTurnDiffResp> {
+    return this.options.applications.session.diff.getTurnDiff(ctx, req);
+  }
+
+  revertTurnDiff(
+    req: RevertTurnDiffReq,
+    ctx: ProcessLocalContext = {},
+  ): Promise<RevertTurnDiffResp> {
+    return this.options.applications.session.diff.revertTurnDiff(ctx, req);
+  }
+
+  reapplyTurnDiff(
+    req: ReapplyTurnDiffReq,
+    ctx: ProcessLocalContext = {},
+  ): Promise<ReapplyTurnDiffResp> {
+    return this.options.applications.session.diff.reapplyTurnDiff(ctx, req);
   }
 
   listSessionInputSummaries(

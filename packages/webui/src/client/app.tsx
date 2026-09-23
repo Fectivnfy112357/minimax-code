@@ -32,6 +32,7 @@ import {
   type ReactElement,
 } from "react";
 import { WebuiMarkdown } from "./markdown.js";
+import { projectMessageParts } from "./message-parts.js";
 import {
   WebuiIconAttach,
   WebuiIconBell,
@@ -87,6 +88,14 @@ import type {
   WebuiRuntimeEvent,
   WebuiStreamFrame,
   WebuiVersionInfo,
+  WebuiGetTurnDiffRequest,
+  WebuiGetTurnDiffResult,
+  WebuiFileDiffInfoView,
+  WebuiTurnDiffView,
+  WebuiRevertTurnDiffRequest,
+  WebuiRevertTurnDiffResult,
+  WebuiReapplyTurnDiffRequest,
+  WebuiReapplyTurnDiffResult,
 } from "../server/port.js";
 import {
   initialWebuiWorkspaceProgress,
@@ -99,11 +108,37 @@ import {
 
 export interface WebuiClientMessage {
   readonly msgId: string;
+  readonly parentMsgId?: string;
+  readonly turnId?: string;
+  readonly queryKey?: string;
+  readonly timestamp?: number;
   readonly msgContent?: string;
+  readonly msgType?: number;
   readonly role?: string;
   readonly thinkingContent?: string;
   readonly thinkingDurationMs?: number;
+  readonly finishReason?: string;
   readonly toolCalls?: readonly Record<string, unknown>[];
+  readonly attachments?: readonly unknown[];
+  readonly usage?: Record<string, unknown>;
+  readonly source?: string;
+  readonly kind?: string;
+  readonly actions?: {
+    readonly fork?: boolean;
+    readonly rewind?: boolean;
+  };
+  readonly forkOrigin?: Record<string, unknown>;
+  readonly originJson?: string;
+  readonly communicationInfosJson?: string;
+  readonly rawJson?: string;
+  readonly fileChanges?: readonly WebuiFileDiffInfoView[];
+  readonly sourceMessageId?: string;
+  readonly changeSetId?: string;
+  readonly turnDiffStatus?: string;
+  readonly revertedAt?: number;
+  readonly canUndo?: boolean;
+  readonly canReapply?: boolean;
+  readonly meta?: Record<string, unknown>;
 }
 
 export interface WebuiClientSession {
@@ -255,39 +290,101 @@ export type WebuiTranscriptItem =
       readonly text: string;
       readonly messageId: string;
       readonly durationMs?: number;
+      readonly diff?: WebuiTurnDiffView;
     }
   | {
       readonly kind: "tool";
       readonly messageId: string;
       readonly tools: readonly Record<string, unknown>[];
+      readonly diff?: WebuiTurnDiffView;
     };
+
+function recordValue(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function readMessageDiff(message: WebuiClientMessage): WebuiTurnDiffView | undefined {
+  const raw = (() => {
+    if (message.rawJson) {
+      try {
+        return recordValue(JSON.parse(message.rawJson));
+      } catch {
+        return undefined;
+      }
+    }
+    return recordValue(message);
+  })();
+  const meta = message.meta ?? recordValue(raw?.meta);
+  const rawFiles = message.fileChanges ?? raw?.file_changes ?? raw?.fileChanges ?? meta?.file_changes ?? meta?.fileChanges;
+  const fileChanges = Array.isArray(rawFiles)
+    ? rawFiles.flatMap((file): WebuiFileDiffInfoView[] => {
+        const value = recordValue(file);
+        if (!value || typeof value.file !== "string") return [];
+        return [{
+          file: value.file,
+          additions: typeof value.additions === "number" ? value.additions : 0,
+          deletions: typeof value.deletions === "number" ? value.deletions : 0,
+          ...(typeof value.status === "string" ? { status: value.status } : {}),
+        }];
+      })
+    : undefined;
+  const sourceMessageId = message.sourceMessageId ?? stringValue(raw?.sourceMessageId) ?? stringValue(meta?.sourceMessageId);
+  const changeSetId = message.changeSetId ?? stringValue(raw?.changeSetId) ?? stringValue(meta?.changeSetId);
+  const status = message.turnDiffStatus ?? stringValue(raw?.turnDiffStatus) ?? stringValue(meta?.turnDiffStatus);
+  const revertedAt = message.revertedAt ?? numberValue(raw?.revertedAt) ?? numberValue(meta?.revertedAt);
+  const canUndo = message.canUndo ?? booleanValue(raw?.canUndo) ?? booleanValue(meta?.canUndo);
+  const canReapply = message.canReapply ?? booleanValue(raw?.canReapply) ?? booleanValue(meta?.canReapply);
+  if (!fileChanges?.length && !sourceMessageId && !changeSetId && !status) return undefined;
+  return {
+    ...(fileChanges?.length ? { fileChanges } : {}),
+    ...(sourceMessageId ? { sourceMessageId } : {}),
+    ...(changeSetId ? { changeSetId } : {}),
+    ...(status ? { status } : {}),
+    ...(revertedAt !== undefined ? { revertedAt } : {}),
+    ...(canUndo !== undefined ? { canUndo } : {}),
+    ...(canReapply !== undefined ? { canReapply } : {}),
+  };
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" ? value : undefined;
+}
+
+function booleanValue(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
+}
 
 export function projectWebuiMessage(
   message: WebuiClientMessage,
 ): WebuiTranscriptItem[] {
-  const items: WebuiTranscriptItem[] = [];
-  if (message.thinkingContent)
-    items.push({
-      kind: "thinking",
-      text: message.thinkingContent,
-      messageId: message.msgId,
-      ...(typeof message.thinkingDurationMs === "number"
-        ? { durationMs: message.thinkingDurationMs }
-        : {}),
-    });
-  if (message.toolCalls?.length)
-    items.push({
-      kind: "tool",
-      tools: message.toolCalls,
-      messageId: message.msgId,
-    });
-  if (message.msgContent)
-    items.push({
-      kind: message.role === "user" ? "user" : "assistant",
-      text: message.msgContent,
-      messageId: message.msgId,
-    });
-  return items;
+  const thinkingItems: WebuiTranscriptItem[] = [];
+  const toolItems: WebuiTranscriptItem[] = [];
+  const answerItems: WebuiTranscriptItem[] = [];
+  for (const part of projectMessageParts(message)) {
+    if (part.type === "thinking")
+      thinkingItems.push({ kind: "thinking", text: part.content, messageId: message.msgId, ...(part.durationMs !== undefined ? { durationMs: part.durationMs } : {}) });
+    else if (part.type === "text")
+      answerItems.push({ kind: message.role === "user" ? "user" : "assistant", text: part.content, messageId: message.msgId });
+    else if (part.type === "tool_call")
+      toolItems.push({ kind: "tool", tools: [part.toolCall], messageId: message.msgId });
+  }
+  // The pure parts layer preserves Desktop's source order. The legacy
+  // transcript item contract renders the process disclosure before markdown,
+  // so keep that public projection order stable for existing callers.
+  const output = [...thinkingItems, ...toolItems, ...answerItems];
+  const diff = readMessageDiff(message);
+  if (diff && output.length > 0) {
+    const last = output.length - 1;
+    const lastItem = output[last];
+    if (lastItem) output[last] = { ...lastItem, diff };
+  }
+  return output;
 }
 
 function toolCallResultText(tool: Record<string, unknown>): string | undefined {
@@ -439,12 +536,164 @@ function WebuiToolRow({
   );
 }
 
-/** Desktop's `已编辑 N 个文件` card: file rows with +N/-N stats, a collapse
- * control, then the remaining tool steps in the same card. */
+function WebuiDiffCard({
+  sessionId,
+  assistantMessageId,
+  turnId,
+  changeSetId,
+  initialView,
+  getTurnDiff,
+  revertTurnDiff,
+  reapplyTurnDiff,
+}: {
+  readonly sessionId?: string;
+  readonly assistantMessageId?: string;
+  readonly turnId?: string;
+  readonly changeSetId?: string;
+  readonly initialView?: WebuiTurnDiffView;
+  readonly getTurnDiff?: (request: WebuiGetTurnDiffRequest) => Promise<WebuiGetTurnDiffResult>;
+  readonly revertTurnDiff?: (request: WebuiRevertTurnDiffRequest) => Promise<WebuiRevertTurnDiffResult>;
+  readonly reapplyTurnDiff?: (request: WebuiReapplyTurnDiffRequest) => Promise<WebuiReapplyTurnDiffResult>;
+}): ReactElement | null {
+  const [view, setView] = useState<WebuiTurnDiffView | undefined>(initialView);
+  const [unsupported, setUnsupported] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
+  const request = useMemo<WebuiGetTurnDiffRequest | undefined>(() => {
+    if (!sessionId || !getTurnDiff) return undefined;
+    return {
+      id: sessionId,
+      ...(assistantMessageId ? { assistantMessageId } : {}),
+      ...(turnId ? { turnId } : {}),
+      ...(changeSetId ? { changeSetId } : {}),
+    };
+  }, [assistantMessageId, changeSetId, getTurnDiff, sessionId, turnId]);
+
+  useEffect(() => {
+    if (!request || !getTurnDiff) return undefined;
+    let cancelled = false;
+    setUnsupported(false);
+    void getTurnDiff(request)
+      .then((nextView) => {
+        if (!cancelled) setView(nextView);
+      })
+      .catch(() => {
+        // The runtime deliberately reports an unavailable diff capability as a
+        // neutral card state. The client must not infer success from edit-tool
+        // output when the authoritative application is unavailable.
+        if (!cancelled) setUnsupported(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [getTurnDiff, request]);
+
+  const mutate = async (action: "revert" | "reapply") => {
+    if (!request || busy) return;
+    const handler = action === "revert" ? revertTurnDiff : reapplyTurnDiff;
+    if (!handler) {
+      setUnsupported(true);
+      return;
+    }
+    if (!window.confirm(action === "revert" ? "撤销这轮文件改动？" : "重新应用这轮文件改动？")) return;
+    setBusy(true);
+    try {
+      const result = await handler({ ...request, ...(view?.changeSetId ? { changeSetId: view.changeSetId } : {}) });
+      const nextView = action === "revert"
+        ? (result as WebuiRevertTurnDiffResult).turnDiff
+        : (result as WebuiReapplyTurnDiffResult);
+      if (nextView) setView(nextView);
+      else setUnsupported(true);
+    } catch {
+      setUnsupported(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if ((!getTurnDiff || !request) && !view) return null;
+  if (unsupported)
+    return (
+      <div className="webui-diff-card webui-diff-card--neutral" data-webui-diff-card="true" data-webui-diff-state="runtime-unsupported">
+        <span className="webui-diff-header-title">文件改动暂不可用</span>
+        <span className="webui-diff-neutral-copy">当前运行时未提供 session diff 能力。</span>
+      </div>
+    );
+  if (!view || (view.fileChanges ?? []).length === 0) return null;
+  const files = view.fileChanges ?? [];
+  const shown = expanded ? files : files.slice(0, 3);
+  const totalAdded = files.reduce((sum, file) => sum + file.additions, 0);
+  const totalDeleted = files.reduce((sum, file) => sum + file.deletions, 0);
+  const reverted = view.status === "reverted";
+  return (
+    <div
+      className="webui-diff-card"
+      data-webui-diff-card="true"
+      data-webui-diff-state={view.status ?? "active"}
+      data-change-set-id={view.changeSetId}
+      data-source-message-id={view.sourceMessageId ?? assistantMessageId}
+    >
+      <div className="webui-diff-header">
+        <span className="webui-diff-icon" aria-hidden="true"><WebuiIconFile /></span>
+        <span className="webui-diff-header-title">{`已编辑 ${files.length} 个文件`}</span>
+        <span className="webui-diff-header-stats">
+          <span className="webui-diff-add">{`+${totalAdded}`}</span>
+          <span className="webui-diff-del">{`-${totalDeleted}`}</span>
+        </span>
+      </div>
+      <ul className="webui-diff-files">
+        {shown.map((file) => (
+          <li className="webui-diff-file" key={file.file}>
+            <WebuiIconFile className="webui-diff-file-icon" />
+            <span className="webui-diff-file-name">{file.file}</span>
+            <span className="webui-diff-file-stats">
+              <span className="webui-diff-add">{`+${file.additions}`}</span>
+              <span className="webui-diff-del">{`-${file.deletions}`}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+      {files.length > 3 ? (
+        <button type="button" className="webui-diff-expand" data-webui-diff-expand="true" onClick={() => setExpanded((value) => !value)}>
+          {expanded ? "收起" : `展开其余 ${files.length - 3} 个`}
+        </button>
+      ) : null}
+      <div className="webui-diff-actions">
+        <button type="button" className="webui-diff-review" data-webui-diff-review="true" onClick={() => setReviewing((value) => !value)}>
+          {reviewing ? "关闭 Review" : "Review"}
+        </button>
+        {reverted ? (
+          <button type="button" className="webui-diff-reapply" disabled={busy || view.canReapply === false} onClick={() => void mutate("reapply")}>
+            重新应用
+          </button>
+        ) : (
+          <button type="button" className="webui-diff-revert" disabled={busy || view.canUndo === false} onClick={() => void mutate("revert")}>
+            撤销
+          </button>
+        )}
+      </div>
+      {reviewing ? (
+        <div className="webui-diff-review-panel" data-webui-diff-review-panel="true">
+          {files.map((file) => (
+            <details key={`${file.file}-review`} open>
+              <summary>{file.file}</summary>
+              {file.diff ? <pre>{file.diff}</pre> : file.patch ? <pre>{JSON.stringify(file.patch, null, 2)}</pre> : <p>当前运行时没有提供该文件的 patch 预览。</p>}
+            </details>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Tool rows remain the fallback only when the runtime diff facade is absent. */
 export function WebuiToolResults({
   tools,
+  authoritativeDiffAvailable = false,
 }: {
   readonly tools: readonly Record<string, unknown>[];
+  readonly authoritativeDiffAvailable?: boolean;
 }): ReactElement | null {
   const [expanded, setExpanded] = useState(false);
   const edits = tools.filter(isWebuiEditTool);
@@ -461,6 +710,13 @@ export function WebuiToolResults({
     return (
       <div className="webui-tool-list" data-webui-tool-list="true">
         {renderRows(tools)}
+      </div>
+    );
+  }
+  if (authoritativeDiffAvailable) {
+    return (
+      <div className="webui-tool-list" data-webui-tool-list="true">
+        {renderRows(others)}
       </div>
     );
   }
@@ -522,6 +778,93 @@ export function WebuiToolResults({
         </div>
       ) : null}
     </div>
+  );
+}
+
+function webuiActivitySummary(tools: readonly Record<string, unknown>[]): string {
+  const labels = tools.map(toolCallLabel);
+  if (labels.every((label) => label === "执行命令")) return `执行 ${tools.length} 条命令`;
+  if (labels.every((label) => label === "读取文件")) return `查看 ${tools.length} 个文件`;
+  if (labels.every((label) => label === "编辑文件" || label === "写入文件"))
+    return `编辑 ${tools.length} 个文件`;
+  return `执行 ${tools.length} 个操作`;
+}
+
+/** Desktop activity-group: a 16px activity header and a timeline body. */
+export function WebuiActivityGroup({
+  tools,
+  authoritativeDiffAvailable = false,
+}: {
+  readonly tools: readonly Record<string, unknown>[];
+  readonly authoritativeDiffAvailable?: boolean;
+}): ReactElement | null {
+  if (tools.length === 0) return null;
+  return (
+    <details className="activity-group" data-testid="activity-group" open>
+      <summary className="activity-group-header">
+        <span className="activity-group-icon" aria-hidden="true">✦</span>
+        <span className="activity-group-summary">{webuiActivitySummary(tools)}</span>
+        <WebuiIconChevronDown className="activity-group-chevron" />
+      </summary>
+      <div className="activity-group-body">
+        <span className="timeline-spine" aria-hidden="true" />
+        <div className="activity-group-items">
+          <WebuiToolResults tools={tools} authoritativeDiffAvailable={authoritativeDiffAvailable} />
+        </div>
+      </div>
+    </details>
+  );
+}
+
+export function WebuiTurnProcess({
+  active,
+  startedAtMs,
+  children,
+}: {
+  readonly active: boolean;
+  readonly startedAtMs?: number;
+  readonly children: ReactElement;
+}): ReactElement {
+  const [expanded, setExpanded] = useState(active);
+  const [, forceTick] = useState(0);
+  useEffect(() => {
+    if (!active) return undefined;
+    const timer = setInterval(() => forceTick((value) => value + 1), 1000);
+    return () => clearInterval(timer);
+  }, [active]);
+  const seconds =
+    typeof startedAtMs === "number"
+      ? Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000))
+      : undefined;
+  const summary = active
+    ? `已执行 ${seconds ?? 0} 秒`
+    : `共执行 ${seconds ?? 0} 秒`;
+  return (
+    <section className="pt-2" data-testid="turn-process-disclosure">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2" data-testid="turn-process-summary">
+        <button
+          type="button"
+          className="group/turn-process text-activity-body-small flex items-center gap-1 py-1 text-center text-sm font-normal leading-5 tracking-normal text-text_label_tertiary_default transition-colors hover:text-text_label_tertiary_hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border_accent"
+          aria-expanded={expanded}
+          data-testid="turn-process-trigger"
+          onClick={() => setExpanded((value) => !value)}
+        >
+          <span>{summary}</span>
+          <span
+            data-testid="turn-process-chevron"
+            className={`-ml-1 inline-flex h-4 w-4 shrink-0 items-center justify-center text-icon_interaction_tertiary_default transition-transform duration-200 ease-out motion-reduce:transition-none group-hover/turn-process:text-icon_interaction_tertiary_hover ${expanded ? "rotate-90" : ""}`}
+          >
+            <WebuiIconChevronDown className="size-4" />
+          </span>
+        </button>
+      </div>
+      <div className="mt-2 border-b-[0.5px] border-border_default" data-testid="turn-process-separator" aria-hidden="true" />
+      {expanded ? (
+        <div className="mt-3 space-y-4" data-testid="turn-process-detail">
+          {children}
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -596,6 +939,14 @@ export function TurnElapsedRow({
 
 function WebuiAssistantBody({
   messageId,
+  sessionId,
+  assistantMessageId,
+  turnId,
+  changeSetId,
+  initialDiff,
+  getTurnDiff,
+  revertTurnDiff,
+  reapplyTurnDiff,
   thinking,
   thinkingDurationMs,
   processingStartedAtMs,
@@ -604,6 +955,14 @@ function WebuiAssistantBody({
   streaming = false,
 }: {
   readonly messageId: string;
+  readonly sessionId?: string;
+  readonly assistantMessageId?: string;
+  readonly turnId?: string;
+  readonly changeSetId?: string;
+  readonly initialDiff?: WebuiTurnDiffView;
+  readonly getTurnDiff?: (request: WebuiGetTurnDiffRequest) => Promise<WebuiGetTurnDiffResult>;
+  readonly revertTurnDiff?: (request: WebuiRevertTurnDiffRequest) => Promise<WebuiRevertTurnDiffResult>;
+  readonly reapplyTurnDiff?: (request: WebuiReapplyTurnDiffRequest) => Promise<WebuiReapplyTurnDiffResult>;
   readonly thinking?: string;
   readonly thinkingDurationMs?: number;
   readonly processingStartedAtMs?: number;
@@ -613,18 +972,37 @@ function WebuiAssistantBody({
 }): ReactElement {
   return (
     <div
-      className="webui-assistant-body"
+      className="webui-assistant-body text-sm space-y-4"
       data-webui-assistant-body={messageId}
     >
-      {thinking ? (
-        <WebuiThinkingBlock
-          text={thinking}
-          durationMs={thinkingDurationMs}
-          streaming={streaming}
-          processingStartedAtMs={processingStartedAtMs}
-        />
+      {thinking || tools?.length ? (
+        <WebuiTurnProcess
+          active={streaming}
+          startedAtMs={processingStartedAtMs}
+        >
+          <div className="activity-group-content">
+            {thinking ? (
+              <WebuiThinkingBlock
+                text={thinking}
+                durationMs={thinkingDurationMs}
+                streaming={streaming}
+                processingStartedAtMs={processingStartedAtMs}
+              />
+            ) : null}
+            {tools?.length ? <WebuiActivityGroup tools={tools} authoritativeDiffAvailable={Boolean(getTurnDiff)} /> : null}
+          </div>
+        </WebuiTurnProcess>
       ) : null}
-      {tools?.length ? <WebuiToolResults tools={tools} /> : null}
+      <WebuiDiffCard
+        sessionId={sessionId}
+        assistantMessageId={assistantMessageId ?? messageId}
+        turnId={turnId}
+        changeSetId={changeSetId}
+        initialView={initialDiff}
+        getTurnDiff={getTurnDiff}
+        revertTurnDiff={revertTurnDiff}
+        reapplyTurnDiff={reapplyTurnDiff}
+      />
       {answers.map((answer, index) => (
         <div
           key={`${messageId}-answer-${index}`}
@@ -638,6 +1016,115 @@ function WebuiAssistantBody({
   );
 }
 
+/**
+ * The single message renderer shared by persisted history and the live turn.
+ * The shell still decides which source owns the turn (history after done,
+ * composer while active), but the DOM for either role is produced here.
+ */
+export function MessageItem({
+  messageId,
+  role,
+  sessionId,
+  assistantMessageId,
+  turnId,
+  changeSetId,
+  initialDiff,
+  getTurnDiff,
+  revertTurnDiff,
+  reapplyTurnDiff,
+  userText,
+  thinking,
+  thinkingDurationMs,
+  processingStartedAtMs,
+  tools,
+  answers,
+  streaming = false,
+  streamMessageId,
+  messageRootId,
+}: {
+  readonly messageId: string;
+  readonly role: "user" | "assistant";
+  readonly sessionId?: string;
+  readonly assistantMessageId?: string;
+  readonly turnId?: string;
+  readonly changeSetId?: string;
+  readonly initialDiff?: WebuiTurnDiffView;
+  readonly getTurnDiff?: (request: WebuiGetTurnDiffRequest) => Promise<WebuiGetTurnDiffResult>;
+  readonly revertTurnDiff?: (request: WebuiRevertTurnDiffRequest) => Promise<WebuiRevertTurnDiffResult>;
+  readonly reapplyTurnDiff?: (request: WebuiReapplyTurnDiffRequest) => Promise<WebuiReapplyTurnDiffResult>;
+  readonly userText?: string;
+  readonly thinking?: string;
+  readonly thinkingDurationMs?: number;
+  readonly processingStartedAtMs?: number;
+  readonly tools?: readonly Record<string, unknown>[];
+  readonly answers?: readonly string[];
+  readonly streaming?: boolean;
+  readonly streamMessageId?: string;
+  readonly messageRootId?: string;
+}): ReactElement {
+  if (role === "user") {
+    return (
+      <div
+        className="webui-message message-animate-in group relative"
+        data-webui-stream-message={streamMessageId}
+        data-webui-message-root={messageRootId ?? messageId}
+        data-webui-message-role="user"
+        data-testid="message-item"
+        data-role="user"
+        data-message-id={messageId}
+      >
+        <div className="flex w-full justify-end">
+          <div className="flex w-full flex-col items-end gap-spacing_8">
+            <div
+              className="webui-user-bubble bg-bg_grouped_tertiary rounded-[16px] px-3 py-2 max-w-[80%]"
+              data-webui-user-bubble="true"
+            >
+              <div className="webui-user-text-clamp">
+                <p
+                  className="webui-user-text"
+                  data-webui-message-kind="user"
+                  data-webui-user-text="true"
+                >
+                  <span>{userText ?? ""}</span>
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div
+      className="webui-message message-animate-in group relative"
+      data-webui-stream-message={streamMessageId}
+      data-webui-message-root={messageRootId ?? messageId}
+      data-webui-message-role="assistant"
+      data-testid="message-item"
+      data-role="assistant"
+      data-message-id={messageId}
+    >
+      <WebuiAssistantBody
+        messageId={messageId}
+        sessionId={sessionId}
+        assistantMessageId={assistantMessageId}
+        turnId={turnId}
+        changeSetId={changeSetId}
+        initialDiff={initialDiff}
+        getTurnDiff={getTurnDiff}
+        revertTurnDiff={revertTurnDiff}
+        reapplyTurnDiff={reapplyTurnDiff}
+        thinking={thinking}
+        thinkingDurationMs={thinkingDurationMs}
+        tools={tools}
+        answers={answers ?? []}
+        streaming={streaming}
+        processingStartedAtMs={processingStartedAtMs}
+      />
+    </div>
+  );
+}
+
 export interface WebuiClientFoundationAppProps {
   readonly label: string;
   readonly version?: WebuiVersionInfo;
@@ -647,6 +1134,9 @@ export interface WebuiClientFoundationAppProps {
   readonly loadSessions?: WebuiClientSessionLoader;
   readonly loadSessionTree?: WebuiClientSessionTreeLoader;
   readonly loadMessages?: WebuiClientMessageLoader;
+  readonly getTurnDiff?: (request: WebuiGetTurnDiffRequest) => Promise<WebuiGetTurnDiffResult>;
+  readonly revertTurnDiff?: (request: WebuiRevertTurnDiffRequest) => Promise<WebuiRevertTurnDiffResult>;
+  readonly reapplyTurnDiff?: (request: WebuiReapplyTurnDiffRequest) => Promise<WebuiReapplyTurnDiffResult>;
   readonly listWorkspaceFileTree?: (request: { readonly workspaceDir: string; readonly path?: string }) => Promise<readonly import("../server/port.js").WebuiWorkspaceFile[]>;
   readonly readWorkspaceFile?: (request: { readonly workspaceDir: string; readonly path: string }) => Promise<import("../server/port.js").WebuiWorkspaceFileContent>;
   readonly getWorkspaceEnvironment?: (request: { readonly workspaceDir: string }) => Promise<import("../server/port.js").WebuiWorkspaceEnvironment>;
@@ -1386,9 +1876,15 @@ export function groupWebuiTranscriptItems(
 export function WebuiSessionTranscript({
   sessionId,
   loadMessages,
+  getTurnDiff,
+  revertTurnDiff,
+  reapplyTurnDiff,
 }: {
   readonly sessionId: string;
   readonly loadMessages: WebuiClientMessageLoader;
+  readonly getTurnDiff?: WebuiClientFoundationAppProps["getTurnDiff"];
+  readonly revertTurnDiff?: WebuiClientFoundationAppProps["revertTurnDiff"];
+  readonly reapplyTurnDiff?: WebuiClientFoundationAppProps["reapplyTurnDiff"];
 }): ReactElement {
   const [page, setPage] = useState<WebuiClientMessagePage>({});
   const [loading, setLoading] = useState(false);
@@ -1455,11 +1951,11 @@ export function WebuiSessionTranscript({
     <section
       aria-label="Transcript"
       data-webui-transcript={sessionId}
-      className="webui-session-transcript-scroll flex w-full flex-col"
+      className="message-container-viewport scrollbar-hide webui-session-transcript-scroll flex w-full flex-col"
       data-webui-session-transcript-scroll="true"
     >
       <div
-        className="flex w-full flex-col gap-spacing_8"
+        className="message-list flex w-full flex-col gap-spacing_8"
         data-webui-message-list="true"
       >
         {error ? (
@@ -1494,31 +1990,12 @@ export function WebuiSessionTranscript({
           );
           if (userItem)
             return (
-              <div
+              <MessageItem
                 key={group.messageId}
-                className="webui-message"
-                data-webui-message-root={group.messageId}
-                data-webui-message-role="user"
-              >
-                <div className="flex w-full justify-end">
-                  <div className="flex w-full flex-col items-end gap-spacing_8">
-                    <div
-                      className="webui-user-bubble"
-                      data-webui-user-bubble="true"
-                    >
-                      <div className="webui-user-text-clamp">
-                        <p
-                          className="webui-user-text"
-                          data-webui-message-kind="user"
-                          data-webui-user-text="true"
-                        >
-                          <span>{userItem.text}</span>
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+                messageId={group.messageId}
+                role="user"
+                userText={userItem.text}
+              />
             );
           const thinkingItems = group.items.filter(
             (item): item is Extract<WebuiTranscriptItem, { text: string }> =>
@@ -1536,25 +2013,29 @@ export function WebuiSessionTranscript({
             (item): item is Extract<WebuiTranscriptItem, { text: string }> =>
               item.kind === "assistant",
           );
+          const initialDiff = [...group.items]
+            .reverse()
+            .find((item) => item.diff)?.diff;
           return (
-            <div
+            <MessageItem
               key={group.messageId}
-              className="webui-message"
-              data-webui-message-root={group.messageId}
-              data-webui-message-role="assistant"
-            >
-              <WebuiAssistantBody
-                messageId={group.messageId}
-                thinking={
-                  thinkingItems.length > 0
-                    ? thinkingItems.map((item) => item.text).join("\n\n")
-                    : undefined
-                }
-                thinkingDurationMs={thinkingItems[0]?.durationMs}
-                tools={tools.length > 0 ? tools : undefined}
-                answers={answers.map((item) => item.text)}
-              />
-            </div>
+              messageId={group.messageId}
+              role="assistant"
+              sessionId={sessionId}
+              assistantMessageId={group.messageId}
+              initialDiff={initialDiff}
+              getTurnDiff={getTurnDiff}
+              revertTurnDiff={revertTurnDiff}
+              reapplyTurnDiff={reapplyTurnDiff}
+              thinking={
+                thinkingItems.length > 0
+                  ? thinkingItems.map((item) => item.text).join("\n\n")
+                  : undefined
+              }
+              thinkingDurationMs={thinkingItems[0]?.durationMs}
+              tools={tools.length > 0 ? tools : undefined}
+              answers={answers.map((item) => item.text)}
+            />
           );
         })}
       </div>
@@ -2201,6 +2682,9 @@ function WebuiComposer({
   sendMessage,
   resumeSession,
   loadMessages,
+  getTurnDiff,
+  revertTurnDiff,
+  reapplyTurnDiff,
   watchEvents,
   listPendingPermissions,
   getPendingQuestionnaire,
@@ -2239,6 +2723,9 @@ function WebuiComposer({
   readonly enqueueMessage?: WebuiClientMessageEnqueuer;
   readonly resumeSession?: WebuiClientSessionResumer;
   readonly loadMessages?: WebuiClientMessageLoader;
+  readonly getTurnDiff?: WebuiClientFoundationAppProps["getTurnDiff"];
+  readonly revertTurnDiff?: WebuiClientFoundationAppProps["revertTurnDiff"];
+  readonly reapplyTurnDiff?: WebuiClientFoundationAppProps["reapplyTurnDiff"];
   readonly watchEvents?: WebuiClientEventWatcher;
   readonly listPendingPermissions?: WebuiClientFoundationAppProps["listPendingPermissions"];
   readonly getPendingQuestionnaire?: WebuiClientFoundationAppProps["getPendingQuestionnaire"];
@@ -2866,25 +3353,14 @@ function WebuiComposer({
           {stream.messages
             .filter((message) => message.role === "user")
             .map((message) => (
-              <div
+              <MessageItem
                 key={message.id}
-                className="flex justify-end"
-                data-webui-stream-message={message.id}
-              >
-                <div
-                  className="webui-user-bubble"
-                  data-webui-message-role="user"
-                >
-                  <p className="webui-user-text">{message.answer}</p>
-                </div>
-              </div>
+                messageId={message.id}
+                role="user"
+                userText={message.answer}
+                streamMessageId={message.id}
+              />
             ))}
-          {turnLive && typeof stream.processingStartedAtMs === "number" ? (
-            <TurnElapsedRow
-              startedAtMs={stream.processingStartedAtMs}
-              running={sending || stream.phase === "streaming"}
-            />
-          ) : null}
           {stream.phase === "reconnecting" ? (
             <p
               role="status"
@@ -2914,21 +3390,22 @@ function WebuiComposer({
             // thinking — desktop shows a single disclosure for the whole
             // turn, so merge here instead of rendering N live bodies.
             return (
-              <div
-                data-webui-stream-message="merged"
-                className="webui-message"
-                data-webui-message-root="merged"
-                data-webui-message-role="assistant"
-              >
-                <WebuiAssistantBody
-                  messageId="stream-live"
-                  thinking={thinking || undefined}
-                  tools={tools.length > 0 ? tools : undefined}
-                  answers={answers}
-                  streaming={stream.phase === "streaming"}
-                  processingStartedAtMs={stream.processingStartedAtMs}
-                />
-              </div>
+              <MessageItem
+                messageId="stream-live"
+                role="assistant"
+                sessionId={sessionId}
+                assistantMessageId={assistant[assistant.length - 1]?.id}
+                getTurnDiff={getTurnDiff}
+                revertTurnDiff={revertTurnDiff}
+                reapplyTurnDiff={reapplyTurnDiff}
+                streamMessageId="merged"
+                messageRootId="merged"
+                thinking={thinking || undefined}
+                tools={tools.length > 0 ? tools : undefined}
+                answers={answers}
+                streaming={stream.phase === "streaming"}
+                processingStartedAtMs={stream.processingStartedAtMs}
+              />
             );
           })()}
           {stream.refusal ? (
@@ -3214,6 +3691,9 @@ export function WebuiClientFoundationApp({
   listArchivedSessions,
   locationHash,
   loadMessages,
+  getTurnDiff,
+  revertTurnDiff,
+  reapplyTurnDiff,
   createSession,
   sendMessage,
   enqueueMessage,
@@ -3749,6 +4229,9 @@ export function WebuiClientFoundationApp({
                     enqueueMessage={enqueueMessage}
                     resumeSession={resumeSession}
                     loadMessages={loadMessages}
+                    getTurnDiff={getTurnDiff}
+                    revertTurnDiff={revertTurnDiff}
+                    reapplyTurnDiff={reapplyTurnDiff}
                     watchEvents={watchEvents}
                     listPendingPermissions={listPendingPermissions}
                     getPendingQuestionnaire={getPendingQuestionnaire}
@@ -3789,6 +4272,9 @@ export function WebuiClientFoundationApp({
                     <WebuiSessionTranscript
                       sessionId={selectedSessionId}
                       loadMessages={loadMessages}
+                      getTurnDiff={getTurnDiff}
+                      revertTurnDiff={revertTurnDiff}
+                      reapplyTurnDiff={reapplyTurnDiff}
                     />
                     </Transcript>
                   ) : null}

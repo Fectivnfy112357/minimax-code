@@ -94,6 +94,22 @@ export interface WebuiAssembledHost {
       request: import("./port.js").WebuiMessagesRequest,
       context?: Record<string, never>,
     ): Promise<import("./port.js").WebuiMessagesResult>;
+    getSessionDiff(
+      request: import("./port.js").WebuiGetSessionDiffRequest,
+      context?: Record<string, never>,
+    ): Promise<import("./port.js").WebuiGetSessionDiffResult>;
+    getTurnDiff(
+      request: import("./port.js").WebuiGetTurnDiffRequest,
+      context?: Record<string, never>,
+    ): Promise<import("./port.js").WebuiGetTurnDiffResult>;
+    revertTurnDiff(
+      request: import("./port.js").WebuiRevertTurnDiffRequest,
+      context?: Record<string, never>,
+    ): Promise<import("./port.js").WebuiRevertTurnDiffResult>;
+    reapplyTurnDiff(
+      request: import("./port.js").WebuiReapplyTurnDiffRequest,
+      context?: Record<string, never>,
+    ): Promise<import("./port.js").WebuiReapplyTurnDiffResult>;
     sendMessage(
       request: import("./port.js").WebuiSendMessageRequest,
       context?: { readonly signal?: AbortSignal },
