@@ -101,7 +101,7 @@ import {
   ConversationUsageBanner,
   type ConversationUsageNotice,
 } from "./components/ConversationUsageBanner.js";
-import { initialWebuiStreamState, type WebuiStreamState } from "./stream.js";
+import { initialWebuiStreamState, type WebuiStreamMessage, type WebuiStreamState } from "./stream.js";
 import {
   buildWebuiStreamLoopSink,
   runWebuiStreamLoop,
@@ -679,12 +679,78 @@ function WebuiToolRow({
   );
 }
 
-function WebuiDiffCard({
+export interface WebuiDiffState {
+  readonly view?: WebuiTurnDiffView;
+  readonly unsupported: boolean;
+  readonly busy: boolean;
+  readonly expanded: boolean;
+  readonly reviewing: boolean;
+}
+
+export type WebuiDiffStateAction =
+  | { readonly type: "loaded"; readonly view: WebuiTurnDiffView }
+  | { readonly type: "unsupported" }
+  | { readonly type: "begin-mutation" }
+  | { readonly type: "mutation-succeeded"; readonly view: WebuiTurnDiffView }
+  | { readonly type: "mutation-failed" }
+  | { readonly type: "toggle-expanded" }
+  | { readonly type: "toggle-review" };
+
+export const initialWebuiDiffState: WebuiDiffState = {
+  unsupported: false,
+  busy: false,
+  expanded: false,
+  reviewing: false,
+};
+
+export function reduceWebuiDiffState(
+  state: WebuiDiffState,
+  action: WebuiDiffStateAction,
+): WebuiDiffState {
+  switch (action.type) {
+    case "loaded":
+      return { ...state, view: action.view, unsupported: false, busy: false };
+    case "unsupported":
+    case "mutation-failed":
+      return { ...state, unsupported: true, busy: false };
+    case "begin-mutation":
+      return state.busy ? state : { ...state, busy: true };
+    case "mutation-succeeded":
+      return { ...state, view: action.view, unsupported: false, busy: false };
+    case "toggle-expanded":
+      return { ...state, expanded: !state.expanded };
+    case "toggle-review":
+      return { ...state, reviewing: !state.reviewing };
+  }
+}
+
+export function buildWebuiDiffMutationRequest(
+  state: WebuiDiffState,
+  request: WebuiGetTurnDiffRequest,
+  action: "revert" | "reapply",
+): WebuiRevertTurnDiffRequest | WebuiReapplyTurnDiffRequest | undefined {
+  if (state.busy || state.unsupported || !state.view?.changeSetId) return undefined;
+  if (action === "revert" && (state.view.status === "reverted" || state.view.canUndo === false)) return undefined;
+  if (action === "reapply" && (state.view.status !== "reverted" || state.view.canReapply === false)) return undefined;
+  return { ...request, changeSetId: state.view.changeSetId };
+}
+
+export function confirmWebuiDiffMutation(
+  state: WebuiDiffState,
+  confirmed: boolean,
+): WebuiDiffState {
+  return confirmed
+    ? reduceWebuiDiffState(state, { type: "begin-mutation" })
+    : state;
+}
+
+export function WebuiDiffCard({
   sessionId,
   assistantMessageId,
   turnId,
   changeSetId,
   initialView,
+  initialState,
   getTurnDiff,
   revertTurnDiff,
   reapplyTurnDiff,
@@ -694,15 +760,17 @@ function WebuiDiffCard({
   readonly turnId?: string;
   readonly changeSetId?: string;
   readonly initialView?: WebuiTurnDiffView;
+  readonly initialState?: Partial<WebuiDiffState>;
   readonly getTurnDiff?: (request: WebuiGetTurnDiffRequest) => Promise<WebuiGetTurnDiffResult>;
   readonly revertTurnDiff?: (request: WebuiRevertTurnDiffRequest) => Promise<WebuiRevertTurnDiffResult>;
   readonly reapplyTurnDiff?: (request: WebuiReapplyTurnDiffRequest) => Promise<WebuiReapplyTurnDiffResult>;
 }): ReactElement | null {
-  const [view, setView] = useState<WebuiTurnDiffView | undefined>(initialView);
-  const [unsupported, setUnsupported] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [expanded, setExpanded] = useState(false);
-  const [reviewing, setReviewing] = useState(false);
+  const [diffState, setDiffState] = useState<WebuiDiffState>(() => ({
+    ...initialWebuiDiffState,
+    ...initialState,
+    ...(initialView ? { view: initialView } : {}),
+  }));
+  const { view, unsupported, busy, expanded, reviewing } = diffState;
   const request = useMemo<WebuiGetTurnDiffRequest | undefined>(() => {
     if (!sessionId || !getTurnDiff) return undefined;
     return {
@@ -716,16 +784,15 @@ function WebuiDiffCard({
   useEffect(() => {
     if (!request || !getTurnDiff) return undefined;
     let cancelled = false;
-    setUnsupported(false);
     void getTurnDiff(request)
       .then((nextView) => {
-        if (!cancelled) setView(nextView);
+        if (!cancelled) setDiffState((current) => reduceWebuiDiffState(current, { type: "loaded", view: nextView }));
       })
       .catch(() => {
         // The runtime deliberately reports an unavailable diff capability as a
         // neutral card state. The client must not infer success from edit-tool
         // output when the authoritative application is unavailable.
-        if (!cancelled) setUnsupported(true);
+        if (!cancelled) setDiffState((current) => reduceWebuiDiffState(current, { type: "unsupported" }));
       });
     return () => {
       cancelled = true;
@@ -736,26 +803,28 @@ function WebuiDiffCard({
     if (!request || busy) return;
     const handler = action === "revert" ? revertTurnDiff : reapplyTurnDiff;
     if (!handler) {
-      setUnsupported(true);
+      setDiffState((current) => reduceWebuiDiffState(current, { type: "unsupported" }));
       return;
     }
-    if (!window.confirm(action === "revert" ? "撤销这轮文件改动？" : "重新应用这轮文件改动？")) return;
-    setBusy(true);
+    const confirmed = window.confirm(action === "revert" ? "撤销这轮文件改动？" : "重新应用这轮文件改动？");
+    if (!confirmed) return;
+    const mutationRequest = buildWebuiDiffMutationRequest(diffState, request, action);
+    if (!mutationRequest) return;
+    setDiffState((current) => confirmWebuiDiffMutation(current, confirmed));
     try {
-      const result = await handler({ ...request, ...(view?.changeSetId ? { changeSetId: view.changeSetId } : {}) });
+      const result = await handler(mutationRequest);
       const nextView = action === "revert"
         ? (result as WebuiRevertTurnDiffResult).turnDiff
         : (result as WebuiReapplyTurnDiffResult);
-      if (nextView) setView(nextView);
-      else setUnsupported(true);
+      if (nextView) setDiffState((current) => reduceWebuiDiffState(current, { type: "mutation-succeeded", view: nextView }));
+      else setDiffState((current) => reduceWebuiDiffState(current, { type: "mutation-failed" }));
     } catch {
-      setUnsupported(true);
+      setDiffState((current) => reduceWebuiDiffState(current, { type: "mutation-failed" }));
     } finally {
-      setBusy(false);
+      setDiffState((current) => ({ ...current, busy: false }));
     }
   };
 
-  if ((!getTurnDiff || !request) && !view) return null;
   if (unsupported)
     return (
       <div className="webui-diff-card webui-diff-card--neutral" data-webui-diff-card="true" data-webui-diff-state="runtime-unsupported">
@@ -763,6 +832,7 @@ function WebuiDiffCard({
         <span className="webui-diff-neutral-copy">当前运行时未提供 session diff 能力。</span>
       </div>
     );
+  if ((!getTurnDiff || !request) && !view) return null;
   if (!view || (view.fileChanges ?? []).length === 0) return null;
   const files = view.fileChanges ?? [];
   const shown = expanded ? files : files.slice(0, 3);
@@ -798,12 +868,12 @@ function WebuiDiffCard({
         ))}
       </ul>
       {files.length > 3 ? (
-        <button type="button" className="webui-diff-expand" data-webui-diff-expand="true" onClick={() => setExpanded((value) => !value)}>
+        <button type="button" className="webui-diff-expand" data-webui-diff-expand="true" onClick={() => setDiffState((current) => reduceWebuiDiffState(current, { type: "toggle-expanded" }))}>
           {expanded ? "收起" : `展开其余 ${files.length - 3} 个`}
         </button>
       ) : null}
       <div className="webui-diff-actions">
-        <button type="button" className="webui-diff-review" data-webui-diff-review="true" onClick={() => setReviewing((value) => !value)}>
+        <button type="button" className="webui-diff-review" data-webui-diff-review="true" onClick={() => setDiffState((current) => reduceWebuiDiffState(current, { type: "toggle-review" }))}>
           {reviewing ? "关闭 Review" : "Review"}
         </button>
         {reverted ? (
@@ -1254,15 +1324,17 @@ export function MessageItem({
   const confirmRewind = (rewindTurnDiff: boolean) => {
     if (!sessionId || !rewindSession) return;
     setMutationBusy(true);
-    void rewindSession({ id: sessionId, userMessageId: messageId, clientRequestId: webuiClientRequestId("rewind"), rewindTurnDiff })
+    void rewindSession(buildWebuiRewindRequest(sessionId, messageId, webuiClientRequestId("rewind"), rewindTurnDiff))
       .then(() => { setRewindOpen(false); onMutationComplete?.(); })
       .catch((error: unknown) => setMutationError(error instanceof Error ? error.message : String(error)))
       .finally(() => setMutationBusy(false));
   };
   const submitEdit = () => {
-    if (!sessionId || !editSessionMessage || !editText.trim()) return;
+    if (!sessionId || !editSessionMessage) return;
+    const request = buildWebuiEditRequest(sessionId, messageId, webuiClientRequestId("edit"), editText);
+    if (!request) return;
     setMutationBusy(true);
-    void editSessionMessage({ id: sessionId, userMessageId: messageId, clientRequestId: webuiClientRequestId("edit"), content: editText.trim() })
+    void editSessionMessage(request)
       .then(() => { setEditing(false); onMutationComplete?.(); })
       .catch((error: unknown) => setMutationError(error instanceof Error ? error.message : String(error)))
       .finally(() => setMutationBusy(false));
@@ -1270,7 +1342,7 @@ export function MessageItem({
   const confirmFork = () => {
     if (!sessionId || !forkSession || forkOptions?.canFork === false) return;
     setMutationBusy(true);
-    void forkSession({ id: sessionId, assistantMessageId: messageId, clientRequestId: webuiClientRequestId("fork"), ...(forkTitle.trim() ? { title: forkTitle.trim() } : {}), useSuggestedTitle: !forkTitle.trim(), createIsolatedWorktree: false })
+    void forkSession(buildWebuiMessageForkRequest(sessionId, messageId, webuiClientRequestId("fork"), forkTitle))
       .then(() => { setForkOpen(false); onMutationComplete?.(); })
       .catch((error: unknown) => setMutationError(error instanceof Error ? error.message : String(error)))
       .finally(() => setMutationBusy(false));
@@ -2496,6 +2568,93 @@ type WebuiMessageActionCapabilities = {
   readonly edit?: boolean;
 };
 
+export function toggleWebuiFeedback(
+  value: "like" | "dislike" | undefined,
+  next: "like" | "dislike",
+): "like" | "dislike" {
+  return value === next ? (next === "like" ? "dislike" : "like") : next;
+}
+
+export interface WebuiCopyDependencies {
+  readonly clipboard?: { readonly writeText: (value: string) => Promise<void> };
+  readonly fallback?: () => void;
+}
+
+export async function copyWebuiMessageText(
+  value: string,
+  dependencies: WebuiCopyDependencies,
+): Promise<boolean> {
+  try {
+    if (dependencies.clipboard) await dependencies.clipboard.writeText(value);
+    else if (dependencies.fallback) dependencies.fallback();
+    else return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function scheduleWebuiCopiedReset(
+  setCopied: (value: boolean) => void,
+  schedule: (callback: () => void, delayMs: number) => unknown,
+): void {
+  schedule(() => setCopied(false), 1_200);
+}
+
+export function buildWebuiRewindRequest(
+  id: string,
+  userMessageId: string,
+  clientRequestId: string,
+  rewindTurnDiff: boolean,
+): WebuiRewindSessionRequest {
+  return { id, userMessageId, clientRequestId, rewindTurnDiff };
+}
+
+export function buildWebuiEditRequest(
+  id: string,
+  userMessageId: string,
+  clientRequestId: string,
+  content: string,
+): WebuiEditSessionMessageRequest | undefined {
+  const trimmed = content.trim();
+  return trimmed ? { id, userMessageId, clientRequestId, content: trimmed } : undefined;
+}
+
+export function buildWebuiForkRequest(args: {
+  readonly id: string;
+  readonly assistantMessageId?: string;
+  readonly clientRequestId: string;
+  readonly title?: string;
+  readonly useSuggestedTitle: boolean;
+  readonly createIsolatedWorktree: boolean;
+}): WebuiForkSessionRequest {
+  const title = args.title?.trim();
+  return {
+    id: args.id,
+    ...(args.assistantMessageId ? { assistantMessageId: args.assistantMessageId } : {}),
+    clientRequestId: args.clientRequestId,
+    ...(title ? { title } : {}),
+    useSuggestedTitle: args.useSuggestedTitle,
+    createIsolatedWorktree: args.createIsolatedWorktree,
+  };
+}
+
+export function buildWebuiMessageForkRequest(
+  id: string,
+  assistantMessageId: string,
+  clientRequestId: string,
+  title: string,
+): WebuiForkSessionRequest {
+  return buildWebuiForkRequest({
+    id,
+    assistantMessageId,
+    clientRequestId,
+    title,
+    useSuggestedTitle: !title.trim(),
+    createIsolatedWorktree: false,
+  });
+}
+
 function webuiClientRequestId(prefix: string): string {
   const random = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
     ? crypto.randomUUID()
@@ -2503,7 +2662,7 @@ function webuiClientRequestId(prefix: string): string {
   return `${prefix}-${random}`;
 }
 
-function WebuiMessageActionButton({
+export function WebuiMessageActionButton({
   testId,
   label,
   onClick,
@@ -2529,7 +2688,7 @@ function WebuiMessageActionButton({
   );
 }
 
-function WebuiFeedbackActions({
+export function WebuiFeedbackActions({
   value,
   onChange,
 }: {
@@ -2542,21 +2701,21 @@ function WebuiFeedbackActions({
         <WebuiMessageActionButton
           testId="message-feedback-like-action"
           label="赞"
-          onClick={() => onChange(value === "like" ? "dislike" : "like")}
+          onClick={() => onChange(toggleWebuiFeedback(value, "like"))}
         />
       </span>
       <span data-testid="message-feedback-dislike">
         <WebuiMessageActionButton
           testId="message-feedback-dislike-action"
           label="踩"
-          onClick={() => onChange(value === "dislike" ? "like" : "dislike")}
+          onClick={() => onChange(toggleWebuiFeedback(value, "dislike"))}
         />
       </span>
     </span>
   );
 }
 
-function WebuiMessageActions({
+export function WebuiMessageActions({
   role,
   messageId,
   copyText,
@@ -2577,20 +2736,29 @@ function WebuiMessageActions({
   const [feedback, setFeedback] = useState<"like" | "dislike">();
   const copy = async () => {
     try {
-      if (typeof navigator !== "undefined" && navigator.clipboard)
-        await navigator.clipboard.writeText(copyText);
-      else if (typeof document !== "undefined") {
-        const area = document.createElement("textarea");
-        area.value = copyText;
-        area.style.position = "fixed";
-        area.style.opacity = "0";
-        document.body.appendChild(area);
-        area.select();
-        document.execCommand("copy");
-        area.remove();
-      }
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1_200);
+      const copied = await copyWebuiMessageText(copyText, {
+        ...(typeof navigator !== "undefined" && navigator.clipboard
+          ? { clipboard: navigator.clipboard }
+          : {}),
+        ...(typeof document !== "undefined"
+          ? {
+              fallback: () => {
+                const area = document.createElement("textarea");
+                area.value = copyText;
+                area.style.position = "fixed";
+                area.style.opacity = "0";
+                document.body.appendChild(area);
+                area.select();
+                document.execCommand("copy");
+                area.remove();
+              },
+            }
+          : {}),
+      });
+      if (copied) {
+        setCopied(true);
+        scheduleWebuiCopiedReset(setCopied, window.setTimeout);
+      } else setCopied(false);
     } catch {
       setCopied(false);
     }
@@ -2636,7 +2804,7 @@ function WebuiMessageActions({
   );
 }
 
-function WebuiRewindDialog({
+export function WebuiRewindDialog({
   messageId,
   preview,
   loading,
@@ -3170,6 +3338,36 @@ function optionIdsForStep(
   return selections[stepId] ?? [];
 }
 
+export function sortWebuiQuestionnaireOptions(
+  options: readonly import("../server/port.js").WebuiQuestionnaireOption[],
+): readonly import("../server/port.js").WebuiQuestionnaireOption[] {
+  return [...options].sort(
+    (left, right) => Number(right.recommended === true) - Number(left.recommended === true),
+  );
+}
+
+export function canAdvanceWebuiQuestionnaireStep(
+  step: import("../server/port.js").WebuiQuestionnaireStep | undefined,
+  selected: readonly string[],
+  selectedOther: boolean,
+  otherText: string,
+): boolean {
+  if (!step || !step.required) return true;
+  if (selectedOther) return Boolean(otherText.trim());
+  return selected.length > 0;
+}
+
+export function toggleWebuiQuestionnaireOption(
+  selected: readonly string[],
+  optionId: string,
+  multiple: boolean,
+): readonly string[] {
+  if (!multiple) return [optionId];
+  return selected.includes(optionId)
+    ? selected.filter((id) => id !== optionId)
+    : [...selected, optionId];
+}
+
 /**
  * Convert the interaction panel's controlled fields into the harness answer
  * shape. Keeping this projection outside the JSX makes the important
@@ -3197,7 +3395,27 @@ export function buildWebuiQuestionnaireAnswers(
   });
 }
 
-const WEBUI_GOAL_STATUS_COPY: Record<WebuiGoalStatus | "updated", string> = {
+export function projectWebuiThreadGoalMessage(
+  eventType: string,
+  goal: WebuiGoal,
+): WebuiStreamMessage | undefined {
+  if (
+    eventType !== "thread_goal.objective_updated" &&
+    eventType !== "thread_goal.objective_steering" &&
+    eventType !== "thread_goal.updated"
+  )
+    return undefined;
+  return {
+    id: `thread-goal-${goal.goalId}`,
+    answer: goal.objective,
+    thinking: "",
+    role: "user",
+    timestamp: goal.updatedAt,
+    isGoal: true,
+  };
+}
+
+export const WEBUI_GOAL_STATUS_COPY: Record<WebuiGoalStatus | "updated", string> = {
   active: "进行中",
   paused: "已停止",
   blocked: "受阻",
@@ -3207,7 +3425,7 @@ const WEBUI_GOAL_STATUS_COPY: Record<WebuiGoalStatus | "updated", string> = {
   updated: "已更新",
 };
 
-const WEBUI_GOAL_WAIT_COPY: Record<string, string> = {
+export const WEBUI_GOAL_WAIT_COPY: Record<string, string> = {
   questionnaire: "等待你回答问题",
   permission: "等待你确认权限",
   plan: "等待 Plan 流程结束",
@@ -3226,6 +3444,31 @@ function formatWebuiGoalDuration(seconds: number): string {
   if (hours > 0) return `${hours}h${minutes > 0 ? `${minutes}min` : ""}`;
   if (minutes > 0) return `${minutes}min${rest > 0 ? `${rest}s` : ""}`;
   return `${rest}s`;
+}
+
+export type WebuiGoalPatchBuildResult =
+  | { readonly ok: true; readonly patch: { readonly objective: string; readonly tokenBudget: number | null } }
+  | { readonly ok: false; readonly error: string };
+
+export function buildWebuiGoalEditPatch(
+  objective: string,
+  budget: string,
+): WebuiGoalPatchBuildResult {
+  const text = objective.trim();
+  if (!text) return { ok: false, error: "目标内容不能为空" };
+  const trimmedBudget = budget.trim();
+  const parsedBudget = trimmedBudget
+    ? Number(trimmedBudget.replace(/k$/iu, "000").replace(/m$/iu, "000000"))
+    : null;
+  if (trimmedBudget && (parsedBudget === null || !Number.isInteger(parsedBudget) || parsedBudget <= 0))
+    return { ok: false, error: "预算值无效：请填正整数、K/M 后缀,或留空以取消上限。" };
+  return { ok: true, patch: { objective: text, tokenBudget: parsedBudget } };
+}
+
+export function buildWebuiGoalStatusPatch(
+  status: WebuiGoalStatus,
+): { readonly status: WebuiGoalStatus } {
+  return { status };
 }
 
 export function WebuiGoalBanner({
@@ -3278,12 +3521,9 @@ export function WebuiGoalBanner({
       .finally(() => setBusy(false));
   };
   const saveEdit = () => {
-    const text = objective.trim();
-    if (!text) { setError("目标内容不能为空"); return; }
-    const trimmedBudget = budget.trim();
-    const parsedBudget = trimmedBudget ? Number(trimmedBudget.replace(/k$/iu, "000").replace(/m$/iu, "000000")) : null;
-    if (trimmedBudget && (parsedBudget === null || !Number.isInteger(parsedBudget) || parsedBudget <= 0)) { setError("预算值无效：请填正整数、K/M 后缀,或留空以取消上限。"); return; }
-    submitPatch({ objective: text, tokenBudget: parsedBudget });
+    const result = buildWebuiGoalEditPatch(objective, budget);
+    if (!result.ok) { setError(result.error); return; }
+    submitPatch(result.patch);
   };
   const clear = () => {
     if (!clearGoal) return;
@@ -3357,7 +3597,11 @@ export function WebuiInteractionPanel({
   );
   const [submitting, setSubmitting] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
-  const [remainingSeconds, setRemainingSeconds] = useState<number>();
+  const [remainingSeconds, setRemainingSeconds] = useState<number | undefined>(() =>
+    questionnaire?.expiresAt === undefined
+      ? undefined
+      : Math.max(0, Math.ceil((questionnaire.expiresAt - Date.now()) / 1000)),
+  );
   useEffect(() => {
     setSelections({});
     setOtherSelections({});
@@ -3380,9 +3624,12 @@ export function WebuiInteractionPanel({
   const activeStep = questionnaire?.steps[currentStep];
   const activeSelected = activeStep ? optionIdsForStep(selections, activeStep.id) : [];
   const activeOther = activeStep ? otherSelections[activeStep.id] === true : false;
-  const activeStepValid = !activeStep || !activeStep.required || activeOther
-    ? !activeStep || !activeStep.required || !activeOther || Boolean((otherTexts[activeStep.id] ?? "").trim())
-    : activeSelected.length > 0;
+  const activeStepValid = canAdvanceWebuiQuestionnaireStep(
+    activeStep,
+    activeSelected,
+    activeOther,
+    otherTexts[activeStep?.id ?? ""] ?? "",
+  );
   return (
     <div
       className="mt-3 flex w-full flex-col gap-3"
@@ -3504,7 +3751,7 @@ export function WebuiInteractionPanel({
                   role={multiple ? "group" : "presentation"}
                 >
                 {multiple ? <span className="webui-questionnaire-multi-hint" data-testid={`questionnaire-multi-hint-${step.id}`}>可多选</span> : null}
-                {(step.options ?? []).slice().sort((left, right) => Number(right.recommended === true) - Number(left.recommended === true)).map((option, optionIndex) => {
+                {sortWebuiQuestionnaireOptions(step.options ?? []).map((option, optionIndex) => {
                   const checked = selected.includes(option.id);
                   return (
                     <label
@@ -3522,11 +3769,7 @@ export function WebuiInteractionPanel({
                           {
                             setSelections((current) => ({
                               ...current,
-                              [step.id]: multiple
-                                ? checked
-                                  ? selected.filter((id) => id !== option.id)
-                                  : [...selected, option.id]
-                                : [option.id],
+                              [step.id]: toggleWebuiQuestionnaireOption(selected, option.id, multiple),
                             }));
                             if (!multiple)
                               setOtherSelections((current) => ({
@@ -3911,21 +4154,19 @@ function WebuiComposer({
           }
           return;
         }
-        if (event.type === "thread_goal.updated") {
+        if (
+          event.type === "thread_goal.objective_updated" ||
+          event.type === "thread_goal.objective_steering" ||
+          event.type === "thread_goal.updated"
+        ) {
           const nextGoal = event.payload.goal;
           if (nextGoal && typeof nextGoal === "object") {
             const projectedGoal = nextGoal as WebuiGoal;
             setGoal(projectedGoal);
             setStream((current) => {
-              const messageId = `thread-goal-${projectedGoal.goalId}`;
-              const message = {
-                id: messageId,
-                answer: projectedGoal.objective,
-                thinking: "",
-                role: "user" as const,
-                timestamp: projectedGoal.updatedAt,
-                isGoal: true,
-              };
+              const message = projectWebuiThreadGoalMessage(event.type, projectedGoal);
+              if (!message) return current;
+              const messageId = message.id;
               const existing = current.messages.findIndex((item) => item.id === messageId);
               if (existing < 0)
                 return { ...current, messages: [...current.messages, message] };

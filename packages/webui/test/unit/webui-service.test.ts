@@ -38,6 +38,8 @@ import {
   type WebuiStreamResult,
   type WebuiRuntimeEvent,
   type WebuiPermissionDecision,
+  type WebuiGetSessionDiffRequest,
+  type WebuiGetTurnDiffRequest,
 } from "../../src/server/index.js";
 import { createWebuiTransport } from "../../src/client/transport.js";
 import { WebuiTerminalManager } from "../../src/server/terminal.js";
@@ -65,6 +67,7 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
   public lastQuestionnaireReply: Record<string, unknown> | undefined;
   public lastQuestionnaireDismissal: Record<string, unknown> | undefined;
   public abortCalls = 0;
+  public diffRequests: Array<{ readonly operation: string; readonly body: unknown }> = [];
   public sendObserved: Promise<void>;
   private resolveSendObserved!: () => void;
 
@@ -108,6 +111,26 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
     _request: WebuiMessagesRequest,
   ): Promise<WebuiMessagesResult> {
     return { messages: [], hasMore: false };
+  }
+
+  async getSessionDiff(request: WebuiGetSessionDiffRequest) {
+    this.diffRequests.push({ operation: "getSessionDiff", body: request });
+    return { diffs: [{ file: "session.ts", additions: 1, deletions: 0 }], changeSetId: "changes-1" };
+  }
+
+  async getTurnDiff(request: WebuiGetTurnDiffRequest) {
+    this.diffRequests.push({ operation: "getTurnDiff", body: request });
+    return { status: "active", canUndo: true, canReapply: false, changeSetId: "changes-1", fileChanges: [{ file: "turn.ts", additions: 2, deletions: 1 }] };
+  }
+
+  async revertTurnDiff(request: WebuiGetTurnDiffRequest) {
+    this.diffRequests.push({ operation: "revertTurnDiff", body: request });
+    return { success: true, turnDiff: { status: "reverted", canUndo: false, canReapply: true, changeSetId: "changes-1", fileChanges: [{ file: "turn.ts", additions: 2, deletions: 1 }] } };
+  }
+
+  async reapplyTurnDiff(request: WebuiGetTurnDiffRequest) {
+    this.diffRequests.push({ operation: "reapplyTurnDiff", body: request });
+    return { success: true, status: "active", canUndo: true, canReapply: false, changeSetId: "changes-1", fileChanges: [{ file: "turn.ts", additions: 2, deletions: 1 }] };
   }
 
   async listWorkspaceFileTree() {
@@ -783,6 +806,28 @@ describe("WebUI service", () => {
     } finally {
       await rm(workspaceDir, { recursive: true, force: true });
     }
+  });
+
+  it("forwards all authoritative diff operations through service and transport names", async () => {
+    const { credential } = await bootService();
+    const transport = createWebuiTransport({
+      websocketUrl: service.info().boundUrl,
+      token: credential.token,
+      webSocket: WebSocket as unknown as NonNullable<
+        Parameters<typeof createWebuiTransport>[0]["webSocket"]
+      >,
+    });
+    const request = { id: "session-1", assistantMessageId: "assistant-1", changeSetId: "changes-1" };
+    expect(await transport.getSessionDiff({ id: "session-1", messageId: "assistant-1" })).toMatchObject({ changeSetId: "changes-1" });
+    expect(await transport.getTurnDiff(request)).toMatchObject({ status: "active", changeSetId: "changes-1" });
+    expect(await transport.revertTurnDiff(request)).toMatchObject({ success: true, turnDiff: { status: "reverted" } });
+    expect(await transport.reapplyTurnDiff(request)).toMatchObject({ success: true, status: "active" });
+    expect(port.diffRequests.map((entry) => entry.operation)).toEqual([
+      "getSessionDiff",
+      "getTurnDiff",
+      "revertTurnDiff",
+      "reapplyTurnDiff",
+    ]);
   });
 
   it("rejects request and stream promises when the client socket closes without a response", async () => {
@@ -1629,6 +1674,28 @@ describe("WebUI service", () => {
 });
 
 describe("WebUI operation allowlist", () => {
+  it("routes all authoritative diff operations through the service registry", async () => {
+    const { createOperationRegistry } = await import("../../src/server/index.js");
+    const port = new ScriptedHarnessPort();
+    const registry = createOperationRegistry(port);
+    const request = { id: "session-1", assistantMessageId: "assistant-1", changeSetId: "changes-1" };
+    const invoke = async (name: string, body: unknown) => {
+      const entry = registry.get(name);
+      if (!entry) throw new Error(`missing operation: ${name}`);
+      return entry.handle({ requestId: name }, body);
+    };
+    expect(await invoke("getSessionDiff", { id: "session-1", messageId: "assistant-1" })).toMatchObject({ body: { changeSetId: "changes-1" } });
+    expect(await invoke("getTurnDiff", request)).toMatchObject({ body: { status: "active" } });
+    expect(await invoke("revertTurnDiff", request)).toMatchObject({ body: { turnDiff: { status: "reverted" } } });
+    expect(await invoke("reapplyTurnDiff", request)).toMatchObject({ body: { status: "active" } });
+    expect(port.diffRequests.map((entry) => entry.operation)).toEqual([
+      "getSessionDiff",
+      "getTurnDiff",
+      "revertTurnDiff",
+      "reapplyTurnDiff",
+    ]);
+  });
+
   it("enforces structural validation on every request body", async () => {
     const port = new ScriptedHarnessPort();
     const service = new WebuiService({ port });

@@ -293,6 +293,13 @@ export function applyFrameData(
       status: text(status ?? event, ["type", "status"]) || undefined,
     };
   }
+  if (type === "session.error" || type === "session_error") {
+    return {
+      ...next,
+      phase: "error",
+      refusal: text(event, ["error", "message", "reason"]) || undefined,
+    };
+  }
   if (
     type === "runtime-event" ||
     type === "action-required" ||
