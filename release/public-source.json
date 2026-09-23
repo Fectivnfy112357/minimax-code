@@ -3419,6 +3419,7 @@
     "packages/webui/src/client/components/OutputError.tsx",
     "packages/webui/src/client/components/SettingsModal.tsx",
     "packages/webui/src/client/components/Transcript.tsx",
+    "packages/webui/src/client/components/TranscriptPrimitives.tsx",
     "packages/webui/src/client/components/TranscriptSkeletons.tsx",
     "packages/webui/src/client/components/TurnNavigator.tsx",
     "packages/webui/src/client/components/UserMenu.tsx",
