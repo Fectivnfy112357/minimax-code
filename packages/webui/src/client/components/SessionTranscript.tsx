@@ -208,6 +208,7 @@ export function WebuiSessionTranscript({
   // does: a process disclosure carrying the thinking and the tool steps, then
   // the assistant's markdown. A user turn is its own block.
   const groups = useMemo(() => groupWebuiTranscriptItems(items), [items]);
+  const showEmptyState = !turnLive && !error && !loading && items.length === 0;
   // The right-rail navigator's tick list mirrors the assistant turns visible
   // on the page. A user turn isn't a tick — only the assistant block that
   // follows it counts. The first assistant group is `active` while we have
@@ -253,6 +254,7 @@ export function WebuiSessionTranscript({
       data-webui-transcript-empty-live={
         turnLive && groups.length === 0 ? "true" : undefined
       }
+      data-webui-transcript-empty={showEmptyState ? "true" : undefined}
       className="message-container-viewport scrollbar-hide webui-session-transcript-scroll relative flex w-full flex-col"
       data-webui-session-transcript-scroll="true"
     >
@@ -269,9 +271,12 @@ export function WebuiSessionTranscript({
           </p>
         ) : null}
         {!turnLive && loading && items.length === 0 ? <ChatSkeleton /> : null}
-        {!turnLive && !error && !loading && items.length === 0 ? (
-          <p className="text-text_default_secondary text-size_14 leading-line_height_20">
-            No messages in this session.
+        {showEmptyState ? (
+          <p
+            className="webui-transcript-empty-state text-text_default_secondary text-size_14 leading-line_height_20"
+            data-testid="transcript-empty-state"
+          >
+            当前会话暂无消息
           </p>
         ) : null}
         {loadOlder ? (

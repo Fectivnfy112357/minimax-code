@@ -327,9 +327,13 @@ describe("WebUI shell", () => {
       createElement(WebuiSessionTranscript, {
         sessionId: "empty-session",
         loadMessages: async () => ({ messages: [], hasMore: false }),
+        initialMessages: { messages: [], hasMore: false },
       }),
     );
     expect(html).toContain('data-webui-transcript="empty-session"');
+    expect(html).toContain('data-webui-transcript-empty="true"');
+    expect(html).toContain('data-testid="transcript-empty-state"');
+    expect(html).toContain("当前会话暂无消息");
   });
 
   it("groups a flat transcript into one block per message", () => {

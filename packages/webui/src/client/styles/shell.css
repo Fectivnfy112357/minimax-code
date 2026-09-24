@@ -1071,11 +1071,31 @@
     padding-left: var(--spacing_16);
     overflow: visible;
   }
+  .webui-session-layout
+    .webui-session-transcript-scroll[data-webui-transcript-empty="true"] {
+    flex: 1 1 auto;
+  }
   .webui-session-layout .message-list {
     width: 100%;
     max-width: 768px;
     margin-right: auto;
     margin-left: auto;
+  }
+  .webui-session-layout
+    .webui-session-transcript-scroll[data-webui-transcript-empty="true"]
+    .message-list {
+    flex: 1 1 auto;
+    align-items: center;
+    justify-content: center;
+  }
+  .webui-transcript-empty-state {
+    display: flex;
+    width: 100%;
+    min-height: clamp(180px, 28vh, 280px);
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    text-align: center;
   }
   /* The composer owns the live stream in React, but its wrapper must not make
    * that stream a bottom-zone flex item. `display: contents` keeps the
@@ -2399,38 +2419,75 @@
   }
 
   .webui-diff-icon svg {
-    width: 18px;
-    height: 18px;
+    width: 20px;
+    height: 20px;
   }
 
   .webui-diff-header {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
-    font-size: 14px;
+    gap: 12px;
+    min-height: 70px;
+    padding: 12px 16px;
+    transition: background-color 120ms ease;
+  }
+
+  .webui-diff-header:hover {
+    background: var(--bg_interaction_secondary_default);
+  }
+
+  .webui-diff-summary {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    align-items: center;
+    gap: 12px;
+    padding-right: 12px;
+    text-align: left;
+  }
+
+  .webui-diff-header-content {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .webui-diff-header-divider {
+    width: 0.5px;
+    height: 13px;
+    flex: none;
+    background: var(--border_default);
   }
 
   .webui-diff-header-title {
+    min-width: 0;
     flex: 1;
+    overflow: hidden;
     color: var(--text_default_primary);
-    font-weight: 500;
+    font-size: 14px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .webui-diff-header-stats,
   .webui-diff-file-stats {
     display: inline-flex;
-    gap: 6px;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 4px;
+    color: var(--text_default_primary);
     font-size: 12px;
     font-variant-numeric: tabular-nums;
   }
 
   .webui-diff-add {
-    color: var(--text_status_success);
+    color: var(--code-theme-addition-foreground, var(--text_status_success));
   }
 
   .webui-diff-del {
-    color: var(--text_status_error);
+    color: var(--code-theme-deletion-foreground, var(--text_status_error));
   }
 
   .webui-diff-files {
@@ -2438,6 +2495,7 @@
     flex-direction: column;
     margin: 0;
     padding: 0;
+    border-top: 0.5px solid var(--border_default);
     list-style: none;
   }
 
@@ -2445,8 +2503,14 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 6px 12px;
+    min-height: 36px;
+    padding: 0 12px;
+    border-bottom: 0.5px solid var(--border_default);
     font-size: 13px;
+  }
+
+  .webui-diff-file:last-child {
+    border-bottom: 0;
   }
 
   .webui-diff-file:hover {
@@ -2454,27 +2518,38 @@
   }
 
   .webui-diff-file-icon {
-    width: 16px;
-    height: 16px;
+    display: inline-flex;
+    width: 18px;
+    height: 18px;
     flex: none;
     color: var(--text_default_tertiary);
+  }
+
+  .webui-diff-file-icon svg {
+    width: 18px;
+    height: 18px;
   }
 
   .webui-diff-file-name {
     min-width: 0;
     flex: 1;
     overflow: hidden;
-    color: var(--text_default_primary);
+    color: var(--text_default_secondary);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .webui-diff-expand {
-    padding: 6px 12px;
+    display: flex;
+    width: 100%;
+    min-height: 36px;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 0 12px;
     border: 0;
     background: transparent;
     color: var(--text_default_secondary);
-    font-size: 13px;
+    font-size: 14px;
     text-align: left;
     cursor: pointer;
   }
@@ -2490,25 +2565,34 @@
   .webui-diff-actions {
     display: flex;
     align-items: center;
-    justify-content: flex-end;
+    flex-shrink: 0;
     gap: 8px;
-    padding: 8px 12px;
   }
 
   .webui-diff-review,
   .webui-diff-revert,
   .webui-diff-reapply {
-    min-height: 32px;
+    display: inline-flex;
+    height: 32px;
+    align-items: center;
     padding: 0 8px;
     border-radius: 8px;
-    font-size: 13px;
+    color: var(--text_default_primary);
+    font-size: 14px;
     cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .webui-diff-review:hover,
+  .webui-diff-revert:hover,
+  .webui-diff-reapply:hover {
+    background: var(--bg_interaction_tertiary_hover);
   }
 
   .webui-diff-review {
-    border: 0.5px solid var(--border_default);
+    padding: 0 12px;
+    border: 1px solid var(--border_default);
     background: transparent;
-    color: var(--text_default_primary);
   }
 
   .webui-diff-review-panel {
@@ -2532,8 +2616,7 @@
   .webui-diff-revert,
   .webui-diff-reapply {
     border: 0;
-    background: var(--bg_interaction_tertiary_hover);
-    color: var(--text_default_primary);
+    background: transparent;
   }
 
   .webui-diff-revert:disabled,

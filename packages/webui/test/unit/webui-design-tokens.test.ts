@@ -275,6 +275,7 @@ describe("WebUI compiled stylesheet", () => {
       /\.webui-nav-item\[data-webui-nav-active="true"\]\s*\{/u,
       /\.webui-session-card\s*\{/u,
       /\.webui-empty-state\s*\{/u,
+      /\.webui-transcript-empty-state\s*\{/u,
       /\.webui-input:focus-visible/u,
       /\.webui-textarea:focus-visible/u,
       /\.webui-button-primary:focus-visible/u,

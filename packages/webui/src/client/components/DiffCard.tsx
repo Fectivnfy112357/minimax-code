@@ -11,7 +11,7 @@
 // their current import path during the W3 wave.
 
 import { useEffect, useMemo, useState, type ReactElement } from "react";
-import { WebuiIconFile } from "../icons.js";
+import { WebuiIconDiffFile, WebuiIconDiffSummary } from "../icons.js";
 import type {
   WebuiGetTurnDiffRequest,
   WebuiReapplyTurnDiffRequest,
@@ -179,26 +179,46 @@ export function WebuiDiffCard({
     <div
       className="webui-diff-card"
       data-webui-diff-card="true"
+      data-testid="turn-diff-card"
       data-webui-diff-state={view.status ?? "active"}
       data-change-set-id={view.changeSetId}
       data-source-message-id={view.sourceMessageId ?? assistantMessageId}
     >
       <div className="webui-diff-header">
-        <span className="webui-diff-icon" aria-hidden="true"><WebuiIconFile /></span>
-        <span className="webui-diff-header-title">{`已编辑 ${files.length} 个文件`}</span>
-        <span className="webui-diff-header-stats" data-webui-diff-stats="true">
-          <span className="webui-diff-add">{`+${totalAdded}`}</span>
-          {/* Desktop's diff card hides the deletion badge when no lines
-           * were removed from the change set — keeping the row additions-only
-           * avoids the misleading "+{n}-0" stat the WebUI used to render. */}
-          {totalDeleted > 0 ? <span className="webui-diff-del">{`-${totalDeleted}`}</span> : null}
-        </span>
+        <div className="webui-diff-summary" data-testid="turn-diff-summary">
+          <span className="webui-diff-icon" aria-hidden="true"><WebuiIconDiffSummary /></span>
+          <span className="webui-diff-header-content">
+            <span className="webui-diff-header-title">{`已编辑 ${files.length} 个文件`}</span>
+            <span className="webui-diff-header-stats" data-webui-diff-stats="true">
+              <span className="webui-diff-add">{`+${totalAdded}`}</span>
+              {/* Desktop's diff card hides the deletion badge when no lines
+               * were removed from the change set — keeping the row additions-only
+               * avoids the misleading "+{n}-0" stat the WebUI used to render. */}
+              {totalDeleted > 0 ? <span className="webui-diff-del">{`-${totalDeleted}`}</span> : null}
+            </span>
+          </span>
+        </div>
+        <span className="webui-diff-header-divider" aria-hidden="true" />
+        <div className="webui-diff-actions">
+          {reverted ? (
+            <button type="button" className="webui-diff-reapply" data-testid="turn-diff-undo" disabled={busy || view.canReapply === false} onClick={() => void mutate("reapply")}>
+              重新应用
+            </button>
+          ) : (
+            <button type="button" className="webui-diff-revert" data-testid="turn-diff-undo" disabled={busy || view.canUndo === false} onClick={() => void mutate("revert")}>
+              撤销
+            </button>
+          )}
+          <button type="button" className="webui-diff-review" data-webui-diff-review="true" data-testid="turn-diff-review" onClick={() => setDiffState((current) => reduceWebuiDiffState(current, { type: "toggle-review" }))}>
+            {reviewing ? "关闭 Review" : "Review"}
+          </button>
+        </div>
       </div>
       <ul className="webui-diff-files">
         {shown.map((file) => (
           <li className="webui-diff-file" key={file.file} data-webui-diff-file="true" data-file-path={file.file}>
-            <WebuiIconFile className="webui-diff-file-icon" />
-            <span className="webui-diff-file-name" title={file.file}>{basenameOf(file.file)}</span>
+            <span className="webui-diff-file-icon" data-testid="turn-diff-file-icon"><WebuiIconDiffFile fileName={basenameOf(file.file)} /></span>
+            <span className="webui-diff-file-name" data-testid="turn-diff-file-name" title={file.file}>{basenameOf(file.file)}</span>
             <span className="webui-diff-file-stats" data-webui-diff-file-stats="true">
               <span className="webui-diff-add">{`+${file.additions}`}</span>
               {file.deletions > 0 ? <span className="webui-diff-del">{`-${file.deletions}`}</span> : null}
@@ -207,24 +227,10 @@ export function WebuiDiffCard({
         ))}
       </ul>
       {files.length > 3 ? (
-        <button type="button" className="webui-diff-expand" data-webui-diff-expand="true" onClick={() => setDiffState((current) => reduceWebuiDiffState(current, { type: "toggle-expanded" }))}>
+        <button type="button" className="webui-diff-expand" data-webui-diff-expand="true" data-testid="turn-diff-show-more" onClick={() => setDiffState((current) => reduceWebuiDiffState(current, { type: "toggle-expanded" }))}>
           {expanded ? "收起" : `展开其余 ${files.length - 3} 个`}
         </button>
       ) : null}
-      <div className="webui-diff-actions">
-        <button type="button" className="webui-diff-review" data-webui-diff-review="true" onClick={() => setDiffState((current) => reduceWebuiDiffState(current, { type: "toggle-review" }))}>
-          {reviewing ? "关闭 Review" : "Review"}
-        </button>
-        {reverted ? (
-          <button type="button" className="webui-diff-reapply" disabled={busy || view.canReapply === false} onClick={() => void mutate("reapply")}>
-            重新应用
-          </button>
-        ) : (
-          <button type="button" className="webui-diff-revert" disabled={busy || view.canUndo === false} onClick={() => void mutate("revert")}>
-            撤销
-          </button>
-        )}
-      </div>
       {reviewing ? (
         <div className="webui-diff-review-panel" data-webui-diff-review-panel="true">
           {files.map((file) => (

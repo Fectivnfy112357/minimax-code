@@ -131,6 +131,12 @@ describe("round-3 authoritative diff state machine", () => {
       initialState: { expanded: false, reviewing: false },
     }));
     expect(active).toContain('data-webui-diff-state="active"');
+    expect(active).toContain('data-testid="turn-diff-card"');
+    expect(active).toContain('data-testid="turn-diff-summary"');
+    expect(active).toContain('data-testid="turn-diff-file-icon"');
+    expect(active).toContain('data-testid="turn-diff-undo"');
+    expect(active).toContain('data-testid="turn-diff-review"');
+    expect(active).toContain('data-testid="turn-diff-show-more"');
     expect(active).toContain('data-change-set-id="changes-1"');
     expect(active).toContain('data-source-message-id="assistant-1"');
     expect(active).toContain("展开其余 1 个");

@@ -213,6 +213,24 @@ describe("W0 · structural declarations W5 must preserve", () => {
     expect(scroll).toContain("flex: 0 0 auto");
     expect(scroll).toContain("overflow: visible");
 
+    const emptyTranscript = winning(
+      '.webui-session-layout .webui-session-transcript-scroll[data-webui-transcript-empty="true"]',
+    );
+    expect(declaration(emptyTranscript.body, "flex")).toBe("1 1 auto");
+
+    const emptyMessageList = winning(
+      '.webui-session-layout .webui-session-transcript-scroll[data-webui-transcript-empty="true"] .message-list',
+    );
+    expect(declaration(emptyMessageList.body, "flex")).toBe("1 1 auto");
+    expect(declaration(emptyMessageList.body, "align-items")).toBe("center");
+    expect(declaration(emptyMessageList.body, "justify-content")).toBe("center");
+
+    const emptyState = winning(".webui-transcript-empty-state");
+    expect(declaration(emptyState.body, "display")).toBe("flex");
+    expect(declaration(emptyState.body, "align-items")).toBe("center");
+    expect(declaration(emptyState.body, "justify-content")).toBe("center");
+    expect(declaration(emptyState.body, "text-align")).toBe("center");
+
     const messageList = winning(".webui-session-layout .message-list");
     expect(declaration(messageList.body, "max-width")).toBe("768px");
     expect(declaration(messageList.body, "margin-left")).toBe("auto");

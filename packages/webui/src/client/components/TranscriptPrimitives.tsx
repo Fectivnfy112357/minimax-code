@@ -15,7 +15,8 @@ import { ActivityIndicator } from "./ActivityIndicator.js";
 import {
   WebuiIconActivity,
   WebuiIconChevronDown,
-  WebuiIconFile,
+  WebuiIconDiffFile,
+  WebuiIconDiffSummary,
 } from "../icons.js";
 import { WebuiMarkdown } from "../markdown.js";
 import {
@@ -106,19 +107,24 @@ export function WebuiToolResults({
   return (
     <div className="webui-diff-card" data-webui-diff-card="true">
       <div className="webui-diff-header">
-        <span className="webui-diff-header-title" data-webui-diff-title="true">
-          {`已编辑 ${edits.length} 个文件`}
-        </span>
-        {totalAdded > 0 || totalDeleted > 0 ? (
-          <span className="webui-diff-header-stats">
-            {totalAdded > 0 ? (
-              <span className="webui-diff-add">{`+${totalAdded}`}</span>
-            ) : null}
-            {totalDeleted > 0 ? (
-              <span className="webui-diff-del">{`-${totalDeleted}`}</span>
+        <div className="webui-diff-summary">
+          <span className="webui-diff-icon" aria-hidden="true"><WebuiIconDiffSummary /></span>
+          <span className="webui-diff-header-content">
+            <span className="webui-diff-header-title" data-webui-diff-title="true">
+              {`已编辑 ${edits.length} 个文件`}
+            </span>
+            {totalAdded > 0 || totalDeleted > 0 ? (
+              <span className="webui-diff-header-stats">
+                {totalAdded > 0 ? (
+                  <span className="webui-diff-add">{`+${totalAdded}`}</span>
+                ) : null}
+                {totalDeleted > 0 ? (
+                  <span className="webui-diff-del">{`-${totalDeleted}`}</span>
+                ) : null}
+              </span>
             ) : null}
           </span>
-        ) : null}
+        </div>
       </div>
       <ul className="webui-diff-files">
         {shown.map((stat, index) => (
@@ -126,7 +132,7 @@ export function WebuiToolResults({
             className="webui-diff-file"
             key={`${stat.name ?? "file"}-${index}`}
           >
-            <WebuiIconFile className="webui-diff-file-icon" />
+            <span className="webui-diff-file-icon" data-testid="turn-diff-file-icon"><WebuiIconDiffFile fileName={stat.name ?? undefined} /></span>
             <span className="webui-diff-file-name">{stat.name ?? "文件"}</span>
             {stat.added > 0 || stat.deleted > 0 ? (
               <span className="webui-diff-file-stats">
