@@ -97,6 +97,10 @@ const WEBUI_SLASH_FALLBACK_SECTIONED: SlashCommandEntry[] = await (async () => {
   return sectionWebuiSlashPalette(WEBUI_BUILTIN_COMMANDS, entries);
 })();
 
+// Desktop keeps the viewport pinned through the short hand-off window where
+// the live turn is replaced by the refreshed historical transcript.
+const WEBUI_STREAM_FINISH_SETTLE_MS = 2_000;
+
 /**
  * Open a directory picker and return the chosen directory's path string.
  *
@@ -307,6 +311,11 @@ export function WebuiComposer({
   const [commandRunning, setCommandRunning] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const composerRegionRef = useRef<HTMLDivElement | null>(null);
+  const streamColumnRef = useRef<HTMLDivElement | null>(null);
+  const autoFollowSessionRef = useRef(true);
+  const manualScrollIntentRef = useRef(false);
+  const previousStreamSessionRef = useRef<string | undefined>(sessionId);
+  const previousStreamContentRef = useRef(false);
   const fieldId = useId();
 
   useEffect(() => {
@@ -718,6 +727,137 @@ export function WebuiComposer({
     stream.phase === "refused" ||
     stream.phase === "error" ||
     stream.transcriptIncomplete;
+  useLayoutEffect(() => {
+    if (!sessionLayout) return undefined;
+    const region = composerRegionRef.current;
+    const layout = region?.closest<HTMLElement>(
+      '[data-webui-session-layout="true"]',
+    );
+    if (!region || !layout) return undefined;
+    const updateReservedHeight = () => {
+      // Desktop reserves the measured composer inset plus a small base tail
+      // inside its single message viewport. Keep the same contract here so a
+      // taller slash/permission/composer state cannot cover the live tail.
+      const height = Math.ceil(region.getBoundingClientRect().height);
+      layout.style.setProperty(
+        "--webui-composer-bottom-padding",
+        `${height + 16}px`,
+      );
+    };
+    updateReservedHeight();
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? undefined
+        : new ResizeObserver(updateReservedHeight);
+    observer?.observe(region);
+    window.addEventListener("resize", updateReservedHeight);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", updateReservedHeight);
+      layout.style.removeProperty("--webui-composer-bottom-padding");
+    };
+  }, [sessionLayout]);
+  useLayoutEffect(() => {
+    if (!sessionLayout || !showStreamContent) return undefined;
+    const streamColumn = streamColumnRef.current;
+    if (!streamColumn) return undefined;
+    const viewport = streamColumn?.closest<HTMLElement>(
+      '[data-webui-session-scroll="true"]',
+    );
+    if (!viewport) return undefined;
+    const followBottom = () => {
+      if (!autoFollowSessionRef.current) return;
+      viewport.scrollTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
+    };
+    const handleScroll = () => {
+      const distance =
+        viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop;
+      if (distance <= 150) {
+        autoFollowSessionRef.current = true;
+        manualScrollIntentRef.current = false;
+      } else if (manualScrollIntentRef.current) {
+        autoFollowSessionRef.current = false;
+      }
+    };
+    const handleWheel = () => {
+      manualScrollIntentRef.current = true;
+    };
+    viewport.addEventListener("scroll", handleScroll, { passive: true });
+    viewport.addEventListener("wheel", handleWheel, { passive: true });
+    followBottom();
+    const bottomPadding = viewport.querySelector<HTMLElement>(
+      '[data-webui-session-bottom-padding="true"]',
+    );
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? undefined
+        : new ResizeObserver(followBottom);
+    observer?.observe(streamColumn);
+    if (bottomPadding) observer?.observe(bottomPadding);
+    return () => {
+      observer?.disconnect();
+      viewport.removeEventListener("scroll", handleScroll);
+      viewport.removeEventListener("wheel", handleWheel);
+    };
+  }, [sessionLayout, showStreamContent]);
+  useLayoutEffect(() => {
+    const previousSessionId = previousStreamSessionRef.current;
+    const wasShowingStream = previousStreamContentRef.current;
+    previousStreamSessionRef.current = sessionId;
+    previousStreamContentRef.current = showStreamContent;
+    if (
+      !sessionLayout ||
+      showStreamContent ||
+      !wasShowingStream ||
+      previousSessionId !== sessionId
+    )
+      return undefined;
+
+    const region = composerRegionRef.current;
+    const viewport = region?.closest<HTMLElement>(
+      '[data-webui-session-scroll="true"]',
+    );
+    if (!viewport || manualScrollIntentRef.current) return undefined;
+    const transcript = viewport.querySelector<HTMLElement>(
+      '[data-webui-session-transcript-scroll="true"]',
+    );
+    const bottomPadding = viewport.querySelector<HTMLElement>(
+      '[data-webui-session-bottom-padding="true"]',
+    );
+    let frame = 0;
+    let timer = 0;
+    const followBottom = () => {
+      if (!autoFollowSessionRef.current) return;
+      viewport.scrollTop = Math.max(
+        0,
+        viewport.scrollHeight - viewport.clientHeight,
+      );
+    };
+    const scheduleFollow = () => {
+      if (frame !== 0) cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        followBottom();
+      });
+    };
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? undefined
+        : new ResizeObserver(scheduleFollow);
+    if (transcript) observer?.observe(transcript);
+    if (bottomPadding) observer?.observe(bottomPadding);
+    scheduleFollow();
+    timer = window.setTimeout(() => {
+      observer?.disconnect();
+      if (frame !== 0) cancelAnimationFrame(frame);
+      frame = 0;
+    }, WEBUI_STREAM_FINISH_SETTLE_MS);
+    return () => {
+      observer?.disconnect();
+      window.clearTimeout(timer);
+      if (frame !== 0) cancelAnimationFrame(frame);
+    };
+  }, [sessionId, sessionLayout, showStreamContent]);
   const sendable = (canCompose || canQueue) && Boolean(draft.trim());
   // The submit handler is a single call into
   // `submitWebuiComposerTurn` with the assembled handler bundle. The
@@ -785,6 +925,11 @@ export function WebuiComposer({
       }
       return;
     }
+    // A newly submitted turn is a Desktop-style request to follow the latest
+    // frontier. The scroll listener can still release this lock immediately
+    // if the user wheels back into history while the turn is running.
+    autoFollowSessionRef.current = true;
+    manualScrollIntentRef.current = false;
     await submitWebuiComposerTurn(
       {
         sessionId,
@@ -891,6 +1036,7 @@ export function WebuiComposer({
       ) : null}
       {showStreamContent ? (
         <div
+          ref={streamColumnRef}
           className="webui-stream-column"
           data-webui-stream-column="true"
         >

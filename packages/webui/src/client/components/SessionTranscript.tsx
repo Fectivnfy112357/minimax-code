@@ -250,6 +250,9 @@ export function WebuiSessionTranscript({
     <section
       aria-label="Transcript"
       data-webui-transcript={sessionId}
+      data-webui-transcript-empty-live={
+        turnLive && groups.length === 0 ? "true" : undefined
+      }
       className="message-container-viewport scrollbar-hide webui-session-transcript-scroll relative flex w-full flex-col"
       data-webui-session-transcript-scroll="true"
     >

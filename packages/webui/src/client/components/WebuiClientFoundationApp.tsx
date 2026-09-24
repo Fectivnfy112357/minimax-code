@@ -902,8 +902,16 @@ export function WebuiClientFoundationApp(
                     />
                   ) : null}
 
-                  <Composer>
-                  <WebuiComposer
+                  <div
+                    className={
+                      homeMode
+                        ? "contents"
+                        : "webui-session-scroll-viewport flex min-h-0 w-full flex-1 flex-col items-center gap-2 overflow-y-auto overflow-x-hidden"
+                    }
+                    data-webui-session-scroll={homeMode ? undefined : "true"}
+                  >
+                    <Composer>
+                    <WebuiComposer
                     sessionId={selectedSessionId}
                     sessionLayout={!homeMode}
                     agentName={selectedAgentName}
@@ -962,27 +970,35 @@ export function WebuiClientFoundationApp(
                         );
                       }
                     }}
-                  />
-                  </Composer>
+                    />
+                    </Composer>
 
 
-                  {selectedSessionId && loadMessages ? (
-                    <Transcript>
-                    <WebuiSessionTranscript
-                      sessionId={selectedSessionId}
-                      loadMessages={loadMessages}
-                      {...(initialMessages ? { initialMessages } : {})}
-                      getTurnDiff={getTurnDiff}
-                      revertTurnDiff={revertTurnDiff}
-                      reapplyTurnDiff={reapplyTurnDiff}
-                      getSessionForkOptions={getSessionForkOptions}
-                      forkSession={forkSession}
-                      getSessionRewindPreview={getSessionRewindPreview}
-                      rewindSession={rewindSession}
-                      editSessionMessage={editSessionMessage}
-            />
-                    </Transcript>
-                  ) : null}
+                    {selectedSessionId && loadMessages ? (
+                      <Transcript>
+                      <WebuiSessionTranscript
+                        sessionId={selectedSessionId}
+                        loadMessages={loadMessages}
+                        {...(initialMessages ? { initialMessages } : {})}
+                        getTurnDiff={getTurnDiff}
+                        revertTurnDiff={revertTurnDiff}
+                        reapplyTurnDiff={reapplyTurnDiff}
+                        getSessionForkOptions={getSessionForkOptions}
+                        forkSession={forkSession}
+                        getSessionRewindPreview={getSessionRewindPreview}
+                        rewindSession={rewindSession}
+                        editSessionMessage={editSessionMessage}
+                      />
+                      </Transcript>
+                    ) : null}
+                    {!homeMode ? (
+                      <div
+                        className="webui-session-bottom-padding w-full shrink-0"
+                        data-testid="message-bottom-padding"
+                        data-webui-session-bottom-padding="true"
+                      />
+                    ) : null}
+                  </div>
                 </div>
               </div>
             </div>

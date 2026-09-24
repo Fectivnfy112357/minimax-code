@@ -1042,10 +1042,10 @@
     .message-animate-in { animation: none; }
   }
 
-  /* A session is a two-zone surface: the transcript owns the scroll position,
-   * while the composer stays in the bottom zone. The DOM keeps the composer
-   * close to the home surface markup, so the explicit order here is the seam
-   * that prevents it from reappearing above the conversation. */
+  /* A session is a two-zone surface: one message viewport owns the scroll
+   * position, while the composer stays in the bottom zone. The DOM keeps the
+   * composer close to the home surface markup, so the explicit order here is
+   * the seam that prevents it from reappearing above the conversation. */
   .webui-session-layout {
     position: relative;
     min-height: 0;
@@ -1054,14 +1054,22 @@
   .webui-session-surface-with-workspace {
     padding-right: 336px;
   }
-  .webui-session-layout .webui-session-transcript-scroll {
-    order: 1;
+  .webui-session-scroll-viewport {
     min-height: 0;
     flex: 1 1 auto;
     width: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+  }
+  .webui-session-layout .webui-session-transcript-scroll {
+    order: 1;
+    min-height: 0;
+    flex: 0 0 auto;
+    width: 100%;
     padding-right: var(--spacing_16);
     padding-left: var(--spacing_16);
-    overflow-y: auto;
+    overflow: visible;
   }
   .webui-session-layout .message-list {
     width: 100%;
@@ -1077,26 +1085,36 @@
     display: contents;
   }
 
-  /* The live turn's column must scroll itself: the shell around it is
-     overflow-hidden, and while the turn runs the transcript above is empty,
-     so a long reply would otherwise be clipped with no way to reach it. */
+  /* The live turn and historical transcript are siblings in the same scroll
+     viewport. Keeping this column non-scrolling is important: a second
+     overflow container cannot see the composer's bottom inset and lets the
+     active reply disappear behind the overlay during a later turn. */
   .webui-session-layout .webui-stream-column {
-    order: 0;
+    order: 2;
     min-height: 0;
-    flex: 1 1 auto;
+    flex: 0 0 auto;
     width: 100%;
     max-width: 768px;
     margin-right: auto;
     margin-left: auto;
     box-sizing: border-box;
-    padding: 0 var(--spacing_16) 168px;
-    overflow-y: auto;
-    overscroll-behavior: contain;
+    padding: 0 var(--spacing_16);
   }
 
-  /* Desktop composer overlays the bottom of the session reading column. The
-   * transcript reserves `padding-bottom` equal to the composer's reserved slot
-   * so the latest message never hides under the overlay. */
+  /* On the first live turn there is no history to place above the stream. The
+   * transcript component remains mounted for its normal hand-off lifecycle,
+   * but must not consume half of the reading column while it is empty. */
+  .webui-session-layout
+    .webui-session-transcript-scroll[data-webui-transcript-empty-live="true"] {
+    flex: 0 0 0;
+    height: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  /* Desktop composer overlays the bottom of the session reading column. Its
+   * measured height is exported by SessionComposer and consumed by the
+   * explicit spacer at the end of the shared message viewport. */
   .webui-session-layout .webui-session-composer-overlay {
     position: absolute;
     left: 0;
@@ -1119,8 +1137,9 @@
     margin-right: auto;
     margin-left: auto;
   }
-  .webui-session-layout .webui-session-transcript-scroll {
-    padding-bottom: 168px;
+  .webui-session-layout .webui-session-bottom-padding {
+    order: 3;
+    height: var(--webui-composer-bottom-padding, 168px);
   }
 
   /* The user's turn: a 16px-radius bubble on the grouped-tertiary surface,

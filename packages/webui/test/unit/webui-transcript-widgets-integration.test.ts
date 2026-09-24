@@ -217,6 +217,60 @@ describe("WebUI transcript widget wiring", () => {
     expect(html).not.toContain("No messages in this session.");
   });
 
+  it("marks an empty transcript so the first live turn keeps the main column", () => {
+    const html = sessionShell({
+      streamingPhase: "streaming",
+      streamUserText: "你好",
+    });
+    expect(html).toContain('data-webui-transcript-empty-live="true"');
+  });
+
+  it("keeps the transcript expanded when a later turn is streaming", () => {
+    const html = sessionShell({
+      messages: [
+        {
+          msgId: "history-user-1",
+          role: "user",
+          msgContent: "你好",
+          timestamp: 1,
+        },
+        {
+          msgId: "history-assistant-1",
+          role: "assistant",
+          msgContent: "你好！我是 Mavis。",
+          timestamp: 2,
+        },
+      ],
+      streamingPhase: "streaming",
+      streamUserText: "你能做什么",
+    });
+    expect(html).not.toContain('data-webui-transcript-empty-live="true"');
+  });
+
+  it("keeps a Desktop-style bottom spacer after the shared live viewport", () => {
+    const html = sessionShell({
+      messages: [
+        {
+          msgId: "history-user-1",
+          role: "user",
+          msgContent: "你好",
+          timestamp: 1,
+        },
+        {
+          msgId: "history-assistant-1",
+          role: "assistant",
+          msgContent: "你好！我是 Mavis。",
+          timestamp: 2,
+        },
+      ],
+      streamingPhase: "streaming",
+      streamUserText: "你能做什么",
+    });
+    expect(html).toContain('data-webui-session-scroll="true"');
+    expect(html).toContain('data-testid="message-bottom-padding"');
+    expect(html).toContain('data-webui-session-bottom-padding="true"');
+  });
+
   it("keeps the same animated loader after the assistant starts streaming", () => {
     const html = sessionShell({
       streamingPhase: "streaming",
