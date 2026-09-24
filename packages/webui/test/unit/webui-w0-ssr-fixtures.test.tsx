@@ -90,6 +90,22 @@ describe("W0 · SSR · WebuiActivityGroup", () => {
     expect(authoritative).not.toContain("webui-diff-card");
     expect(authoritative).toContain("webui-tool-list");
   });
+
+  it("keeps file-edit children in a mixed thinking activity when turn diff is available", () => {
+    const html = render(
+      createElement(WebuiActivityGroup, {
+        tools: [{ ...EDIT_TOOL, tool_call_name: "write" }],
+        activityItems: [
+          { type: "thinking", text: "准备修改文件" },
+          { type: "tool", tool: { ...EDIT_TOOL, tool_call_name: "write" } },
+        ],
+        authoritativeDiffAvailable: true,
+      }),
+    );
+
+    expect(html).toContain("思考 1 次，修改 1 个文件");
+    expect(html).toContain('data-webui-tool-call="write"');
+  });
 });
 
 describe("W0 · SSR · WebuiTurnProcess", () => {

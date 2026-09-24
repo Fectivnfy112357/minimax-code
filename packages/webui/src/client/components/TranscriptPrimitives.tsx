@@ -123,9 +123,12 @@ function WebuiToolIcon({ category }: { readonly category: ReturnType<typeof tool
 export function WebuiToolResults({
   tools,
   authoritativeDiffAvailable = false,
+  showEditToolRows = false,
 }: {
   readonly tools: readonly Record<string, unknown>[];
   readonly authoritativeDiffAvailable?: boolean;
+  /** Activity disclosures list each tool call even when the turn diff card is available. */
+  readonly showEditToolRows?: boolean;
 }): ReactElement | null {
   const [expanded, setExpanded] = useState(false);
   const edits = tools.filter(isWebuiEditTool);
@@ -148,7 +151,7 @@ export function WebuiToolResults({
   if (authoritativeDiffAvailable) {
     return (
       <div className="webui-tool-list" data-webui-tool-list="true">
-        {renderRows(others)}
+        {renderRows(showEditToolRows ? tools : others)}
       </div>
     );
   }
@@ -257,7 +260,7 @@ export function WebuiActivityGroup({
         const next = activityItems[index];
         if (next?.type === "tool") groupedTools.push(next.tool);
       }
-      detailItems.push(<WebuiToolResults key={`tools-${index}`} tools={groupedTools} authoritativeDiffAvailable={authoritativeDiffAvailable} />);
+      detailItems.push(<WebuiToolResults key={`tools-${index}`} tools={groupedTools} authoritativeDiffAvailable={authoritativeDiffAvailable} showEditToolRows />);
     }
   }
   return (
@@ -275,7 +278,7 @@ export function WebuiActivityGroup({
       <div className="activity-group-body">
         <span className="timeline-spine" aria-hidden="true" />
         <div className="activity-group-items">
-          {activityItems ? detailItems : <WebuiToolResults tools={tools} authoritativeDiffAvailable={authoritativeDiffAvailable} />}
+          {activityItems ? detailItems : <WebuiToolResults tools={tools} authoritativeDiffAvailable={authoritativeDiffAvailable} showEditToolRows />}
         </div>
       </div>
     </details>
