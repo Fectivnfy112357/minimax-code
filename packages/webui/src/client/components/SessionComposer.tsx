@@ -1155,13 +1155,17 @@ export function WebuiComposer({
               items.push(
                 <MessageItem
                   key={message.id}
-                  messageId={message.id}
-                  role="user"
-                  userText={stripped.content}
-                  timestamp={message.timestamp}
-                  isGoal={message.isGoal}
-                  streamMessageId={message.id}
-                  view={projectLiveUserView([message])}
+                  view={projectLiveUserView([message]) ?? {
+                    source: "live",
+                    messageId: message.id,
+                    role: "user",
+                    userText: stripped.content,
+                    streamMessageId: message.id,
+                    ...(message.timestamp !== undefined
+                      ? { timestamp: message.timestamp }
+                      : {}),
+                    ...(message.isGoal ? { isGoal: true } : {}),
+                  }}
                 />,
               );
               return items;
@@ -1230,42 +1234,33 @@ export function WebuiComposer({
             return (
               <>
                 <MessageItem
-                  messageId="stream-live"
-                  role="assistant"
-                  sessionId={sessionId}
-                  assistantMessageId={assistant[assistant.length - 1]?.id}
-                  getTurnDiff={getTurnDiff}
-                  revertTurnDiff={revertTurnDiff}
-                  reapplyTurnDiff={reapplyTurnDiff}
-                  streamMessageId="merged"
-                  messageRootId="merged"
-                  thinking={thinking || undefined}
-                  tools={tools.length > 0 ? tools : undefined}
-                  answers={answers}
-                  streaming={stream.phase === "streaming"}
-                  processingStartedAtMs={stream.processingStartedAtMs}
-                  totalRequestDurationMs={
-                    totalRequestDurationMs > 0 ? totalRequestDurationMs : undefined
-                  }
-                  totalOutputTokens={
-                    totalOutputTokens > 0 ? totalOutputTokens : undefined
-                  }
-                  processSegments={assistant
-                    .map((message) => ({
-                      messageId: message.id,
-                      ...(message.thinking.trim()
-                        ? { thinking: message.thinking }
-                        : {}),
-                      ...(message.toolCalls?.length
-                        ? { tools: message.toolCalls }
-                        : {}),
-                    }))
-                    .filter((segment) => segment.thinking || segment.tools?.length)}
                   view={projectLiveTurnView(stream.messages, {
                       sessionId,
                       streaming: stream.phase === "streaming",
                       processingStartedAtMs: stream.processingStartedAtMs,
-                    }) ?? undefined}
+                    }) ?? {
+                      source: "live",
+                      messageId: "stream-live",
+                      role: "assistant",
+                      ...(sessionId ? { sessionId } : {}),
+                      assistantMessageId: assistant[assistant.length - 1]?.id,
+                      streamMessageId: "merged",
+                      messageRootId: "merged",
+                      streaming: stream.phase === "streaming",
+                      ...(stream.processingStartedAtMs !== undefined
+                        ? { processingStartedAtMs: stream.processingStartedAtMs }
+                        : {}),
+                      ...(thinking ? { thinking } : {}),
+                      ...(tools.length > 0 ? { tools } : {}),
+                      ...(answers.length > 0 ? { answers } : {}),
+                      ...(totalRequestDurationMs > 0
+                        ? { totalRequestDurationMs }
+                        : {}),
+                      ...(totalOutputTokens > 0 ? { totalOutputTokens } : {}),
+                    }}
+                  getTurnDiff={getTurnDiff}
+                  revertTurnDiff={revertTurnDiff}
+                  reapplyTurnDiff={reapplyTurnDiff}
                 />
                 {(stream.phase === "streaming" || stream.phase === "waiting") && !thinking.trim() ? (
                   <ActivityIndicator showLabel labelOverride="思考中…" />

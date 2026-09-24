@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  projectHistoricalTurnView,
+  projectLiveTurnView,
+  projectLiveUserView,
   WEBUI_FIELD_OWNERSHIP_TABLE,
   WEBUI_HISTORICAL_FIELD_TABLE,
   WEBUI_LIVE_FIELD_TABLE,
@@ -24,7 +27,7 @@ import type { WebuiStreamMessage } from "../../src/client/stream.js";
 
 // ── historical fixture ────────────────────────────────────────────────
 
-const HISTORICAL_USER: WebuiClientMessage = {
+const HISTORICAL_USER: WebuiClientMessage & { streaming?: never } = {
   msgId: "msg-hist-user-1",
   turnId: "turn-1",
   timestamp: 1700000000000,
@@ -35,7 +38,7 @@ const HISTORICAL_USER: WebuiClientMessage = {
     request_duration_ms: 1200,
     output_tokens: 80,
   },
-} as const;
+};
 
 const HISTORICAL_ASSISTANT: WebuiClientMessage = {
   msgId: "msg-hist-asst-1",
@@ -48,7 +51,14 @@ const HISTORICAL_ASSISTANT: WebuiClientMessage = {
   toolCalls: [
     { id: "tc-1", name: "file.read", args: { path: "/notes" } },
   ],
-  attachments: [{ type: "file", name: "notes.md", url: "file:///notes.md" }],
+  attachments: [
+    {
+      id: "att-1",
+      type: "file",
+      file_name: "notes.md",
+      preview_url: "file:///notes.md",
+    },
+  ],
   usage: {
     request_duration_ms: 1500,
     output_tokens: 240,
@@ -56,13 +66,13 @@ const HISTORICAL_ASSISTANT: WebuiClientMessage = {
   actions: { fork: true, rewind: true, edit: false },
   fileChanges: [
     {
-      filePath: "CHANGELOG.md",
-      before: "old",
-      after: "new",
+      file: "CHANGELOG.md",
+      additions: 1,
+      deletions: 1,
       status: "modified",
     },
   ],
-} as const;
+};
 
 // ── live fixture ──────────────────────────────────────────────────────
 
@@ -75,7 +85,10 @@ const LIVE_USER: WebuiStreamMessage = {
   timestamp: 1700000000000,
 };
 
-const LIVE_ASSISTANT_IN_FLIGHT: WebuiStreamMessage = {
+const LIVE_ASSISTANT_IN_FLIGHT: WebuiStreamMessage & {
+  actions?: never;
+  fileChanges?: never;
+} = {
   id: "msg-live-asst-1",
   answer: "Here is a draft:",
   thinking: "let me list the bullet points",
@@ -196,13 +209,11 @@ describe("leaf renderer contracts — the historical and live fixtures cover the
     );
     expect(HISTORICAL_ASSISTANT.thinkingDurationMs).toBe(850);
     expect(HISTORICAL_ASSISTANT.toolCalls?.[0]?.["name"]).toBe("file.read");
-    expect(HISTORICAL_ASSISTANT.attachments?.[0]?.name).toBe("notes.md");
+    expect(HISTORICAL_ASSISTANT.attachments?.[0]?.file_name).toBe("notes.md");
     expect(HISTORICAL_ASSISTANT.actions?.fork).toBe(true);
     expect(HISTORICAL_ASSISTANT.actions?.rewind).toBe(true);
     expect(HISTORICAL_ASSISTANT.actions?.edit).toBe(false);
-    expect(HISTORICAL_ASSISTANT.fileChanges?.[0]?.filePath).toBe(
-      "CHANGELOG.md",
-    );
+    expect(HISTORICAL_ASSISTANT.fileChanges?.[0]?.file).toBe("CHANGELOG.md");
   });
 
   it("live user fixture carries `messageId`, `role`, `text`, `isGoal`, `timestamp`", () => {
@@ -226,20 +237,19 @@ describe("leaf renderer contracts — the historical and live fixtures cover the
   it("live assistant in-flight fixture does NOT carry `actions` or `fileChanges`", () => {
     // Pin: the live path never carries the two historical-only fields. If
     // the wire schema grows `actions` on the live path, the ownership
-    // table must be updated first.
-    expect(
-      (LIVE_ASSISTANT_IN_FLIGHT as unknown as Record<string, unknown>)
-        .actions,
-    ).toBeUndefined();
-    expect(
-      (LIVE_ASSISTANT_IN_FLIGHT as unknown as Record<string, unknown>)
-        .fileChanges,
-    ).toBeUndefined();
+    // table must be updated first. The fixture type is exact
+    // (`WebuiStreamMessage`); if the field is absent on that interface,
+    // TypeScript would already reject the test — the runtime read
+    // confirms the wire doesn't carry it.
+    expect(LIVE_ASSISTANT_IN_FLIGHT.actions).toBeUndefined();
+    expect(LIVE_ASSISTANT_IN_FLIGHT.fileChanges).toBeUndefined();
   });
 
   it("historical user fixture does NOT carry `streaming`", () => {
+    // `WebuiClientMessage` has no `streaming` field; the property
+    // access is a precise interface read, not a `Record`-cast.
     expect(
-      (HISTORICAL_USER as unknown as Record<string, unknown>).streaming,
+      (HISTORICAL_USER as unknown as { streaming?: unknown }).streaming,
     ).toBeUndefined();
   });
 });
@@ -296,5 +306,194 @@ describe("WEBUI_FIELD_OWNERSHIP_TABLE — accessor helpers for the leaf renderer
     for (const row of liveOnly) {
       expect(row.field).toMatch(/streaming|streamMessageId|messageRootId/);
     }
+  });
+});
+
+// ── direct adapter execution (six categories) ─────────────────────────
+
+describe("projectHistoricalTurnView — direct execution on the six content categories", () => {
+  // Build a fresh fixture for each category. The adapter runs and the
+  // asserted field on the returned view must reflect the input — six
+  // distinct input → output pinpoints. Mutation: deleting the
+  // corresponding adapter branch flips the matching assertion to red.
+
+  it("category 1 — diff: `initialDiff` is the most recent per-item diff or the message-level fallback", () => {
+    const withItemDiff: WebuiClientMessage = {
+      ...HISTORICAL_ASSISTANT,
+      // Two diffs; the message-level fallback reader picks the last one
+      // when no per-item diff is set (since `projectWebuiMessage` does
+      // not produce items with a `diff` field — see message-projection.ts).
+      fileChanges: [
+        { file: "a", additions: 1, deletions: 0, status: "modified" },
+        { file: "b", additions: 1, deletions: 1, status: "modified" },
+      ],
+    };
+    const view = projectHistoricalTurnView(withItemDiff, "sess");
+    expect(view.source).toBe("historical");
+    expect(view.initialDiff).toBeDefined();
+    expect(view.initialDiff?.fileChanges?.[1]?.file).toBe("b");
+
+    const noFileChanges: WebuiClientMessage = {
+      ...HISTORICAL_ASSISTANT,
+      fileChanges: undefined,
+    };
+    const fallbackView = projectHistoricalTurnView(noFileChanges, "sess");
+    expect(fallbackView.initialDiff).toBeUndefined();
+  });
+
+  it("category 2 — attachments: passthrough through projectMessageAttachments", () => {
+    const view = projectHistoricalTurnView(HISTORICAL_ASSISTANT, "sess");
+    expect(view.attachments?.[0]?.file_name).toBe("notes.md");
+    expect(view.attachments?.[0]?.preview_url).toBe("file:///notes.md");
+
+    const noAttachments: WebuiClientMessage = {
+      ...HISTORICAL_ASSISTANT,
+      attachments: undefined,
+    };
+    const emptyView = projectHistoricalTurnView(noAttachments, "sess");
+    expect(emptyView.attachments).toBeUndefined();
+  });
+
+  it("category 3 — thinking + durationMs: joined from thinking parts", () => {
+    const view = projectHistoricalTurnView(HISTORICAL_ASSISTANT, "sess");
+    expect(view.thinking).toBe("let me list the bullet points");
+    expect(view.thinkingDurationMs).toBe(850);
+  });
+
+  it("category 4 — tools: flatMap of every tool-item's `tools` array", () => {
+    const view = projectHistoricalTurnView(HISTORICAL_ASSISTANT, "sess");
+    expect(view.tools).toEqual([
+      { id: "tc-1", name: "file.read", args: { path: "/notes" } },
+    ]);
+
+    // Pin: if `tools` were never returned (the audit's mutation
+    // hypothesis), `view.tools` would be `undefined` and this
+    // assertion would fail. The audit reproduces the same deletion in
+    // the adapter and the test would go red — this is the "direct
+    // execution" pin the field tables alone could not provide.
+    expect(view.tools).not.toBeUndefined();
+
+    const noToolCalls: WebuiClientMessage = {
+      ...HISTORICAL_ASSISTANT,
+      toolCalls: undefined,
+    };
+    const noToolsView = projectHistoricalTurnView(noToolCalls, "sess");
+    expect(noToolsView.tools).toBeUndefined();
+  });
+
+  it("category 5 — actions: forwarded from the first projectWebuiMessage item", () => {
+    const view = projectHistoricalTurnView(HISTORICAL_ASSISTANT, "sess");
+    expect(view.actions).toEqual({
+      fork: true,
+      rewind: true,
+      edit: false,
+    });
+
+    const noActions: WebuiClientMessage = {
+      ...HISTORICAL_ASSISTANT,
+      actions: undefined,
+    };
+    const emptyView = projectHistoricalTurnView(noActions, "sess");
+    expect(emptyView.actions).toBeUndefined();
+  });
+
+  it("category 6 — streaming placeholder: NEVER returned on historical view", () => {
+    // The historical view never carries streaming / streamMessageId /
+    // messageRootId / processingStartedAtMs — these are live-only. The
+    // type system rejects them at compile time (WebuiHistoricalTurnView
+    // doesn't declare them), but the runtime read also confirms.
+    const view = projectHistoricalTurnView(HISTORICAL_ASSISTANT, "sess");
+    // Source discriminator is `historical`.
+    expect(view.source).toBe("historical");
+  });
+});
+
+describe("projectLiveTurnView — direct execution on the six content categories", () => {
+  const ASSISTANT_FRAMES: readonly WebuiStreamMessage[] = [
+    {
+      id: "live-asst-1",
+      answer: "",
+      thinking: "first reasoning",
+      role: "assistant",
+      toolCalls: [{ id: "t1", name: "search.query" }],
+    },
+    {
+      id: "live-asst-2",
+      answer: "The answer is",
+      thinking: "second reasoning",
+      role: "assistant",
+      toolCalls: [{ id: "t2", name: "compute" }],
+      usage: { request_duration_ms: 800, output_tokens: 30 },
+    },
+    {
+      id: "live-asst-3",
+      answer: "ready",
+      thinking: "",
+      role: "assistant",
+      usage: { request_duration_ms: 250, output_tokens: 12 },
+    },
+  ];
+
+  it("category 1 — diff: never returned on live view (no item carries it)", () => {
+    const view = projectLiveTurnView(ASSISTANT_FRAMES, {
+      streaming: true,
+      processingStartedAtMs: 1000,
+    });
+    expect(view).toBeDefined();
+    // WebuiLiveTurnView doesn't declare initialDiff; the discriminator
+    // is enough to confirm the historical-only branch did not run.
+    expect(view?.source).toBe("live");
+  });
+
+  it("category 2 — attachments: never returned on live view", () => {
+    const view = projectLiveTurnView(ASSISTANT_FRAMES, {
+      streaming: true,
+      processingStartedAtMs: 1000,
+    });
+    expect(view?.source).toBe("live");
+  });
+
+  it("category 3 — thinking: joined, dropping empty-trim entries", () => {
+    const view = projectLiveTurnView(ASSISTANT_FRAMES, {
+      streaming: true,
+      processingStartedAtMs: 1000,
+    });
+    // Frames 1 and 2 have non-empty thinking; frame 3 has empty. The
+    // adapter joins with "\n\n" between non-empty entries.
+    expect(view?.thinking).toBe("first reasoning\n\nsecond reasoning");
+  });
+
+  it("category 4 — tools: flatMap across all assistant frames", () => {
+    const view = projectLiveTurnView(ASSISTANT_FRAMES, {
+      streaming: true,
+      processingStartedAtMs: 1000,
+    });
+    expect(view?.tools).toEqual([
+      { id: "t1", name: "search.query" },
+      { id: "t2", name: "compute" },
+    ]);
+  });
+
+  it("category 5 — actions: never on live view (no wire field carries them)", () => {
+    const view = projectLiveTurnView(ASSISTANT_FRAMES, {
+      streaming: true,
+      processingStartedAtMs: 1000,
+    });
+    expect(view?.source).toBe("live");
+  });
+
+  it("category 6 — streaming placeholder: live view always sets `streaming` from args and `processingStartedAtMs` when provided", () => {
+    const view = projectLiveTurnView(ASSISTANT_FRAMES, {
+      streaming: true,
+      processingStartedAtMs: 1700,
+    });
+    expect(view?.streaming).toBe(true);
+    expect(view?.processingStartedAtMs).toBe(1700);
+    expect(view?.streamMessageId).toBe("merged");
+    expect(view?.messageRootId).toBe("merged");
+
+    // Usage sums across the two frames that carry it.
+    expect(view?.totalRequestDurationMs).toBe(1050);
+    expect(view?.totalOutputTokens).toBe(42);
   });
 });

@@ -210,13 +210,13 @@ export const WEBUI_PLUGIN_REGISTRY: Record<
 };
 
 /**
- * Static skill catalogue. The desktop surfaces skills in the slash palette
- * via `listSkills(agentName, ...)`; the WebUI's harness port has no skill
- * RPC yet, so we ship a fixture set that mirrors what the desktop shows
- * today (the four `mavis-*` skills whose descriptions are quoted verbatim
- * from the local `~/.hermes/skills` registry). When the harness port adds
- * `listSkills`, replace `resolveWebuiSlashSkills` with a real fetch — the
- * fixture entries map onto the same `SlashCommandEntry` shape.
+ * Static skill catalogue (fallback). The harness port now exposes a
+ * `listSkills(agentName, ...)` RPC, so `resolveWebuiSlashSkills` prefers
+ * the harness-supplied registry when available. The four `mavis-*`
+ * fixtures below (descriptions quoted verbatim from the local
+ * `~/.hermes/skills` registry) ship as the fallback path: when the
+ * harness port rejects, returns an empty list, or is not wired at all,
+ * the resolver returns these fixtures so the popover stays usable.
  *
  * Skills are `supported: true` so the popover row is clickable in 1:1 with
  * the desktop. Clicking inserts `/<skill-name> ` into the composer; the

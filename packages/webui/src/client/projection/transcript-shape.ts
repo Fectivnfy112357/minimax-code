@@ -141,43 +141,104 @@ export type WebuiTurnViewCapabilities = Pick<
 >;
 
 /**
- * The minimum normalised turn view. Both adapter paths produce this shape;
- * `MessageItem` reads it through the `view` prop and treats legacy
- * individual props as fallback. Fields the live path can never carry
- * (`actions`, `initialDiff`) are typed optional; the historical adapter
- * fills them, the live adapter leaves them undefined.
+ * The minimum normalised turn view — truly shared fields only.
  *
- * `source` is the only field both adapters must set — it tells the leaf
- * renderer which path produced the view and which provenance attrs
- * (`streaming` / `messageRootId` / `streamMessageId`) apply.
+ * Field-by-field ownership table (line numbers cite the reads in
+ * `MessageItem.tsx` after the E-revise narrow):
+ *
+ *   | field                | read by historical path?              | read by live path?                  | verdict  |
+ *   |----------------------|---------------------------------------|-------------------------------------|----------|
+ *   | source               | historical adapter sets "historical"  | live adapter sets "live"            | shared   |
+ *   | messageId            | from `message.msgId`                   | from `last.id`                      | shared   |
+ *   | role                 | from normalised role                  | always "assistant" (assistant view) | shared   |
+ *   | sessionId            | from caller (transcript scope)        | from caller (composer scope)        | shared   |
+ *   | turnId               | from `message.turnId`                  | n/a (live merges one turn)          | shared*  |
+ *   | userText             | from userItems[0].text                 | from `user.answer`                  | shared   |
+ *   | thinking             | joined from thinkingItems              | joined from assistant frames        | shared   |
+ *   | thinkingDurationMs   | from thinkingItems[0].durationMs       | n/a (live has no duration yet)      | shared*  |
+ *   | tools                | flatMap tool-items                     | flatMap toolCalls                   | shared   |
+ *   | answers              | assistantItems.map text                | assistant.map answer (non-empty)    | shared   |
+ *   | timestamp            | normalised.timestamp                  | message.timestamp                   | shared   |
+ *   | isGoal               | from source/kind/items                 | from `message.isGoal`               | shared   |
+ *   | totalRequestDurationMs | from message.usage                  | from assistant.usage sum            | shared   |
+ *   | totalOutputTokens    | from message.usage                     | from assistant.usage sum            | shared   |
+ *   | processSegments      | group-level projector fills it on historical | live adapter joins assistant frames | shared |
+ *   | initialDiff          | from lastDiff/fallbackDiff             | n/a (live never carries diff)      | historical-only |
+ *   | actions              | from firstItem.actions                 | n/a (live never carries actions)   | historical-only |
+ *   | attachments          | from projectMessageAttachments        | n/a (live frames don't carry attachments) | historical-only |
+ *   | assistantMessageId   | n/a (historical is per-message)       | from `last.id` (turn-merge key)     | live-only |
+ *   | streaming            | always undefined on historical        | from `args.streaming`               | live-only |
+ *   | streamMessageId      | n/a (historical has its own id)        | "merged" literal                    | live-only |
+ *   | messageRootId        | n/a                                    | "merged" literal                    | live-only |
+ *   | processingStartedAtMs| n/a (historical doesn't track it)     | from `args.processingStartedAtMs`   | live-only |
+ *   | processSegments      | session collapse uses group-level helper, NOT adapter | derived from assistant frames | live-only |
+ *
+ * `wallClockDurationMs` is *group-level* (sum-of-frame span), not per-message.
+ * Neither adapter produces it; `SessionTranscript.tsx` computes it on the
+ * `group` and passes it as the one remaining non-view MessageItem prop
+ * (documented at the call site).
+ *
+ * `changeSetId` is carried in the wire shape and the historical
+ * message-projection reads it for the diff, but it is never surfaced to
+ * `MessageItem`. Removed from the leaf renderer prop block entirely.
+ *
+ * The base type below carries **only the shared fields**. The two
+ * extensions add the side-specific fields; the union `WebuiTurnView` is
+ * the consumer-facing type `MessageItem.view` accepts.
  */
-export interface WebuiTurnView {
+export interface WebuiTurnViewBase {
   readonly source: "historical" | "live";
   readonly messageId: string;
   readonly role: "user" | "assistant";
   readonly sessionId?: string;
-  readonly assistantMessageId?: string;
   readonly turnId?: string;
-  readonly changeSetId?: string;
-  readonly initialDiff?: WebuiTurnDiffView;
-  readonly actions?: WebuiMessageActionCapabilities;
-  readonly timestamp?: number;
-  readonly isGoal?: boolean;
   readonly userText?: string;
   readonly thinking?: string;
   readonly thinkingDurationMs?: number;
-  readonly processingStartedAtMs?: number;
   readonly tools?: readonly Record<string, unknown>[];
   readonly answers?: readonly string[];
+  readonly timestamp?: number;
+  readonly isGoal?: boolean;
+  readonly totalRequestDurationMs?: number;
+  readonly totalOutputTokens?: number;
+  /**
+   * Per-segment disclosure list (Desktop-style process detail row).
+   * Historical group collapse and the live adapter both produce it; the
+   * per-message adapter in `projectHistoricalTurnView` leaves it
+   * undefined because group-level projection owns it.
+   */
+  readonly processSegments?: readonly WebuiTranscriptProcessSegment[];
+}
+
+/**
+ * Historical-only extension: persisted fields the live path never carries.
+ * `source: "historical"` narrows the union for `MessageItem` reads.
+ */
+export interface WebuiHistoricalTurnView extends WebuiTurnViewBase {
+  readonly source: "historical";
+  readonly initialDiff?: WebuiTurnDiffView;
+  readonly actions?: WebuiMessageActionCapabilities;
   readonly attachments?: readonly WebuiMessageAttachment[];
+}
+
+/**
+ * Live-only extension: in-flight fields the historical path never carries.
+ * `source: "live"` narrows the union for `MessageItem` reads.
+ */
+export interface WebuiLiveTurnView extends WebuiTurnViewBase {
+  readonly source: "live";
+  readonly assistantMessageId?: string;
   readonly streaming?: boolean;
   readonly streamMessageId?: string;
   readonly messageRootId?: string;
-  readonly processSegments?: readonly WebuiTranscriptProcessSegment[];
-  readonly totalRequestDurationMs?: number;
-  readonly totalOutputTokens?: number;
-  readonly wallClockDurationMs?: number;
+  readonly processingStartedAtMs?: number;
 }
+
+/**
+ * Discriminated union the leaf renderer accepts. Access to side-specific
+ * fields (`initialDiff`, `streaming`, …) requires narrowing on `source`.
+ */
+export type WebuiTurnView = WebuiHistoricalTurnView | WebuiLiveTurnView;
 
 // ── Adapters ─────────────────────────────────────────────────────────
 
@@ -191,11 +252,16 @@ export interface WebuiTurnView {
  *
  * `sessionId` is provided by the caller (the transcript projection owns the
  * session scope; the adapter is per-message).
+ *
+ * Returns `WebuiHistoricalTurnView` — the historical-only extension of the
+ * shared `WebuiTurnViewBase`. The result is a strict subtype: the type
+ * system itself rejects any field that isn't either shared or historical-
+ * only (e.g. `streaming`, `processSegments`).
  */
 export function projectHistoricalTurnView(
   message: WebuiClientMessage,
   sessionId: string,
-): WebuiTurnView {
+): WebuiHistoricalTurnView {
   const items: WebuiTranscriptItem[] = projectWebuiMessage(message);
   const userItems = items.filter(
     (item): item is Extract<WebuiTranscriptItem, { text: string }> =>
@@ -238,9 +304,6 @@ export function projectHistoricalTurnView(
     ? "user"
     : "assistant";
   const turnId = message.turnId;
-  // `wallClockDurationMs` lives on the group (sum-of-frame span); the
-  // per-message adapter has no group span, so leave undefined and let the
-  // group-level projector fill it when SessionTranscript collapses turns.
   const totalRequestDurationMs = readUsageNumber(
     message.usage,
     "requestDurationMs",
@@ -251,15 +314,12 @@ export function projectHistoricalTurnView(
     "outputTokens",
     "output_tokens",
   );
-  return {
+  const view: WebuiHistoricalTurnView = {
     source: "historical",
     messageId: message.msgId,
     role,
     sessionId,
     ...(turnId ? { turnId } : {}),
-    ...(actions ? { actions } : {}),
-    ...(timestamp !== undefined ? { timestamp } : {}),
-    ...(isGoal ? { isGoal: true } : {}),
     ...(userItems[0]?.text !== undefined
       ? { userText: userItems[0].text }
       : {}),
@@ -273,13 +333,16 @@ export function projectHistoricalTurnView(
     ...(assistantItems.length > 0
       ? { answers: assistantItems.map((item) => item.text) }
       : {}),
-    ...(attachments ? { attachments } : {}),
-    ...(initialDiff ? { initialDiff } : {}),
+    ...(isGoal ? { isGoal: true } : {}),
     ...(typeof totalRequestDurationMs === "number"
       ? { totalRequestDurationMs }
       : {}),
     ...(typeof totalOutputTokens === "number" ? { totalOutputTokens } : {}),
+    ...(actions ? { actions } : {}),
+    ...(attachments ? { attachments } : {}),
+    ...(initialDiff ? { initialDiff } : {}),
   };
+  return view;
 }
 
 /**
@@ -291,6 +354,10 @@ export function projectHistoricalTurnView(
  *
  * Returns `undefined` when there are no assistant frames (the live column
  * is empty — caller renders the streaming loader instead).
+ *
+ * Returns `WebuiLiveTurnView` — the live-only extension. The result type
+ * excludes historical-only fields (`initialDiff`, `attachments`, `actions`)
+ * by construction.
  */
 export function projectLiveTurnView(
   messages: readonly WebuiStreamMessage[],
@@ -299,7 +366,7 @@ export function projectLiveTurnView(
     readonly streaming: boolean;
     readonly processingStartedAtMs?: number;
   },
-): WebuiTurnView | undefined {
+): WebuiLiveTurnView | undefined {
   const assistant = messages.filter((message) => message.role !== "user");
   if (assistant.length === 0) return undefined;
   const last = assistant[assistant.length - 1];
@@ -339,21 +406,21 @@ export function projectLiveTurnView(
       ...(message.toolCalls?.length ? { tools: message.toolCalls } : {}),
     }))
     .filter((segment) => segment.thinking || segment.tools?.length);
-  const view: WebuiTurnView = {
+  const view: WebuiLiveTurnView = {
     source: "live",
     messageId: last.id,
     role: "assistant",
     ...(args.sessionId ? { sessionId: args.sessionId } : {}),
-    assistantMessageId: last.id,
-    streamMessageId: "merged",
-    messageRootId: "merged",
-    streaming: args.streaming,
-    ...(args.processingStartedAtMs !== undefined
-      ? { processingStartedAtMs: args.processingStartedAtMs }
-      : {}),
     ...(thinking ? { thinking } : {}),
     ...(tools.length > 0 ? { tools } : {}),
     ...(answers.length > 0 ? { answers } : {}),
+    ...(typeof last.id === "string" ? { assistantMessageId: last.id } : {}),
+    streaming: args.streaming,
+    streamMessageId: "merged",
+    messageRootId: "merged",
+    ...(args.processingStartedAtMs !== undefined
+      ? { processingStartedAtMs: args.processingStartedAtMs }
+      : {}),
     ...(processSegments.length > 0 ? { processSegments } : {}),
     ...(totalRequestDurationMs > 0 ? { totalRequestDurationMs } : {}),
     ...(totalOutputTokens > 0 ? { totalOutputTokens } : {}),
@@ -364,19 +431,23 @@ export function projectLiveTurnView(
 /**
  * Project the pending user frame into the user-bubble view. Returns
  * `undefined` when there is no pending user bubble.
+ *
+ * The user bubble is a `WebuiLiveTurnView` — it inherits the live-only
+ * `streamMessageId` provenance attr the historical path doesn't carry.
  */
 export function projectLiveUserView(
   messages: readonly WebuiStreamMessage[],
-): WebuiTurnView | undefined {
+): WebuiLiveTurnView | undefined {
   const user = messages.find((message) => message.role === "user");
   if (!user) return undefined;
-  return {
+  const view: WebuiLiveTurnView = {
     source: "live",
     messageId: user.id,
     role: "user",
+    userText: user.answer,
     streamMessageId: user.id,
     ...(user.timestamp !== undefined ? { timestamp: user.timestamp } : {}),
     ...(user.isGoal ? { isGoal: true } : {}),
-    userText: user.answer,
   };
+  return view;
 }

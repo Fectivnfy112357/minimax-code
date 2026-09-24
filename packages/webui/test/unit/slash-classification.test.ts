@@ -26,7 +26,7 @@ import { resolveWebuiSubmissionIntent } from "../../src/client/projection/compos
  * `memory` are inert today; `compact` is wired).
  */
 
-const ICON = () => null as never;
+const ICON: SlashCommandEntry["icon"] = () => null;
 
 const newEntry = (name: string, supported: boolean): SlashCommandEntry => ({
   name,

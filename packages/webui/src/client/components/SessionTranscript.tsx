@@ -348,13 +348,25 @@ export function WebuiSessionTranscript({
             result.push(
               <MessageItem
                 key={group.messageId}
-                messageId={group.messageId}
-                role="user"
-                userText={userItem.text}
-                actions={userItem.actions}
-                timestamp={userItem.timestamp}
-                isGoal={userItem.isGoal}
-                view={turnViewsByMessageId.get(group.messageId)}
+                view={
+                  turnViewsByMessageId.get(group.messageId) ?? {
+                    source: "historical",
+                    messageId: group.messageId,
+                    role: "user",
+                    sessionId,
+                    ...(group.turnId ? { turnId: group.turnId } : {}),
+                    ...(userItem.text !== undefined
+                      ? { userText: userItem.text }
+                      : {}),
+                    ...(userItem.actions
+                      ? { actions: userItem.actions }
+                      : {}),
+                    ...(userItem.timestamp !== undefined
+                      ? { timestamp: userItem.timestamp }
+                      : {}),
+                    ...(userItem.isGoal ? { isGoal: true } : {}),
+                  }
+                }
                 getSessionForkOptions={getSessionForkOptions}
                 forkSession={forkSession}
                 getSessionRewindPreview={getSessionRewindPreview}
@@ -364,61 +376,33 @@ export function WebuiSessionTranscript({
             );
           if (result.length > 0) return result;
           // Fall through to the assistant-group renderer below.
-          const thinkingItems = group.items.filter(
-            (item): item is Extract<WebuiTranscriptItem, { text: string }> =>
-              item.kind === "thinking",
-          );
-          const tools = group.items
-            .filter(
-              (
-                item,
-              ): item is Extract<WebuiTranscriptItem, { kind: "tool" }> =>
-                item.kind === "tool",
-            )
-            .flatMap((item) => item.tools);
-          const answers = group.items.filter(
-            (item): item is Extract<WebuiTranscriptItem, { text: string }> =>
-              item.kind === "assistant",
-          );
-          const initialDiff = [...group.items]
-            .reverse()
-            .find((item): item is Extract<WebuiTranscriptItem, { diff?: WebuiTurnDiffView }> =>
-              "diff" in item,
-            )?.diff;
+          // `processSegments` and `wallClockDurationMs` are group-level
+          // facts (one turn spans multiple frames; the group collapse owns
+          // them). `processSegments` is passed via view (the historical
+          // adapter leaves it undefined; SessionTranscript fills it
+          // before rendering the assistant turn here).
           return (
             <MessageItem
               key={group.messageId}
-              messageId={group.messageId}
-              role="assistant"
-              sessionId={sessionId}
-              assistantMessageId={group.messageId}
-              {...(group.turnId ? { turnId: group.turnId } : {})}
-              initialDiff={initialDiff}
+              view={
+                turnViewsByMessageId.get(group.messageId) ?? {
+                  source: "historical",
+                  messageId: group.messageId,
+                  role: "assistant",
+                  sessionId,
+                  ...(group.turnId ? { turnId: group.turnId } : {}),
+                  processSegments: projectWebuiProcessSegments(group.items),
+                }
+              }
+              wallClockDurationMs={group.wallClockDurationMs}
               getTurnDiff={getTurnDiff}
               revertTurnDiff={revertTurnDiff}
               reapplyTurnDiff={reapplyTurnDiff}
-              actions={group.items.find((item): item is Extract<WebuiTranscriptItem, { actions?: WebuiMessageActionCapabilities }> =>
-                "actions" in item,
-              )?.actions}
-              view={turnViewsByMessageId.get(group.messageId)}
               getSessionForkOptions={getSessionForkOptions}
               forkSession={forkSession}
               getSessionRewindPreview={getSessionRewindPreview}
               rewindSession={rewindSession}
               editSessionMessage={editSessionMessage}
-              thinking={
-                thinkingItems.length > 0
-                  ? thinkingItems.map((item) => item.text).join("\n\n")
-                  : undefined
-              }
-              thinkingDurationMs={thinkingItems[0]?.durationMs}
-              tools={tools.length > 0 ? tools : undefined}
-              answers={answers.map((item) => item.text)}
-              processSegments={projectWebuiProcessSegments(group.items)}
-              attachments={answers[0]?.attachments}
-              totalRequestDurationMs={group.totalRequestDurationMs}
-              totalOutputTokens={group.totalOutputTokens}
-              wallClockDurationMs={group.wallClockDurationMs}
             />
           );
         })}

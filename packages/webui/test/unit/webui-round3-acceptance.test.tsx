@@ -369,7 +369,12 @@ describe("round-3 stream state and transcript render units", () => {
     let state = initialWebuiStreamState;
     expect(state.phase).toBe("idle");
     expect(renderToStaticMarkup(createElement(MessageItem, {
-      messageId: "empty", role: "assistant", answers: [],
+      view: {
+        source: "live",
+        messageId: "empty",
+        role: "assistant",
+        answers: [],
+      },
     }))).toContain('data-testid="message-item"');
 
     state = reduceWebuiStreamFrame(state, frame('{"type":10}'));
@@ -377,35 +382,61 @@ describe("round-3 stream state and transcript render units", () => {
     state = reduceWebuiStreamFrame(state, frame('{"type":6,"agent_message_chunk":{"msg_id":"m1","msg_content":"hello","thinking_content":"consider"}}'));
     expect(state.messages[0]?.answer).toBe("hello");
     expect(renderToStaticMarkup(createElement(MessageItem, {
-      messageId: "m1", role: "assistant", thinking: "consider", answers: ["hello"], streaming: true,
+      view: {
+        source: "live",
+        messageId: "m1",
+        role: "assistant",
+        thinking: "consider",
+        answers: ["hello"],
+        streaming: true,
+        streamMessageId: "m1",
+        messageRootId: "m1",
+      },
     }))).toContain('data-testid="turn-process-disclosure"');
 
     state = reduceWebuiStreamFrame(state, frame("[DONE]"));
     expect(state.phase).toBe("done");
     expect(renderToStaticMarkup(createElement(MessageItem, {
-      messageId: "m1", role: "assistant", answers: ["hello"], streaming: false,
+      view: {
+        source: "live",
+        messageId: "m1",
+        role: "assistant",
+        answers: ["hello"],
+        streaming: false,
+        streamMessageId: "m1",
+        messageRootId: "m1",
+      },
     }))).toContain("hello");
   });
 
   it("renders Goal identity and Desktop-style visible process segments", () => {
     const goalMarkup = renderToStaticMarkup(createElement(MessageItem, {
-      messageId: "goal-message",
-      role: "user",
-      userText: "你好",
-      isGoal: true,
+      view: {
+        source: "live",
+        messageId: "goal-message",
+        role: "user",
+        userText: "你好",
+        isGoal: true,
+        streamMessageId: "goal-message",
+      },
     }));
     expect(goalMarkup).toContain('data-webui-goal-label="true"');
     expect(goalMarkup).toContain(">Goal<");
 
     const assistantMarkup = renderToStaticMarkup(createElement(MessageItem, {
-      messageId: "assistant-message",
-      role: "assistant",
-      thinking: "第一段思考",
-      answers: ["答复"],
-      processSegments: [
-        { messageId: "segment-1", thinking: "第一段思考" },
-        { messageId: "segment-2", thinking: "第二段思考", tools: [{ name: "read" }] },
-      ],
+      view: {
+        source: "live",
+        messageId: "assistant-message",
+        role: "assistant",
+        thinking: "第一段思考",
+        answers: ["答复"],
+        processSegments: [
+          { messageId: "segment-1", thinking: "第一段思考" },
+          { messageId: "segment-2", thinking: "第二段思考", tools: [{ name: "read" }] },
+        ],
+        streamMessageId: "assistant-message",
+        messageRootId: "assistant-message",
+      },
     }));
     expect(assistantMarkup).toContain('data-testid="turn-process-detail"');
     expect(assistantMarkup).toContain("思考 1 次");
