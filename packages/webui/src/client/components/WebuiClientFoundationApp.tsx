@@ -217,6 +217,9 @@ export function WebuiClientFoundationApp(
   const [usageQuota, setUsageQuota] = useState<WebuiUsageQuotaResult | undefined>(
     () => initialUsageQuota,
   );
+  const [dismissedUsageNoticeKey, setDismissedUsageNoticeKey] = useState<
+    string | undefined
+  >();
   const [pinnedSessions, setPinnedSessions] = useState<Record<string, boolean>>(
     readSessionOverlay("pins"),
   );
@@ -492,6 +495,13 @@ export function WebuiClientFoundationApp(
     () => deriveConversationUsageNotice(usageQuota),
     [usageQuota],
   );
+  const usageNoticeKey = usageNotice
+    ? `${usageNotice.kind}:${usageNotice.messageKey}:${usageNotice.resetAtMs ?? ""}`
+    : undefined;
+  const visibleUsageNotice =
+    usageNoticeKey && usageNoticeKey === dismissedUsageNoticeKey
+      ? null
+      : usageNotice;
   // First-paint of the home page: the rail reads from the sessions list,
   // but the welcome hero appears regardless. Show the greeting skeleton
   // while the initial session page is still being fetched so the layout
@@ -805,16 +815,17 @@ export function WebuiClientFoundationApp(
                       </span>
                     </div>
                   )}
-                  {usageNotice ? (
+                  {visibleUsageNotice ? (
                     <ConversationUsageBanner
-                      notice={usageNotice}
+                      notice={visibleUsageNotice}
                       messageText={
-                        usageNotice.kind === "weekly"
+                        visibleUsageNotice.kind === "weekly"
                           ? "本周配额接近上限。"
-                          : usageNotice.kind === "five_hour"
+                          : visibleUsageNotice.kind === "five_hour"
                             ? "五小时配额接近上限。"
                             : "本周期视频配额已用尽。"
                       }
+                      onDismiss={() => setDismissedUsageNoticeKey(usageNoticeKey)}
                     />
                   ) : null}
 
