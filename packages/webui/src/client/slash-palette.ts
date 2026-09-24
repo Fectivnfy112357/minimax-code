@@ -39,12 +39,43 @@ export type SlashDirectAction = "memory" | "fork";
 export type SlashPaletteSection = "special" | "skills";
 
 /**
+ * Three states a slash command can be in at runtime. Distinct from the
+ * static `supported` flag (a boolean capability declaration):
+ *   - `runnable`            — `supported: true` AND the name is in
+ *                             `WEBUI_RUN_COMMAND_NAMES`. Submit dispatches
+ *                             the host's `runCommand` capability.
+ *   - `inert-wired`         — `supported: true` BUT the name is NOT in
+ *                             `WEBUI_RUN_COMMAND_NAMES` (skills, for example).
+ *                             Click inserts `/<name> ` into the composer; the
+ *                             submit path treats the slash as a user message
+ *                             the user can edit before sending — same as the
+ *                             desktop's default behaviour for entries without
+ *                             `composerMode` / `sendIntent` / `directAction`.
+ *   - `inert-unsupported`   — `supported: false`. The host port is not
+ *                             wired. The row renders inert (aria-disabled,
+ *                             no click, no hover tint, dimmed icon + label +
+ *                             description); clicking is a no-op.
+ *
+ * The boolean `supported` flag stays the wire shape; the classification is
+ * the runtime decision `classifyWebuiSlashCommand` makes on top of it. No
+ * `supported: "fallback"` literal was added — runtime classification is the
+ * same as the original capability check, just spelled out as three states
+ * for the submit pipeline to dispatch on without renaming `supported`.
+ */
+export type WebuiCommandClassification =
+  | "runnable"
+  | "inert-wired"
+  | "inert-unsupported";
+
+/**
  * One row in the slash palette. Mirrors the desktop record shape so a future
  * `listSkills` RPC can be slotted into `resolveWebuiSkills` without renaming.
  *
  * `supported` is the WebUI-specific capability flag — entries where the
  * harness port is not wired render as inert rows (`aria-disabled`, no click,
- * no hover tint, dimmed icon + label + description).
+ * no hover tint, dimmed icon + label + description). The runtime
+ * classification (see `WebuiCommandClassification`) extends this with the
+ * `inert-wired` state for supported-but-not-runnable entries (skills).
  */
 export interface SlashCommandEntry {
   readonly name: string;
@@ -63,7 +94,12 @@ export interface SlashCommandEntry {
   readonly display_name?: string;
   readonly display_description?: string;
   readonly source_kind?: string;
-  /** WebUI-specific: true if the runCommand path is wired for this entry. */
+  /**
+   * WebUI-specific capability flag — three states described above:
+   *   - `true`  → host port wired; dispatch as runnable if the name is in
+   *               WEBUI_RUN_COMMAND_NAMES, otherwise inert-wired.
+   *   - `false` → host port not wired; render inert-unsupported.
+   */
   readonly supported: boolean;
 }
 
@@ -504,4 +540,37 @@ export function isWebuiRunnableCommand(
     entry.supported &&
     (WEBUI_RUN_COMMAND_NAMES as readonly string[]).includes(entry.name)
   );
+}
+
+/**
+ * Pure three-state classification of a slash command. Pairs with
+ * `isWebuiRunnableCommand` (a boolean narrowing predicate); the
+ * classification is the broader decision the popover / submit pipeline
+ * dispatches on.
+ *
+ * Behaviour table:
+ *
+ *   | entry.supported | name ∈ WEBUI_RUN_COMMAND_NAMES | classification        |
+ *   |------------------|-------------------------------|----------------------|
+ *   | true             | yes                           | runnable             |
+ *   | true             | no                            | inert-wired          |
+ *   | false            | yes                           | inert-unsupported    |
+ *   | false            | no                            | inert-unsupported    |
+ *
+ * The split between `inert-wired` and `inert-unsupported` matters because
+ * the submit path treats `inert-wired` rows as editable user messages (the
+ * slash becomes the start of the draft the user keeps typing) while
+ * `inert-unsupported` rows render as inert UI (no click, no hover tint).
+ * `resolveWebuiSubmissionIntent` already implements the runtime version of
+ * this table; this function exists to give the tests a typed handle on the
+ * classification without going through the React component.
+ */
+export function classifyWebuiSlashCommand(
+  entry: SlashCommandEntry,
+): WebuiCommandClassification {
+  if (!entry.supported) return "inert-unsupported";
+  if ((WEBUI_RUN_COMMAND_NAMES as readonly string[]).includes(entry.name)) {
+    return "runnable";
+  }
+  return "inert-wired";
 }

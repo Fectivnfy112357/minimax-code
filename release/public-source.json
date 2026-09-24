@@ -3519,6 +3519,7 @@
     "packages/webui/test/unit/projections.test.ts",
     "packages/webui/test/unit/settings-modal.test.tsx",
     "packages/webui/test/unit/settings-search-highlight.test.ts",
+    "packages/webui/test/unit/slash-classification.test.ts",
     "packages/webui/test/unit/slash-palette.test.ts",
     "packages/webui/test/unit/team-mode.test.ts",
     "packages/webui/test/unit/transcript-shape.test.ts",
