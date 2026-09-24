@@ -3300,6 +3300,7 @@
     "packages/tui/test/unit/tui/widgets/editor/editor-behavior.test.ts",
     "packages/tui/test/unit/update-application.test.ts",
     "packages/tui/test/unit/update-service.test.ts",
+    "packages/webui/AGENTS.md",
     "packages/webui/LICENSE",
     "packages/webui/README.md",
     "packages/webui/package.json",
