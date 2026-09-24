@@ -86,7 +86,6 @@ export type WebuiOperationPort = Pick<
   | "getMiniMaxApiKeyStatus"
   | "upsertMiniMaxApiKey"
   | "getCodexOAuthStatus"
-  | "requestCompaction"
   | "invalidateAuth"
 >;
 
@@ -105,22 +104,22 @@ export function createOperationHandlers(
       body: await port.createSession(body),
     }),
     listWorkspaceFileTree: async (_context, body) => ({
-      body: await port.listWorkspaceFileTree!(body as never) as unknown as Record<string, unknown>,
+      body: (await port.listWorkspaceFileTree(body as never)) as unknown as Record<string, unknown>,
     }),
     readWorkspaceFile: async (_context, body) => ({
-      body: await port.readWorkspaceFile!(body as never) as unknown as Record<string, unknown>,
+      body: (await port.readWorkspaceFile(body as never)) as unknown as Record<string, unknown>,
     }),
     readCanvas: async (_context, body) => ({
-      body: await port.readCanvas!(body as never) as unknown as Record<string, unknown>,
+      body: (await port.readCanvas(body as never)) as unknown as Record<string, unknown>,
     }),
     applyCanvas: async (_context, body) => ({
-      body: await port.applyCanvas!(body as never) as unknown as Record<string, unknown>,
+      body: (await port.applyCanvas(body as never)) as unknown as Record<string, unknown>,
     }),
     getWorkspaceEnvironment: async (_context, body) => ({
-      body: await port.getWorkspaceEnvironment!(body as never) as unknown as Record<string, unknown>,
+      body: (await port.getWorkspaceEnvironment(body as never)) as unknown as Record<string, unknown>,
     }),
     mutateWorkspaceGit: async (_context, body) => ({
-      body: await port.mutateWorkspaceGit!(body as never),
+      body: (await port.mutateWorkspaceGit(body as never)) as unknown as Record<string, unknown>,
     }),
     createTerminal: async (_context, body) => ({
       body: terminal!.create(String((body as Record<string, unknown>).workspaceDir ?? process.cwd())),
@@ -178,7 +177,6 @@ export function createOperationHandlers(
     getCodexOAuthStatus: async () => ({ body: await port.getCodexOAuthStatus() }),
     runCommand: async (_context, body) => ({ body: await runWebuiCommand(port, body) }),
     signOut: async () => {
-      if (!port.invalidateAuth) throw new Error("auth invalidation is unavailable");
       await port.invalidateAuth();
       return { body: { success: true as const } };
     },
@@ -212,18 +210,18 @@ export function createOperationHandlers(
         },
       };
     },
-    getSessionDiff: async (_context, body) => ({ body: await port.getSessionDiff!(body) }),
-    getTurnDiff: async (_context, body) => ({ body: await port.getTurnDiff!(body) }),
-    revertTurnDiff: async (_context, body) => ({ body: await port.revertTurnDiff!(body) }),
-    reapplyTurnDiff: async (_context, body) => ({ body: await port.reapplyTurnDiff!(body) }),
-    getSessionRewindPreview: async (_context, body) => ({ body: await port.getSessionRewindPreview!(body) }),
-    rewindSession: async (_context, body) => ({ body: await port.rewindSession!(body) }),
-    editSessionMessage: async (_context, body) => ({ body: await port.editSessionMessage!(body) }),
-    isGoalEnabled: async () => ({ body: await port.isGoalEnabled!() }),
-    getGoal: async (_context, body) => ({ body: await port.getGoal!(body) }),
-    createGoal: async (_context, body) => ({ body: await port.createGoal!(body) }),
-    patchGoal: async (_context, body) => ({ body: await port.patchGoal!(body) }),
-    clearGoal: async (_context, body) => ({ body: await port.clearGoal!(body) }),
+    getSessionDiff: async (_context, body) => ({ body: await port.getSessionDiff(body) }),
+    getTurnDiff: async (_context, body) => ({ body: await port.getTurnDiff(body) }),
+    revertTurnDiff: async (_context, body) => ({ body: await port.revertTurnDiff(body) }),
+    reapplyTurnDiff: async (_context, body) => ({ body: await port.reapplyTurnDiff(body) }),
+    getSessionRewindPreview: async (_context, body) => ({ body: await port.getSessionRewindPreview(body) }),
+    rewindSession: async (_context, body) => ({ body: await port.rewindSession(body) }),
+    editSessionMessage: async (_context, body) => ({ body: await port.editSessionMessage(body) }),
+    isGoalEnabled: async () => ({ body: await port.isGoalEnabled() }),
+    getGoal: async (_context, body) => ({ body: await port.getGoal(body) }),
+    createGoal: async (_context, body) => ({ body: await port.createGoal(body) }),
+    patchGoal: async (_context, body) => ({ body: await port.patchGoal(body) }),
+    clearGoal: async (_context, body) => ({ body: await port.clearGoal(body) }),
     listSessions: async (_context, body) => ({ body: await port.listSessions(body) }),
     getSessionTree: async (_context, body) => ({ body: await port.getSessionTree(body) }),
     sendMessage: async (context, body) => {

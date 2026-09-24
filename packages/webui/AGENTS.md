@@ -88,7 +88,7 @@ The registry is one module per concern. Add code in the layer it belongs to, not
 | `operation/<domain>.ts` | The operation descriptors (name + `validate`) grouped by domain: `session`, `workspace`, `messages`, `goal`, `interaction`, `questionnaire`, `queue`, `provider`. |
 | `operation/operation-handlers.ts` | `createOperationHandlers(port, terminal)`. The handler map's type is derived from the descriptors, so each handler's `body` is that operation's request type and a descriptor/handler mismatch fails to compile. |
 | `operation/operation-dispatch.ts` | `dispatchWebuiFrame` — one inbound frame → validate → look up → handle → response, stream, or error frame. |
-| `operation/operations.ts` | `createOperationRegistry` (the single `registerOperation` call site) and `registerOperation`. Re-exports the descriptors, so importers keep one entry point. |
+| `operation/operations.ts` | `createOperationRegistry` (the single `registerOperation` call site) and `registerOperation`. Re-exports the descriptors, so importers keep one entry point. The registry order is observable on the wire; preserve it when adding/removing operations. The set of operations it registers is contractually the same as `WebuiHarnessPort`'s — `operation-handlers.ts` derives its `Pick` from the port, so a port method added or removed must reach this file in the same change, and `integration/webui-host-shape-invariant.test.ts` (added in batch C) fails loudly if the two diverge. |
 
 ## How a request travels
 
@@ -164,9 +164,11 @@ Edit in this order so each layer compiles against the previous one:
 6. `server/operation/operations.ts` — the `registerOperation` call, in the position the order needs.
 7. `client/contracts.ts` — the method on `WebuiTransport` (optional, like its neighbours).
 8. `client/transport.ts` — the implementation, then plumb it to the component that needs it.
-9. `test/unit/webui-service.test.ts` — extend `ScriptedHarnessPort`. Test files are **not**
-   type-checked (the tsconfigs cover `src/` only), so a forgotten stub surfaces as a runtime failure,
-   not a red typecheck.
+9. `test/unit/webui-service.test.ts` — extend `ScriptedHarnessPort`. Since batch A,
+   `pnpm typecheck:webui` includes `tsconfig.test.json`, so a missing or
+   wrongly-typed stub surfaces as a `Type ... is missing the following properties from type 'WebuiHarnessPort'`
+   compile error, not a runtime failure. Keep the stubs exhaustive: a forgotten member
+   `Partial<WebuiHarnessPort>` would defeat the type-checked-port guarantee batch C relies on.
 10. `server/assembly.ts` — only when the implementation needs a session-scoped dependency (oauth
     lease client, quota client). Build it once and spread it onto the object **returned** as `host`:
     the dev launcher rebuilds the port from `createHarnessPortFromHost(assembled.host)` while unit

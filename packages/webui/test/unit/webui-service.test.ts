@@ -49,6 +49,17 @@ import {
   type WebuiGetTurnDiffRequest,
   type WebuiErrorFrame,
 } from "../../src/server/index.js";
+import type {
+  WebuiGetSessionRewindPreviewRequest,
+  WebuiGetSessionRewindPreviewResult,
+  WebuiRewindSessionRequest,
+  WebuiRewindSessionResult,
+  WebuiEditSessionMessageRequest,
+  WebuiEditSessionMessageResult,
+  WebuiGoal,
+  WebuiGoalCreateRequest,
+  WebuiGoalPatchRequest,
+} from "../../src/server/port.js";
 import { createWebuiTransport } from "../../src/client/transport.js";
 import { WebuiTerminalManager } from "../../src/server/terminal.js";
 
@@ -157,6 +168,66 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
   async reapplyTurnDiff(request: WebuiGetTurnDiffRequest) {
     this.diffRequests.push({ operation: "reapplyTurnDiff", body: request });
     return { success: true, status: "active", canUndo: true, canReapply: false, changeSetId: "changes-1", fileChanges: [{ file: "turn.ts", additions: 2, deletions: 1 }] };
+  }
+
+  async getSessionRewindPreview(_request: WebuiGetSessionRewindPreviewRequest): Promise<WebuiGetSessionRewindPreviewResult> {
+    return { turns: [] };
+  }
+
+  async rewindSession(_request: WebuiRewindSessionRequest): Promise<WebuiRewindSessionResult> {
+    return { rewound: false };
+  }
+
+  async editSessionMessage(_request: WebuiEditSessionMessageRequest): Promise<WebuiEditSessionMessageResult> {
+    return { rewound: false };
+  }
+
+  async isGoalEnabled() {
+    return { enabled: true };
+  }
+
+  async getGoal(): Promise<WebuiGoal | undefined> {
+    return undefined;
+  }
+
+  async createGoal(request: WebuiGoalCreateRequest): Promise<WebuiGoal> {
+    return {
+      goalId: "goal-fixture",
+      sessionId: request.sessionId,
+      objective: request.objective,
+      status: "active",
+      createdAt: 0,
+      updatedAt: 0,
+      tokensUsed: 0,
+      turnsUsed: 0,
+      timeUsedSeconds: 0,
+      tokenBudget: request.tokenBudget ?? null,
+      statusReason: null,
+    };
+  }
+
+  async patchGoal(request: WebuiGoalPatchRequest): Promise<WebuiGoal> {
+    return {
+      goalId: "goal-fixture",
+      sessionId: request.sessionId,
+      objective: request.objective ?? "",
+      status: request.status ?? "active",
+      createdAt: 0,
+      updatedAt: 0,
+      tokensUsed: 0,
+      turnsUsed: 0,
+      timeUsedSeconds: 0,
+      tokenBudget: request.tokenBudget ?? null,
+      statusReason: null,
+    };
+  }
+
+  async clearGoal() {
+    return { success: true };
+  }
+
+  async invalidateAuth(): Promise<void> {
+    // Test fixture: nothing to invalidate.
   }
 
   async listWorkspaceFileTree() {
@@ -310,8 +381,6 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
   async getMiniMaxApiKeyStatus() { return { hasApiKey: false }; }
   async upsertMiniMaxApiKey() { return { success: true }; }
   async getCodexOAuthStatus() { return { connected: false }; }
-
-  async requestCompaction() { return { success: true }; }
 
   async close(): Promise<void> {
     this.closed = true;
@@ -2462,9 +2531,133 @@ describe("WebUI shutdown order (criterion 7)", () => {
       async getCodexOAuthStatus() {
         return { connected: false };
       },
-      async requestCompaction() {
+      async getSessionDiff() {
+        return {
+          diffs: [],
+          changeSetId: "recording",
+        };
+      },
+      async getTurnDiff() {
+        return {
+          status: "active",
+          canUndo: false,
+          canReapply: false,
+          changeSetId: "recording",
+          fileChanges: [],
+        };
+      },
+      async revertTurnDiff() {
+        return {
+          success: true,
+          turnDiff: {
+            status: "reverted",
+            canUndo: false,
+            canReapply: true,
+            changeSetId: "recording",
+            fileChanges: [],
+          },
+        };
+      },
+      async reapplyTurnDiff() {
+        return {
+          success: true,
+          status: "active",
+          canUndo: true,
+          canReapply: false,
+          changeSetId: "recording",
+          fileChanges: [],
+        };
+      },
+      async listWorkspaceFileTree() {
+        return [];
+      },
+      async readWorkspaceFile() {
+        return { type: "text" as const, content: "" };
+      },
+      async getWorkspaceEnvironment() {
+        return {
+          isGitRepo: false,
+          changedFiles: 0,
+          insertions: 0,
+          deletions: 0,
+          lineStatsStatus: "skipped" as const,
+        };
+      },
+      async mutateWorkspaceGit() {
         return { success: true };
       },
+      async readCanvas() {
+        return {
+          schemaVersion: 1,
+          canvasId: "recording",
+          sessionId: "shutdown",
+          changeSeq: 0,
+          nodes: [],
+          updatedAtMs: 0,
+        };
+      },
+      async applyCanvas() {
+        return {
+          operationId: "recording",
+          document: {
+            schemaVersion: 1,
+            canvasId: "recording",
+            sessionId: "shutdown",
+            changeSeq: 0,
+            nodes: [],
+            updatedAtMs: 0,
+          },
+        };
+      },
+      async clearGoal() {
+        return { success: true };
+      },
+      async getSessionRewindPreview() {
+        return { turns: [] };
+      },
+      async rewindSession() {
+        return { rewound: false };
+      },
+      async editSessionMessage() {
+        return { rewound: false };
+      },
+      async isGoalEnabled() {
+        return { enabled: false };
+      },
+      async getGoal() {
+        return undefined;
+      },
+      async createGoal() {
+        return {
+          goalId: "goal-recording",
+          sessionId: "shutdown",
+          objective: "recording",
+          status: "active" as const,
+          createdAt: 0,
+          updatedAt: 0,
+          tokensUsed: 0,
+          turnsUsed: 0,
+          timeUsedSeconds: 0,
+          tokenBudget: null,
+          statusReason: null,
+        };
+      },
+      async patchGoal() {
+        return {
+          goalId: "goal-recording",
+          sessionId: "shutdown",
+          objective: "recording",
+          status: "active" as const,
+          createdAt: 0,
+          updatedAt: 0,
+          tokensUsed: 0,
+          turnsUsed: 0,
+          timeUsedSeconds: 0,
+          tokenBudget: null,
+          statusReason: null,
+        };
+      },
+      async invalidateAuth() {},
       async getUsageQuota() {
         return { signedIn: false as const };
       },
@@ -2675,9 +2868,133 @@ describe("WebUI shutdown order (criterion 7)", () => {
       async getCodexOAuthStatus() {
         return { connected: false };
       },
-      async requestCompaction() {
+      async getSessionDiff() {
+        return {
+          diffs: [],
+          changeSetId: "recording",
+        };
+      },
+      async getTurnDiff() {
+        return {
+          status: "active",
+          canUndo: false,
+          canReapply: false,
+          changeSetId: "recording",
+          fileChanges: [],
+        };
+      },
+      async revertTurnDiff() {
+        return {
+          success: true,
+          turnDiff: {
+            status: "reverted",
+            canUndo: false,
+            canReapply: true,
+            changeSetId: "recording",
+            fileChanges: [],
+          },
+        };
+      },
+      async reapplyTurnDiff() {
+        return {
+          success: true,
+          status: "active",
+          canUndo: true,
+          canReapply: false,
+          changeSetId: "recording",
+          fileChanges: [],
+        };
+      },
+      async listWorkspaceFileTree() {
+        return [];
+      },
+      async readWorkspaceFile() {
+        return { type: "text" as const, content: "" };
+      },
+      async getWorkspaceEnvironment() {
+        return {
+          isGitRepo: false,
+          changedFiles: 0,
+          insertions: 0,
+          deletions: 0,
+          lineStatsStatus: "skipped" as const,
+        };
+      },
+      async mutateWorkspaceGit() {
         return { success: true };
       },
+      async readCanvas() {
+        return {
+          schemaVersion: 1,
+          canvasId: "recording",
+          sessionId: "shutdown",
+          changeSeq: 0,
+          nodes: [],
+          updatedAtMs: 0,
+        };
+      },
+      async applyCanvas() {
+        return {
+          operationId: "recording",
+          document: {
+            schemaVersion: 1,
+            canvasId: "recording",
+            sessionId: "shutdown",
+            changeSeq: 0,
+            nodes: [],
+            updatedAtMs: 0,
+          },
+        };
+      },
+      async clearGoal() {
+        return { success: true };
+      },
+      async getSessionRewindPreview() {
+        return { turns: [] };
+      },
+      async rewindSession() {
+        return { rewound: false };
+      },
+      async editSessionMessage() {
+        return { rewound: false };
+      },
+      async isGoalEnabled() {
+        return { enabled: false };
+      },
+      async getGoal() {
+        return undefined;
+      },
+      async createGoal() {
+        return {
+          goalId: "goal-recording",
+          sessionId: "shutdown",
+          objective: "recording",
+          status: "active" as const,
+          createdAt: 0,
+          updatedAt: 0,
+          tokensUsed: 0,
+          turnsUsed: 0,
+          timeUsedSeconds: 0,
+          tokenBudget: null,
+          statusReason: null,
+        };
+      },
+      async patchGoal() {
+        return {
+          goalId: "goal-recording",
+          sessionId: "shutdown",
+          objective: "recording",
+          status: "active" as const,
+          createdAt: 0,
+          updatedAt: 0,
+          tokensUsed: 0,
+          turnsUsed: 0,
+          timeUsedSeconds: 0,
+          tokenBudget: null,
+          statusReason: null,
+        };
+      },
+      async invalidateAuth() {},
       async getUsageQuota() {
         return { signedIn: false as const };
       },

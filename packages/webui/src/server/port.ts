@@ -638,7 +638,7 @@ export interface WebuiSkillEntry {
 }
 
 export interface WebuiRunCommandRequest {
-  readonly command: "help" | "new" | "compact" | "status" | "usage" | "model";
+  readonly command: "help" | "new" | "status" | "usage" | "model";
   readonly input?: string;
   readonly sessionId?: string;
   readonly agentName?: string;
@@ -665,24 +665,24 @@ export interface WebuiHarnessPort {
     request: WebuiSessionLookupRequest,
   ): Promise<WebuiSessionLookupResult>;
   getMessages(request: WebuiMessagesRequest): Promise<WebuiMessagesResult>;
-  getSessionDiff?(request: WebuiGetSessionDiffRequest): Promise<WebuiGetSessionDiffResult>;
-  getTurnDiff?(request: WebuiGetTurnDiffRequest): Promise<WebuiGetTurnDiffResult>;
-  revertTurnDiff?(request: WebuiRevertTurnDiffRequest): Promise<WebuiRevertTurnDiffResult>;
-  reapplyTurnDiff?(request: WebuiReapplyTurnDiffRequest): Promise<WebuiReapplyTurnDiffResult>;
-  getSessionRewindPreview?(request: WebuiGetSessionRewindPreviewRequest): Promise<WebuiGetSessionRewindPreviewResult>;
-  rewindSession?(request: WebuiRewindSessionRequest): Promise<WebuiRewindSessionResult>;
-  editSessionMessage?(request: WebuiEditSessionMessageRequest): Promise<WebuiEditSessionMessageResult>;
-  isGoalEnabled?(): Promise<WebuiGoalEnabledResult>;
-  getGoal?(request: WebuiGoalSessionRequest): Promise<WebuiGoal | undefined>;
-  createGoal?(request: WebuiGoalCreateRequest): Promise<WebuiGoal>;
-  patchGoal?(request: WebuiGoalPatchRequest): Promise<WebuiGoal>;
-  clearGoal?(request: WebuiGoalSessionRequest): Promise<{ readonly success: boolean }>;
-  listWorkspaceFileTree?(request: { readonly workspaceDir: string; readonly path?: string }): Promise<readonly WebuiWorkspaceFile[]>;
-  readWorkspaceFile?(request: { readonly workspaceDir: string; readonly path: string }): Promise<WebuiWorkspaceFileContent>;
-  getWorkspaceEnvironment?(request: { readonly workspaceDir: string }): Promise<WebuiWorkspaceEnvironment>;
-  mutateWorkspaceGit?(request: WebuiWorkspaceGitMutationRequest): Promise<Record<string, unknown>>;
-  readCanvas?(request: { readonly sessionId: string }): Promise<WebuiCanvasDocument>;
-  applyCanvas?(request: { readonly sessionId: string; readonly operation: Record<string, unknown> }): Promise<{ readonly operationId: string; readonly document: WebuiCanvasDocument }>;
+  getSessionDiff(request: WebuiGetSessionDiffRequest): Promise<WebuiGetSessionDiffResult>;
+  getTurnDiff(request: WebuiGetTurnDiffRequest): Promise<WebuiGetTurnDiffResult>;
+  revertTurnDiff(request: WebuiRevertTurnDiffRequest): Promise<WebuiRevertTurnDiffResult>;
+  reapplyTurnDiff(request: WebuiReapplyTurnDiffRequest): Promise<WebuiReapplyTurnDiffResult>;
+  getSessionRewindPreview(request: WebuiGetSessionRewindPreviewRequest): Promise<WebuiGetSessionRewindPreviewResult>;
+  rewindSession(request: WebuiRewindSessionRequest): Promise<WebuiRewindSessionResult>;
+  editSessionMessage(request: WebuiEditSessionMessageRequest): Promise<WebuiEditSessionMessageResult>;
+  isGoalEnabled(): Promise<WebuiGoalEnabledResult>;
+  getGoal(request: WebuiGoalSessionRequest): Promise<WebuiGoal | undefined>;
+  createGoal(request: WebuiGoalCreateRequest): Promise<WebuiGoal>;
+  patchGoal(request: WebuiGoalPatchRequest): Promise<WebuiGoal>;
+  clearGoal(request: WebuiGoalSessionRequest): Promise<{ readonly success: boolean }>;
+  listWorkspaceFileTree(request: { readonly workspaceDir: string; readonly path?: string }): Promise<readonly WebuiWorkspaceFile[]>;
+  readWorkspaceFile(request: { readonly workspaceDir: string; readonly path: string }): Promise<WebuiWorkspaceFileContent>;
+  getWorkspaceEnvironment(request: { readonly workspaceDir: string }): Promise<WebuiWorkspaceEnvironment>;
+  mutateWorkspaceGit(request: WebuiWorkspaceGitMutationRequest): Promise<Record<string, unknown>>;
+  readCanvas(request: { readonly sessionId: string }): Promise<WebuiCanvasDocument>;
+  applyCanvas(request: { readonly sessionId: string; readonly operation: Record<string, unknown> }): Promise<{ readonly operationId: string; readonly document: WebuiCanvasDocument }>;
   sendMessage(
     request: WebuiSendMessageRequest,
     signal?: AbortSignal,
@@ -773,13 +773,6 @@ export interface WebuiHarnessPort {
   getMiniMaxApiKeyStatus(): Promise<Record<string, unknown>>;
   upsertMiniMaxApiKey(request: { readonly apiKey: string; readonly saveAndUse?: boolean }): Promise<unknown>;
   getCodexOAuthStatus(): Promise<Record<string, unknown>>;
-  invalidateAuth?(): Promise<void>;
-  requestCompaction(request: {
-    readonly name: string;
-    readonly id: string;
-    readonly reason: "ui_request";
-    readonly customInstructions?: string;
-  }): Promise<Record<string, unknown>>;
   /**
    * Release anything the port owns. The service calls this after closing
    * every transport-side resource so the harness can tear itself down in
@@ -787,12 +780,21 @@ export interface WebuiHarnessPort {
    */
   /**
    * Cloud account quota for the user-menu usage panel. Not a harness
-   * capability — see `usage-quota.ts`; the assembly supplies the client.
+   * capability — see `usage-quota.ts`; the assembly supplies the client
+   * (so the method is unconditionally present on the port the service
+   * binds to, even though the live `CliService` does not own it).
    */
   getUsageQuota(request?: {
     readonly forceRefresh?: boolean;
   }): Promise<WebuiUsageQuotaResult>;
-  /** Daily check-in panel status (cloud check-in API; see `check-in.ts`). */
+  /**
+   * Auth invalidation is owned by the auth context reader, not the
+   * harness. The assembly supplies the invalidator alongside the host,
+   * so the method is unconditionally present on the port the service
+   * binds to.
+   */
+  invalidateAuth(): Promise<void>;
+  /** Daily check-in panel status (cloud check-in API; see `check-in.ts`); supplied by the assembly alongside the host. */
   getSigninPanel(): Promise<WebuiSigninPanelView>;
   claimSignin(): Promise<WebuiClaimSigninView>;
   close(): Promise<void>;

@@ -12,35 +12,14 @@ import {
 } from "../../src/server/operation/operations.js";
 
 describe("WebUI command adapter", () => {
-  it("returns the six-command catalogue for help", async () => {
+  it("returns the five-command catalogue for help", async () => {
     const result = await runWebuiCommand({} as never, { command: "help" });
-    expect(result.output).toContain("/compact");
-    expect(result.data).toHaveLength(6);
-  });
-
-  it("uses the CliService single-object compaction shape", async () => {
-    const requestCompaction = vi.fn().mockResolvedValue({ success: true });
-    await runWebuiCommand({ requestCompaction } as never, { command: "compact", sessionId: "s1", agentName: "main", input: "focus" });
-    expect(requestCompaction).toHaveBeenCalledWith({ name: "main", id: "s1", reason: "ui_request", customInstructions: "focus" });
-  });
-
-  it("maps nothing-to-compact to a handled response", async () => {
-    const result = await runWebuiCommand({ requestCompaction: vi.fn().mockResolvedValue({ code: "NOTHING_TO_COMPACT" }) } as never, { command: "compact", sessionId: "s1" });
-    expect(result).toEqual({ handled: true, output: "No compaction is needed for this conversation yet." });
-  });
-
-  it("preserves a runtime rejection code for the service envelope", async () => {
-    await expect(
-      runWebuiCommand(
-        {
-          requestCompaction: vi.fn().mockResolvedValue({
-            code: "runtimeRejected",
-            error: "not allowed",
-          }),
-        } as never,
-        { command: "compact", sessionId: "s1" },
-      ),
-    ).rejects.toMatchObject({ code: "runtimeRejected", message: "not allowed" });
+    expect(result.output).toContain("/status");
+    expect(result.data).toHaveLength(5);
+    // /compact dropped in batch C: the harness port no longer exposes
+    // requestCompaction and the runner's whitelist was reduced to the five
+    // still-implemented surfaces.
+    expect(result.output).not.toContain("/compact");
   });
 
   it("rejects malformed and unknown command request bodies", () => {

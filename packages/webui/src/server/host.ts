@@ -63,6 +63,198 @@ import type {
   WebuiGoalPatchRequest,
 } from "./port.js";
 
+/**
+ * The exact surface of the runtime `cliService` the WebUI talks to. The
+ * runtime harness is responsible for satisfying this shape; the WebUI's only
+ * job is to forward requests here. Methods optional on the live cliService
+ * stay optional here too — `createHarnessPortFromHost` projects them back
+ * with `requireCliService` so every wire-error is a single, uniform
+ * `runtime host does not expose the CLI service` message.
+ *
+ * Exported as the single source of truth so the assembly layer can type its
+ * `cliService?: WebuiRuntimeCliService` slot without re-spelling it.
+ */
+export interface WebuiRuntimeCliService {
+  listSessions(
+    request: WebuiSessionListRequest,
+    context?: Record<string, never>,
+  ): Promise<WebuiSessionPage>;
+  getSessionTree(
+    request: WebuiSessionTreeRequest,
+    context?: Record<string, never>,
+  ): Promise<WebuiSessionTreePage>;
+  archiveSession(
+    request: { readonly id: string },
+    context?: Record<string, never>,
+  ): Promise<{ readonly success?: boolean }>;
+  deleteSession(
+    request: { readonly id: string },
+    context?: Record<string, never>,
+  ): Promise<{ readonly success?: boolean }>;
+  updateSession(
+    request: import("./port.js").WebuiUpdateSessionRequest,
+    context?: Record<string, never>,
+  ): Promise<import("./port.js").WebuiUpdateSessionResult>;
+  getSessionForkOptions(
+    request: WebuiGetSessionForkOptionsRequest,
+    context?: Record<string, never>,
+  ): Promise<WebuiGetSessionForkOptionsResult>;
+  forkSession(
+    request: WebuiForkSessionRequest,
+    context?: Record<string, never>,
+  ): Promise<WebuiForkSessionResult>;
+  createSession(
+    request: WebuiCreateSessionRequest,
+    context?: Record<string, never>,
+  ): Promise<WebuiCreateSessionResult>;
+  getSession(
+    request: import("./port.js").WebuiSessionLookupRequest,
+    context?: Record<string, never>,
+  ): Promise<import("./port.js").WebuiSessionLookupResult>;
+  getMessages(
+    request: import("./port.js").WebuiMessagesRequest,
+    context?: Record<string, never>,
+  ): Promise<import("./port.js").WebuiMessagesResult>;
+  getSessionDiff(
+    request: WebuiGetSessionDiffRequest,
+    context?: Record<string, never>,
+  ): Promise<WebuiGetSessionDiffResult>;
+  getTurnDiff(
+    request: WebuiGetTurnDiffRequest,
+    context?: Record<string, never>,
+  ): Promise<WebuiGetTurnDiffResult>;
+  revertTurnDiff(
+    request: WebuiRevertTurnDiffRequest,
+    context?: Record<string, never>,
+  ): Promise<WebuiRevertTurnDiffResult>;
+  reapplyTurnDiff(
+    request: WebuiReapplyTurnDiffRequest,
+    context?: Record<string, never>,
+  ): Promise<WebuiReapplyTurnDiffResult>;
+  getSessionRewindPreview(
+    request: WebuiGetSessionRewindPreviewRequest,
+    context?: Record<string, never>,
+  ): Promise<WebuiGetSessionRewindPreviewResult>;
+  rewindSession(
+    request: WebuiRewindSessionRequest,
+    context?: Record<string, never>,
+  ): Promise<WebuiRewindSessionResult>;
+  editSessionMessage(
+    request: WebuiEditSessionMessageRequest,
+    context?: Record<string, never>,
+  ): Promise<WebuiEditSessionMessageResult>;
+  isGoalEnabled(): boolean;
+  getGoal(sessionId: string): Promise<WebuiGoal | undefined>;
+  createGoal(request: WebuiGoalCreateRequest): Promise<WebuiGoal>;
+  patchGoal(
+    sessionId: string,
+    patch: Omit<WebuiGoalPatchRequest, "sessionId">,
+  ): Promise<WebuiGoal>;
+  clearGoal(sessionId: string): Promise<boolean>;
+  listWorkspaceFileTree?(request: { readonly workspaceDir: string; readonly path?: string }): Promise<readonly WebuiWorkspaceFile[]>;
+  readWorkspaceFile?(request: { readonly workspaceDir: string; readonly path: string }): Promise<WebuiWorkspaceFileContent>;
+  getWorkspaceGitEnvironment?(workspaceDir: string): Promise<{ readonly metadata: Record<string, unknown>; readonly changes: Record<string, unknown> }>;
+  mutateWorkspaceGit?(request: WebuiWorkspaceGitMutationRequest): Promise<Record<string, unknown>>;
+  readCanvas?(request: { readonly sessionId: string }): Promise<WebuiCanvasDocument>;
+  applyCanvas?(request: { readonly sessionId: string; readonly operation: Record<string, unknown> }): Promise<{ readonly operationId: string; readonly document: WebuiCanvasDocument }>;
+  sendMessage(
+    request: WebuiSendMessageRequest,
+    context?: { readonly signal?: AbortSignal },
+  ): Promise<WebuiSendMessageResult>;
+  enqueueMessage(
+    request: WebuiEnqueueMessageRequest,
+    context?: { readonly signal?: AbortSignal },
+  ): Promise<WebuiEnqueueMessageResult>;
+  resumeSession(
+    request: WebuiResumeSessionRequest,
+    context?: { readonly signal?: AbortSignal },
+  ): Promise<WebuiStreamResult>;
+  watchEvents(signal?: AbortSignal): AsyncIterable<WebuiRuntimeEvent>;
+  listPendingPermissions(): Promise<{
+    readonly requests: readonly WebuiPendingPermission[];
+  }>;
+  getPendingQuestionnaire(request: {
+    readonly name: string;
+    readonly sessionId: string;
+  }): Promise<{ readonly request?: WebuiQuestionnaireRequest }>;
+  replyPermission(request: {
+    readonly name: string;
+    readonly requestId: string;
+    readonly reply: number;
+  }): Promise<WebuiInteractionReplyResult>;
+  replyQuestionnaire(request: {
+    readonly name: string;
+    readonly requestId: string;
+    readonly schemaVersion: number;
+    readonly answers: readonly WebuiQuestionnaireAnswer[];
+  }): Promise<WebuiInteractionReplyResult>;
+  dismissQuestionnaire(request: {
+    readonly name: string;
+    readonly requestId: string;
+  }): Promise<WebuiInteractionReplyResult>;
+  abortSession(request: {
+    readonly id: string;
+  }): Promise<{ readonly success?: boolean }>;
+  listQueueMessages(request: { readonly id: string }): Promise<{
+    readonly items?: readonly WebuiQueueItem[];
+    readonly paused?: boolean;
+    readonly pendingCount?: number;
+  }>;
+  deleteQueueItem(request: {
+    readonly id: string;
+    readonly itemId: string;
+  }): Promise<{ readonly item?: WebuiQueueItem }>;
+  listModels(request?: {
+    readonly sessionId?: string;
+  }): Promise<readonly WebuiModelEntry[]>;
+  /**
+   * The cliService returns the harness `SkillInfo[]`; the host then projects
+   * it down to `WebuiSkillEntry[]` for the WebUI client. The structural type
+   * spells out the wider shape (incl. `displayDescription` for i18n) so the
+   * field-selection logic in `listSkills()` below type-checks.
+   */
+  listSkills(request?: {
+    readonly agentName?: string;
+  }): Promise<{
+    readonly skills: readonly {
+      readonly name: string;
+      readonly displayName?: string;
+      readonly description?: string;
+      readonly displayDescription?: string;
+    }[];
+  }>;
+  selectModel(request: {
+    readonly providerId: string;
+    readonly modelId: string;
+    readonly variant?: string;
+    readonly contextLimit?: number;
+    readonly sessionId?: string;
+  }): Promise<{ readonly success?: boolean }>;
+  getSessionUsage(request: {
+    readonly id: string;
+  }): Promise<Record<string, unknown>>;
+  getAccountStatus(request?: {
+    readonly sessionId?: string;
+  }): Promise<Record<string, unknown>>;
+  listUserModelProviders(): Promise<readonly Record<string, unknown>[]>;
+  createUserModelProvider(request: Record<string, unknown>): Promise<unknown>;
+  updateUserModelProvider(request: Record<string, unknown>): Promise<unknown>;
+  deleteUserModelProvider(request: { readonly providerId: string }): Promise<unknown>;
+  testUserModelProvider(request: { readonly providerId: string }): Promise<unknown>;
+  testUserModel(request: { readonly providerId: string; readonly modelId: string }): Promise<unknown>;
+  discoverUserModelsCandidate(request: Record<string, unknown>): Promise<unknown>;
+  saveUserModelProviderCandidate(request: Record<string, unknown>): Promise<unknown>;
+  listProviderPresets(): Promise<readonly Record<string, unknown>[]>;
+  getMiniMaxApiKeyStatus(): Promise<Record<string, unknown>>;
+  upsertMiniMaxApiKey(request: { readonly apiKey: string; readonly saveAndUse?: boolean }): Promise<unknown>;
+  getCodexOAuthStatus(): Promise<Record<string, unknown>>;
+}
+
+/** Single source of truth for the runtime host's `cliService` slot. */
+export type WebuiHostCliServiceSlot =
+  | WebuiRuntimeCliService
+  | undefined;
+
 export interface WebuiRuntimeHostHandle {
   readonly apiHost: { close(): Promise<void> };
   readonly appVersion?: string;
@@ -81,195 +273,11 @@ export interface WebuiRuntimeHostHandle {
    */
   readonly getSigninPanel?: () => Promise<import("./port.js").WebuiSigninPanelView>;
   readonly claimSignin?: () => Promise<import("./port.js").WebuiClaimSigninView>;
-  readonly cliService?: {
-    listSessions(
-      request: WebuiSessionListRequest,
-      context?: Record<string, never>,
-    ): Promise<WebuiSessionPage>;
-    getSessionTree(
-      request: WebuiSessionTreeRequest,
-      context?: Record<string, never>,
-    ): Promise<WebuiSessionTreePage>;
-    archiveSession(
-      request: { readonly id: string },
-      context?: Record<string, never>,
-    ): Promise<{ readonly success?: boolean }>;
-    deleteSession(
-      request: { readonly id: string },
-      context?: Record<string, never>,
-    ): Promise<{ readonly success?: boolean }>;
-    updateSession(
-      request: import("./port.js").WebuiUpdateSessionRequest,
-      context?: Record<string, never>,
-    ): Promise<import("./port.js").WebuiUpdateSessionResult>;
-    getSessionForkOptions(
-      request: import("./port.js").WebuiGetSessionForkOptionsRequest,
-      context?: Record<string, never>,
-    ): Promise<import("./port.js").WebuiGetSessionForkOptionsResult>;
-    forkSession(
-      request: import("./port.js").WebuiForkSessionRequest,
-      context?: Record<string, never>,
-    ): Promise<import("./port.js").WebuiForkSessionResult>;
-    createSession(
-      request: WebuiCreateSessionRequest,
-      context?: Record<string, never>,
-    ): Promise<WebuiCreateSessionResult>;
-    getSession(
-      request: import("./port.js").WebuiSessionLookupRequest,
-      context?: Record<string, never>,
-    ): Promise<import("./port.js").WebuiSessionLookupResult>;
-    getMessages(
-      request: import("./port.js").WebuiMessagesRequest,
-      context?: Record<string, never>,
-    ): Promise<import("./port.js").WebuiMessagesResult>;
-    getSessionDiff(
-      request: WebuiGetSessionDiffRequest,
-      context?: Record<string, never>,
-    ): Promise<WebuiGetSessionDiffResult>;
-    getTurnDiff(
-      request: WebuiGetTurnDiffRequest,
-      context?: Record<string, never>,
-    ): Promise<WebuiGetTurnDiffResult>;
-    revertTurnDiff(
-      request: WebuiRevertTurnDiffRequest,
-      context?: Record<string, never>,
-    ): Promise<WebuiRevertTurnDiffResult>;
-    reapplyTurnDiff(
-      request: WebuiReapplyTurnDiffRequest,
-      context?: Record<string, never>,
-    ): Promise<WebuiReapplyTurnDiffResult>;
-    getSessionForkOptions(
-      request: WebuiGetSessionForkOptionsRequest,
-      context?: Record<string, never>,
-    ): Promise<WebuiGetSessionForkOptionsResult>;
-    forkSession(
-      request: WebuiForkSessionRequest,
-      context?: Record<string, never>,
-    ): Promise<WebuiForkSessionResult>;
-    getSessionRewindPreview(
-      request: WebuiGetSessionRewindPreviewRequest,
-      context?: Record<string, never>,
-    ): Promise<WebuiGetSessionRewindPreviewResult>;
-    rewindSession(
-      request: WebuiRewindSessionRequest,
-      context?: Record<string, never>,
-    ): Promise<WebuiRewindSessionResult>;
-    editSessionMessage(
-      request: WebuiEditSessionMessageRequest,
-      context?: Record<string, never>,
-    ): Promise<WebuiEditSessionMessageResult>;
-    isGoalEnabled(): boolean;
-    getGoal(sessionId: string): Promise<WebuiGoal | undefined>;
-    createGoal(request: WebuiGoalCreateRequest): Promise<WebuiGoal>;
-    patchGoal(
-      sessionId: string,
-      patch: Omit<WebuiGoalPatchRequest, "sessionId">,
-    ): Promise<WebuiGoal>;
-    clearGoal(sessionId: string): Promise<boolean>;
-    listWorkspaceFileTree?(request: { readonly workspaceDir: string; readonly path?: string }): Promise<readonly WebuiWorkspaceFile[]>;
-    readWorkspaceFile?(request: { readonly workspaceDir: string; readonly path: string }): Promise<WebuiWorkspaceFileContent>;
-    getWorkspaceGitEnvironment?(workspaceDir: string): Promise<{ readonly metadata: Record<string, unknown>; readonly changes: Record<string, unknown> }>;
-    mutateWorkspaceGit?(request: WebuiWorkspaceGitMutationRequest): Promise<Record<string, unknown>>;
-    readCanvas?(request: { readonly sessionId: string }): Promise<WebuiCanvasDocument>;
-    applyCanvas?(request: { readonly sessionId: string; readonly operation: Record<string, unknown> }): Promise<{ readonly operationId: string; readonly document: WebuiCanvasDocument }>;
-    sendMessage(
-      request: WebuiSendMessageRequest,
-      context?: { readonly signal?: AbortSignal },
-    ): Promise<WebuiSendMessageResult>;
-    enqueueMessage(
-      request: WebuiEnqueueMessageRequest,
-      context?: { readonly signal?: AbortSignal },
-    ): Promise<WebuiEnqueueMessageResult>;
-    resumeSession(
-      request: WebuiResumeSessionRequest,
-      context?: { readonly signal?: AbortSignal },
-    ): Promise<WebuiStreamResult>;
-    watchEvents(signal?: AbortSignal): AsyncIterable<WebuiRuntimeEvent>;
-    listPendingPermissions(): Promise<{
-      readonly requests: readonly WebuiPendingPermission[];
-    }>;
-    getPendingQuestionnaire(request: {
-      readonly name: string;
-      readonly sessionId: string;
-    }): Promise<{ readonly request?: WebuiQuestionnaireRequest }>;
-    replyPermission(request: {
-      readonly name: string;
-      readonly requestId: string;
-      readonly reply: number;
-    }): Promise<WebuiInteractionReplyResult>;
-    replyQuestionnaire(request: {
-      readonly name: string;
-      readonly requestId: string;
-      readonly schemaVersion: number;
-      readonly answers: readonly WebuiQuestionnaireAnswer[];
-    }): Promise<WebuiInteractionReplyResult>;
-    dismissQuestionnaire(request: {
-      readonly name: string;
-      readonly requestId: string;
-    }): Promise<WebuiInteractionReplyResult>;
-    abortSession(request: {
-      readonly id: string;
-    }): Promise<{ readonly success?: boolean }>;
-    listQueueMessages(request: { readonly id: string }): Promise<{
-      readonly items?: readonly WebuiQueueItem[];
-      readonly paused?: boolean;
-      readonly pendingCount?: number;
-    }>;
-    deleteQueueItem(request: {
-      readonly id: string;
-      readonly itemId: string;
-    }): Promise<{ readonly item?: WebuiQueueItem }>;
-    listModels(request?: {
-      readonly sessionId?: string;
-    }): Promise<readonly WebuiModelEntry[]>;
-    /**
- * The cliService returns the harness `SkillInfo[]`; the host then projects
- * it down to `WebuiSkillEntry[]` for the WebUI client. The structural type
- * spells out the wider shape (incl. `displayDescription` for i18n) so the
- * field-selection logic in `listSkills()` below type-checks.
- */
-listSkills(request?: {
-      readonly agentName?: string;
-    }): Promise<{
-      readonly skills: readonly {
-        readonly name: string;
-        readonly displayName?: string;
-        readonly description?: string;
-        readonly displayDescription?: string;
-      }[];
-    }>;
-    selectModel(request: {
-      readonly providerId: string;
-      readonly modelId: string;
-      readonly variant?: string;
-      readonly contextLimit?: number;
-      readonly sessionId?: string;
-    }): Promise<{ readonly success?: boolean }>;
-    getSessionUsage(request: {
-      readonly id: string;
-    }): Promise<Record<string, unknown>>;
-    getAccountStatus(request?: {
-      readonly sessionId?: string;
-    }): Promise<Record<string, unknown>>;
-    listUserModelProviders(): Promise<readonly Record<string, unknown>[]>;
-    createUserModelProvider(request: Record<string, unknown>): Promise<unknown>;
-    updateUserModelProvider(request: Record<string, unknown>): Promise<unknown>;
-    deleteUserModelProvider(request: { readonly providerId: string }): Promise<unknown>;
-    testUserModelProvider(request: { readonly providerId: string }): Promise<unknown>;
-    testUserModel(request: { readonly providerId: string; readonly modelId: string }): Promise<unknown>;
-    discoverUserModelsCandidate(request: Record<string, unknown>): Promise<unknown>;
-    saveUserModelProviderCandidate(request: Record<string, unknown>): Promise<unknown>;
-    listProviderPresets(): Promise<readonly Record<string, unknown>[]>;
-    getMiniMaxApiKeyStatus(): Promise<Record<string, unknown>>;
-    upsertMiniMaxApiKey(request: { readonly apiKey: string; readonly saveAndUse?: boolean }): Promise<unknown>;
-    getCodexOAuthStatus(): Promise<Record<string, unknown>>;
-    requestCompaction?(request: {
-      readonly name: string;
-      readonly id: string;
-      readonly reason: "ui_request";
-      readonly customInstructions?: string;
-    }): Promise<Record<string, unknown>>;
-  };
+  /**
+   * Source of every harness command the WebUI maps to operations. Owned by
+   * the runtime host; the WebUI only needs the structural shape to forward.
+   */
+  readonly cliService?: WebuiRuntimeCliService;
 }
 
 /**
@@ -295,128 +303,83 @@ export function createHarnessPortFromHost(
       host.invalidateAuth?.();
     },
     async listSessions(request) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.listSessions(request, {});
+      return requireCliService(host).listSessions(request, {});
     },
     async getSessionTree(request) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.getSessionTree(request, {});
+      return requireCliService(host).getSessionTree(request, {});
     },
     async archiveSession(request) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.archiveSession(request, {});
+      return requireCliService(host).archiveSession(request, {});
     },
     async deleteSession(request) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.deleteSession(request, {});
+      return requireCliService(host).deleteSession(request, {});
     },
     async updateSession(request) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.updateSession(request, {});
+      return requireCliService(host).updateSession(request, {});
     },
     async getSessionForkOptions(request) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.getSessionForkOptions(request, {});
+      return requireCliService(host).getSessionForkOptions(request, {});
     },
     async forkSession(request) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.forkSession(request, {});
+      return requireCliService(host).forkSession(request, {});
     },
     async createSession(request) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.createSession(request, {});
+      return requireCliService(host).createSession(request, {});
     },
     async getSession(request) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.getSession(request, {});
+      return requireCliService(host).getSession(request, {});
     },
     async getMessages(request) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.getMessages(request, {});
+      return requireCliService(host).getMessages(request, {});
     },
     async getSessionDiff(request) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.getSessionDiff(request, {});
+      return requireCliService(host).getSessionDiff(request, {});
     },
     async getTurnDiff(request) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.getTurnDiff(request, {});
+      return requireCliService(host).getTurnDiff(request, {});
     },
     async revertTurnDiff(request) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.revertTurnDiff(request, {});
+      return requireCliService(host).revertTurnDiff(request, {});
     },
     async reapplyTurnDiff(request) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.reapplyTurnDiff(request, {});
+      return requireCliService(host).reapplyTurnDiff(request, {});
     },
     async getSessionRewindPreview(request) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.getSessionRewindPreview(request, {});
+      return requireCliService(host).getSessionRewindPreview(request, {});
     },
     async rewindSession(request) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.rewindSession(request, {});
+      return requireCliService(host).rewindSession(request, {});
     },
     async editSessionMessage(request) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.editSessionMessage(request, {});
+      return requireCliService(host).editSessionMessage(request, {});
     },
     async isGoalEnabled() {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return { enabled: host.cliService.isGoalEnabled() };
+      return { enabled: requireCliService(host).isGoalEnabled() };
     },
     async getGoal(request) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.getGoal(request.sessionId);
+      return requireCliService(host).getGoal(request.sessionId);
     },
     async createGoal(request) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.createGoal(request);
+      return requireCliService(host).createGoal(request);
     },
     async patchGoal(request) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
       const { sessionId, ...patch } = request;
-      return host.cliService.patchGoal(sessionId, patch);
+      return requireCliService(host).patchGoal(sessionId, patch);
     },
     async clearGoal(request) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return { success: await host.cliService.clearGoal(request.sessionId) };
+      return { success: await requireCliService(host).clearGoal(request.sessionId) };
     },
     async listWorkspaceFileTree(request) {
-      if (!host.cliService) throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.listWorkspaceFileTree?.(request) as Promise<readonly WebuiWorkspaceFile[]>;
+      return requireCliService(host).listWorkspaceFileTree!(request) as Promise<readonly WebuiWorkspaceFile[]>;
     },
     async readWorkspaceFile(request) {
-      if (!host.cliService) throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.readWorkspaceFile?.(request) as Promise<WebuiWorkspaceFileContent>;
+      return requireCliService(host).readWorkspaceFile!(request) as Promise<WebuiWorkspaceFileContent>;
     },
     async getWorkspaceEnvironment(request) {
-      if (!host.cliService?.getWorkspaceGitEnvironment)
+      const cliService = requireCliService(host);
+      if (!cliService.getWorkspaceGitEnvironment)
         throw new Error("runtime host does not expose Workspace git state");
-      const { metadata, changes } = await host.cliService.getWorkspaceGitEnvironment(request.workspaceDir);
+      const { metadata, changes } = await cliService.getWorkspaceGitEnvironment(request.workspaceDir);
       return {
         isGitRepo: changes.isGitRepo === true || metadata.isGitRepo === true,
         ...(typeof metadata.branch === "string" ? { branch: metadata.branch } : {}),
@@ -432,100 +395,69 @@ export function createHarnessPortFromHost(
       } as WebuiWorkspaceEnvironment;
     },
     async mutateWorkspaceGit(request) {
-      if (!host.cliService?.mutateWorkspaceGit)
+      const cliService = requireCliService(host);
+      if (!cliService.mutateWorkspaceGit)
         throw new Error("runtime host does not expose Workspace git mutations");
-      return host.cliService.mutateWorkspaceGit(request);
+      return cliService.mutateWorkspaceGit(request);
     },
     async readCanvas(request) {
-      if (!host.cliService) throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.readCanvas?.(request) as Promise<WebuiCanvasDocument>;
+      return requireCliService(host).readCanvas!(request) as Promise<WebuiCanvasDocument>;
     },
     async applyCanvas(request) {
-      if (!host.cliService) throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.applyCanvas?.(request as never) as Promise<{ readonly operationId: string; readonly document: WebuiCanvasDocument }>;
+      return requireCliService(host).applyCanvas!(request as never) as Promise<{ readonly operationId: string; readonly document: WebuiCanvasDocument }>;
     },
     async sendMessage(request, signal) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.sendMessage(request, signal ? { signal } : {});
+      return requireCliService(host).sendMessage(request, signal ? { signal } : {});
     },
     async enqueueMessage(request) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.enqueueMessage(request, {});
+      return requireCliService(host).enqueueMessage(request, {});
     },
     async resumeSession(request, signal) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.resumeSession(request, signal ? { signal } : {});
+      return requireCliService(host).resumeSession(request, signal ? { signal } : {});
     },
     watchEvents(signal) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.watchEvents(signal);
+      return requireCliService(host).watchEvents(signal);
     },
     async listPendingPermissions() {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.listPendingPermissions();
+      return requireCliService(host).listPendingPermissions();
     },
     async getPendingQuestionnaire(request) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.getPendingQuestionnaire(request);
+      return requireCliService(host).getPendingQuestionnaire(request);
     },
     async replyPermission(request) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.replyPermission({
+      return requireCliService(host).replyPermission({
         name: request.name,
         requestId: request.requestId,
         reply: permissionReplyValue(request.reply),
       });
     },
     async replyQuestionnaire(request) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.replyQuestionnaire(request);
+      return requireCliService(host).replyQuestionnaire(request);
     },
     async dismissQuestionnaire(request) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.dismissQuestionnaire(request);
+      return requireCliService(host).dismissQuestionnaire(request);
     },
     async abortSession(request) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.abortSession(request);
+      return requireCliService(host).abortSession(request);
     },
     async listQueueMessages(request) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.listQueueMessages(request);
+      return requireCliService(host).listQueueMessages(request);
     },
     async deleteQueueItem(request) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.deleteQueueItem(request);
+      return requireCliService(host).deleteQueueItem(request);
     },
     async listModels(request) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.listModels(request);
+      return requireCliService(host).listModels(request);
     },
     async selectModel(request) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.selectModel(request);
+      return requireCliService(host).selectModel(request);
     },
     async listSkills(request) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
       // cliService.listSkills returns the full `SkillInfo[]` shape; map it
       // down to the WebUI's minimal projection. `displayDescription` and
       // i18n keys win over the raw `description` so the popover matches the
       // desktop's translated copy.
-      const result = await host.cliService.listSkills(request ?? {});
+      const result = await requireCliService(host).listSkills(request ?? {});
       return {
         skills: result.skills.map((skill) => ({
           name: skill.name,
@@ -536,9 +468,7 @@ export function createHarnessPortFromHost(
       };
     },
     async getSessionUsage(request) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.getSessionUsage(request);
+      return requireCliService(host).getSessionUsage(request);
     },
     async getUsageQuota(request) {
       if (!host.getUsageQuota)
@@ -556,64 +486,43 @@ export function createHarnessPortFromHost(
       return host.claimSignin();
     },
     async getAccountStatus(request) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.getAccountStatus(request);
+      return requireCliService(host).getAccountStatus(request);
     },
     async listUserModelProviders() {
-      if (!host.cliService) throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.listUserModelProviders();
+      return requireCliService(host).listUserModelProviders();
     },
     async createUserModelProvider(request) {
-      if (!host.cliService) throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.createUserModelProvider(request);
+      return requireCliService(host).createUserModelProvider(request);
     },
     async updateUserModelProvider(request) {
-      if (!host.cliService) throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.updateUserModelProvider(request);
+      return requireCliService(host).updateUserModelProvider(request);
     },
     async deleteUserModelProvider(providerId) {
-      if (!host.cliService) throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.deleteUserModelProvider({ providerId });
+      return requireCliService(host).deleteUserModelProvider({ providerId });
     },
     async testUserModelProvider(providerId) {
-      if (!host.cliService) throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.testUserModelProvider({ providerId });
+      return requireCliService(host).testUserModelProvider({ providerId });
     },
     async testUserModel(request) {
-      if (!host.cliService) throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.testUserModel({ providerId: request.providerId, modelId: request.modelId });
+      return requireCliService(host).testUserModel({ providerId: request.providerId, modelId: request.modelId });
     },
     async discoverUserModelsCandidate(request) {
-      if (!host.cliService) throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.discoverUserModelsCandidate(request);
+      return requireCliService(host).discoverUserModelsCandidate(request);
     },
     async saveUserModelProviderCandidate(request) {
-      if (!host.cliService) throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.saveUserModelProviderCandidate(request);
+      return requireCliService(host).saveUserModelProviderCandidate(request);
     },
     async listProviderPresets() {
-      if (!host.cliService) throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.listProviderPresets();
+      return requireCliService(host).listProviderPresets();
     },
     async getMiniMaxApiKeyStatus() {
-      if (!host.cliService) throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.getMiniMaxApiKeyStatus();
+      return requireCliService(host).getMiniMaxApiKeyStatus();
     },
     async upsertMiniMaxApiKey(request) {
-      if (!host.cliService) throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.upsertMiniMaxApiKey(request);
+      return requireCliService(host).upsertMiniMaxApiKey(request);
     },
     async getCodexOAuthStatus() {
-      if (!host.cliService) throw new Error("runtime host does not expose the CLI service");
-      return host.cliService.getCodexOAuthStatus();
-    },
-    async requestCompaction(request) {
-      if (!host.cliService)
-        throw new Error("runtime host does not expose the CLI service");
-      if (!host.cliService.requestCompaction)
-        throw new Error("runtime host does not expose requestCompaction");
-      return host.cliService.requestCompaction(request);
+      return requireCliService(host).getCodexOAuthStatus();
     },
     async close() {
       if (closed) return;
@@ -621,6 +530,18 @@ export function createHarnessPortFromHost(
       await host.apiHost.close();
     },
   };
+}
+
+/**
+ * Resolve the runtime host's `cliService` slot. Every harness port method
+ * that has no equivalent on the auth/quota/check-in side flows through this
+ * helper so the failure message is the same as it was before the batch-C
+ * seam work.
+ */
+function requireCliService(host: WebuiRuntimeHostHandle): WebuiRuntimeCliService {
+  if (!host.cliService)
+    throw new Error("runtime host does not expose the CLI service");
+  return host.cliService;
 }
 
 function permissionReplyValue(reply: WebuiPermissionDecision): number {
