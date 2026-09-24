@@ -344,27 +344,33 @@ export function WebuiSessionTranscript({
               />,
             );
           }
-          if (userItem)
+          if (userItem) {
+            const projectedUserView = turnViewsByMessageId.get(
+              userItem.messageId,
+            );
+            const historicalUserView =
+              projectedUserView?.source === "historical"
+                ? projectedUserView
+                : undefined;
             result.push(
               <MessageItem
                 key={group.messageId}
                 view={
-                  turnViewsByMessageId.get(group.messageId) ?? {
+                  {
+                    ...(historicalUserView ?? {
+                      source: "historical",
+                      messageId: userItem.messageId,
+                      role: "user",
+                      sessionId,
+                    }),
                     source: "historical",
-                    messageId: group.messageId,
+                    messageId: userItem.messageId,
                     role: "user",
                     sessionId,
-                    ...(group.turnId ? { turnId: group.turnId } : {}),
-                    ...(userItem.text !== undefined
-                      ? { userText: userItem.text }
-                      : {}),
-                    ...(userItem.actions
-                      ? { actions: userItem.actions }
-                      : {}),
-                    ...(userItem.timestamp !== undefined
-                      ? { timestamp: userItem.timestamp }
-                      : {}),
-                    ...(userItem.isGoal ? { isGoal: true } : {}),
+                    userText: userItem.text,
+                    actions: userItem.actions,
+                    timestamp: userItem.timestamp,
+                    isGoal: userItem.isGoal,
                   }
                 }
                 getSessionForkOptions={getSessionForkOptions}
@@ -374,6 +380,7 @@ export function WebuiSessionTranscript({
                 editSessionMessage={editSessionMessage}
               />,
             );
+          }
           if (result.length > 0) return result;
           // Fall through to the assistant-group renderer below.
           // `wallClockDurationMs` and `processSegments` are group-level
@@ -381,16 +388,77 @@ export function WebuiSessionTranscript({
           // per-message activity rows across the assistant group. The
           // historical per-message adapter leaves processSegments out;
           // this group projection supplies it before rendering.
+          const thinkingItems = group.items.filter(
+            (item): item is Extract<WebuiTranscriptItem, { text: string }> =>
+              item.kind === "thinking",
+          );
+          const tools = group.items
+            .filter(
+              (
+                item,
+              ): item is Extract<WebuiTranscriptItem, { kind: "tool" }> =>
+                item.kind === "tool",
+            )
+            .flatMap((item) => item.tools);
+          const answers = group.items.filter(
+            (item): item is Extract<WebuiTranscriptItem, { text: string }> =>
+              item.kind === "assistant",
+          );
+          const actions = group.items.find(
+            (
+              item,
+            ): item is Extract<
+              WebuiTranscriptItem,
+              { actions?: WebuiMessageActionCapabilities }
+            > => "actions" in item,
+          )?.actions;
+          const initialDiff = [...group.items]
+            .reverse()
+            .find(
+              (
+                item,
+              ): item is Extract<
+                WebuiTranscriptItem,
+                { diff?: WebuiTurnDiffView }
+              > => "diff" in item,
+            )?.diff;
+          const projectedAssistantView = turnViewsByMessageId.get(
+            group.messageId,
+          );
+          const historicalAssistantView =
+            projectedAssistantView?.source === "historical"
+              ? projectedAssistantView
+              : undefined;
           return (
             <MessageItem
               key={group.messageId}
               view={
-                turnViewsByMessageId.get(group.messageId) ?? {
+                {
+                  ...(historicalAssistantView ?? {
+                    source: "historical",
+                    messageId: group.messageId,
+                    role: "assistant",
+                    sessionId,
+                  }),
                   source: "historical",
                   messageId: group.messageId,
                   role: "assistant",
                   sessionId,
                   ...(group.turnId ? { turnId: group.turnId } : {}),
+                  userText: undefined,
+                  thinking: thinkingItems.length > 0
+                    ? thinkingItems.map((item) => item.text).join("\n\n")
+                    : undefined,
+                  thinkingDurationMs: thinkingItems[0]?.durationMs,
+                  tools: tools.length > 0 ? tools : undefined,
+                  answers: answers.map((item) => item.text),
+                  timestamp: undefined,
+                  isGoal: undefined,
+                  totalRequestDurationMs: group.totalRequestDurationMs,
+                  totalOutputTokens: group.totalOutputTokens,
+                  actions,
+                  initialDiff,
+                  attachments: answers[0]?.attachments,
                   processSegments: projectWebuiProcessSegments(group.items),
                 }
               }

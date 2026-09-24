@@ -2355,6 +2355,80 @@ describe("WebUI composer transcriptIncomplete", () => {
     expect(html).toContain('data-webui-transcript="merge-session"');
   });
 
+  it("enriches a matched historical group view from every group item", () => {
+    const html = renderToStaticMarkup(
+      createElement(WebuiSessionTranscript, {
+        sessionId: "group-enrichment-session",
+        loadMessages: async () => ({ messages: [], hasMore: false }),
+        initialMessages: {
+          messages: [
+            {
+              msgId: "group-user",
+              role: "user",
+              msgContent: "Please inspect these files",
+              source: "thread-goal",
+              timestamp: 1_700_000_000_000,
+              actions: { edit: true },
+            },
+            {
+              msgId: "assistant-first",
+              turnId: "assistant-group-turn",
+              thinkingContent: "First reasoning segment",
+              thinkingDurationMs: 1_500,
+              toolCalls: [{ name: "read" }],
+              msgContent: "First answer",
+              attachments: [
+                {
+                  id: "attachment-first",
+                  type: "file",
+                  file_name: "group-output.txt",
+                  preview_url: "/tmp/group-output.txt",
+                },
+              ],
+              fileChanges: [
+                { file: "stale.ts", additions: 1, deletions: 0 },
+              ],
+              usage: { request_duration_ms: 2_000, output_tokens: 20 },
+            },
+            {
+              msgId: "assistant-second",
+              turnId: "assistant-group-turn",
+              thinkingContent: "Second reasoning segment",
+              thinkingDurationMs: 2_500,
+              toolCalls: [{ name: "search" }],
+              msgContent: "Second answer",
+              actions: { fork: true },
+              fileChanges: [
+                { file: "latest.ts", additions: 3, deletions: 1 },
+              ],
+              usage: { request_duration_ms: 3_000, output_tokens: 70 },
+            },
+          ],
+          hasMore: false,
+        },
+      }),
+    );
+
+    expect(html).toContain("Please inspect these files");
+    expect(html).toContain('data-webui-goal-message="true"');
+    expect(html).toContain('data-testid="user-message-edit-button"');
+    expect(html).toContain('data-message-timestamp="1700000000000"');
+    expect(html.match(/class="webui-turn-process-segment"/g)).toHaveLength(2);
+    expect(html).toContain("First reasoning segment");
+    expect(html).toContain("Second reasoning segment");
+    expect(html).toContain(">1s<");
+    expect(html).toContain(">2s<");
+    expect(html).toContain('data-webui-tool-call="read"');
+    expect(html).toContain('data-webui-tool-call="search"');
+    expect(html).toContain("First answer");
+    expect(html).toContain("Second answer");
+    expect(html).toContain("group-output.txt");
+    expect(html).toContain('data-testid="message-fork-button"');
+    expect(html).toContain('data-file-path="latest.ts"');
+    expect(html).not.toContain('data-file-path="stale.ts"');
+    expect(html).toContain("18 token/s");
+  });
+
   it("renders the desktop thinking block: history and live forms", () => {
     const history = renderToStaticMarkup(
       createElement(WebuiThinkingBlock, {
