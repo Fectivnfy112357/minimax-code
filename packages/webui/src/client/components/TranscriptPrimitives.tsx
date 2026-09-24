@@ -218,36 +218,25 @@ export function WebuiToolResults({
   );
 }
 
-/** Desktop activity-group: a 16px activity header and a timeline body.
- *  Desktop defaults to collapsed; the WebUI's previous `open` default is
- *  preserved only when the turn is still streaming so the user can see the
- *  running tool calls. */
+/** Desktop activity-group: a 16px activity header and a timeline body. */
 export function WebuiActivityGroup({
   tools,
   authoritativeDiffAvailable = false,
   activityItems,
-  initiallyExpanded = false,
 }: {
   readonly tools: readonly Record<string, unknown>[];
   readonly authoritativeDiffAvailable?: boolean;
   readonly activityItems?: readonly WebuiActivityGroupItem[];
-  readonly initiallyExpanded?: boolean;
 }): ReactElement | null {
-  if (tools.length === 0) return null;
   const active = tools.some((tool) => {
     const status = toolCallStatus(tool);
     return status === "pending" || status === "running";
   });
-  const activeTool = [...tools].reverse().find((tool) => {
-    const status = toolCallStatus(tool);
-    return status === "pending" || status === "running";
-  });
-  const categories = new Set(tools.map(toolCallIconCategory));
-  const summaryIcon = activeTool
-    ? toolCallIconCategory(activeTool)
-    : categories.size === 1
-      ? toolCallIconCategory(tools[0] ?? {})
-      : "combine";
+  const [expanded, setExpanded] = useState(false);
+  useEffect(() => {
+    if (!active) setExpanded(false);
+  }, [active]);
+  if (tools.length === 0) return null;
   const thinkingCount = activityItems?.filter((item) => item.type === "thinking").length ?? 0;
   const summary = [
     ...(thinkingCount > 0 ? [`思考 ${thinkingCount} 次`] : []),
@@ -276,12 +265,10 @@ export function WebuiActivityGroup({
       className="activity-group"
       data-testid="activity-group"
       data-active={active ? "true" : undefined}
-      open={active || initiallyExpanded}
+      open={active || expanded}
+      onToggle={(event) => setExpanded(event.currentTarget.open)}
     >
       <summary className="activity-group-header">
-        <span className="activity-group-icon" data-webui-activity-icon-category={summaryIcon} aria-hidden="true">
-          <WebuiToolIcon category={summaryIcon} />
-        </span>
         <span className="activity-group-summary">{summary}</span>
         <WebuiIconChevronDown className="activity-group-chevron" />
       </summary>
@@ -311,7 +298,7 @@ export function WebuiTurnProcess({
   hasExpandableContent = true,
   forceExpanded = false,
   disabled = false,
-  initiallyExpanded = true,
+  initiallyExpanded = false,
 }: {
   readonly active: boolean;
   readonly startedAtMs?: number;
@@ -463,7 +450,7 @@ export function WebuiThinkingBlock({
   readonly showDetailHeading?: boolean;
 }): ReactElement | null {
   const [, forceTick] = useState(0);
-  const [detailOpen, setDetailOpen] = useState(streaming);
+  const [detailOpen, setDetailOpen] = useState(false);
   const [contentExpanded, setContentExpanded] = useState(false);
   const [contentOverflows, setContentOverflows] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -471,6 +458,9 @@ export function WebuiThinkingBlock({
     if (!streaming) return undefined;
     const timer = setInterval(() => forceTick((value) => value + 1), 1000);
     return () => clearInterval(timer);
+  }, [streaming]);
+  useEffect(() => {
+    if (!streaming) setDetailOpen(false);
   }, [streaming]);
   useEffect(() => {
     const content = contentRef.current;
@@ -493,7 +483,7 @@ export function WebuiThinkingBlock({
       ? Math.max(1, Math.floor(durationMs / 1000))
       : undefined;
   return (
-    <details className="webui-thinking-block" data-webui-thinking-block="true" open={streaming} onToggle={(event) => setDetailOpen(event.currentTarget.open)}>
+    <details className="webui-thinking-block" data-webui-thinking-block="true" open={streaming || detailOpen} onToggle={(event) => setDetailOpen(event.currentTarget.open)}>
       <summary className="webui-thinking-summary" data-webui-thinking="true">
         {streaming ? (
           <ActivityIndicator aria-hidden="true" />

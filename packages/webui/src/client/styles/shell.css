@@ -1301,23 +1301,11 @@
     gap: var(--spacing_8);
     cursor: pointer;
     color: var(--text_default_secondary);
-    font-size: 12px;
-    line-height: 16px;
+    font-size: 14px;
+    line-height: 22px;
     transition: color 120ms ease;
   }
   .activity-group-header:hover { color: var(--text_default_primary); }
-  .activity-group-icon {
-    display: inline-flex;
-    width: 16px;
-    height: 16px;
-    flex: 0 0 16px;
-    align-items: center;
-    justify-content: center;
-    color: var(--text_default_secondary);
-    font-size: 16px;
-    line-height: 16px;
-  }
-  .activity-group-icon > svg { width: 16px; height: 16px; }
   .activity-group-summary { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .activity-group-chevron {
     width: 16px;
@@ -1325,8 +1313,7 @@
     color: var(--text_default_tertiary);
     transition: transform 200ms ease-out;
   }
-  /* Default state on Desktop is collapsed; the WebUI's previous open default
-   * is preserved as the override below. */
+  /* Rotate the disclosure chevron while the activity details are open. */
   .activity-group[open] .activity-group-chevron { transform: rotate(90deg); }
   .activity-group-body {
     position: relative;
@@ -1337,7 +1324,19 @@
     display: flex;
     min-width: 0;
     flex-direction: column;
-    gap: var(--spacing_8);
+    gap: 0;
+  }
+  /* A timeline step is a fixed 28px row whether it is thinking or a tool.
+   * Tool runs arrive in their own list wrapper, so remove that wrapper's gap
+   * here to avoid spacing tools differently from adjacent thinking steps. */
+  .activity-group-items > .webui-tool-list {
+    gap: 0;
+  }
+  .activity-group-items .webui-tool-row {
+    min-height: 28px;
+  }
+  .activity-group-items .webui-tool-row-summary {
+    min-height: 28px;
   }
   .timeline-spine {
     position: absolute;
