@@ -22,6 +22,7 @@ export async function runWebuiCommand(
     | "getSessionUsage"
     | "listModels"
     | "selectModel"
+    | "requestCompaction"
   >,
   request: WebuiRunCommandRequest,
 ): Promise<WebuiRunCommandResult> {
@@ -43,6 +44,19 @@ export async function runWebuiCommand(
     return { handled: true, data: session, output: "New session created." };
   }
   if (!request.sessionId) throw new Error(`sessionId is required for /${request.command}`);
+  if (request.command === "compact") {
+    const result = await port.requestCompaction({
+      name: request.agentName ?? "main",
+      id: request.sessionId,
+      reason: "ui_request",
+      ...(request.input?.trim() ? { customInstructions: request.input.trim() } : {}),
+    });
+    if (result.success) return { handled: true, data: result, output: formatCompaction(result) };
+    if (result.code === "NOTHING_TO_COMPACT" || result.code === "unchanged") {
+      return { handled: true, output: "No compaction is needed for this conversation yet." };
+    }
+    throw runtimeRejected(result.code, result.error);
+  }
   if (request.command === "status") {
     const [account, session] = await Promise.all([
       port.getAccountStatus({ sessionId: request.sessionId }),
@@ -108,4 +122,22 @@ function resolveModelSelection(models: readonly WebuiModelEntry[], input: string
     modelId: modelId ?? normalized,
     ...(variant ? { variant } : {}),
   };
+}
+
+function formatCompaction(result: Record<string, unknown>): string {
+  return [
+    "Compaction completed.",
+    ...(result.messagesBefore !== undefined && result.messagesAfter !== undefined
+      ? [`Messages: ${String(result.messagesBefore)} → ${String(result.messagesAfter)}`]
+      : []),
+    ...(result.tokensBefore !== undefined && result.tokensAfter !== undefined
+      ? [`Tokens: ${String(result.tokensBefore)} → ${String(result.tokensAfter)}`]
+      : []),
+  ].join("\n");
+}
+
+function runtimeRejected(code: unknown, error: unknown): Error {
+  const rejected = new Error(String(error ?? "Runtime rejected the compaction request."));
+  Object.assign(rejected, { code });
+  return rejected;
 }

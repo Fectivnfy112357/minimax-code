@@ -382,6 +382,8 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
   async upsertMiniMaxApiKey() { return { success: true }; }
   async getCodexOAuthStatus() { return { connected: false }; }
 
+  async requestCompaction() { return { success: true }; }
+
   async close(): Promise<void> {
     this.closed = true;
   }
@@ -2531,6 +2533,9 @@ describe("WebUI shutdown order (criterion 7)", () => {
       async getCodexOAuthStatus() {
         return { connected: false };
       },
+      async requestCompaction() {
+        return { success: true };
+      },
       async getSessionDiff() {
         return {
           diffs: [],
@@ -2867,6 +2872,9 @@ describe("WebUI shutdown order (criterion 7)", () => {
       },
       async getCodexOAuthStatus() {
         return { connected: false };
+      },
+      async requestCompaction() {
+        return { success: true };
       },
       async getSessionDiff() {
         return {

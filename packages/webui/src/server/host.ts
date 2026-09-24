@@ -248,6 +248,23 @@ export interface WebuiRuntimeCliService {
   getMiniMaxApiKeyStatus(): Promise<Record<string, unknown>>;
   upsertMiniMaxApiKey(request: { readonly apiKey: string; readonly saveAndUse?: boolean }): Promise<unknown>;
   getCodexOAuthStatus(): Promise<Record<string, unknown>>;
+  /**
+   * Compaction is opt-in on the live harness: the `CliService` exposes it
+   * only when the host has a meaningful reducer, and the WebUI surface
+   * surfaces `runtime host does not expose requestCompaction` for any host
+   * that omits it. The runner's `/compact` path therefore can't assume the
+   * method always exists, which is why the port's `requestCompaction` is
+   * a required harness-port method: the assembly is responsible for
+   * projecting an `optional` cliService hook into a `required` port entry,
+   * and failing closed otherwise. See `createHarnessPortFromHost` for the
+   * nested-guard pattern that turns that `?` into a clear error.
+   */
+  requestCompaction?(request: {
+    readonly name: string;
+    readonly id: string;
+    readonly reason: "ui_request";
+    readonly customInstructions?: string;
+  }): Promise<Record<string, unknown>>;
 }
 
 /** Single source of truth for the runtime host's `cliService` slot. */
@@ -523,6 +540,20 @@ export function createHarnessPortFromHost(
     },
     async getCodexOAuthStatus() {
       return requireCliService(host).getCodexOAuthStatus();
+    },
+    async requestCompaction(request) {
+      // `cliService.requestCompaction` is optional on the harness. The
+      // outer `cliService` guard stays even though the rest of the harness
+      // port now goes through `requireCliService`: this is the one method
+      // that the runner explicitly drives, so the failure message has to
+      // be specific (the `/compact` slash command tells the user the host
+      // does not support conversation compaction; folding the two errors
+      // into one would only mention the CLI service).
+      if (!host.cliService)
+        throw new Error("runtime host does not expose the CLI service");
+      if (!host.cliService.requestCompaction)
+        throw new Error("runtime host does not expose requestCompaction");
+      return host.cliService.requestCompaction(request);
     },
     async close() {
       if (closed) return;

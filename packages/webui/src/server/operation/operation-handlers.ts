@@ -86,6 +86,7 @@ export type WebuiOperationPort = Pick<
   | "getMiniMaxApiKeyStatus"
   | "upsertMiniMaxApiKey"
   | "getCodexOAuthStatus"
+  | "requestCompaction"
   | "invalidateAuth"
 >;
 

@@ -86,7 +86,7 @@ export const runCommandOperation: WebuiOperation<
     if (body === null || typeof body !== "object" || Array.isArray(body))
       return { ok: false, code: WebuiErrorCode.invalidBody, message: "runCommand body must be an object" };
     const candidate = body as Record<string, unknown>;
-    const commands = ["help", "new", "status", "usage", "model"] as const;
+    const commands = ["help", "new", "compact", "status", "usage", "model"] as const;
     if (!commands.includes(candidate.command as (typeof commands)[number]))
       return { ok: false, code: WebuiErrorCode.invalidBody, message: "runCommand command is invalid" };
     for (const field of ["input", "sessionId", "agentName", "workspaceDir"] as const) {

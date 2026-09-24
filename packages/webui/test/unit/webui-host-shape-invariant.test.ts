@@ -319,6 +319,12 @@ class FullPort implements WebuiHarnessPort {
   async invalidateAuth() {
     // no-op: the full-port invariant never actually invalidates.
   }
+  async requestCompaction() {
+    // The invariant port satisfies the harness-port requirement that
+    // `requestCompaction` exists on every implementor; the runner's
+    // `/compact` slash command reaches it through `runWebuiCommand`.
+    return { success: true as const };
+  }
   async close() {
     // no-op
   }

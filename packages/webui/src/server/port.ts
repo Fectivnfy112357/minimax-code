@@ -638,7 +638,7 @@ export interface WebuiSkillEntry {
 }
 
 export interface WebuiRunCommandRequest {
-  readonly command: "help" | "new" | "status" | "usage" | "model";
+  readonly command: "help" | "new" | "compact" | "status" | "usage" | "model";
   readonly input?: string;
   readonly sessionId?: string;
   readonly agentName?: string;
@@ -794,6 +794,20 @@ export interface WebuiHarnessPort {
    * binds to.
    */
   invalidateAuth(): Promise<void>;
+  /**
+   * Request a conversation compaction. Required on the port because the
+   * `/compact` slash command always has a wire-level target; the harness
+   * may still omit the underlying reducer (see `host.ts`'s nested-guard),
+   * in which case the port turns that into a `runtime host does not
+   * expose requestCompaction` error instead of letting the caller's
+   * Promise.reject materialise later.
+   */
+  requestCompaction(request: {
+    readonly name: string;
+    readonly id: string;
+    readonly reason: "ui_request";
+    readonly customInstructions?: string;
+  }): Promise<Record<string, unknown>>;
   /** Daily check-in panel status (cloud check-in API; see `check-in.ts`); supplied by the assembly alongside the host. */
   getSigninPanel(): Promise<WebuiSigninPanelView>;
   claimSignin(): Promise<WebuiClaimSigninView>;

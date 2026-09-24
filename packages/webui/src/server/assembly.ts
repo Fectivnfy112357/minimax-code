@@ -66,6 +66,20 @@ export interface WebuiAssembledHost {
   }) => Promise<import("./port.js").WebuiUsageQuotaResult>;
   readonly getSigninPanel: () => Promise<import("./port.js").WebuiSigninPanelView>;
   readonly claimSignin: () => Promise<import("./port.js").WebuiClaimSigninView>;
+  /**
+   * Conversation compaction is opt-in on the live harness: `local-runtime-v2`
+   * exposes `CliService.requestCompaction?` and the WebUI host surface
+   * turns its absence into `runtime host does not expose requestCompaction`.
+   * Kept as a `?` here so a runtime that does not implement compaction
+   * still type-checks. Production hosts that do implement it will satisfy
+   * this slot and the service's `runCommand -> /compact` path will work.
+   */
+  requestCompaction?(request: {
+    readonly name: string;
+    readonly id: string;
+    readonly reason: "ui_request";
+    readonly customInstructions?: string;
+  }): Promise<Record<string, unknown>>;
   readonly cliService?: WebuiRuntimeCliService;
 }
 

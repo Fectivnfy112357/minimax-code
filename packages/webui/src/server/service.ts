@@ -217,6 +217,7 @@ export class WebuiService {
       getMiniMaxApiKeyStatus: () => this.port.getMiniMaxApiKeyStatus(),
       upsertMiniMaxApiKey: (request) => this.port.upsertMiniMaxApiKey(request),
       getCodexOAuthStatus: () => this.port.getCodexOAuthStatus(),
+      requestCompaction: (request) => this.port.requestCompaction(request),
       invalidateAuth: () => this.port.invalidateAuth(),
     }, this.terminalManager);
     const factory = options.httpServerFactory ?? (() => createServer());
