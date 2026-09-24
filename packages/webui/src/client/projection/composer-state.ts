@@ -29,7 +29,7 @@ import {
 } from "../stream-loop.js";
 import type { WebuiStreamState } from "../stream.js";
 import type { SlashCommandEntry, WebuiRunCommandName } from "../slash-palette.js";
-import { isWebuiRunnableCommand } from "../slash-palette.js";
+import { isWebuiRunnableCommand, classifyWebuiSlashCommand } from "../slash-palette.js";
 
 /**
  * Whether the live turn column should own the render surface. Mirrors the
@@ -127,14 +127,21 @@ export function resolveWebuiSubmissionIntent(args: {
     const objective = directGoalObjective ?? trimmedDraft;
     return { kind: "submit-goal", objective };
   }
-  // Path 3 — slash command backed by `runCommand`. The narrowing mirrors
-  // the original `isWebuiRunnableCommand` gate; disabled commands fall
-  // through to path 4.
-  if (command && isWebuiRunnableCommand(command)) {
+  // Path 3 — slash command backed by `runCommand`. The classification
+  // gates the run-command intent: only `runnable` entries reach the host;
+  // `inert-wired` (skills; supported but not runnable) and
+  // `inert-unsupported` (disabled entries) fall through to path 4. This
+  // is the production consumer of `classifyWebuiSlashCommand` — the
+  // three-state taxonomy now drives the resolver, not just the test
+  // catalogue.
+  if (command && classifyWebuiSlashCommand(command) === "runnable") {
     const trimmedInput = args.commandInvocationInput?.trim();
     return {
       kind: "run-command",
-      command,
+      command: command as SlashCommandEntry & {
+        readonly name: WebuiRunCommandName;
+        readonly supported: true;
+      },
       ...(trimmedInput ? { input: trimmedInput } : {}),
     };
   }

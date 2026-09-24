@@ -137,8 +137,9 @@ describe("WebUI slash palette — runtime narrowing", () => {
 
 describe("WebUI slash palette — skill fixtures", () => {
   it("places skill entries after the default section with paletteSection: \"skills\"", async () => {
-    const skills = await resolveWebuiSlashSkills();
-    const palette = buildWebuiSlashPalette({ skills });
+    const resolved = await resolveWebuiSlashSkills();
+    expect(resolved.source).toBe("fixtures-fallback");
+    const palette = buildWebuiSlashPalette({ skills: resolved.skills });
     const skillRows = palette.filter(
       (entry) => entry.paletteSection === "skills",
     );
@@ -155,7 +156,7 @@ describe("WebUI slash palette — skill fixtures", () => {
     // Mirrors the desktop: skill rows are clickable and insert "/<skill> " into
     // the composer, but submit does not dispatch runCommand (the name isn't in
     // WEBUI_RUN_COMMAND_NAMES), so the slash becomes a user message instead.
-    const skills = await resolveWebuiSlashSkills();
+    const skills = (await resolveWebuiSlashSkills()).skills;
     const palette = buildWebuiSlashPalette({ skills });
     const skillRows = palette.filter(
       (entry) => entry.paletteSection === "skills",
@@ -183,10 +184,11 @@ describe("WebUI slash palette — fetched skills", () => {
       { name: "my-local-skill", displayName: "My Local", description: "Local skill" },
       { name: "another-skill", description: "Another one" },
     ];
-    const skills = await resolveWebuiSlashSkills({
+    const resolved = await resolveWebuiSlashSkills({
       fetcher: async () => fetched,
     });
-    const skillNames = skills
+    expect(resolved.source).toBe("harness");
+    const skillNames = resolved.skills
       .filter((entry) => entry.paletteSection === "skills")
       .map((entry) => entry.name)
       .sort();
@@ -195,12 +197,13 @@ describe("WebUI slash palette — fetched skills", () => {
   });
 
   it("falls back to fixtures when the fetcher rejects", async () => {
-    const skills = await resolveWebuiSlashSkills({
+    const resolved = await resolveWebuiSlashSkills({
       fetcher: async () => {
         throw new Error("harness down");
       },
     });
-    const skillNames = skills
+    expect(resolved.source).toBe("fixtures-fallback");
+    const skillNames = resolved.skills
       .filter((entry) => entry.paletteSection === "skills")
       .map((entry) => entry.name)
       .sort();
@@ -212,21 +215,31 @@ describe("WebUI slash palette — fetched skills", () => {
     ]);
   });
 
-  it("falls back to fixtures when the fetcher returns an empty list", async () => {
-    const skills = await resolveWebuiSlashSkills({
+  it("surfaces `harness-empty` (not fixtures-fallback) when the fetcher returns an empty list", async () => {
+    const resolved = await resolveWebuiSlashSkills({
       fetcher: async () => [],
     });
-    const skillNames = skills
-      .filter((entry) => entry.paletteSection === "skills")
-      .map((entry) => entry.name);
-    // Empty payload is treated as "no skills yet" rather than "the user has
-    // zero skills"; keep the fixtures visible so the popover stays usable.
-    expect(skillNames).toContain("ask-matt");
+    // Empty payload is reported distinctly from a port failure. The caller
+    // can decide whether to keep the fixtures or render an empty popover.
+    // The plugin registry entries (`paletteSection: "special"`) are always
+    // merged regardless of the skills path; only the skills pool is empty.
+    expect(resolved.source).toBe("harness-empty");
+    const skillEntries = resolved.skills.filter(
+      (entry) => entry.paletteSection === "skills",
+    );
+    expect(skillEntries).toEqual([]);
+    const pluginEntries = resolved.skills.filter(
+      (entry) => entry.paletteSection === "special",
+    );
+    expect(pluginEntries.map((entry) => entry.name)).toContain(
+      "deploy-website",
+    );
   });
 
   it("falls back to fixtures when no fetcher is provided", async () => {
-    const skills = await resolveWebuiSlashSkills();
-    const skillNames = skills
+    const resolved = await resolveWebuiSlashSkills();
+    expect(resolved.source).toBe("fixtures-fallback");
+    const skillNames = resolved.skills
       .filter((entry) => entry.paletteSection === "skills")
       .map((entry) => entry.name);
     expect(skillNames).toContain("ask-matt");

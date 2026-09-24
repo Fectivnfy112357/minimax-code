@@ -289,6 +289,36 @@ export interface WebuiSlashSkillSummary {
 }
 
 /**
+ * Skills resolver outcome — the three states the resolver can land in.
+ *
+ *   - `harness`           — the harness port returned one or more skills.
+ *                          The popover shows the live registry.
+ *   - `harness-empty`     — the harness port returned successfully with
+ *                          an empty list. We keep the fixtures so the
+ *                          popover still surfaces the local skill
+ *                          catalogue, but the caller can tell the harness
+ *                          was reachable. UI may show a "harness had no
+ *                          skills" hint.
+ *   - `fixtures-fallback` — the harness port was unavailable (no fetcher
+ *                          supplied, or the call rejected). The fixtures
+ *                          carry the popover, and the caller should pin
+ *                          the fallback path with diagnostics.
+ *
+ * The `source` tag is the production consumer of the three-state
+ * classification: callers gate features (icons, support flags, harness
+ * diagnostics) on it; the popover rendering stays unchanged.
+ */
+export type WebuiSlashResolveSource =
+  | "harness"
+  | "harness-empty"
+  | "fixtures-fallback";
+
+export interface WebuiSlashSkillsResult {
+  readonly source: WebuiSlashResolveSource;
+  readonly skills: readonly SlashCommandEntry[];
+}
+
+/**
  * Skills resolver. Mirrors the desktop's `listSkillHub` (signed-out web) /
  * `listSkills(agentName, ...)` split.
  *
@@ -300,34 +330,47 @@ export interface WebuiSlashSkillSummary {
  * `WEBUI_PLUGIN_REGISTRY` is always merged in regardless of the fetcher
  * outcome; its entries sit in the `special` section so the sectioning pass
  * routes them to the default row, not under the `技能` divider.
+ *
+ * Returns a tagged result so callers can react to the three resolution
+ * outcomes (harness / harness-empty / fixtures-fallback) — see
+ * `WebuiSlashResolveSource`.
  */
 export async function resolveWebuiSlashSkills(options?: {
   readonly fetcher?: () => Promise<readonly WebuiSlashSkillSummary[]>;
-}): Promise<SlashCommandEntry[]> {
+}): Promise<WebuiSlashSkillsResult> {
   const pluginEntries = Object.values(WEBUI_PLUGIN_REGISTRY).map((entry) => ({
     ...entry,
     display_name: entry.label,
     display_description: entry.description,
     source_kind: "plugin",
   }));
-  const skillEntries = await resolveSkillEntries(options?.fetcher);
-  return [...pluginEntries, ...skillEntries];
+  const resolved = await resolveSkillEntries(options?.fetcher);
+  return {
+    source: resolved.source,
+    skills: [...pluginEntries, ...resolved.skills],
+  };
 }
 
 async function resolveSkillEntries(
   fetcher?: () => Promise<readonly WebuiSlashSkillSummary[]>,
-): Promise<SlashCommandEntry[]> {
+): Promise<{ source: WebuiSlashResolveSource; skills: SlashCommandEntry[] }> {
   if (fetcher) {
     try {
       const skills = await fetcher();
       const fromHarness = skills.map(slashSkillSummaryToEntry);
-      if (fromHarness.length > 0) return fromHarness;
+      if (fromHarness.length > 0) {
+        return { source: "harness", skills: fromHarness };
+      }
+      // Harness returned successfully but with no skills. Don't substitute
+      // the fixtures silently — surface the empty result so callers can
+      // distinguish it from a port failure.
+      return { source: "harness-empty", skills: [] };
     } catch {
       // Swallow and fall through to fixtures so a malformed probe entry stays
       // a recoverable problem rather than an empty popover.
     }
   }
-  return [...WEBUI_SKILL_FIXTURES];
+  return { source: "fixtures-fallback", skills: [...WEBUI_SKILL_FIXTURES] };
 }
 
 /**
@@ -506,10 +549,10 @@ export async function buildWebuiSlashPaletteAsync(options: {
   readonly lite?: boolean;
   readonly fetcher?: () => Promise<readonly WebuiSlashSkillSummary[]>;
 } = {}): Promise<SlashCommandEntry[]> {
-  const skills = await resolveWebuiSlashSkills({
+  const resolved = await resolveWebuiSlashSkills({
     fetcher: options.fetcher,
   });
-  return buildWebuiSlashPalette({ skills, lite: options.lite });
+  return buildWebuiSlashPalette({ skills: resolved.skills, lite: options.lite });
 }
 
 /**
