@@ -2,6 +2,19 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { LocalRuntimeApplication } from "./process-local-application-contract.js";
 import { createProcessLocalApplication } from "./process-local-application.js";
+import { toSessionMessageView } from "./content-application.js";
+
+describe("SessionContentApplication history message serialization", () => {
+  it("keeps ordered activity parts in the opaque rawJson channel", () => {
+    const parts = [
+      { id: "think-1", type: "thinking", content: "reasoning" },
+      { id: "tool-1", type: "tool_call", tool_call: { name: "bash", status: 1 } },
+      { id: "text-1", type: "text", content: "finished" },
+    ];
+    const view = toSessionMessageView({ msg_id: "history-1", role: "assistant", parts });
+    expect(JSON.parse(view.rawJson ?? "{}").parts).toEqual(parts);
+  });
+});
 
 describe("createProcessLocalApplication account and usage", () => {
   it("uses the recovered model route for account login checks while preserving live token presence", async () => {

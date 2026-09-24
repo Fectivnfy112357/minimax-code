@@ -9,6 +9,12 @@ import {
 } from "../../src/client/projection/transcript-shape.js";
 import type { WebuiClientMessage } from "../../src/client/contracts.js";
 import type { WebuiStreamMessage } from "../../src/client/stream.js";
+import { projectWebuiMessage } from "../../src/client/projection/message-projection.js";
+import {
+  groupWebuiTranscriptItems,
+  projectWebuiQueryDurations,
+  projectWebuiProcessSegments,
+} from "../../src/client/projection/transcript-projection.js";
 
 /**
  * Pure tests for the two transcript adapters. The leaf renderer tests
@@ -115,6 +121,7 @@ describe("WEBUI_HISTORICAL_FIELD_TABLE — every populated field on the historic
     "thinkingContent",
     "thinkingDurationMs",
     "toolCalls",
+    "parts",
     "attachments",
     "actions",
     "fileChanges",
@@ -138,6 +145,7 @@ describe("WEBUI_LIVE_FIELD_TABLE — every populated field on the live fixtures 
     "isGoal",
     "timestamp",
     "toolCalls",
+    "parts",
     "usage",
   ];
   const tableFields = new Set(
@@ -159,6 +167,7 @@ describe("WEBUI_FIELD_OWNERSHIP_TABLE — exclusive fields are not double-listed
       "source", "messageId", "role", "sessionId", "userText", "thinking",
       "tools", "answers", "timestamp", "isGoal", "totalRequestDurationMs",
       "totalOutputTokens", "processSegments", "turnId", "thinkingDurationMs",
+      "activityParts",
       "initialDiff", "actions", "attachments", "assistantMessageId", "streaming",
       "streamMessageId", "messageRootId", "processingStartedAtMs",
     ];
@@ -193,6 +202,40 @@ describe("WEBUI_FIELD_OWNERSHIP_TABLE — exclusive fields are not double-listed
 // ── leaf renderer contracts (typing + shape) ─────────────────────────
 
 describe("leaf renderer contracts — the historical and live fixtures cover the renderer surface", () => {
+  it("projects historical delegation and activity rows from the persisted raw message", () => {
+    const items = projectWebuiMessage({
+      msgId: "history-activity",
+      role: "assistant",
+      rawJson: JSON.stringify({
+        parts: [
+          { id: "think", type: "thinking", content: "Reasoning" },
+          { id: "delegate", type: "delegation", message: { fromAgent: "main", toAgent: "child", content: "Review" } },
+          { id: "tool", type: "tool_call", tool_call: { name: "bash", status: "done" } },
+          { id: "answer", type: "text", content: "Final" },
+        ],
+      }),
+    });
+    expect(items.map((item) => item.kind)).toEqual(["thinking", "activity", "tool", "assistant"]);
+    const segments = projectWebuiProcessSegments(items);
+    expect(segments[0]?.activityParts?.map((part) => part.type)).toEqual(["thinking", "delegation", "tool", "text"]);
+    expect(segments[0]?.activityParts?.[1]).toMatchObject({ type: "delegation", message: { toAgent: "child" } });
+  });
+
+  it("projects the same activity order from live agent_message parts", () => {
+    const view = projectLiveTurnView([{
+      id: "live-activity",
+      answer: "Final",
+      thinking: "",
+      parts: [
+        { id: "think", type: "thinking", content: "Reasoning" },
+        { id: "delegate", type: "delegation", message: { fromAgent: "main", toAgent: "child", content: "Review" } },
+        { id: "tool", type: "tool_call", tool_call: { name: "bash", status: "running" } },
+        { id: "answer", type: "text", content: "Final" },
+      ],
+    }], { streaming: true });
+    expect(view?.processSegments?.[0]?.activityParts?.map((part) => part.type)).toEqual(["thinking", "delegation", "tool", "text"]);
+  });
+
   it("historical user fixture carries `messageId`, `role`, `text`, `timestamp`, `isGoal`, `usage`", () => {
     expect(HISTORICAL_USER.msgId).toBe("msg-hist-user-1");
     expect(HISTORICAL_USER.role).toBe("user");
@@ -498,5 +541,31 @@ describe("projectLiveTurnView — direct execution on the six content categories
     // Usage sums across the two frames that carry it.
     expect(view?.totalRequestDurationMs).toBe(1050);
     expect(view?.totalOutputTokens).toBe(42);
+  });
+});
+
+describe("groupWebuiTranscriptItems — persisted query duration", () => {
+  it("uses the persisted query elapsed time when per-message request usage is absent", () => {
+    const messageId = "goal-reply";
+    const items = projectWebuiMessage({
+      msgId: messageId,
+      role: "assistant",
+      turnId: "turn-final",
+      queryKey: "goal:goal-1:turn:turn-root",
+      timestamp: 1_790_224_743_333,
+      parts: [{ type: "text", content: "Goal completed" }],
+    });
+    const queryDurations = projectWebuiQueryDurations(
+      [{ msgId: messageId, queryKey: "goal:goal-1:turn:turn-root" }],
+      [{
+        queryKey: "goal:goal-1:turn:turn-root",
+        currentTurnId: "turn-final",
+        processingStartedAtMs: 1_790_224_724_874,
+        processingFinishedAtMs: 1_790_224_743_471,
+      }],
+    );
+    const groups = groupWebuiTranscriptItems(items, queryDurations);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.totalRequestDurationMs).toBe(18_597);
   });
 });

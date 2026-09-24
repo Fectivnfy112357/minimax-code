@@ -41,6 +41,7 @@ import type { WebuiTurnDiffView } from "../../server/port.js";
 import type { WebuiQuestionnaireResponseSummary } from "../projection/message-parts.js";
 import {
   groupWebuiTranscriptItems,
+  projectWebuiQueryDurations,
   projectWebuiProcessSegments,
 } from "../projection/transcript-projection.js";
 import { projectWebuiMessage } from "../projection/message-projection.js";
@@ -48,6 +49,15 @@ import {
   projectHistoricalTurnView,
   type WebuiTurnView,
 } from "../projection/transcript-shape.js";
+
+function mergeQueryCollapseViews(
+  current: NonNullable<WebuiClientMessagePage["queryCollapseViews"]>,
+  older: NonNullable<WebuiClientMessagePage["queryCollapseViews"]>,
+) {
+  const byQueryKey = new Map(current.map((view) => [view.queryKey, view]));
+  for (const view of older) byQueryKey.set(view.queryKey, view);
+  return [...byQueryKey.values()];
+}
 
 /**
  * Historical questionnaire-response projection. Once the user submits a
@@ -237,7 +247,14 @@ export function WebuiSessionTranscript({
   // Group by message so one turn renders as one block, the way the desktop
   // does: a process disclosure carrying the thinking and the tool steps, then
   // the assistant's markdown. A user turn is its own block.
-  const groups = useMemo(() => groupWebuiTranscriptItems(items), [items]);
+  const queryDurationByMessageId = useMemo(
+    () => projectWebuiQueryDurations(page.messages ?? [], page.queryCollapseViews ?? []),
+    [page.messages, page.queryCollapseViews],
+  );
+  const groups = useMemo(
+    () => groupWebuiTranscriptItems(items, queryDurationByMessageId),
+    [items, queryDurationByMessageId],
+  );
   const showEmptyState = !turnLive && !error && !loading && items.length === 0;
   // The right-rail navigator's tick list mirrors the assistant turns visible
   // on the page. A user turn isn't a tick — only the assistant block that
@@ -288,6 +305,10 @@ export function WebuiSessionTranscript({
                   ...(olderPage.messages ?? []),
                   ...(current.messages ?? []),
                 ],
+                queryCollapseViews: mergeQueryCollapseViews(
+                  current.queryCollapseViews ?? [],
+                  olderPage.queryCollapseViews ?? [],
+                ),
                 nextCursor: olderPage.nextCursor,
                 hasMore: olderPage.hasMore,
               }));

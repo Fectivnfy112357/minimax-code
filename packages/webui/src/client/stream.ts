@@ -12,6 +12,8 @@ export interface WebuiStreamMessage {
   readonly timestamp?: number;
   readonly isGoal?: boolean;
   readonly toolCalls?: readonly Record<string, unknown>[];
+  /** Ordered Desktop activity parts carried by the existing agent_message frame. */
+  readonly parts?: readonly Record<string, unknown>[];
   /** Runtime-reported `TokenUsage` (with `request_duration_ms` / `output_tokens`)
    *  from the agent_message wire frame. The WebUI uses it to render the
    *  Desktop-style "共执行 N 分 M 秒 · {rate} token/s" row. */
@@ -131,6 +133,9 @@ function upsertMessage(
     "thought_content",
   ]);
   const calls = toolCalls(value);
+  const parts = Array.isArray(value.parts)
+    ? value.parts.filter((item): item is Record<string, unknown> => !!record(item))
+    : undefined;
   const usage = usageRecord(value);
   const index = messages.findIndex((message) => message.id === id);
   if (index < 0)
@@ -141,6 +146,7 @@ function upsertMessage(
         answer,
         thinking,
         ...(calls ? { toolCalls: calls } : {}),
+        ...(parts ? { parts } : {}),
         ...(usage ? { usage } : {}),
         ...(id.startsWith("msg-user-") ? ({ role: "user" } as const) : {}),
       },
@@ -165,6 +171,7 @@ function upsertMessage(
     ...(calls || messages[index]!.toolCalls
       ? { toolCalls: calls ?? messages[index]!.toolCalls }
       : {}),
+    ...(parts || messages[index]!.parts ? { parts: parts ?? messages[index]!.parts } : {}),
     ...(usage || messages[index]!.usage ? { usage: usage ?? messages[index]!.usage } : {}),
     ...(messages[index]!.role ? { role: messages[index]!.role } : {}),
     ...(messages[index]!.timestamp !== undefined

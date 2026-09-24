@@ -37,6 +37,7 @@ import type {
   WebuiTransport,
   WebuiTranscriptItem,
   WebuiTranscriptProcessSegment,
+  WebuiTranscriptActivityPart,
 } from "../contracts.js";
 import type { WebuiStreamMessage } from "../stream.js";
 import type { WebuiTurnDiffView } from "../../server/port.js";
@@ -47,6 +48,7 @@ import {
   projectWebuiMessage,
   readUsageNumber,
 } from "./message-projection.js";
+import { projectMessageParts } from "./message-parts.js";
 
 // ── Field table documentation (readonly; pinned by tests) ────────────
 
@@ -83,6 +85,7 @@ export const WEBUI_HISTORICAL_FIELD_TABLE: readonly WebuiHistoricalFieldRow[] =
     { field: "thinkingContent", projectedTo: "thinking", projection: "reshape", notes: "Joined across thinking parts by projectMessageParts." },
     { field: "thinkingDurationMs", projectedTo: "thinkingDurationMs", projection: "verbatim", notes: "First thinking part's duration; drives the 已思考 N 秒 row." },
     { field: "toolCalls", projectedTo: "tools[*]", projection: "reshape", notes: "Each tool call becomes one tool-call item under the assistant group." },
+    { field: "parts", projectedTo: "ordered activity rows", projection: "reshape", notes: "Persisted Desktop part ordering and activity kinds from the raw history payload." },
     { field: "attachments", projectedTo: "attachments", projection: "verbatim", notes: "Passthrough to MessageItem; ordered by message-parts projector." },
     { field: "usage", projectedTo: "totalRequestDurationMs / totalOutputTokens / wallClockDurationMs", projection: "reshape", notes: "messageUsage reader pulls request_duration_ms + output_tokens; wall clock derives from group span." },
     { field: "source", projectedTo: "isGoal (when source === 'thread-goal' || kind === 'goal')", projection: "derive", notes: "Right-aligned goal banner instead of plain user bubble." },
@@ -100,6 +103,7 @@ export const WEBUI_LIVE_FIELD_TABLE: readonly WebuiLiveFieldRow[] = [
   { field: "timestamp", projectedTo: "timestamp (live)", projection: "verbatim", notes: "Optional in-flight timestamp." },
   { field: "isGoal", projectedTo: "isGoal", projection: "verbatim", notes: "Right-aligned goal banner flag." },
   { field: "toolCalls", projectedTo: "tools (live)", projection: "verbatim", notes: "In-flight tool calls; carried through the turn." },
+  { field: "parts", projectedTo: "processSegments[*].activityParts", projection: "reshape", notes: "Ordered Desktop activity parts from the existing agent_message frame." },
   { field: "usage", projectedTo: "totalRequestDurationMs / totalOutputTokens (live)", projection: "reshape", notes: "Per-message usage reported on agent_message frames." },
   { field: "role", projectedTo: "role", projection: "verbatim", notes: "'user' replays from the server as the in-flight user bubble." },
   { field: "derived", projectedTo: "streaming / messageRootId", projection: "derive", notes: "Driven by stream.phase; not a field on WebuiStreamMessage itself." },
@@ -119,6 +123,7 @@ export const WEBUI_FIELD_OWNERSHIP_TABLE: readonly WebuiFieldOwnershipRow[] = [
   { field: "totalRequestDurationMs", owner: "shared", notes: "Read from historical usage or aggregated from live assistant frames." },
   { field: "totalOutputTokens", owner: "shared", notes: "Read from historical usage or aggregated from live assistant frames." },
   { field: "processSegments", owner: "shared", notes: "Historical assistant groups enrich the per-message adapter result; live assistant adapter supplies segments directly." },
+  { field: "activityParts", owner: "shared", notes: "Ordered thinking/cognitive/compaction/tool/delegation parts from persisted parts or live agent_message frames." },
   { field: "turnId", owner: "historical", notes: "Persisted message or group key; live turns merge without a turn id." },
   { field: "thinkingDurationMs", owner: "historical", notes: "Persisted thinking duration; live stream has no duration field." },
   { field: "initialDiff", owner: "historical", notes: "Diff is projected from persisted file changes; live never carries it." },
@@ -408,12 +413,32 @@ export function projectLiveTurnView(
       : sum;
   }, 0);
   const processSegments = assistant
-    .map((message) => ({
-      messageId: message.id,
-      ...(message.thinking.trim() ? { thinking: message.thinking } : {}),
-      ...(message.toolCalls?.length ? { tools: message.toolCalls } : {}),
-    }))
-    .filter((segment) => segment.thinking || segment.tools?.length);
+    .map((message) => {
+      const parts = projectMessageParts({
+        msgId: message.id,
+        thinkingContent: message.thinking,
+        msgContent: message.answer,
+        toolCalls: message.toolCalls,
+        parts: message.parts,
+      });
+      const activityParts = parts.flatMap<WebuiTranscriptActivityPart>((part) => {
+        if (part.type === "thinking") return [{ type: "thinking", text: part.content, ...(part.durationMs !== undefined ? { durationMs: part.durationMs } : {}) }];
+        if (part.type === "text") return [{ type: "text", text: part.content }];
+        if (part.type === "cognitive") return [{ type: "cognitive", text: part.content }];
+        if (part.type === "compaction") return [{ type: "compaction", text: part.content }];
+        if (part.type === "tool_call") return [{ type: "tool", tool: part.toolCall }];
+        if (part.type === "delegation") return [{ type: "delegation", message: part.message }];
+        if (part.type === "agent_joined") return [{ type: "agent_joined", agent: part.agent as Record<string, unknown> }];
+        return [];
+      });
+      return {
+        messageId: message.id,
+        ...(message.thinking.trim() ? { thinking: message.thinking } : {}),
+        ...(message.toolCalls?.length ? { tools: message.toolCalls } : {}),
+        ...(activityParts.some((part) => part.type !== "text") ? { activityParts } : {}),
+      };
+    })
+    .filter((segment) => segment.thinking || segment.tools?.length || segment.activityParts?.length);
   const view: WebuiLiveTurnView = {
     source: "live",
     messageId: last.id,

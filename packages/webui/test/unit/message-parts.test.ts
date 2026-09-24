@@ -4,8 +4,74 @@ import {
   projectMessageParts,
   stripQuestionnaireResponse,
 } from "../../src/client/projection/message-parts.js";
+import {
+  toolCallLabel,
+  toolCallStatus,
+  toolCallStatusLabel,
+  toolCallIconCategory,
+  WEBUI_DESKTOP_TOOL_ICON_GROUPS,
+  WEBUI_DESKTOP_TOOL_DISPLAY_LABELS,
+} from "../../src/client/projection/tool-projection.js";
 
 describe("Desktop message parts projection", () => {
+  it("normalizes Desktop tool lifecycle states without inventing completion", () => {
+    expect(toolCallStatus({ status: "pending" })).toBe("pending");
+    expect(toolCallStatus({ status: "running" })).toBe("running");
+    expect(toolCallStatus({ status: "done" })).toBe("completed");
+    expect(toolCallStatus({ status: "failed" })).toBe("error");
+    expect(toolCallStatus({ status: "interrupted" })).toBe("cancelled");
+    expect(toolCallStatus({ tool_call_status: 1 })).toBe("running");
+    expect(toolCallStatus({ tool_call_status: 2 })).toBe("completed");
+    expect(toolCallStatus({ tool_call_status: 3 })).toBe("error");
+    expect(toolCallStatus({ tool_call_status: 4 })).toBe("pending");
+    expect(toolCallStatus({ tool_call_status: 5 })).toBe("pending");
+    expect(toolCallStatus({ tool_call_status: 6 })).toBe("unknown");
+    expect(toolCallStatus({ status: "future-state" })).toBe("unknown");
+    expect(toolCallStatusLabel("unknown")).toBeUndefined();
+  });
+
+  it("keeps the Desktop-visible labels for the supported tool categories", () => {
+    expect(toolCallLabel({ name: "bash" })).toBe("终端");
+    expect(toolCallLabel({ name: "read_file" })).toBe("读取文件");
+    expect(toolCallLabel({ name: "edit_file" })).toBe("编辑文件");
+    expect(toolCallLabel({ name: "web_fetch" })).toBe("网页抓取");
+    expect(toolCallLabel({ name: "my_tool" })).toBe("工具");
+    expect(WEBUI_DESKTOP_TOOL_DISPLAY_LABELS.website_deploy).toBe("部署网站");
+    expect(WEBUI_DESKTOP_TOOL_DISPLAY_LABELS.task_query).toBe("任务进度");
+    expect(WEBUI_DESKTOP_TOOL_DISPLAY_LABELS.create_goal).toBe("目标创建");
+    expect(toolCallLabel({ name: "website_deploy" })).toBe("部署网站");
+    expect(toolCallLabel({ name: "task_query" })).toBe("任务进度");
+  });
+
+  it("maps every tool id exposed by the Desktop 3.0.73 registry to its icon category", () => {
+    const fixtures = [
+      ["command", "bash", "python", "python3", "shell", "command", "terminal"],
+      ["file", "read", "read_file", "ls", "find", "glob", "read_mcp_resource", "list_mcp_resources", "list_mcp_resource_templates", "deliver_asset", "archon.asset.deliver"],
+      ["code", "write", "write_file", "edit", "str_replace", "file_edit", "apply_patch"],
+      ["search", "grep", "search", "tool_search"],
+      ["web", "web", "webfetch", "web_fetch", "web_search", "website_deploy"],
+      ["browser", "mcp_browser", "browser", "archon.browser.call", "browser_open"],
+      ["logo", "mavis", "matrix_mcp", "mcp_call", "archon.mcp.call"],
+      ["memory", "memory"],
+      ["image", "images_understand", "image_synthesize", "images_search_and_download", "image_reverse_search", "generate_image", "matrix_generate_image", "describe_image", "view_image", "image_query"],
+      ["video", "submit_video_generation", "query_video_generation", "gen_videos", "batch_text_to_video", "batch_image_to_video", "videos_understand", "video_generation"],
+      ["music", "get_voice_list", "batch_text_to_audio", "batch_text_to_music", "synthesize_speech", "batch_synthesize_speech", "audios_understand", "transcribe_audio", "music_generation", "audio_generation"],
+      ["combine", "parallel"],
+      ["task", "ask_user", "task", "task_query", "task_output", "task_stop", "update_plan", "exitplanmode", "todo_write", "todowrite", "request_user_input"],
+      ["bot", "archon.communication.send", "spawn_agent", "delegate_task", "send_input", "wait_agent", "resume_agent", "close_agent"],
+      ["goal", "create_goal", "update_goal", "get_goal"],
+      ["tool", "web_view", "communicate"],
+    ] as const;
+    for (const [icon, ...ids] of fixtures) {
+      for (const id of ids) expect(toolCallIconCategory({ name: id })).toBe(icon);
+    }
+    expect(Object.values(WEBUI_DESKTOP_TOOL_ICON_GROUPS).flat().sort()).toEqual(
+      fixtures.flatMap(([, ...ids]) => ids).sort(),
+    );
+    expect(toolCallIconCategory({ name: "mcp:external-tool" })).toBe("logo");
+    expect(toolCallIconCategory({ name: "read_file", input: { path: "image.png" } })).toBe("image");
+  });
+
   it("keeps thinking, text, and tool calls in Desktop order", () => {
     const tool = { id: "tool-1", name: "bash" };
     expect(
@@ -19,6 +85,39 @@ describe("Desktop message parts projection", () => {
       { id: "thinking", type: "thinking", content: "先想" },
       { id: "text", type: "text", content: "结果" },
       { id: "tool-1", type: "tool_call", toolCall: tool },
+    ]);
+  });
+
+  it("preserves the Desktop parts order for thinking, delegation, tools, and final text", () => {
+    const parts = projectMessageParts({
+      msgId: "ordered",
+      parts: [
+        { id: "think", type: "thinking", content: "Reasoning" },
+        { id: "delegate", type: "delegation", message: { fromAgent: "main", toAgent: "reviewer", content: "Check this" } },
+        { id: "tool", type: "tool_call", tool_call: { name: "bash", status: "running" } },
+        { id: "answer", type: "text", content: "Finished" },
+        null as unknown as Record<string, unknown>,
+      ],
+    });
+    expect(parts.map((part) => part.type)).toEqual(["thinking", "delegation", "tool_call", "text"]);
+    expect(parts[1]).toMatchObject({ type: "delegation", message: { toAgent: "reviewer" } });
+  });
+
+  it("expands Desktop delegation parts arrays in their source order", () => {
+    const parts = projectMessageParts({
+      msgId: "delegation-array",
+      parts: [{
+        id: "delegation-batch",
+        type: "delegation",
+        delegations: [
+          { fromAgent: "main", toAgent: "reviewer", content: "Review" },
+          { fromAgent: "main", toAgent: "tester", content: "Test" },
+        ],
+      }],
+    });
+    expect(parts).toEqual([
+      { id: "delegation-batch-0", type: "delegation", message: { fromAgent: "main", toAgent: "reviewer", content: "Review" } },
+      { id: "delegation-batch-1", type: "delegation", message: { fromAgent: "main", toAgent: "tester", content: "Test" } },
     ]);
   });
 

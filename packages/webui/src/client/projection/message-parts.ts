@@ -15,6 +15,8 @@ export interface WebuiMessageForParts {
   readonly thinkingContent?: string;
   readonly thinkingDurationMs?: number;
   readonly toolCalls?: readonly Record<string, unknown>[];
+  /** Desktop's ordered activity parts when the runtime includes them. */
+  readonly parts?: readonly Record<string, unknown>[];
   readonly communicationInfosJson?: unknown;
   /** Per-message token usage (matches `TokenUsage` from agent-core). Used to
    *  compute the Desktop-style output rate and turn duration for historical
@@ -41,8 +43,11 @@ export type WebuiMessagePart =
       readonly id: string;
       readonly type: "thinking";
       readonly content: string;
+      readonly kind?: string;
       readonly durationMs?: number;
     }
+  | { readonly id: string; readonly type: "cognitive"; readonly content: string; readonly kind?: string }
+  | { readonly id: string; readonly type: "compaction"; readonly content: string; readonly kind?: string }
   | { readonly id: string; readonly type: "text"; readonly content: string }
   | {
       readonly id: string;
@@ -206,6 +211,38 @@ function projectSyntheticParts(
 export function projectMessageParts(
   message: WebuiMessageForParts,
 ): readonly WebuiMessagePart[] {
+  if (Array.isArray(message.parts) && message.parts.length > 0) {
+    const ordered: WebuiMessagePart[] = [];
+    for (const [index, raw] of message.parts.entries()) {
+      const type = stringValue(raw, "type");
+      const id = stringValue(raw, "id") ?? `part-${index}`;
+      const content = stringValue(raw, "content") ?? "";
+      if (type === "thinking" || type === "cognitive_text" || type === "cognitive" || type === "compaction") {
+        const kind = stringValue(raw, "kind");
+        ordered.push(type === "thinking"
+          ? { id, type: "thinking", content, ...(kind ? { kind } : {}) }
+          : { id, type: type === "compaction" ? "compaction" : "cognitive", content, ...(kind ? { kind } : {}) });
+      } else if (type === "text" && content.trim()) ordered.push({ id, type: "text", content });
+      else if (type === "tool_call") {
+        const call = record(raw.tool_call) ?? record(raw.toolCall);
+        if (call) ordered.push({ id, type: "tool_call", toolCall: call });
+      } else if (type === "agent_joined") {
+        ordered.push({ id, type: "agent_joined", agent: record(raw.agent) ?? raw });
+      } else if (type === "delegation") {
+        const data = record(raw.message) ?? record(raw.delegation) ?? raw;
+        const delegations: Record<string, unknown>[] = Array.isArray(raw.delegations)
+          ? raw.delegations.flatMap((value: unknown) => {
+              const entry = record(value);
+              return entry ? [entry] : [];
+            })
+          : [data];
+        for (const [delegationIndex, message] of delegations.entries()) {
+          ordered.push({ id: delegations.length > 1 ? `${id}-${delegationIndex}` : id, type: "delegation", message });
+        }
+      }
+    }
+    return ordered;
+  }
   const parts: WebuiMessagePart[] = [];
   if (message.thinkingContent?.trim()) {
     parts.push({

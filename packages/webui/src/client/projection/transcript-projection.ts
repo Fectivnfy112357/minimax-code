@@ -16,7 +16,10 @@ import type {
 } from "../../server/port.js";
 import type {
   WebuiTranscriptItem,
+  WebuiTranscriptActivityPart,
   WebuiTranscriptProcessSegment,
+  WebuiClientMessage,
+  WebuiQueryCollapseView,
 } from "../contracts.js";
 import { readUsageNumber } from "./message-projection.js";
 
@@ -35,6 +38,34 @@ export interface WebuiTranscriptGroup {
   readonly wallClockDurationMs?: number;
 }
 
+export interface WebuiMessageQueryDuration {
+  readonly queryKey: string;
+  readonly durationMs: number;
+}
+
+/** Map persisted query timing to the messages that belong to that query. */
+export function projectWebuiQueryDurations(
+  messages: readonly Pick<WebuiClientMessage, "msgId" | "queryKey">[],
+  views: readonly WebuiQueryCollapseView[],
+): ReadonlyMap<string, WebuiMessageQueryDuration> {
+  const durationByQuery = new Map<string, number>();
+  for (const view of views) {
+    const { processingStartedAtMs: start, processingFinishedAtMs: end } = view;
+    if (
+      typeof view.queryKey === "string" && view.queryKey.length > 0 &&
+      typeof start === "number" && Number.isFinite(start) &&
+      typeof end === "number" && Number.isFinite(end) && end >= start
+    ) durationByQuery.set(view.queryKey, end - start);
+  }
+  const out = new Map<string, WebuiMessageQueryDuration>();
+  for (const message of messages) {
+    if (!message.queryKey) continue;
+    const durationMs = durationByQuery.get(message.queryKey);
+    if (durationMs !== undefined) out.set(message.msgId, { queryKey: message.queryKey, durationMs });
+  }
+  return out;
+}
+
 /** Preserve the per-message activity segments that Desktop renders as rows. */
 export function projectWebuiProcessSegments(
   items: readonly WebuiTranscriptItem[],
@@ -42,10 +73,21 @@ export function projectWebuiProcessSegments(
   const segments: WebuiTranscriptProcessSegment[] = [];
   const byMessageId = new Map<string, WebuiTranscriptProcessSegment>();
   for (const item of items) {
-    if (item.kind !== "thinking" && item.kind !== "tool") continue;
+    if (item.kind !== "thinking" && item.kind !== "tool" && item.kind !== "assistant" && !("activityType" in item)) continue;
     const current = byMessageId.get(item.messageId) ?? {
       messageId: item.messageId,
     };
+    let parts: readonly WebuiTranscriptActivityPart[];
+    if (item.kind === "thinking") parts = [{ type: "thinking", text: item.text, ...(item.durationMs !== undefined ? { durationMs: item.durationMs } : {}) }];
+    else if (item.kind === "tool") parts = item.tools.map((tool) => ({ type: "tool", tool }));
+    else if (item.kind === "assistant") parts = [{ type: "text", text: item.text }];
+    else {
+      const activity = item as Extract<WebuiTranscriptItem, { activityType: string }>;
+      if (activity.activityType === "delegation") parts = [{ type: "delegation", message: activity.detail ?? {} }];
+      else if (activity.activityType === "agent_joined") parts = [{ type: "agent_joined", agent: activity.detail ?? {} }];
+      else if (activity.activityType === "cognitive") parts = [{ type: "cognitive", text: activity.text ?? "" }];
+      else parts = [{ type: "compaction", text: activity.text ?? "" }];
+    }
     const next: WebuiTranscriptProcessSegment = item.kind === "thinking"
       ? {
           ...current,
@@ -54,22 +96,23 @@ export function projectWebuiProcessSegments(
             ? { thinkingDurationMs: item.durationMs }
             : {}),
         }
-      : {
+      : item.kind === "tool"
+      ? {
           ...current,
-          tools: [...(current.tools ?? []), ...(
-            item as Extract<WebuiTranscriptItem, { kind: "tool" }>
-          ).tools],
-        };
-    if (!byMessageId.has(item.messageId)) segments.push(next);
+          tools: [...(current.tools ?? []), ...(item as Extract<WebuiTranscriptItem, { kind: "tool" }>).tools],
+        }
+      : current;
+    const withParts = { ...next, activityParts: [...(current.activityParts ?? []), ...parts] };
+    if (!byMessageId.has(item.messageId)) segments.push(withParts);
     else {
       const index = segments.findIndex(
         (segment) => segment.messageId === item.messageId,
       );
-      if (index >= 0) segments[index] = next;
+      if (index >= 0) segments[index] = withParts;
     }
-    byMessageId.set(item.messageId, next);
+    byMessageId.set(item.messageId, withParts);
   }
-  return segments;
+  return segments.filter((segment) => segment.activityParts?.some((part) => part.type !== "text"));
 }
 
 /**
@@ -85,6 +128,7 @@ export function projectWebuiProcessSegments(
  */
 export function groupWebuiTranscriptItems(
   items: readonly WebuiTranscriptItem[],
+  queryDurationByMessageId: ReadonlyMap<string, WebuiMessageQueryDuration> = new Map(),
 ): readonly WebuiTranscriptGroup[] {
   type Group = {
     messageId: string;
@@ -93,6 +137,7 @@ export function groupWebuiTranscriptItems(
     totalRequestDurationMs?: number;
     totalOutputTokens?: number;
     assistantMaxTimestamp?: number;
+    queryDurations?: Map<string, number>;
   };
   // The user and assistant blocks live in different groups (the renderer
   // opens its own block for every user line). To compute a wall-clock span
@@ -119,7 +164,7 @@ export function groupWebuiTranscriptItems(
   const countedMessages = new Set<string>();
   const out: Group[] = [];
   const addUsage = (group: Group, item: WebuiTranscriptItem): void => {
-    if (item.kind === "user" || item.kind === "questionnaire_response") return;
+    if (item.kind === "user" || item.kind === "questionnaire_response" || item.kind === "activity") return;
     if (typeof item.timestamp === "number" && Number.isFinite(item.timestamp)) {
       group.assistantMaxTimestamp = Math.max(
         group.assistantMaxTimestamp ?? Number.NEGATIVE_INFINITY,
@@ -128,6 +173,11 @@ export function groupWebuiTranscriptItems(
     }
     if (countedMessages.has(item.messageId)) return;
     countedMessages.add(item.messageId);
+    const queryDuration = queryDurationByMessageId.get(item.messageId);
+    if (queryDuration) {
+      group.queryDurations ??= new Map();
+      group.queryDurations.set(queryDuration.queryKey, queryDuration.durationMs);
+    }
     const usage = item.usage;
     const tokens = readUsageNumber(usage, "outputTokens", "output_tokens");
     if (typeof tokens === "number") {
@@ -166,7 +216,10 @@ export function groupWebuiTranscriptItems(
     }
   }
   return out.map((group) => {
-    const { assistantMaxTimestamp, ...rest } = group;
+    const { assistantMaxTimestamp, queryDurations, ...rest } = group;
+    if (queryDurations?.size) {
+      rest.totalRequestDurationMs = [...queryDurations.values()].reduce((sum, duration) => sum + duration, 0);
+    }
     const userStart = userStartByTurn.get(group.turnId ?? group.messageId);
     if (
       typeof userStart === "number" &&

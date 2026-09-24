@@ -63,15 +63,14 @@ describe("W0 · SSR · WebuiActivityGroup", () => {
     expect(summary?.[1]?.length ?? 0).toBeGreaterThan(0);
   });
 
-  it("marks a streaming group and opens it by default", () => {
+  it("marks an active tool group and opens it by default", () => {
     const html = render(
       createElement(WebuiActivityGroup, {
-        tools: [READ_TOOL],
-        streaming: true,
+        tools: [{ ...READ_TOOL, status: "running" }],
       }),
     );
 
-    expect(html).toContain('data-streaming="true"');
+    expect(html).toContain('data-active="true"');
     expect(html).toContain("open");
   });
 

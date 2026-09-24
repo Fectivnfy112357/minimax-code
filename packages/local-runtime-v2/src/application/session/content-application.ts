@@ -553,6 +553,7 @@ function toSessionMessageRawJson(
   return isRecord(
     firstDefined([message.contextUsage, message.context_usage]),
   ) ||
+    Array.isArray(message.parts) ||
     (isRecord(message.usage) && message.usage.request_duration_ms !== undefined)
     ? jsonStringOrString(message)
     : jsonStringOrString(firstDefined([message.rawJson, message.raw_json]));

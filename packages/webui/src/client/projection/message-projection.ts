@@ -20,6 +20,7 @@ import type {
   WebuiMessageAttachment,
   WebuiTranscriptItem,
 } from "../contracts.js";
+import type { WebuiStreamMessage } from "../stream.js";
 import type { WebuiFileDiffInfoView, WebuiTurnDiffView } from "../../server/port.js";
 import {
   projectMessageParts,
@@ -229,7 +230,9 @@ export function projectWebuiMessage(
   const thinkingItems: WebuiTranscriptItem[] = [];
   const toolItems: WebuiTranscriptItem[] = [];
   const answerItems: WebuiTranscriptItem[] = [];
+  const activityItems: WebuiTranscriptItem[] = [];
   const questionnaireItems: WebuiTranscriptItem[] = [];
+  const orderedItems: WebuiTranscriptItem[] = [];
   const attachments = projectMessageAttachments(normalized.attachments);
   // Pull the raw message-level usage (matches `TokenUsage` from agent-core).
   // The message-parts projector already strips the questionnaire XML block
@@ -238,8 +241,9 @@ export function projectWebuiMessage(
   const messageUsage = readMessageUsage(normalized);
   for (const part of projectMessageParts(normalized)) {
     const turn = normalized.turnId ? { turnId: normalized.turnId } : {};
-    if (part.type === "thinking")
-      thinkingItems.push({
+    let item: WebuiTranscriptItem | undefined;
+    if (part.type === "thinking") {
+      item = {
         kind: "thinking",
         text: part.content,
         messageId: normalized.msgId,
@@ -249,9 +253,10 @@ export function projectWebuiMessage(
         ...(normalized.timestamp !== undefined ? { timestamp: normalized.timestamp } : {}),
         ...(attachments ? { attachments } : {}),
         ...(messageUsage ? { usage: messageUsage } : {}),
-      });
-    else if (part.type === "text")
-      answerItems.push({
+      };
+      thinkingItems.push(item);
+    } else if (part.type === "text") {
+      item = {
         kind: normalized.role === "user" ? "user" : "assistant",
         text: part.content,
         messageId: normalized.msgId,
@@ -263,28 +268,44 @@ export function projectWebuiMessage(
           : {}),
         ...(attachments ? { attachments } : {}),
         ...(messageUsage ? { usage: messageUsage } : {}),
-      });
-    else if (part.type === "tool_call")
-      toolItems.push({
+      };
+      answerItems.push(item);
+    } else if (part.type === "tool_call") {
+      item = {
         kind: "tool",
         tools: [part.toolCall],
         messageId: normalized.msgId,
         ...turn,
         ...(messageUsage ? { usage: messageUsage } : {}),
-      });
-    else if (part.type === "questionnaire_response")
-      questionnaireItems.push({
+      };
+      toolItems.push(item);
+    } else if (part.type === "cognitive" || part.type === "compaction") {
+      item = { kind: "activity", activityType: part.type, text: part.content, messageId: normalized.msgId, ...turn };
+      activityItems.push(item);
+    } else if (part.type === "delegation") {
+      item = { kind: "activity", activityType: "delegation", detail: part.message, ...(typeof part.message.content === "string" ? { text: part.message.content } : {}), messageId: normalized.msgId, ...turn };
+      activityItems.push(item);
+    } else if (part.type === "agent_joined") {
+      item = { kind: "activity", activityType: "agent_joined", detail: part.agent as Record<string, unknown>, messageId: normalized.msgId, ...turn };
+      activityItems.push(item);
+    } else if (part.type === "questionnaire_response") {
+      item = {
         kind: "questionnaire_response",
         messageId: normalized.msgId,
         ...turn,
         summary: part.summary,
         ...(normalized.timestamp !== undefined ? { timestamp: normalized.timestamp } : {}),
-      });
+      };
+      questionnaireItems.push(item);
+    }
+    if (item) orderedItems.push(item);
   }
   // The pure parts layer preserves Desktop's source order. The legacy
   // transcript item contract renders the process disclosure before markdown,
   // so keep that public projection order stable for existing callers.
-  const output = [...thinkingItems, ...toolItems, ...answerItems, ...questionnaireItems];
+  const output = normalized.parts?.length
+    ? orderedItems
+    : [...thinkingItems, ...toolItems, ...activityItems, ...answerItems, ...questionnaireItems];
   const diff = readMessageDiff(message);
   if (diff && output.length > 0) {
     const last = output.length - 1;
@@ -346,6 +367,7 @@ function normalizeWebuiClientMessage(
   );
   const thinkingDurationMs = read("thinkingDurationMs", "thinking_duration_ms");
   const toolCalls = read("toolCalls", "tool_calls");
+  const parts = read("parts");
   const timestamp = read("timestamp");
   return {
     ...message,
@@ -353,6 +375,7 @@ function normalizeWebuiClientMessage(
     ...(typeof thinkingContent === "string" ? { thinkingContent } : {}),
     ...(typeof thinkingDurationMs === "number" ? { thinkingDurationMs } : {}),
     ...(Array.isArray(toolCalls) ? { toolCalls } : {}),
+    ...(Array.isArray(parts) ? { parts: parts as Record<string, unknown>[] } : {}),
     ...(typeof read("role") === "string" ? { role: read("role") as string } : {}),
     ...(typeof read("source") === "string" ? { source: read("source") as string } : {}),
     ...(typeof read("kind") === "string" ? { kind: read("kind") as string } : {}),
@@ -390,6 +413,39 @@ export function readMessageUsage(
     }
   }
   return undefined;
+}
+
+/** Rebuild one historical record as one live/resync message without losing
+ *  the Desktop ordered parts or the live message-level fields. */
+export function projectWebuiMessageToStreamMessage(
+  message: WebuiClientMessage,
+): WebuiStreamMessage {
+  const normalized = normalizeWebuiClientMessage(message);
+  const id = normalized.msgId;
+  const parts = Array.isArray(normalized.parts)
+    ? normalized.parts.filter((part): part is Record<string, unknown> =>
+        !!recordValue(part),
+      )
+    : undefined;
+  const toolCalls = Array.isArray(normalized.toolCalls)
+    ? normalized.toolCalls
+    : undefined;
+  const usage = readMessageUsage(message);
+  return {
+    id,
+    answer: normalized.msgContent ?? "",
+    thinking: normalized.thinkingContent ?? "",
+    ...(normalized.timestamp !== undefined ? { timestamp: normalized.timestamp } : {}),
+    ...(normalized.source === "thread-goal" || normalized.kind === "goal"
+      ? { isGoal: true }
+      : {}),
+    ...(toolCalls ? { toolCalls } : {}),
+    ...(parts ? { parts } : {}),
+    ...(usage ? { usage } : {}),
+    ...(normalized.role === "user" || id.startsWith("msg-user-")
+      ? { role: "user" as const }
+      : {}),
+  };
 }
 
 /**

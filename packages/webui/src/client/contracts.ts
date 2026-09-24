@@ -133,6 +133,7 @@ export interface WebuiClientMessage {
   readonly forkOrigin?: Record<string, unknown>;
   readonly originJson?: string;
   readonly communicationInfosJson?: string;
+  readonly parts?: readonly Record<string, unknown>[];
   readonly rawJson?: string;
   readonly fileChanges?: readonly WebuiFileDiffInfoView[];
   readonly sourceMessageId?: string;
@@ -187,8 +188,16 @@ export type WebuiClientSessionLoader = (
 
 export interface WebuiClientMessagePage {
   readonly messages?: readonly WebuiClientMessage[];
+  readonly queryCollapseViews?: readonly WebuiQueryCollapseView[];
   readonly nextCursor?: string;
   readonly hasMore?: boolean;
+}
+
+export interface WebuiQueryCollapseView {
+  readonly queryKey: string;
+  readonly currentTurnId: string;
+  readonly processingStartedAtMs: number;
+  readonly processingFinishedAtMs?: number;
 }
 
 export type WebuiClientMessageLoader = (request: {
@@ -273,6 +282,15 @@ export type WebuiTranscriptItem =
       readonly turnId?: string;
       readonly summary: import("./projection/message-parts.js").WebuiQuestionnaireResponseSummary;
       readonly timestamp?: number;
+    }
+  | {
+      readonly kind: "activity";
+      readonly messageId: string;
+      readonly turnId?: string;
+      readonly activityType: "cognitive" | "compaction" | "delegation" | "agent_joined";
+      readonly text?: string;
+      readonly detail?: Record<string, unknown>;
+      readonly timestamp?: number;
     };
 
 /** One Desktop-style thinking/tool segment inside an assistant turn. */
@@ -281,7 +299,17 @@ export interface WebuiTranscriptProcessSegment {
   readonly thinking?: string;
   readonly thinkingDurationMs?: number;
   readonly tools?: readonly Record<string, unknown>[];
+  readonly activityParts?: readonly WebuiTranscriptActivityPart[];
 }
+
+export type WebuiTranscriptActivityPart =
+  | { readonly type: "thinking"; readonly text: string; readonly durationMs?: number }
+  | { readonly type: "text"; readonly text: string }
+  | { readonly type: "cognitive"; readonly text: string }
+  | { readonly type: "compaction"; readonly text: string }
+  | { readonly type: "tool"; readonly tool: Record<string, unknown> }
+  | { readonly type: "delegation"; readonly message: Record<string, unknown> }
+  | { readonly type: "agent_joined"; readonly agent: Record<string, unknown> };
 
 export interface WebuiDiffState {
   readonly view?: WebuiTurnDiffView;

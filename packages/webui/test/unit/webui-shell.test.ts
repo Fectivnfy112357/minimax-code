@@ -62,6 +62,7 @@ import {
   submitWebuiComposerTurn,
 } from "../../src/client/projection/composer-state.js";
 import { projectWebuiMessage } from "../../src/client/projection/message-projection.js";
+import { projectLiveTurnView } from "../../src/client/projection/transcript-shape.js";
 import { buildWebuiQuestionnaireAnswers } from "../../src/client/projection/questionnaire-state.js";
 import { groupWebuiTranscriptItems } from "../../src/client/projection/transcript-projection.js";
 import type { WebuiGoal, WebuiQuestionnaireRequest } from "../../src/server/port.js";
@@ -1242,6 +1243,98 @@ describe("WebUI composer send/resume loop", () => {
     expect(observedPhases).toContain("reconnecting");
     expect(observedPhases).not.toContain("refused");
     expect(observedPhases.at(-1)).toBe("done");
+  });
+
+  it("resyncs one stream message per history record and retains ordered Desktop parts", async () => {
+    const orderedHistoryMessage = {
+      msgId: "resync-ordered",
+      role: "assistant",
+      msgContent: "legacy message text",
+      thinkingContent: "legacy thinking",
+      toolCalls: [{ name: "legacy_tool" }],
+      timestamp: 123,
+      usage: { request_duration_ms: 1_250, output_tokens: 42 },
+      parts: [
+        { id: "p1", type: "thinking", content: "first thought" },
+        { id: "p2", type: "tool_call", tool_call: { name: "read_file", input: "src/a.ts" } },
+        { id: "p3", type: "text", content: "text between activities" },
+        { id: "p4", type: "cognitive", content: "cognitive detail" },
+        { id: "p5", type: "delegation", message: { fromAgent: "main", toAgent: "reviewer", content: "review this" } },
+        { id: "p6", type: "text", content: "final ordered text" },
+      ],
+    };
+    const legacyHistoryMessage = {
+      msgId: "resync-legacy",
+      role: "assistant",
+      msgContent: "legacy answer",
+      thinkingContent: "legacy thought",
+      toolCalls: [{ name: "bash", input: "pwd" }],
+    };
+    const userHistoryMessage = {
+      msgId: "msg-user-resync",
+      role: "user",
+      msgContent: "original prompt",
+    };
+    const history = [orderedHistoryMessage, legacyHistoryMessage, userHistoryMessage];
+    let resyncedMessages: Parameters<WebuiStreamLoopSink["setMessages"]>[0] = [];
+    const sendMessage: WebuiClientMessageSender = async (_request, onFrame) => {
+      onFrame({ dataJson: '{"type":"resume_overflow"}' });
+      onFrame({ dataJson: "[DONE]" });
+    };
+    const resumeSession: WebuiClientSessionResumer = async (_request, onFrame) => {
+      onFrame({ dataJson: "[DONE]" });
+    };
+    const loadMessages: WebuiClientMessageLoader = async () => ({
+      messages: history,
+      hasMore: false,
+    });
+
+    await runWebuiStreamLoop(
+      { sendMessage, resumeSession, loadMessages },
+      { sessionId: "session-resync", message: "prompt" },
+      {
+        applyFrame: () => undefined,
+        setPhase: () => undefined,
+        setMessages: (messages) => { resyncedMessages = messages; },
+        refuse: () => undefined,
+      },
+    );
+
+    expect(resyncedMessages).toHaveLength(history.length);
+    expect(resyncedMessages.map((message) => message.id)).toEqual([
+      "resync-ordered", "resync-legacy", "msg-user-resync",
+    ]);
+    expect(resyncedMessages[0]).toMatchObject({
+      timestamp: 123,
+      usage: { request_duration_ms: 1_250, output_tokens: 42 },
+      parts: orderedHistoryMessage.parts,
+    });
+    expect(resyncedMessages[0]).not.toHaveProperty("role");
+    expect(resyncedMessages[2]).toMatchObject({ role: "user", answer: "original prompt" });
+    expect(resyncedMessages[1]).toMatchObject({
+      answer: "legacy answer",
+      thinking: "legacy thought",
+      toolCalls: legacyHistoryMessage.toolCalls,
+    });
+
+    const liveView = projectLiveTurnView(resyncedMessages, {
+      sessionId: "session-resync",
+      streaming: false,
+    });
+    expect(liveView?.processSegments?.[0]?.activityParts?.map((part) => part.type)).toEqual([
+      "thinking", "tool", "text", "cognitive", "delegation", "text",
+    ]);
+    expect(liveView?.processSegments?.[0]?.activityParts?.map((part) =>
+      part.type === "text" || part.type === "thinking" || part.type === "cognitive"
+        ? part.text
+        : part.type === "delegation"
+          ? part.message.content
+          : part.type === "tool"
+            ? part.tool.name
+            : undefined,
+    )).toEqual([
+      "first thought", "read_file", "text between activities", "cognitive detail", "review this", "final ordered text",
+    ]);
   });
 
   it("contains sink callback failures — the loop never rejects even if the sink throws", async () => {

@@ -17,6 +17,25 @@ import { __webuiProbeReduce } from "../../src/client/stream-instrumentation.js";
 const frame = (dataJson: string) => ({ dataJson });
 
 describe("WebUI mixed stream reducer", () => {
+  it("retains Desktop ordered activity parts from the live wire envelope", () => {
+    const state = reduceWebuiStreamFrame(initialWebuiStreamState, frame(JSON.stringify({
+      type: "agent_message",
+      agent_message: {
+        msg_id: "activity-1",
+        msg_content: "Done",
+        parts: [
+          { id: "think", type: "thinking", content: "Reasoning" },
+          { id: "delegate", type: "delegation", message: { fromAgent: "main", toAgent: "child" } },
+          null,
+        ],
+      },
+    })));
+    expect(state.messages[0]?.parts).toEqual([
+      { id: "think", type: "thinking", content: "Reasoning" },
+      { id: "delegate", type: "delegation", message: { fromAgent: "main", toAgent: "child" } },
+    ]);
+  });
+
   it("keeps open, whole messages, chunks, thinking, actions, status and done distinct", () => {
     let state = reduceWebuiStreamFrame(
       initialWebuiStreamState,

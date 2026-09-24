@@ -18,7 +18,7 @@ import type {
   WebuiClientMessageSender,
   WebuiClientSessionResumer,
 } from "./contracts.js";
-import { projectWebuiMessage } from "./projection/message-projection.js";
+import { projectWebuiMessageToStreamMessage } from "./projection/message-projection.js";
 
 import {
   recogniseWebuiStreamPayload,
@@ -281,16 +281,7 @@ export async function runWebuiStreamLoop(
           try {
             const page = await loadMessages({ id: sessionId });
             safe.setMessages(
-              (page.messages ?? []).flatMap(projectWebuiMessage).map(
-                (item): WebuiStreamMessage => ({
-                  id: item.messageId,
-                  answer: "text" in item ? item.text : "",
-                  thinking: item.kind === "thinking" ? item.text : "",
-                  // The rebuild must keep the user tag, or a resync turns
-                  // the right-aligned bubble into assistant text.
-                  ...(item.kind === "user" ? ({ role: "user" } as const) : {}),
-                }),
-              ),
+              (page.messages ?? []).map(projectWebuiMessageToStreamMessage),
             );
           } catch (error) {
             const reason =
