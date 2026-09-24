@@ -197,7 +197,8 @@
       "packages/webui/test/unit/webui-host-shape-invariant.test.ts",
       "packages/webui/test/unit/composer-intent.test.ts",
       "packages/webui/test/unit/transcript-shape.test.ts",
-      "packages/webui/test/unit/slash-classification.test.ts"
+      "packages/webui/test/unit/slash-classification.test.ts",
+      "packages/webui/test/unit/outside-close.test.ts"
     ]
   }
 }
