@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactElement, type ReactNode } from "react";
 import type { WebuiModelEntry, WebuiSessionListItem, WebuiUsageQuotaResult, WebuiVersionInfo } from "../../server/port.js";
+import type { WebuiTransport } from "../contracts.js";
 
 export type SettingsTabKey = "desktop" | "shortcuts" | "voice" | "custom-instructions" | "usage" | "connection" | "account" | "coding" | "worktree" | "archived";
 export interface SettingsTabDefinition { readonly key: SettingsTabKey; readonly group: "preferences" | "management" | "coding" | "archived"; readonly label: string; readonly icon: string; }
@@ -25,9 +26,31 @@ function SettingRow({ title, description, children, testId, disabled = false }: 
 function Divider(): ReactElement { return <div className="webui-generic-divider"><span /></div>; }
 function Section({ title, testId, children, preference = false }: { readonly title: string; readonly testId?: string; readonly children: ReactNode; readonly preference?: boolean }): ReactElement { return <section data-testid={testId} className={`webui-generic-section${preference ? " is-preference" : ""}`}><h3>{title}</h3><div className="webui-generic-card">{children}</div></section>; }
 
-interface SettingsModalProps { readonly open: boolean; readonly onClose: () => void; readonly dataDir?: string; readonly version?: WebuiVersionInfo; readonly listArchivedSessions?: () => Promise<{ readonly sessions: readonly WebuiSessionListItem[] }>; readonly archiveSession?: (request: { readonly id: string }) => Promise<{ readonly success?: boolean }>; readonly deleteSession?: (request: { readonly id: string }) => Promise<{ readonly success?: boolean }>; readonly sessionId?: string; readonly listModels?: (request?: { readonly sessionId?: string }) => Promise<readonly WebuiModelEntry[]>; readonly selectModel?: (request: { readonly providerId: string; readonly modelId: string; readonly variant?: string; readonly contextLimit?: number; readonly sessionId?: string }) => Promise<{ readonly success?: boolean }>; readonly getUsageQuota?: (request?: { readonly forceRefresh?: boolean }) => Promise<WebuiUsageQuotaResult>; readonly getAccountStatus?: (request?: { readonly sessionId?: string }) => Promise<Record<string, unknown>>; readonly listUserModelProviders?: () => Promise<readonly Record<string, unknown>[]>; readonly createUserModelProvider?: (request: Record<string, unknown>) => Promise<unknown>; readonly updateUserModelProvider?: (request: Record<string, unknown>) => Promise<unknown>; readonly deleteUserModelProvider?: (providerId: string) => Promise<unknown>; readonly testUserModelProvider?: (providerId: string) => Promise<unknown>; readonly testUserModel?: (request: { readonly providerId: string; readonly modelId: string }) => Promise<unknown>; readonly discoverUserModelsCandidate?: (request: Record<string, unknown>) => Promise<unknown>; readonly saveUserModelProviderCandidate?: (request: Record<string, unknown>) => Promise<unknown>; readonly listProviderPresets?: () => Promise<readonly Record<string, unknown>[]>; readonly getMiniMaxApiKeyStatus?: () => Promise<Record<string, unknown>>; readonly upsertMiniMaxApiKey?: (request: { readonly apiKey: string; readonly saveAndUse?: boolean }) => Promise<unknown>; readonly getCodexOAuthStatus?: () => Promise<Record<string, unknown>>; readonly signOut?: () => Promise<{ readonly success?: boolean }>; }
+interface SettingsModalProps {
+  readonly open: boolean;
+  readonly onClose: () => void;
+  readonly dataDir?: string;
+  readonly version?: WebuiVersionInfo;
+  readonly sessionId?: string;
+  /** Single capability source for everything the modal needs. Settings
+   *  reads each capability through `transport?.X` so the modal is no longer
+   *  coupled to a hand-curated subset of transport fields. */
+  readonly transport?: WebuiTransport;
+}
 
-export function SettingsModal({ open, onClose, dataDir, version, listArchivedSessions, deleteSession, sessionId, listModels, selectModel, getUsageQuota, getAccountStatus, listUserModelProviders, getMiniMaxApiKeyStatus, signOut }: SettingsModalProps): ReactElement | null {
+export function SettingsModal({ open, onClose, dataDir, version, sessionId, transport }: SettingsModalProps): ReactElement | null {
+  // The transport is optional. Each capability is optional too, so we bind
+  // only when both are present; otherwise we surface `undefined` and let the
+  // call sites do their existing null checks.
+  const listModels = transport?.listModels ? transport.listModels.bind(transport) : undefined;
+  const selectModel = transport?.selectModel ? transport.selectModel.bind(transport) : undefined;
+  const getUsageQuota = transport?.getUsageQuota ? transport.getUsageQuota.bind(transport) : undefined;
+  const getAccountStatus = transport?.getAccountStatus ? transport.getAccountStatus.bind(transport) : undefined;
+  const listUserModelProviders = transport?.listUserModelProviders ? transport.listUserModelProviders.bind(transport) : undefined;
+  const listArchivedSessions = transport?.listArchivedSessions ? transport.listArchivedSessions.bind(transport) : undefined;
+  const getMiniMaxApiKeyStatus = transport?.getMiniMaxApiKeyStatus ? transport.getMiniMaxApiKeyStatus.bind(transport) : undefined;
+  const signOut = transport?.signOut ? transport.signOut.bind(transport) : undefined;
+  const deleteSession = transport?.deleteSession ? transport.deleteSession.bind(transport) : undefined;
   const [active, setActive] = useState<SettingsTabKey>("desktop"); const [query, setQuery] = useState(""); const [theme, setTheme] = useState(() => stored("webui-theme", "light")); const [systemDark, setSystemDark] = useState(() => typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: dark)").matches); const [language, setLanguage] = useState(() => stored("mavis-locale", "en")); const [wrap, setWrap] = useState(() => stored("file_line_wrap", "true") === "true"); const [newTab, setNewTab] = useState(() => stored("file_open_in_new_tab", "false") === "true"); const [followUp, setFollowUp] = useState(() => stored("webui-follow-up-behavior", "queue")); const [contextWindow, setContextWindow] = useState(() => stored("webui-context-window-usage", "false") === "true"); const [models, setModels] = useState<readonly WebuiModelEntry[]>([]); const [quota, setQuota] = useState<WebuiUsageQuotaResult>(); const [account, setAccount] = useState<Record<string, unknown>>(); const [providers, setProviders] = useState<readonly Record<string, unknown>[]>([]); const [apiKeyStatus, setApiKeyStatus] = useState<Record<string, unknown>>(); const [archived, setArchived] = useState<readonly WebuiSessionListItem[]>([]); const [signOutError, setSignOutError] = useState<string>(); const actualTheme = resolveThemePreference(theme, systemDark);
   useEffect(() => { if (typeof window === "undefined" || !window.matchMedia) return; const media = window.matchMedia("(prefers-color-scheme: dark)"); const listener = () => setSystemDark(media.matches); listener(); media.addEventListener?.("change", listener); return () => media.removeEventListener?.("change", listener); }, []);
   useEffect(() => { if (typeof document === "undefined") return; document.documentElement.classList.toggle("dark", actualTheme === "dark"); document.documentElement.classList.toggle("light", actualTheme !== "dark"); document.documentElement.lang = language.startsWith("zh") ? "zh-CN" : "en"; localStorage?.setItem("webui-theme", theme); localStorage?.setItem("mavis-locale", language); localStorage?.setItem("file_line_wrap", String(wrap)); localStorage?.setItem("file_open_in_new_tab", String(newTab)); localStorage?.setItem("webui-follow-up-behavior", followUp); localStorage?.setItem("webui-context-window-usage", String(contextWindow)); }, [actualTheme, contextWindow, followUp, language, newTab, theme, wrap]);

@@ -800,30 +800,10 @@ export function WebuiClientFoundationApp(
                   hostLabel={hostLabel}
                   dataDir={dataDir}
                   version={runtimeVersion}
-                  listArchivedSessions={listArchivedSessions}
                   sessionId={selectedSessionId}
-                  listModels={listModels}
-                  selectModel={selectModel}
-                  getSessionUsage={getSessionUsage}
-                  getUsageQuota={getUsageQuota}
+                  transport={transport}
                   getSigninPanel={getSigninPanel}
                   claimSignin={claimSignin}
-                  getAccountStatus={getAccountStatus}
-                  signOut={signOut}
-                  archiveSession={archiveSession}
-                  deleteSession={deleteSession}
-                  listUserModelProviders={listUserModelProviders}
-                  createUserModelProvider={createUserModelProvider}
-                  updateUserModelProvider={updateUserModelProvider}
-                  deleteUserModelProvider={deleteUserModelProvider}
-                  testUserModelProvider={testUserModelProvider}
-                  testUserModel={testUserModel}
-                  discoverUserModelsCandidate={discoverUserModelsCandidate}
-                  saveUserModelProviderCandidate={saveUserModelProviderCandidate}
-                  listProviderPresets={listProviderPresets}
-                  getMiniMaxApiKeyStatus={getMiniMaxApiKeyStatus}
-                  upsertMiniMaxApiKey={upsertMiniMaxApiKey}
-                  getCodexOAuthStatus={getCodexOAuthStatus}
                 />
               </div>
             </aside>
