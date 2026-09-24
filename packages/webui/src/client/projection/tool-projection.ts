@@ -77,6 +77,8 @@ export function toolCallLabel(tool: Record<string, unknown>): string {
     webfetch: "网页抓取",
     web_fetch: "网页抓取",
     task: "任务",
+    todo_write: "todowrite",
+    todowrite: "todowrite",
   };
   return WEBUI_DESKTOP_TOOL_DISPLAY_LABELS[normalized] ?? labels[normalized] ?? "工具";
 }

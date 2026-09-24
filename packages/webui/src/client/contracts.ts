@@ -196,6 +196,9 @@ export interface WebuiClientMessagePage {
 export interface WebuiQueryCollapseView {
   readonly queryKey: string;
   readonly currentTurnId: string;
+  /** Runtime reconciliation can require details to stay open, which removes
+   *  the outer disclosure control in Desktop. */
+  readonly forceExpanded?: boolean;
   readonly processingStartedAtMs: number;
   readonly processingFinishedAtMs?: number;
 }

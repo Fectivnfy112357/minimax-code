@@ -319,7 +319,7 @@ describe("WebUI shell", () => {
         toolCalls: [{ name: "read" }],
         msgContent: "Answer",
       }).map((item) => item.kind),
-    ).toEqual(["thinking", "tool", "assistant"]);
+    ).toEqual(["thinking", "assistant", "tool"]);
     expect(
       projectWebuiMessage({
         msgId: "answer",

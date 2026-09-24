@@ -218,20 +218,14 @@ export function deriveConversationUsageNotice(
 /**
  * Convert a wire message into the components-facing transcript items. The
  * pure parts layer preserves Desktop's source order (thinking → text → tool
- * calls → synthetic). This projection re-orders them into the legacy
- * `thinkingItems → toolItems → answerItems → questionnaireItems` order the
- * transcript renderer has always rendered, so callers see a stable item
- * stream regardless of the wire format.
+ * calls → synthetic). Keep that order here: a text part is a boundary between
+ * activity groups, so moving tools ahead of text incorrectly merges activity
+ * that Desktop renders on opposite sides of an assistant reply.
  */
 export function projectWebuiMessage(
   message: WebuiClientMessage,
 ): WebuiTranscriptItem[] {
   const normalized = normalizeWebuiClientMessage(message);
-  const thinkingItems: WebuiTranscriptItem[] = [];
-  const toolItems: WebuiTranscriptItem[] = [];
-  const answerItems: WebuiTranscriptItem[] = [];
-  const activityItems: WebuiTranscriptItem[] = [];
-  const questionnaireItems: WebuiTranscriptItem[] = [];
   const orderedItems: WebuiTranscriptItem[] = [];
   const attachments = projectMessageAttachments(normalized.attachments);
   // Pull the raw message-level usage (matches `TokenUsage` from agent-core).
@@ -254,7 +248,6 @@ export function projectWebuiMessage(
         ...(attachments ? { attachments } : {}),
         ...(messageUsage ? { usage: messageUsage } : {}),
       };
-      thinkingItems.push(item);
     } else if (part.type === "text") {
       item = {
         kind: normalized.role === "user" ? "user" : "assistant",
@@ -269,7 +262,6 @@ export function projectWebuiMessage(
         ...(attachments ? { attachments } : {}),
         ...(messageUsage ? { usage: messageUsage } : {}),
       };
-      answerItems.push(item);
     } else if (part.type === "tool_call") {
       item = {
         kind: "tool",
@@ -278,16 +270,12 @@ export function projectWebuiMessage(
         ...turn,
         ...(messageUsage ? { usage: messageUsage } : {}),
       };
-      toolItems.push(item);
     } else if (part.type === "cognitive" || part.type === "compaction") {
       item = { kind: "activity", activityType: part.type, text: part.content, messageId: normalized.msgId, ...turn };
-      activityItems.push(item);
     } else if (part.type === "delegation") {
       item = { kind: "activity", activityType: "delegation", detail: part.message, ...(typeof part.message.content === "string" ? { text: part.message.content } : {}), messageId: normalized.msgId, ...turn };
-      activityItems.push(item);
     } else if (part.type === "agent_joined") {
       item = { kind: "activity", activityType: "agent_joined", detail: part.agent as Record<string, unknown>, messageId: normalized.msgId, ...turn };
-      activityItems.push(item);
     } else if (part.type === "questionnaire_response") {
       item = {
         kind: "questionnaire_response",
@@ -296,16 +284,10 @@ export function projectWebuiMessage(
         summary: part.summary,
         ...(normalized.timestamp !== undefined ? { timestamp: normalized.timestamp } : {}),
       };
-      questionnaireItems.push(item);
     }
     if (item) orderedItems.push(item);
   }
-  // The pure parts layer preserves Desktop's source order. The legacy
-  // transcript item contract renders the process disclosure before markdown,
-  // so keep that public projection order stable for existing callers.
-  const output = normalized.parts?.length
-    ? orderedItems
-    : [...thinkingItems, ...toolItems, ...activityItems, ...answerItems, ...questionnaireItems];
+  const output = orderedItems;
   const diff = readMessageDiff(message);
   if (diff && output.length > 0) {
     const last = output.length - 1;

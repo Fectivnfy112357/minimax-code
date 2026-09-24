@@ -508,6 +508,7 @@ export function WebuiSessionTranscript({
                   role: "assistant",
                   sessionId,
                   ...(group.turnId ? { turnId: group.turnId } : {}),
+                  ...(group.forceExpanded ? { processForceExpanded: true } : {}),
                   userText: undefined,
                   thinking: thinkingItems.length > 0
                     ? thinkingItems.map((item) => item.text).join("\n\n")

@@ -10,7 +10,7 @@
 // stays private — it was a non-exported helper in `app.tsx`, used only
 // by `WebuiToolResults`.
 
-import { useEffect, useState, type ReactElement } from "react";
+import { useEffect, useState, type ReactElement, type ReactNode } from "react";
 import { ActivityIndicator } from "./ActivityIndicator.js";
 import {
   WebuiIconChevronDown,
@@ -307,6 +307,10 @@ export function WebuiTurnProcess({
   requestDurationMs,
   wallClockDurationMs,
   children,
+  collapsedContent,
+  hasExpandableContent = true,
+  forceExpanded = false,
+  disabled = false,
   initiallyExpanded = true,
 }: {
   readonly active: boolean;
@@ -325,9 +329,22 @@ export function WebuiTurnProcess({
    *  runtime hands us, so render its real value rather than guess. */
   readonly wallClockDurationMs?: number;
   readonly children: ReactElement | ((expanded: boolean) => ReactElement);
+  /** Content that remains visible outside the collapsible details while the
+   *  process is collapsed (for example, the final assistant reply). */
+  readonly collapsedContent?: (expanded: boolean) => ReactNode;
+  /** Desktop only renders an outer disclosure control when this turn has
+   *  content that can actually be expanded. The duration summary can remain
+   *  visible without the control. */
+  readonly hasExpandableContent?: boolean;
+  /** Mirrors Desktop turn-process modes: these states suppress the toggle
+   *  and keep available details open. */
+  readonly forceExpanded?: boolean;
+  readonly disabled?: boolean;
   readonly initiallyExpanded?: boolean;
 }): ReactElement {
   const [expanded, setExpanded] = useState(initiallyExpanded);
+  const canToggle = hasExpandableContent && !forceExpanded && !disabled;
+  const contentExpanded = forceExpanded || disabled || expanded;
   const [, forceTick] = useState(0);
   useEffect(() => {
     if (!active) return undefined;
@@ -383,22 +400,32 @@ export function WebuiTurnProcess({
   return (
     <section className="pt-2" data-testid="turn-process-disclosure">
       <div className="flex min-w-0 flex-wrap items-center gap-x-2" data-testid="turn-process-summary">
-        <button
-          type="button"
-          className="group/turn-process text-activity-body-small flex items-center gap-1 py-1 text-center text-sm font-normal leading-5 tracking-normal text-text_label_tertiary_default transition-colors hover:text-text_label_tertiary_hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border_accent"
-          aria-expanded={expanded}
-          data-testid="turn-process-trigger"
-          data-summary-text={summary}
-          onClick={() => setExpanded((value) => !value)}
-        >
-          <span data-testid="turn-process-summary-text">{summary}</span>
-          <span
-            data-testid="turn-process-chevron"
-            className={`-ml-1 inline-flex h-4 w-4 shrink-0 items-center justify-center text-icon_interaction_tertiary_default transition-transform duration-200 ease-out motion-reduce:transition-none group-hover/turn-process:text-icon_interaction_tertiary_hover ${expanded ? "rotate-90" : ""}`}
+        {canToggle ? (
+          <button
+            type="button"
+            className="group/turn-process text-activity-body-small flex items-center gap-1 py-1 text-center text-sm font-normal leading-5 tracking-normal text-text_label_tertiary_default transition-colors hover:text-text_label_tertiary_hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border_accent"
+            aria-expanded={contentExpanded}
+            data-testid="turn-process-trigger"
+            data-summary-text={summary}
+            onClick={() => setExpanded((value) => !value)}
           >
-            <WebuiIconChevronDown className="size-4" />
+            <span data-testid="turn-process-summary-text">{summary}</span>
+            <span
+              data-testid="turn-process-chevron"
+              className={`-ml-1 inline-flex h-4 w-4 shrink-0 items-center justify-center text-icon_interaction_tertiary_default transition-transform duration-200 ease-out motion-reduce:transition-none group-hover/turn-process:text-icon_interaction_tertiary_hover ${contentExpanded ? "rotate-90" : ""}`}
+            >
+              <WebuiIconChevronDown className="size-4" />
+            </span>
+          </button>
+        ) : (
+          <span
+            className="text-activity-body-small flex items-center gap-2 py-1 text-center text-sm font-normal leading-5 tracking-normal text-text_label_tertiary_default"
+            data-testid="turn-process-summary-text"
+            data-summary-text={summary}
+          >
+            {summary}
           </span>
-        </button>
+        )}
         {!active && outputRateLabel ? (
           <span
             className="ml-auto text-text_default_tertiary text-size_12"
@@ -410,9 +437,12 @@ export function WebuiTurnProcess({
         ) : null}
       </div>
       <div className="mt-2 border-b-[0.5px] border-border_default" data-testid="turn-process-separator" aria-hidden="true" />
-      <div className="mt-3 space-y-4" data-testid="turn-process-detail" hidden={!expanded && typeof children !== "function"}>
-        {typeof children === "function" ? children(expanded) : expanded ? children : null}
-      </div>
+      {hasExpandableContent ? (
+        <div className="mt-3 space-y-4" data-testid="turn-process-detail" hidden={!contentExpanded}>
+          {typeof children === "function" ? children(contentExpanded) : contentExpanded ? children : null}
+        </div>
+      ) : null}
+      {collapsedContent?.(contentExpanded)}
     </section>
   );
 }

@@ -207,10 +207,27 @@ function projectSyntheticParts(
   return parts;
 }
 
+/** Desktop consumes the serialized todo_updated system event as progress
+ *  state; it must not also appear as an assistant message containing JSON. */
+function isTodoUpdatedEventMessage(message: WebuiMessageForParts): boolean {
+  const content = message.msgContent?.trimStart();
+  if (!content?.startsWith('{"eventType":')) return false;
+  try {
+    const parsed = record(JSON.parse(content));
+    return parsed?.eventType === "todo_updated";
+  } catch {
+    return false;
+  }
+}
+
 /** Build parts in the exact Desktop order: thinking, text, then tool calls. */
 export function projectMessageParts(
   message: WebuiMessageForParts,
 ): readonly WebuiMessagePart[] {
+  // `todo_updated` is a persisted SystemEvent envelope. Workspace progress
+  // consumes it separately; mirroring Desktop means omitting it from the
+  // conversational transcript while retaining actual `todowrite` calls.
+  if (isTodoUpdatedEventMessage(message)) return [];
   if (Array.isArray(message.parts) && message.parts.length > 0) {
     const ordered: WebuiMessagePart[] = [];
     for (const [index, raw] of message.parts.entries()) {

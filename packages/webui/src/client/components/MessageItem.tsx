@@ -104,6 +104,7 @@ export function MessageItem({
   // Historical-only (Plan A: `turnId` / `thinkingDurationMs` /
   // `initialDiff` / `actions` / `attachments`).
   const turnId = historicalView?.turnId;
+  const processForceExpanded = historicalView?.processForceExpanded;
   const thinkingDurationMs = historicalView?.thinkingDurationMs;
   const initialDiff = historicalView?.initialDiff;
   const actions = historicalView?.actions;
@@ -263,6 +264,7 @@ export function MessageItem({
         totalOutputTokens={totalOutputTokens}
         wallClockDurationMs={wallClockDurationMs}
         processSegments={processSegments}
+        processForceExpanded={processForceExpanded}
       />
       <WebuiMessageActions {...actionProps} />
       {forkOpen ? <div className="webui-message-dialog" role="dialog" aria-modal="true" data-testid="fork-dialog"><div className="webui-message-dialog-surface"><h3>复制为新会话</h3><p>{forkOptions?.unavailableReason ?? "保留当前上下文，在新会话中继续"}</p><input aria-label="会话名称" value={forkTitle} onChange={(event) => setForkTitle(event.target.value)} placeholder="使用简短且不同的名称，便于识别" disabled={forkOptions?.canFork === false} /><div className="webui-message-dialog-actions"><button type="button" onClick={() => setForkOpen(false)} disabled={mutationBusy}>取消</button><button type="button" onClick={confirmFork} disabled={mutationBusy || forkOptions?.canFork === false}>复制并进入</button></div></div></div> : null}

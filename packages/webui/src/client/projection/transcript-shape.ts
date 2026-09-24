@@ -228,6 +228,7 @@ export interface WebuiTurnViewBase {
 export interface WebuiHistoricalTurnView extends WebuiTurnViewBase {
   readonly source: "historical";
   readonly turnId?: string;
+  readonly processForceExpanded?: boolean;
   readonly thinkingDurationMs?: number;
   readonly initialDiff?: WebuiTurnDiffView;
   readonly actions?: WebuiMessageActionCapabilities;
@@ -412,7 +413,7 @@ export function projectLiveTurnView(
       ? sum + value
       : sum;
   }, 0);
-  const processSegments = assistant
+  const projectedProcessSegments = assistant
     .map((message) => {
       const parts = projectMessageParts({
         msgId: message.id,
@@ -437,8 +438,12 @@ export function projectLiveTurnView(
         ...(message.toolCalls?.length ? { tools: message.toolCalls } : {}),
         ...(activityParts.some((part) => part.type !== "text") ? { activityParts } : {}),
       };
-    })
-    .filter((segment) => segment.thinking || segment.tools?.length || segment.activityParts?.length);
+    });
+  const processSegments = projectedProcessSegments.some((segment) =>
+    segment.activityParts?.some((part) => part.type !== "text"),
+  )
+    ? projectedProcessSegments.filter((segment) => segment.activityParts?.length)
+    : [];
   const view: WebuiLiveTurnView = {
     source: "live",
     messageId: last.id,

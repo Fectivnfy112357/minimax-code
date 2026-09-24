@@ -32,6 +32,7 @@ export interface WebuiTranscriptGroup {
   readonly items: WebuiTranscriptItem[];
   readonly totalRequestDurationMs?: number;
   readonly totalOutputTokens?: number;
+  readonly forceExpanded?: boolean;
   /** Wall-clock turn duration derived from message timestamps: the oldest
    *  `user` timestamp in the same turn (across group boundaries) to the
    *  newest `assistant` timestamp. */
@@ -41,6 +42,7 @@ export interface WebuiTranscriptGroup {
 export interface WebuiMessageQueryDuration {
   readonly queryKey: string;
   readonly durationMs: number;
+  readonly forceExpanded?: boolean;
 }
 
 /** Map persisted query timing to the messages that belong to that query. */
@@ -48,20 +50,24 @@ export function projectWebuiQueryDurations(
   messages: readonly Pick<WebuiClientMessage, "msgId" | "queryKey">[],
   views: readonly WebuiQueryCollapseView[],
 ): ReadonlyMap<string, WebuiMessageQueryDuration> {
-  const durationByQuery = new Map<string, number>();
+  const durationByQuery = new Map<string, WebuiMessageQueryDuration>();
   for (const view of views) {
     const { processingStartedAtMs: start, processingFinishedAtMs: end } = view;
     if (
       typeof view.queryKey === "string" && view.queryKey.length > 0 &&
       typeof start === "number" && Number.isFinite(start) &&
       typeof end === "number" && Number.isFinite(end) && end >= start
-    ) durationByQuery.set(view.queryKey, end - start);
+    ) durationByQuery.set(view.queryKey, {
+      queryKey: view.queryKey,
+      durationMs: end - start,
+      ...(view.forceExpanded === true ? { forceExpanded: true } : {}),
+    });
   }
   const out = new Map<string, WebuiMessageQueryDuration>();
   for (const message of messages) {
     if (!message.queryKey) continue;
-    const durationMs = durationByQuery.get(message.queryKey);
-    if (durationMs !== undefined) out.set(message.msgId, { queryKey: message.queryKey, durationMs });
+    const queryDuration = durationByQuery.get(message.queryKey);
+    if (queryDuration) out.set(message.msgId, queryDuration);
   }
   return out;
 }
@@ -112,7 +118,13 @@ export function projectWebuiProcessSegments(
     }
     byMessageId.set(item.messageId, withParts);
   }
-  return segments.filter((segment) => segment.activityParts?.some((part) => part.type !== "text"));
+  // Once a group has process activity, keep text-only assistant messages too:
+  // Desktop treats earlier replies as archived process content while the
+  // final reply remains outside the disclosure. Dropping text-only segments
+  // here makes that boundary impossible to project in the renderer.
+  return segments.some((segment) => segment.activityParts?.some((part) => part.type !== "text"))
+    ? segments
+    : [];
 }
 
 /**
@@ -136,8 +148,9 @@ export function groupWebuiTranscriptItems(
     items: WebuiTranscriptItem[];
     totalRequestDurationMs?: number;
     totalOutputTokens?: number;
+    forceExpanded?: boolean;
     assistantMaxTimestamp?: number;
-    queryDurations?: Map<string, number>;
+    queryDurations?: Map<string, WebuiMessageQueryDuration>;
   };
   // The user and assistant blocks live in different groups (the renderer
   // opens its own block for every user line). To compute a wall-clock span
@@ -176,7 +189,8 @@ export function groupWebuiTranscriptItems(
     const queryDuration = queryDurationByMessageId.get(item.messageId);
     if (queryDuration) {
       group.queryDurations ??= new Map();
-      group.queryDurations.set(queryDuration.queryKey, queryDuration.durationMs);
+      group.queryDurations.set(queryDuration.queryKey, queryDuration);
+      if (queryDuration.forceExpanded) group.forceExpanded = true;
     }
     const usage = item.usage;
     const tokens = readUsageNumber(usage, "outputTokens", "output_tokens");
@@ -218,7 +232,9 @@ export function groupWebuiTranscriptItems(
   return out.map((group) => {
     const { assistantMaxTimestamp, queryDurations, ...rest } = group;
     if (queryDurations?.size) {
-      rest.totalRequestDurationMs = [...queryDurations.values()].reduce((sum, duration) => sum + duration, 0);
+      const queryViews = [...queryDurations.values()];
+      rest.totalRequestDurationMs = queryViews.reduce((sum, view) => sum + view.durationMs, 0);
+      if (queryViews.some((view) => view.forceExpanded)) rest.forceExpanded = true;
     }
     const userStart = userStartByTurn.get(group.turnId ?? group.messageId);
     if (

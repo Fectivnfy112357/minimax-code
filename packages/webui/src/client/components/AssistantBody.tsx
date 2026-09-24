@@ -43,6 +43,7 @@ function renderActivityParts(
   for (let index = 0; index < parts.length; index += 1) {
     const part = parts[index];
     if (!part) continue;
+    if (part.type === "text" && !processExpanded) continue;
     if (!processExpanded && part.type !== "text") continue;
     if (part.type === "tool" || part.type === "thinking") {
       const activityItems: WebuiActivityGroupItem[] = [];
@@ -166,6 +167,7 @@ export function WebuiAssistantBody({
   streaming = false,
   processSegments,
   processInitiallyExpanded,
+  processForceExpanded,
 }: {
   readonly messageId: string;
   readonly sessionId?: string;
@@ -192,6 +194,7 @@ export function WebuiAssistantBody({
   readonly streaming?: boolean;
   readonly processSegments?: readonly WebuiTranscriptProcessSegment[];
   readonly processInitiallyExpanded?: boolean;
+  readonly processForceExpanded?: boolean;
 } & WebuiAssistantBodyCapabilities): ReactElement {
   const segments = processSegments?.length
     ? processSegments
@@ -203,12 +206,52 @@ export function WebuiAssistantBody({
           ...(tools?.length ? { tools } : {}),
         } satisfies WebuiTranscriptProcessSegment,
       ];
+  const processTextParts = segments.flatMap((segment) =>
+    (segment.activityParts ?? []).filter(
+      (part): part is Extract<WebuiTranscriptActivityPart, { type: "text" }> => part.type === "text",
+    ),
+  );
+  const primaryAnswerPart = processTextParts[processTextParts.length - 1];
+  // Desktop builds one activity disclosure for each run of activity between
+  // assistant replies. Historical messages can split that run across several
+  // messageIds, so flatten the per-message projection before grouping; text
+  // parts remain in sequence and still end the current activity group.
+  const orderedProcessParts: WebuiTranscriptActivityPart[] = segments.flatMap((segment) => {
+    if (segment.activityParts?.length) return [...segment.activityParts];
+    return [
+      ...(segment.thinking?.trim()
+        ? [{ type: "thinking", text: segment.thinking, ...(segment.thinkingDurationMs !== undefined ? { durationMs: segment.thinkingDurationMs } : {}) } satisfies WebuiTranscriptActivityPart]
+        : []),
+      ...(segment.tools ?? []).map((tool) => ({ type: "tool", tool }) satisfies WebuiTranscriptActivityPart),
+    ];
+  });
+  const hasExpandableProcessContent = Boolean(
+    thinking?.trim() ||
+    tools?.length ||
+    processSegments?.some((segment) => segment.activityParts?.length),
+  );
+  const hasProcessDuration =
+    typeof processingStartedAtMs === "number" ||
+    typeof totalRequestDurationMs === "number" ||
+    typeof wallClockDurationMs === "number";
+  const renderProcessContent = (processExpanded: boolean) => (
+    <div className="activity-group-content webui-turn-process-segments">
+      {processExpanded ? renderActivityParts(
+        messageId,
+        orderedProcessParts,
+        streaming,
+        Boolean(getTurnDiff),
+        true,
+        processingStartedAtMs,
+      ) : null}
+    </div>
+  );
   return (
     <div
       className="webui-assistant-body text-sm space-y-4"
       data-webui-assistant-body={messageId}
     >
-      {thinking || tools?.length || processSegments?.some((segment) => segment.activityParts?.length) ? (
+      {hasExpandableProcessContent || hasProcessDuration ? (
         <WebuiTurnProcess
           active={streaming}
           startedAtMs={processingStartedAtMs}
@@ -222,41 +265,20 @@ export function WebuiAssistantBody({
           }
           requestDurationMs={totalRequestDurationMs}
           wallClockDurationMs={wallClockDurationMs}
+          hasExpandableContent={hasExpandableProcessContent}
+          forceExpanded={processForceExpanded}
           initiallyExpanded={processInitiallyExpanded}
-        >
-          {(processExpanded) => <div className="activity-group-content webui-turn-process-segments">
-            {segments.map((segment) => {
-              const toolCount = segment.tools?.length ?? 0;
-              const summaryLabel = segment.thinking
-                ? `思考 1 次${toolCount > 0 ? `, 使用 ${toolCount} 个工具` : ""}`
-                : undefined;
-              const rows = segment.activityParts?.length
-                ? renderActivityParts(segment.messageId, segment.activityParts, streaming, Boolean(getTurnDiff), processExpanded, processingStartedAtMs)
-                : null;
-              return (
-                <div className="webui-turn-process-segment" key={segment.messageId}>
-                  {rows ?? (segment.thinking && processExpanded ? (
-                    <WebuiThinkingBlock
-                      text={segment.thinking}
-                      durationMs={segment.thinkingDurationMs}
-                      streaming={streaming}
-                      processingStartedAtMs={processingStartedAtMs}
-                      summaryLabel={summaryLabel}
-                    />
-                  ) : null)}
-                  {!rows && processExpanded && segment.tools?.length ? (
-                    <WebuiActivityGroup
-                      tools={segment.tools}
-                      authoritativeDiffAvailable={Boolean(getTurnDiff)}
-                    />
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>}
-        </WebuiTurnProcess>
+          children={renderProcessContent}
+          collapsedContent={(expanded) => !expanded && primaryAnswerPart
+            ? <div className="webui-assistant-answer" data-webui-message-kind="assistant"><WebuiMarkdown source={primaryAnswerPart.text} /></div>
+            : null}
+        />
       ) : null}
-      {processSegments?.some((segment) => segment.activityParts?.some((part) => part.type === "text")) ? null : answers.map((answer, index) => (
+      {primaryAnswerPart && !hasExpandableProcessContent ? (
+        <div className="webui-assistant-answer" data-webui-message-kind="assistant">
+          <WebuiMarkdown source={primaryAnswerPart.text} />
+        </div>
+      ) : processTextParts.length > 0 ? null : answers.map((answer, index) => (
         <div
           key={`${messageId}-answer-${index}`}
           className="webui-assistant-answer"
