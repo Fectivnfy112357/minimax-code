@@ -42,7 +42,6 @@ import { WebuiComposer } from "./SessionComposer.js";
 import { WebuiSessionTranscript } from "./SessionTranscript.js";
 import {
   WebuiProjectList,
-  groupWebuiSessionsByWorkspace,
   sessionHash,
   sessionLabel,
 } from "./SessionRail.js";
@@ -72,7 +71,6 @@ import type {
 import type { WebuiProjectGroup } from "./SessionRail.js";
 import { readNoProjectFlag, writeNoProjectFlag } from "../no-project.js";
 import {
-  isTeamModeLocked,
   readTeamModeOff,
   readTeamModeSessionChoices,
   writeTeamModeOff,
@@ -666,16 +664,6 @@ export function WebuiClientFoundationApp(
   const composerTeamModeOff = selectedSessionId
     ? teamModeChoices[selectedSessionId] ?? teamModeOff
     : teamModeOff;
-  const composerTeamModeLocked = selectedSession
-    ? isTeamModeLocked(
-        {
-          id: selectedSession.sessionId,
-          teamModeOff: composerTeamModeOff,
-        },
-        (sessionId) =>
-          sessionId === selectedSession.sessionId ? childSessions : [],
-      )
-    : false;
   const [railCollapsed, setRailCollapsed] = useState(false);
   const [workspacePanelOpen, setWorkspacePanelOpen] = useState(false);
   const [workspaceOverviewOpen, setWorkspaceOverviewOpen] = useState(true);
@@ -897,7 +885,6 @@ export function WebuiClientFoundationApp(
                     agentName={selectedAgentName}
                     createSession={createSession}
                     createSessionWorkspaceDir={newTaskWorkspaceDir}
-                    availableWorkspaces={groupWebuiSessionsByWorkspace(page.sessions)}
                     onWorkspaceChange={handleWorkspaceChange}
                     workspaceMenuOpen={workspaceMenuOpen}
                     setWorkspaceMenuOpen={setWorkspaceMenuOpen}
@@ -935,21 +922,7 @@ export function WebuiClientFoundationApp(
                     draft={draft}
                     onDraftChange={setDraft}
                     teamModeOff={composerTeamModeOff}
-                    teamModeLocked={composerTeamModeLocked}
                     onSessionCreated={handleSessionCreated}
-                    onTeamModeOffChange={(nextTeamModeOff) => {
-                      setTeamModeOff(nextTeamModeOff);
-                      if (selectedSessionId) {
-                        setTeamModeChoices((current) => ({
-                          ...current,
-                          [selectedSessionId]: nextTeamModeOff,
-                        }));
-                        writeTeamModeSessionChoice(
-                          selectedSessionId,
-                          nextTeamModeOff,
-                        );
-                      }
-                    }}
                     />
                     </Composer>
 

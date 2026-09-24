@@ -99,7 +99,7 @@ import {
 } from "../projection/action-requests.js";
 import { useSessionRuntimeState } from "../session-runtime-store.js";
 import { initialWebuiStreamState } from "../stream.js";
-import { workspaceProjectName, type WebuiProjectGroup } from "./SessionRail.js";
+import { workspaceProjectName } from "./SessionRail.js";
 import {
   isWebuiRunnableCommand,
   rankWebuiSlashPalette,
@@ -214,7 +214,6 @@ export function WebuiComposer({
   agentName,
   createSession,
   createSessionWorkspaceDir,
-  availableWorkspaces,
   onWorkspaceChange,
   workspaceMenuOpen,
   setWorkspaceMenuOpen,
@@ -254,15 +253,12 @@ export function WebuiComposer({
   onSessionCreated,
   enqueueMessage,
   teamModeOff,
-  onTeamModeOffChange,
-  teamModeLocked,
 }: {
   readonly sessionId?: string;
   readonly sessionLayout?: boolean;
   readonly agentName: string;
   readonly createSession?: WebuiClientSessionCreator;
   readonly createSessionWorkspaceDir?: string;
-  readonly availableWorkspaces: readonly WebuiProjectGroup[];
   readonly onWorkspaceChange: (workspaceDir?: string) => void;
   /** Open state for the workspace picker; owned by the parent so the
    *  parent's workspace-change handler can also close the popover. */
@@ -296,8 +292,6 @@ export function WebuiComposer({
   readonly onNeedsSession?: (draft: string) => void;
   readonly onSessionCreated?: (sessionId: string) => void;
   readonly teamModeOff: boolean;
-  readonly onTeamModeOffChange: (teamModeOff: boolean) => void;
-  readonly teamModeLocked: boolean;
 } & WebuiSessionComposerCapabilities): ReactElement {
   const {
     state: runtimeState,
