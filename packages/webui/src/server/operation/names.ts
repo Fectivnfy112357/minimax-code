@@ -1,6 +1,6 @@
 export const VERSION_OPERATION_NAME = "version" as const;
 export const LIST_SESSIONS_OPERATION_NAME = "listSessions" as const;
-export const LIST_RECENT_PROJECTS_OPERATION_NAME = "listRecentProjects" as const;
+export const LIST_VISIBLE_PROJECTS_OPERATION_NAME = "listVisibleProjects" as const;
 export const GET_SESSION_TREE_OPERATION_NAME = "getSessionTree" as const;
 export const CREATE_SESSION_OPERATION_NAME = "createSession" as const;
 export const GET_SESSION_OPERATION_NAME = "getSession" as const;

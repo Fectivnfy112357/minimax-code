@@ -155,9 +155,9 @@ export class WebuiService {
         protocolVersion: this.port.version().protocolVersion,
       }),
       listSessions: (request) => this.port.listSessions(request),
-      listRecentProjects: (request) => {
-        if (!this.port.listRecentProjects) throw new Error("runtime host does not expose project listing");
-        return this.port.listRecentProjects(request);
+      listVisibleProjects: (request) => {
+        if (!this.port.listVisibleProjects) throw new Error("runtime host does not expose project listing");
+        return this.port.listVisibleProjects(request);
       },
       getSessionTree: (request) => this.port.getSessionTree(request),
       archiveSession: (request) => this.port.archiveSession(request),

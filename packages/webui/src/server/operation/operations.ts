@@ -1,4 +1,4 @@
-import { versionOperation, listSessionsOperation, listRecentProjectsOperation, getSessionTreeOperation, createSessionOperation, getSessionOperation } from "./session.js";
+import { versionOperation, listSessionsOperation, listVisibleProjectsOperation, getSessionTreeOperation, createSessionOperation, getSessionOperation } from "./session.js";
 import { listWorkspaceFileTreeOperation, readWorkspaceFileOperation, getWorkspaceEnvironmentOperation, mutateWorkspaceGitOperation, readCanvasOperation, applyCanvasOperation, createTerminalOperation, listTerminalsOperation, writeTerminalOperation, resizeTerminalOperation, disposeTerminalOperation, watchTerminalOperation } from "./workspace.js";
 import { getMessagesOperation, getSessionDiffOperation, getTurnDiffOperation, revertTurnDiffOperation, reapplyTurnDiffOperation, getSessionRewindPreviewOperation, rewindSessionOperation, editSessionMessageOperation } from "./messages.js";
 import { isGoalEnabledOperation, getGoalOperation, createGoalOperation, patchGoalOperation, clearGoalOperation } from "./goal.js";
@@ -6,7 +6,7 @@ import { sendMessageOperation, enqueueMessageOperation, resumeSessionOperation }
 import { watchEventsOperation, listPendingPermissionsOperation, getPendingQuestionnaireOperation, replyPermissionOperation, replyQuestionnaireOperation, dismissQuestionnaireOperation } from "./questionnaire.js";
 import { abortSessionOperation, listQueueMessagesOperation, deleteQueueItemOperation, listModelsOperation, listSkillsOperation, selectModelOperation, getSessionUsageOperation, getUsageQuotaOperation, getAccountStatusOperation } from "./queue.js";
 import { archiveSessionOperation, deleteSessionOperation, updateSessionOperation, getSessionForkOptionsOperation, forkSessionOperation, listUserModelProvidersOperation, createUserModelProviderOperation, updateUserModelProviderOperation, deleteUserModelProviderOperation, testUserModelProviderOperation, testUserModelOperation, discoverUserModelsCandidateOperation, saveUserModelProviderCandidateOperation, listProviderPresetsOperation, getMiniMaxApiKeyStatusOperation, upsertMiniMaxApiKeyOperation, getCodexOAuthStatusOperation, runCommandOperation, getSigninPanelOperation, claimSigninOperation, signOutOperation } from "./provider.js";
-export { versionOperation, listSessionsOperation, listRecentProjectsOperation, getSessionTreeOperation, createSessionOperation, getSessionOperation } from "./session.js";
+export { versionOperation, listSessionsOperation, listVisibleProjectsOperation, getSessionTreeOperation, createSessionOperation, getSessionOperation } from "./session.js";
 export { listWorkspaceFileTreeOperation, readWorkspaceFileOperation, getWorkspaceEnvironmentOperation, mutateWorkspaceGitOperation, readCanvasOperation, applyCanvasOperation, createTerminalOperation, listTerminalsOperation, writeTerminalOperation, resizeTerminalOperation, disposeTerminalOperation, watchTerminalOperation } from "./workspace.js";
 export { getMessagesOperation, getSessionDiffOperation, getTurnDiffOperation, revertTurnDiffOperation, reapplyTurnDiffOperation, getSessionRewindPreviewOperation, rewindSessionOperation, editSessionMessageOperation } from "./messages.js";
 export { isGoalEnabledOperation, getGoalOperation, createGoalOperation, patchGoalOperation, clearGoalOperation } from "./goal.js";
@@ -138,7 +138,7 @@ export function createOperationRegistry(
   registerOperation(registry, { operation: patchGoalOperation, handle: handlers.patchGoal });
   registerOperation(registry, { operation: clearGoalOperation, handle: handlers.clearGoal });
   registerOperation(registry, { operation: listSessionsOperation, handle: handlers.listSessions });
-  registerOperation(registry, { operation: listRecentProjectsOperation, handle: handlers.listRecentProjects });
+  registerOperation(registry, { operation: listVisibleProjectsOperation, handle: handlers.listVisibleProjects });
   registerOperation(registry, { operation: getSessionTreeOperation, handle: handlers.getSessionTree });
   registerOperation(registry, { operation: sendMessageOperation, handle: handlers.sendMessage });
   registerOperation(registry, { operation: enqueueMessageOperation, handle: handlers.enqueueMessage });

@@ -17,7 +17,7 @@ import type {
   WebuiSessionTreePage,
 } from "../port.js";
 import { validateSessionIdBody } from "./common.js";
-import { VERSION_OPERATION_NAME, LIST_SESSIONS_OPERATION_NAME, LIST_RECENT_PROJECTS_OPERATION_NAME, GET_SESSION_TREE_OPERATION_NAME, CREATE_SESSION_OPERATION_NAME, GET_SESSION_OPERATION_NAME } from "./names.js";
+import { VERSION_OPERATION_NAME, LIST_SESSIONS_OPERATION_NAME, LIST_VISIBLE_PROJECTS_OPERATION_NAME, GET_SESSION_TREE_OPERATION_NAME, CREATE_SESSION_OPERATION_NAME, GET_SESSION_OPERATION_NAME } from "./names.js";
 type VersionRequestBody = undefined;
 
 interface VersionResponseBody {
@@ -77,15 +77,15 @@ export const listSessionsOperation: WebuiOperation<
   validate: validateListSessionsRequestBody,
 };
 
-export const listRecentProjectsOperation: WebuiOperation<
+export const listVisibleProjectsOperation: WebuiOperation<
   { readonly limit?: number },
-  readonly import("../port.js").WebuiRecentProject[]
+  readonly import("../port.js").WebuiProjectRecord[]
 > = {
-  name: LIST_RECENT_PROJECTS_OPERATION_NAME,
+  name: LIST_VISIBLE_PROJECTS_OPERATION_NAME,
   validate(body) {
     if (body === undefined) return { ok: true, body: {} };
     if (body === null || typeof body !== "object" || Array.isArray(body))
-      return invalidBody("listRecentProjects body must be an object");
+      return invalidBody("listVisibleProjects body must be an object");
     const limit = (body as Record<string, unknown>).limit;
     if (limit !== undefined && (!Number.isInteger(limit) || (limit as number) < 1 || (limit as number) > 100))
       return invalidBody("limit must be an integer between 1 and 100");

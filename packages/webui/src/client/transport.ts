@@ -276,7 +276,7 @@ export function createWebuiTransport({
 
   return {
     version: () => request<WebuiVersionInfo>("version", undefined),
-    loadProjects: () => request<readonly WebuiClientProject[]>("listRecentProjects", { limit: 100 }),
+    loadProjects: () => request<readonly WebuiClientProject[]>("listVisibleProjects", { limit: 100 }),
     loadSessions: (cursor) =>
       request<WebuiClientSessionPage>("listSessions", {
         name: "main",

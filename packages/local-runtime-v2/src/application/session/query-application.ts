@@ -23,16 +23,28 @@ export interface SessionQueryApplicationOptions {
     SessionQueryService,
     "list" | "search" | "tree" | "get"
   >;
-  readonly projects?: Pick<ProjectService, "listRecent">;
+  readonly projects?: Pick<ProjectService, "list">;
 }
 
 /** Local Session query; parameters come from the service contract and results are built by local view converters. */
 export class SessionQueryApplication {
   constructor(private readonly options: SessionQueryApplicationOptions) {}
 
-  listRecentProjects(limit = 100) {
+  listVisibleProjects(limit = 100) {
     if (!this.options.projects) throw new Error("Project listing is unavailable.");
-    return this.options.projects.listRecent(limit);
+    return this.options.projects
+      .list({
+        // The sidebar shows projects across Agents. The session rail still
+        // filters conversations to the primary Agent further down the stack.
+        sessionFilter: {
+          archived: false,
+          includeHidden: false,
+          excludeInternalTreeSessions: true,
+        },
+        limit,
+        sessionLimit: 1,
+      })
+      .then((page) => page.projects.map(({ project }) => project));
   }
 
   async listSessions(

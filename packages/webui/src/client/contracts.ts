@@ -36,7 +36,7 @@ import type {
   WebuiModelEntry,
   WebuiPendingPermission,
   WebuiQueueItem,
-  WebuiRecentProject,
+  WebuiProjectRecord,
   WebuiQuestionnaireAnswer,
   WebuiQuestionnaireOption,
   WebuiQuestionnaireRequest,
@@ -164,7 +164,7 @@ export interface WebuiClientSessionPage {
   readonly nextCursor?: string;
 }
 
-export type WebuiClientProject = WebuiRecentProject;
+export type WebuiClientProject = WebuiProjectRecord;
 
 export interface WebuiClientSessionTreeNode {
   readonly session: WebuiClientSession;

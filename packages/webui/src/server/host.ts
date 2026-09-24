@@ -18,7 +18,7 @@ import type {
   WebuiSessionPage,
   WebuiSessionTreeRequest,
   WebuiSessionTreePage,
-  WebuiRecentProject,
+  WebuiProjectRecord,
   WebuiCreateSessionRequest,
   WebuiCreateSessionResult,
   WebuiVersionInfo,
@@ -76,7 +76,7 @@ import type {
  * `cliService?: WebuiRuntimeCliService` slot without re-spelling it.
  */
 export interface WebuiRuntimeCliService {
-  listRecentProjects?(limit?: number): Promise<readonly WebuiRecentProject[]>;
+  listVisibleProjects?(limit?: number): Promise<readonly WebuiProjectRecord[]>;
   listSessions(
     request: WebuiSessionListRequest,
     context?: Record<string, never>,
@@ -319,10 +319,10 @@ export function createHarnessPortFromHost(
     async listSessions(request) {
       return requireCliService(host).listSessions(request, {});
     },
-    async listRecentProjects(request) {
+    async listVisibleProjects(request) {
       const service = requireCliService(host);
-      if (!service.listRecentProjects) throw new Error("runtime host does not expose project listing");
-      return service.listRecentProjects(request.limit ?? 100);
+      if (!service.listVisibleProjects) throw new Error("runtime host does not expose project listing");
+      return service.listVisibleProjects(request.limit ?? 100);
     },
     async getSessionTree(request) {
       return requireCliService(host).getSessionTree(request, {});
