@@ -40,6 +40,7 @@ import type {
   WebuiModelPickerDraft,
   WebuiModelPickerEntry,
 } from "../contracts.js";
+import { evaluateOutsideClose } from "../projection/outside-close.js";
 
 // Re-export so existing importers keep their import path stable.
 export type { WebuiModelPickerDraft, WebuiModelPickerEntry };
@@ -150,7 +151,21 @@ export function WebuiModelPicker({
     if (!open) return undefined;
     const handler = (event: PointerEvent) => {
       if (!rootRef.current) return;
-      if (!rootRef.current.contains(event.target as Node)) setOpen(false);
+      const insideContainer = rootRef.current.contains(event.target as Node);
+      // The four-surface outside-close policy lives in
+      // `projection/outside-close.ts`; ModelPicker's per-surface variant
+      // subscribes to `pointerdown` only (no keydown listener). Routing
+      // through `evaluateOutsideClose` keeps the four call sites
+      // consistent without changing the original close semantics.
+      if (
+        evaluateOutsideClose({
+          surface: "modelPicker",
+          kind: "pointerdown",
+          insideContainer,
+        }) === "close"
+      ) {
+        setOpen(false);
+      }
     };
     document.addEventListener("pointerdown", handler);
     return () => document.removeEventListener("pointerdown", handler);

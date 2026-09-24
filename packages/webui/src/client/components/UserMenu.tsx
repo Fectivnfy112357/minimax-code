@@ -17,6 +17,7 @@ import type {
 } from "../../server/port.js";
 import type { WebuiTransport } from "../contracts.js";
 import { SettingsModal, type WebuiSettingsModalCapabilities } from "./SettingsModal.js";
+import { evaluateOutsideClose } from "../projection/outside-close.js";
 
 type AccountStatus = Record<string, unknown>;
 
@@ -713,13 +714,28 @@ export function UserMenu({
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (event: PointerEvent) => {
-      if (event.target instanceof Node && !anchorRef.current?.contains(event.target)) {
+      if (!(event.target instanceof Node)) return;
+      const insideContainer = Boolean(anchorRef.current?.contains(event.target));
+      if (
+        evaluateOutsideClose({
+          surface: "userMenu",
+          kind: "pointerdown",
+          insideContainer,
+        }) === "close"
+      ) {
         setOpen(false);
         closePanels();
       }
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (
+        evaluateOutsideClose({
+          surface: "userMenu",
+          kind: "keydown",
+          key: event.key,
+          insideContainer: false,
+        }) === "close"
+      ) {
         setOpen(false);
         closePanels();
       }

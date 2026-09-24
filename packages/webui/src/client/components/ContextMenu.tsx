@@ -11,6 +11,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactElement } from "react";
 import { createPortal } from "react-dom";
 import { WebuiIconContextChevron } from "../icons.js";
+import { evaluateOutsideClose } from "../projection/outside-close.js";
 
 export function placeWebuiContextMenu({
   x,
@@ -83,10 +84,33 @@ export function WebuiContextMenu({
   }, [items, x, y]);
   useEffect(() => {
     const handlePointerDown = (event: globalThis.MouseEvent) => {
-      if (!menuRef.current?.contains(event.target as Node)) onClose();
+      const insideContainer =
+        menuRef.current?.contains(event.target as Node) ?? false;
+      // ContextMenu's per-surface variant subscribes to `mousedown` (NOT
+      // `pointerdown` — desktop parity) + `keydown`; Escape closes. Routing
+      // through `evaluateOutsideClose` keeps the four call sites
+      // consistent without changing the original close semantics.
+      if (
+        evaluateOutsideClose({
+          surface: "contextMenu",
+          kind: "mousedown",
+          insideContainer,
+        }) === "close"
+      ) {
+        onClose();
+      }
     };
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (
+        evaluateOutsideClose({
+          surface: "contextMenu",
+          kind: "keydown",
+          key: event.key,
+          insideContainer: false,
+        }) === "close"
+      ) {
+        onClose();
+      }
     };
     document.addEventListener("mousedown", handlePointerDown);
     document.addEventListener("keydown", handleKeyDown);
