@@ -1047,13 +1047,27 @@
    * close to the home surface markup, so the explicit order here is the seam
    * that prevents it from reappearing above the conversation. */
   .webui-session-layout {
+    position: relative;
     min-height: 0;
+    width: 100%;
+  }
+  .webui-session-surface-with-workspace {
+    padding-right: 336px;
   }
   .webui-session-layout .webui-session-transcript-scroll {
     order: 1;
     min-height: 0;
     flex: 1 1 auto;
+    width: 100%;
+    padding-right: var(--spacing_16);
+    padding-left: var(--spacing_16);
     overflow-y: auto;
+  }
+  .webui-session-layout .message-list {
+    width: 100%;
+    max-width: 768px;
+    margin-right: auto;
+    margin-left: auto;
   }
   .webui-session-layout .webui-session-composer {
     order: 2;
@@ -1092,6 +1106,10 @@
   }
   .webui-session-layout .webui-session-composer-overlay > * {
     pointer-events: auto;
+    width: 100%;
+    max-width: 768px;
+    margin-right: auto;
+    margin-left: auto;
   }
   .webui-session-layout .webui-session-transcript-scroll {
     padding-bottom: 168px;

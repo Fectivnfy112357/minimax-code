@@ -1009,6 +1009,8 @@ describe("WebUI shell — desktop anatomy", () => {
     const html = renderSessionShell();
 
     expect(html).toMatch(/data-webui-session-layout="true"/u);
+    expect(html).toMatch(/webui-session-surface-with-workspace/u);
+    expect(html).toMatch(/webui-session-layout relative flex h-full min-h-0 w-full/u);
     expect(html).toMatch(/data-webui-session-transcript-scroll="true"/u);
     expect(html).toMatch(/data-webui-session-composer="true"/u);
     expect(html).toMatch(/webui-session-transcript-scroll/u);

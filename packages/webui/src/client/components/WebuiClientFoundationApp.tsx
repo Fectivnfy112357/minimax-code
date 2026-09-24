@@ -842,7 +842,7 @@ export function WebuiClientFoundationApp(
           {/* -------------------------------------------------------------- main */}
           <main
             data-webui-shell-region="surface"
-            className="relative flex min-h-0 min-w-0 flex-1 flex-row"
+            className={`relative flex min-h-0 min-w-0 flex-1 flex-row ${!homeMode && workspaceOverviewOpen && !workspacePanelOpen ? "webui-session-surface-with-workspace" : ""}`}
           >
             {!homeMode ? <WebuiWorkspacePanelControls filePanelOpen={workspacePanelOpen} workspaceOpen={workspaceOverviewOpen && !workspacePanelOpen} onOpenFiles={() => { setWorkspacePanelTab("files"); setWorkspacePanelOpen((value) => !value); }} onToggleWorkspace={() => setWorkspaceOverviewOpen((value) => !value)} /> : null}
             {!homeMode && workspaceOverviewOpen && !workspacePanelOpen ? <WebuiWorkspaceOverview workspaceDir={selectedSession?.workspaceDir} isDefaultWorkspace={selectedSession?.isDefaultWorkspace} todos={progressTodos} subagents={progressSubagents} showProgress={!homeMode} showEmptyProgress={true} getWorkspaceEnvironment={getWorkspaceEnvironment} mutateWorkspaceGit={mutateWorkspaceGit} environmentCollapsed={workspaceEnvironmentCollapsed} progressCollapsed={workspaceProgressCollapsed} subagentsCollapsed={workspaceSubagentsCollapsed} onToggleEnvironment={() => setWorkspaceEnvironmentCollapsed((value) => !value)} onToggleProgress={() => setWorkspaceProgressCollapsed((value) => !value)} onToggleSubagents={() => setWorkspaceSubagentsCollapsed((value) => !value)} onMemberClick={handleWorkspaceSubagentClick} onOpenChanges={() => { setWorkspacePanelTab("files"); setWorkspacePanelOpen(true); }} onOpenTerminal={() => { setWorkspacePanelTab("terminal"); setWorkspacePanelOpen(true); }} /> : null}
@@ -861,7 +861,9 @@ export function WebuiClientFoundationApp(
                 data-webui-session-layout={!homeMode ? "true" : undefined}
               >
                 <div
-                  className={`flex w-full ${homeMode ? "max-w-[743px]" : "max-w-[768px]"} flex-col items-center gap-2 px-4 ${homeMode ? "" : "webui-session-layout h-full min-h-0"}`}
+                  className={homeMode
+                    ? "flex w-full max-w-[743px] flex-col items-center gap-2 px-4"
+                    : "webui-session-layout relative flex h-full min-h-0 w-full flex-col items-center gap-2"}
                 >
                   {homeMode ? (
                     homeGreetingPending ? (

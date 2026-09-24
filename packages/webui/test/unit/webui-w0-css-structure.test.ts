@@ -190,6 +190,15 @@ describe("W0 · structural declarations W5 must preserve", () => {
 
   it("keeps the session layout as two zones with the transcript owning the scroll", () => {
     expect(declarationsFor(".webui-session-layout")).toContain("min-height: 0");
+    expect(declaration(winning(".webui-session-layout").body, "position")).toBe(
+      "relative",
+    );
+    expect(declaration(winning(".webui-session-layout").body, "width")).toBe(
+      "100%",
+    );
+    expect(
+      declaration(winning(".webui-session-surface-with-workspace").body, "padding-right"),
+    ).toBe("336px");
 
     // Two rules define this selector and they are complementary, not
     // overriding: the first carries the geometry, the second only retunes the
@@ -210,9 +219,21 @@ describe("W0 · structural declarations W5 must preserve", () => {
       ),
     ).toBe("168px");
 
+    const messageList = winning(".webui-session-layout .message-list");
+    expect(declaration(messageList.body, "max-width")).toBe("768px");
+    expect(declaration(messageList.body, "margin-left")).toBe("auto");
+    expect(declaration(messageList.body, "margin-right")).toBe("auto");
+
     const composer = winning(".webui-session-layout .webui-session-composer");
     expect(declaration(composer.body, "order")).toBe("2");
     expect(declaration(composer.body, "flex")).toBe("0 0 auto");
+
+    const composerContent = winning(
+      ".webui-session-layout .webui-session-composer-overlay > *",
+    );
+    expect(declaration(composerContent.body, "max-width")).toBe("768px");
+    expect(declaration(composerContent.body, "margin-left")).toBe("auto");
+    expect(declaration(composerContent.body, "margin-right")).toBe("auto");
   });
 
   it("keeps the markdown and code surfaces scrollable where they were", () => {
