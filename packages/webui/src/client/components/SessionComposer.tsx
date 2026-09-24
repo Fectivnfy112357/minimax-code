@@ -97,6 +97,11 @@ import {
   isTurnLive,
 } from "../projection/composer-state.js";
 import {
+  projectLiveTurnView,
+  projectLiveUserView,
+} from "../projection/transcript-shape.js";
+import { evaluateOutsideClose } from "../projection/outside-close.js";
+import {
   buildWebuiModelSelectionRequest,
 } from "../projection/action-requests.js";
 import { useSessionRuntimeState } from "../session-runtime-store.js";
@@ -114,9 +119,11 @@ import {
 } from "../slash-palette.js";
 
 const WEBUI_SLASH_FALLBACK_SECTIONED: SlashCommandEntry[] = await (async () => {
-  const { resolveWebuiSlashSkills } = await import("../slash-palette.js");
-  const entries = await resolveWebuiSlashSkills();
-  return sectionWebuiSlashPalette(WEBUI_BUILTIN_COMMANDS, entries);
+  const { resolveWebuiSlashSkills, sectionWebuiSlashPalette } = await import(
+    "../slash-palette.js"
+  );
+  const resolved = await resolveWebuiSlashSkills();
+  return sectionWebuiSlashPalette(WEBUI_BUILTIN_COMMANDS, resolved.skills);
 })();
 
 // Desktop keeps the viewport pinned through the short hand-off window where
@@ -706,7 +713,21 @@ export function WebuiComposer({
       const match = slashMatchRef.current;
       if (!match) return;
       if (!(event.target instanceof Node)) return;
-      if (region.contains(event.target)) return;
+      const insideContainer = region.contains(event.target);
+      // Slash popover's per-surface variant subscribes to `pointerdown`
+      // only (no Escape handler — the composer input change handler is
+      // the only path). Routing through `evaluateOutsideClose` keeps the
+      // four call sites consistent without changing the original close
+      // semantics.
+      if (
+        evaluateOutsideClose({
+          surface: "slashPopover",
+          kind: "pointerdown",
+          insideContainer,
+        }) !== "close"
+      ) {
+        return;
+      }
       // Same clear-and-close as Escape: drop the "/xxx" segment so the
       // regex no longer matches and the popover disappears.
       onDraftChange(slashDraftRef.current.slice(0, match.index));
@@ -1140,6 +1161,7 @@ export function WebuiComposer({
                   timestamp={message.timestamp}
                   isGoal={message.isGoal}
                   streamMessageId={message.id}
+                  view={projectLiveUserView([message])}
                 />,
               );
               return items;
@@ -1239,6 +1261,11 @@ export function WebuiComposer({
                         : {}),
                     }))
                     .filter((segment) => segment.thinking || segment.tools?.length)}
+                  view={projectLiveTurnView(stream.messages, {
+                      sessionId,
+                      streaming: stream.phase === "streaming",
+                      processingStartedAtMs: stream.processingStartedAtMs,
+                    }) ?? undefined}
                 />
                 {(stream.phase === "streaming" || stream.phase === "waiting") && !thinking.trim() ? (
                   <ActivityIndicator showLabel labelOverride="思考中…" />

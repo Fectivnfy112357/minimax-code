@@ -44,6 +44,10 @@ import {
   projectWebuiProcessSegments,
 } from "../projection/transcript-projection.js";
 import { projectWebuiMessage } from "../projection/message-projection.js";
+import {
+  projectHistoricalTurnView,
+  type WebuiTurnView,
+} from "../projection/transcript-shape.js";
 
 /**
  * Historical questionnaire-response projection. Once the user submits a
@@ -212,6 +216,23 @@ export function WebuiSessionTranscript({
     () => (page.messages ?? []).flatMap(projectWebuiMessage),
     [page.messages],
   );
+  // Per-message leaf-renderer input view. Both adapters in
+  // `projection/transcript-shape.ts` produce this shape; the historical
+  // adapter owns the persisted fields (`actions`, `initialDiff`,
+  // `attachments`), the live adapter owns the in-flight markers
+  // (`streaming`, `streamMessageId`, `messageRootId`). `MessageItem` reads
+  // the view through its `view` prop and falls back to legacy per-field
+  // props when the view is absent.
+  const turnViewsByMessageId = useMemo(
+    () =>
+      new Map<string, WebuiTurnView>(
+        (page.messages ?? []).map((message) => [
+          message.msgId,
+          projectHistoricalTurnView(message, sessionId),
+        ]),
+      ),
+    [page.messages, sessionId],
+  );
   // Group by message so one turn renders as one block, the way the desktop
   // does: a process disclosure carrying the thinking and the tool steps, then
   // the assistant's markdown. A user turn is its own block.
@@ -333,6 +354,7 @@ export function WebuiSessionTranscript({
                 actions={userItem.actions}
                 timestamp={userItem.timestamp}
                 isGoal={userItem.isGoal}
+                view={turnViewsByMessageId.get(group.messageId)}
                 getSessionForkOptions={getSessionForkOptions}
                 forkSession={forkSession}
                 getSessionRewindPreview={getSessionRewindPreview}
@@ -378,6 +400,7 @@ export function WebuiSessionTranscript({
               actions={group.items.find((item): item is Extract<WebuiTranscriptItem, { actions?: WebuiMessageActionCapabilities }> =>
                 "actions" in item,
               )?.actions}
+              view={turnViewsByMessageId.get(group.messageId)}
               getSessionForkOptions={getSessionForkOptions}
               forkSession={forkSession}
               getSessionRewindPreview={getSessionRewindPreview}

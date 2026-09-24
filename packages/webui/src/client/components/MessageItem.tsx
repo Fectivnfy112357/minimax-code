@@ -20,6 +20,7 @@ import type {
   WebuiTranscriptProcessSegment,
   WebuiTransport,
 } from "../contracts.js";
+import type { WebuiTurnView } from "../projection/transcript-shape.js";
 
 /** Capability subset the message item consumes. Single source of truth
  *  lives in `WebuiTransport`; this alias keeps the prop block free of
@@ -89,6 +90,7 @@ export function MessageItem({
   streamMessageId,
   messageRootId,
   processSegments,
+  view,
 }: {
   readonly messageId: string;
   readonly role: "user" | "assistant";
@@ -117,7 +119,47 @@ export function MessageItem({
   readonly totalRequestDurationMs?: number;
   readonly totalOutputTokens?: number;
   readonly wallClockDurationMs?: number;
+  /**
+   * Shared leaf-renderer input. When provided, the data fields
+   * (`userText`, `thinking`, `answers`, etc.) come from `view` and the
+   * legacy per-field props become fallback defaults — the caller picks
+   * which path it wants. The historical and live adapters in
+   * `projection/transcript-shape.ts` both produce a `WebuiTurnView`.
+   *
+   * `messageId` / `role` stay on the prop block: they are the React key
+   * and the bubble-alignment switch, not data.
+   */
+  readonly view?: WebuiTurnView;
 } & WebuiMessageItemCapabilities): ReactElement {
+  // View-resolved data fields. Legacy props remain as fallback so the
+  // existing `webui-round3-acceptance.test.tsx` suite (which mounts
+  // MessageItem with individual props) keeps working unchanged.
+  const effectiveSessionId = view?.sessionId ?? sessionId;
+  const effectiveAssistantMessageId =
+    view?.assistantMessageId ?? assistantMessageId;
+  const effectiveTurnId = view?.turnId ?? turnId;
+  const effectiveChangeSetId = view?.changeSetId ?? changeSetId;
+  const effectiveInitialDiff = view?.initialDiff ?? initialDiff;
+  const effectiveActions = view?.actions ?? actions;
+  const effectiveTimestamp = view?.timestamp ?? timestamp;
+  const effectiveIsGoal = view?.isGoal ?? isGoal;
+  const effectiveUserText = view?.userText ?? userText;
+  const effectiveThinking = view?.thinking ?? thinking;
+  const effectiveThinkingDurationMs =
+    view?.thinkingDurationMs ?? thinkingDurationMs;
+  const effectiveProcessingStartedAtMs =
+    view?.processingStartedAtMs ?? processingStartedAtMs;
+  const effectiveTools = view?.tools ?? tools;
+  const effectiveAnswers = view?.answers ?? answers;
+  const effectiveAttachments = view?.attachments ?? attachments;
+  const effectiveStreaming = view?.streaming ?? streaming;
+  const effectiveStreamMessageId = view?.streamMessageId ?? streamMessageId;
+  const effectiveMessageRootId = view?.messageRootId ?? messageRootId;
+  const effectiveProcessSegments = view?.processSegments ?? processSegments;
+  const effectiveTotalRequestDurationMs =
+    view?.totalRequestDurationMs ?? totalRequestDurationMs;
+  const effectiveTotalOutputTokens =
+    view?.totalOutputTokens ?? totalOutputTokens;
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState(userText ?? "");
   const [rewindOpen, setRewindOpen] = useState(false);
@@ -132,24 +174,24 @@ export function MessageItem({
     setRewindOpen(true);
     setRewindPreview(undefined);
     setMutationError(undefined);
-    if (!sessionId || !getSessionRewindPreview) return;
+    if (!effectiveSessionId || !getSessionRewindPreview) return;
     setRewindLoading(true);
-    void getSessionRewindPreview({ id: sessionId, userMessageId: messageId })
+    void getSessionRewindPreview({ id: effectiveSessionId, userMessageId: messageId })
       .then(setRewindPreview)
       .catch((error: unknown) => setMutationError(error instanceof Error ? error.message : String(error)))
       .finally(() => setRewindLoading(false));
   };
   const confirmRewind = (rewindTurnDiff: boolean) => {
-    if (!sessionId || !rewindSession) return;
+    if (!effectiveSessionId || !rewindSession) return;
     setMutationBusy(true);
-    void rewindSession(buildWebuiRewindRequest(sessionId, messageId, webuiClientRequestId("rewind"), rewindTurnDiff))
+    void rewindSession(buildWebuiRewindRequest(effectiveSessionId, messageId, webuiClientRequestId("rewind"), rewindTurnDiff))
       .then(() => { setRewindOpen(false); onMutationComplete?.(); })
       .catch((error: unknown) => setMutationError(error instanceof Error ? error.message : String(error)))
       .finally(() => setMutationBusy(false));
   };
   const submitEdit = () => {
-    if (!sessionId || !editSessionMessage) return;
-    const request = buildWebuiEditRequest(sessionId, messageId, webuiClientRequestId("edit"), editText);
+    if (!effectiveSessionId || !editSessionMessage) return;
+    const request = buildWebuiEditRequest(effectiveSessionId, messageId, webuiClientRequestId("edit"), editText);
     if (!request) return;
     setMutationBusy(true);
     void editSessionMessage(request)
@@ -158,9 +200,9 @@ export function MessageItem({
       .finally(() => setMutationBusy(false));
   };
   const confirmFork = () => {
-    if (!sessionId || !forkSession || forkOptions?.canFork === false) return;
+    if (!effectiveSessionId || !forkSession || forkOptions?.canFork === false) return;
     setMutationBusy(true);
-    void forkSession(buildWebuiMessageForkRequest(sessionId, messageId, webuiClientRequestId("fork"), forkTitle))
+    void forkSession(buildWebuiMessageForkRequest(effectiveSessionId, messageId, webuiClientRequestId("fork"), forkTitle))
       .then(() => { setForkOpen(false); onMutationComplete?.(); })
       .catch((error: unknown) => setMutationError(error instanceof Error ? error.message : String(error)))
       .finally(() => setMutationBusy(false));
@@ -168,8 +210,8 @@ export function MessageItem({
   const openFork = () => {
     setForkOpen(true);
     setForkOptions(undefined);
-    if (!sessionId || !getSessionForkOptions) return;
-    void getSessionForkOptions({ id: sessionId, assistantMessageId: messageId })
+    if (!effectiveSessionId || !getSessionForkOptions) return;
+    void getSessionForkOptions({ id: effectiveSessionId, assistantMessageId: effectiveAssistantMessageId ?? messageId })
       .then((nextOptions) => {
         setForkOptions(nextOptions);
         if (nextOptions.suggestedTitle) setForkTitle(nextOptions.suggestedTitle);
@@ -179,25 +221,25 @@ export function MessageItem({
   const actionProps = {
     role,
     messageId,
-    copyText: role === "user" ? userText ?? "" : answers?.join("\n\n") ?? "",
-    actions,
+    copyText: role === "user" ? effectiveUserText ?? "" : effectiveAnswers?.join("\n\n") ?? "",
+    actions: effectiveActions,
     onRewind: role === "user" ? openRewind : undefined,
-    onEdit: role === "user" ? () => { setEditText(userText ?? ""); setEditing(true); } : undefined,
+    onEdit: role === "user" ? () => { setEditText(effectiveUserText ?? ""); setEditing(true); } : undefined,
     onFork: role === "assistant" ? openFork : undefined,
-    timestamp,
+    timestamp: effectiveTimestamp,
   };
   if (role === "user") {
     return (
       <div
         className="webui-message message-animate-in group relative"
-        data-webui-stream-message={streamMessageId}
-        data-webui-message-root={messageRootId ?? messageId}
+        data-webui-stream-message={effectiveStreamMessageId}
+        data-webui-message-root={effectiveMessageRootId ?? messageId}
         data-webui-message-role="user"
         data-testid="message-item"
         data-role="user"
         data-message-id={messageId}
-        data-webui-goal-message={isGoal ? "true" : undefined}
-        data-message-timestamp={timestamp}
+        data-webui-goal-message={effectiveIsGoal ? "true" : undefined}
+        data-message-timestamp={effectiveTimestamp}
       >
         <div className="flex w-full justify-end">
           <div className="flex w-full flex-col items-end gap-spacing_8">
@@ -216,13 +258,13 @@ export function MessageItem({
                   data-webui-message-kind="user"
                   data-webui-user-text="true"
                 >
-                  {isGoal ? (
+                  {effectiveIsGoal ? (
                     <span className="webui-user-goal-label" data-webui-goal-label="true">
                       <WebuiIconCommandGoal aria-hidden="true" />
                       <span>Goal</span>
                     </span>
                   ) : null}
-                  <span>{userText ?? ""}</span>
+                  <span>{effectiveUserText ?? ""}</span>
                 </p>
               </div>
             </div>}
@@ -236,8 +278,8 @@ export function MessageItem({
   return (
     <div
       className="webui-message message-animate-in group relative"
-      data-webui-stream-message={streamMessageId}
-      data-webui-message-root={messageRootId ?? messageId}
+      data-webui-stream-message={effectiveStreamMessageId}
+      data-webui-message-root={effectiveMessageRootId ?? messageId}
       data-webui-message-role="assistant"
       data-testid="message-item"
       data-role="assistant"
@@ -245,25 +287,25 @@ export function MessageItem({
     >
       <WebuiAssistantBody
         messageId={messageId}
-        sessionId={sessionId}
-        assistantMessageId={assistantMessageId}
-        turnId={turnId}
-        changeSetId={changeSetId}
-        initialDiff={initialDiff}
+        sessionId={effectiveSessionId}
+        assistantMessageId={effectiveAssistantMessageId}
+        turnId={effectiveTurnId}
+        changeSetId={effectiveChangeSetId}
+        initialDiff={effectiveInitialDiff}
         getTurnDiff={getTurnDiff}
         revertTurnDiff={revertTurnDiff}
         reapplyTurnDiff={reapplyTurnDiff}
-        thinking={thinking}
-        thinkingDurationMs={thinkingDurationMs}
-        tools={tools}
-        answers={answers ?? []}
-        attachments={attachments}
-        streaming={streaming}
-        processingStartedAtMs={processingStartedAtMs}
-        totalRequestDurationMs={totalRequestDurationMs}
-        totalOutputTokens={totalOutputTokens}
+        thinking={effectiveThinking}
+        thinkingDurationMs={effectiveThinkingDurationMs}
+        tools={effectiveTools}
+        answers={effectiveAnswers ?? []}
+        attachments={effectiveAttachments}
+        streaming={effectiveStreaming}
+        processingStartedAtMs={effectiveProcessingStartedAtMs}
+        totalRequestDurationMs={effectiveTotalRequestDurationMs}
+        totalOutputTokens={effectiveTotalOutputTokens}
         wallClockDurationMs={wallClockDurationMs}
-        processSegments={processSegments}
+        processSegments={effectiveProcessSegments}
       />
       <WebuiMessageActions {...actionProps} />
       {forkOpen ? <div className="webui-message-dialog" role="dialog" aria-modal="true" data-testid="fork-dialog"><div className="webui-message-dialog-surface"><h3>复制为新会话</h3><p>{forkOptions?.unavailableReason ?? "保留当前上下文，在新会话中继续"}</p><input aria-label="会话名称" value={forkTitle} onChange={(event) => setForkTitle(event.target.value)} placeholder="使用简短且不同的名称，便于识别" disabled={forkOptions?.canFork === false} /><div className="webui-message-dialog-actions"><button type="button" onClick={() => setForkOpen(false)} disabled={mutationBusy}>取消</button><button type="button" onClick={confirmFork} disabled={mutationBusy || forkOptions?.canFork === false}>复制并进入</button></div></div></div> : null}
