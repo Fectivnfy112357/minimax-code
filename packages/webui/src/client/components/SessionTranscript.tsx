@@ -15,6 +15,7 @@ import { TurnNavigator, type TurnSummary } from "./TurnNavigator.js";
 import { MessageItem } from "./MessageItem.js";
 import { formatWebuiMessageTimestamp, type WebuiMessageActionCapabilities } from "./MessageActions.js";
 import { useSessionRuntimeState } from "../session-runtime-store.js";
+import { isTurnLive } from "../projection/composer-state.js";
 import type {
   WebuiClientMessageLoader,
   WebuiClientMessagePage,
@@ -183,10 +184,7 @@ export function WebuiSessionTranscript({
   // One live column per turn: while the turn runs the composer renders it
   // (including the in-flight user bubble), so skip loads; reload when the
   // turn lands so the transcript takes over with the full history.
-  const turnLive =
-    streamPhase === "streaming" ||
-    streamPhase === "waiting" ||
-    streamPhase === "reconnecting";
+  const turnLive = isTurnLive(streamPhase);
   useEffect(() => {
     if (turnLive) return undefined;
     let cancelled = false;

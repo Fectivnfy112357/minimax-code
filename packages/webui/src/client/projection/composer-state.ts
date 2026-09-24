@@ -28,6 +28,123 @@ import {
   type WebuiStreamLoopDeps,
 } from "../stream-loop.js";
 import type { WebuiStreamState } from "../stream.js";
+import type { SlashCommandEntry, WebuiRunCommandName } from "../slash-palette.js";
+import { isWebuiRunnableCommand } from "../slash-palette.js";
+
+/**
+ * Whether the live turn column should own the render surface. Mirrors the
+ * Desktop's `phase === "streaming" || "waiting" || "reconnecting"` rule.
+ *
+ * Single source of truth for the three-value predicate the composer and the
+ * transcript both used to inline. The phase taxonomy comes from `stream.ts`
+ * (`idle / streaming / waiting / done / refused / error / reconnecting`);
+ * `streaming / waiting / reconnecting` are the three phases during which the
+ * server-side turn is still in flight, so the live column owns the render
+ * surface and the historical transcript defers its `loadMessages` call.
+ *
+ * `sending` (a separate `WebuiSessionRuntimeState` boolean) is intentionally
+ * NOT folded into this predicate: `sending` is the submit lifecycle (a flag
+ * the submit path owns and the stop button reads), while `phase` is the
+ * session-flow lifecycle owned by the runtime event reducer. Conflating the
+ * two would change the meaning of `turnLive` for the `done` phase (where
+ * `sending` is briefly still true) and would break the
+ * `submitWebuiComposerTurn` `finally` ordering.
+ */
+export function isTurnLive(
+  phase: WebuiStreamState["phase"] | undefined,
+): boolean {
+  return (
+    phase === "streaming" ||
+    phase === "waiting" ||
+    phase === "reconnecting"
+  );
+}
+
+/**
+ * The submission intent resolver — pure function that classifies a composer
+ * submit into one of the five paths the submit pipeline recognises:
+ *
+ *   1. `activate-goal-mode` — bare `/goal` with no objective, while not yet
+ *      in goal mode. Switches the textarea into goal-mode; the draft is
+ *      cleared and the focus stays on the textarea.
+ *   2. `submit-goal` — either an explicit `/goal <objective>` or
+ *      `goalMode + draft`. Resolved via `submitWebuiGoal` (create/patch).
+ *   3. `run-command` — a slash command whose name is in
+ *      `WEBUI_RUN_COMMAND_NAMES` (help / new / compact / status / usage /
+ *      model) and whose `supported` flag is true. Resolved via the host's
+ *      `runCommand` capability.
+ *   4. `submit-turn` — the default path: the trim of the draft is the user
+ *      message. `submitWebuiComposerTurn` further dispatches into the
+ *      `send+resume` (when `sending === false`) and `queue` (when
+ *      `sending === true && enqueueMessage` is wired) sub-paths.
+ *
+ * The resolver carries NO side effects: it reads the inputs and returns the
+ * intent, the component decides what to do with it. `undefined` is returned
+ * when no intent can be resolved (e.g. an empty draft with no slash match
+ * and no goal-mode active — the submit path is a no-op there).
+ *
+ * `commandInvocation` is the parsed slash command shape `submit` already
+ * computes (`name` + optional `(cap, ...rest)` segments). The resolver takes
+ * the same primitive (the parsed `name` and the optional `input`) rather than
+ * re-parsing the draft — this keeps the slash regex in one place.
+ */
+export type WebuiSubmissionIntent =
+  | { readonly kind: "activate-goal-mode" }
+  | { readonly kind: "submit-goal"; readonly objective: string }
+  | {
+      readonly kind: "run-command";
+      readonly command: SlashCommandEntry & {
+        readonly name: WebuiRunCommandName;
+        readonly supported: true;
+      };
+      readonly input?: string;
+    }
+  | { readonly kind: "submit-turn" };
+
+export function resolveWebuiSubmissionIntent(args: {
+  readonly draft: string;
+  readonly commandMatch: SlashCommandEntry | undefined;
+  readonly commandInvocationName?: string;
+  readonly commandInvocationInput?: string;
+  readonly goalMode: boolean;
+}): WebuiSubmissionIntent | undefined {
+  const trimmedDraft = args.draft.trim();
+  const command = args.commandMatch;
+  const directGoalObjective =
+    command?.name === "goal"
+      ? args.commandInvocationInput?.trim()
+      : undefined;
+  // Path 1 — bare `/goal` (no objective) flips the textarea into goal mode.
+  if (command?.name === "goal" && !args.goalMode && !directGoalObjective) {
+    return { kind: "activate-goal-mode" };
+  }
+  // Path 2 — goal submission. Either an explicit `/goal <objective>` form,
+  // or an active goal-mode composer carrying a draft.
+  if (
+    (args.goalMode || Boolean(directGoalObjective)) &&
+    (Boolean(trimmedDraft) || Boolean(directGoalObjective))
+  ) {
+    const objective = directGoalObjective ?? trimmedDraft;
+    return { kind: "submit-goal", objective };
+  }
+  // Path 3 — slash command backed by `runCommand`. The narrowing mirrors
+  // the original `isWebuiRunnableCommand` gate; disabled commands fall
+  // through to path 4.
+  if (command && isWebuiRunnableCommand(command)) {
+    const trimmedInput = args.commandInvocationInput?.trim();
+    return {
+      kind: "run-command",
+      command,
+      ...(trimmedInput ? { input: trimmedInput } : {}),
+    };
+  }
+  // Path 4 — default user-message submit. `submitWebuiComposerTurn` will
+  // further split into `send+resume` vs `queue` based on `args.sending` and
+  // the `enqueueMessage` wiring; that split is downstream of the intent
+  // resolver because it owns the side effects (setStream / setSending) the
+  // resolver must not call.
+  return { kind: "submit-turn" };
+}
 
 /** Inputs the composer submit handler needs. */
 export interface WebuiComposerSubmitArgs {

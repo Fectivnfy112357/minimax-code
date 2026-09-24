@@ -93,6 +93,8 @@ import {
   buildWebuiComposerHandlers,
   submitWebuiGoal,
   submitWebuiComposerTurn,
+  resolveWebuiSubmissionIntent,
+  isTurnLive,
 } from "../projection/composer-state.js";
 import {
   buildWebuiModelSelectionRequest,
@@ -755,10 +757,11 @@ export function WebuiComposer({
   const canQueue = Boolean(enqueueMessage && sessionId);
   // One live column while the turn runs; `done` hands the view back to the
   // transcript (single renderer per turn — no left/right split of one turn).
-  const turnLive =
-    stream.phase === "streaming" ||
-    stream.phase === "waiting" ||
-    stream.phase === "reconnecting";
+  // `isTurnLive` is the single source of truth for the three-value phase
+  // predicate; `session-runtime-store.ts` carries `sending` as a separate
+  // submit-lifecycle boolean the reducer deliberately does NOT merge with
+  // `phase` — `submitWebuiComposerTurn` relies on the two staying distinct.
+  const turnLive = isTurnLive(stream.phase);
   const showStreamContent =
     turnLive ||
     stream.phase === "refused" ||
@@ -927,20 +930,34 @@ export function WebuiComposer({
   });
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const trimmedDraft = draft.trim();
     const command = commandInvocation
       ? slashSectioned.find(
           (item) => item.name === commandInvocation[1],
         )
       : undefined;
-    const directGoalObjective =
-      command?.name === "goal" ? commandInvocation?.[2]?.trim() : undefined;
-    if (command?.name === "goal" && !goalMode && !directGoalObjective) {
+    // Pure intent resolution — five paths: activate-goal-mode, submit-goal,
+    // run-command, submit-turn (which submitWebuiComposerTurn further
+    // splits into send+resume vs queue). All side effects (state updates,
+    // draft clearing, auto-follow lock, error rendering) stay in this
+    // function so the resolver itself can be tested without React.
+    const intent = resolveWebuiSubmissionIntent({
+      draft,
+      commandMatch: command,
+      ...(commandInvocation?.[1] !== undefined
+        ? { commandInvocationName: commandInvocation[1] }
+        : {}),
+      ...(commandInvocation?.[2] !== undefined
+        ? { commandInvocationInput: commandInvocation[2] }
+        : {}),
+      goalMode,
+    });
+    if (!intent) return;
+    if (intent.kind === "activate-goal-mode") {
       activateGoalMode();
       return;
     }
-    if ((goalMode || directGoalObjective) && (trimmedDraft || directGoalObjective)) {
-      const objective = directGoalObjective ?? trimmedDraft;
+    if (intent.kind === "submit-goal") {
+      const { objective } = intent;
       if (!createGoal || !goalEnabled) return;
       setGoalSubmitting(true);
       setInteractionError(undefined);
@@ -970,15 +987,20 @@ export function WebuiComposer({
       }
       return;
     }
-    if (runCommand && command && isWebuiRunnableCommand(command)) {
+    if (intent.kind === "run-command") {
+      const { command: matchedCommand, input } = intent;
+      // The original gate (`runCommand && command && isWebuiRunnableCommand`)
+      // collapsed into the intent, but the `runCommand` runtime check stays
+      // here — the resolver is the source of truth for *which* path, the
+      // component is still the source of truth for *whether the host wired
+      // the capability* (a disabled host must not reach the run-path).
+      if (!runCommand) return;
       setCommandRunning(true);
       setInteractionError(undefined);
       try {
         const result = await runCommand({
-          command: command.name,
-          ...(commandInvocation?.[2]
-            ? { input: commandInvocation[2].trim() }
-            : {}),
+          command: matchedCommand.name,
+          ...(input ? { input } : {}),
           ...(sessionId ? { sessionId } : {}),
           agentName,
           ...(createSessionWorkspaceDir
@@ -1000,6 +1022,7 @@ export function WebuiComposer({
       }
       return;
     }
+    // intent.kind === "submit-turn"
     // A newly submitted turn is a Desktop-style request to follow the latest
     // frontier. The scroll listener can still release this lock immediately
     // if the user wheels back into history while the turn is running.
