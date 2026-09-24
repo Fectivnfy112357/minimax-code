@@ -149,7 +149,13 @@ describe("WebUI shell", () => {
     expect(overview).toContain('data-testid="workspace-section-group"');
     expect(overview).toContain("环境信息");
     expect(overview).toContain(">webui<");
-    expect(overview).toContain("+4 -1");
+    // 158a301 起行数拆成两个着色 span，"+4 -1" 不再是连续文本。
+    // 断言功能效果：新增/删除计数对视觉与辅助技术都可见，不绑定 markup 结构。
+    const changesBadge = overview.match(/<small[^>]*>[\s\S]*?<\/small>/)?.[0] ?? "";
+    const changesText = changesBadge.replace(/<[^>]*>/g, "");
+    expect(changesText).toContain(`+${environment.insertions}`);
+    expect(changesText).toContain(`-${environment.deletions}`);
+    expect(changesBadge).toContain(`aria-label="新增 ${environment.insertions} 行，删除 ${environment.deletions} 行"`);
     expect(overview).toContain("进度");
     expect(overview).toContain("跟踪较长任务的进度");
     expect(overview).not.toContain('data-webui-placeholder-chrome="environment-变更"');
