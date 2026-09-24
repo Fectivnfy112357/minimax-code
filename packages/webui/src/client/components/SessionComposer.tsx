@@ -33,6 +33,24 @@ import {
   type WebuiModelSelectionRequest,
   type WebuiTransport,
 } from "../contracts.js";
+
+/** Capability subset the session composer consumes. Single source of truth
+ *  lives in `WebuiTransport`; this alias keeps the prop block free of
+ *  per-key `WebuiTransport["x"]` redeclarations. */
+type WebuiSessionComposerCapabilities = Pick<
+  WebuiTransport,
+  | "loadMessages"
+  | "getTurnDiff"
+  | "revertTurnDiff"
+  | "reapplyTurnDiff"
+  | "getSessionForkOptions"
+  | "forkSession"
+  | "getSessionRewindPreview"
+  | "rewindSession"
+  | "editSessionMessage"
+  | "patchGoal"
+  | "clearGoal"
+>;
 import type {
   WebuiGoal,
   WebuiGoalCreateRequest,
@@ -254,19 +272,10 @@ export function WebuiComposer({
   readonly sendMessage?: WebuiClientMessageSender;
   readonly enqueueMessage?: WebuiClientMessageEnqueuer;
   readonly resumeSession?: WebuiClientSessionResumer;
-  readonly loadMessages?: WebuiTransport["loadMessages"];
-  readonly getTurnDiff?: WebuiTransport["getTurnDiff"];
-  readonly revertTurnDiff?: WebuiTransport["revertTurnDiff"];
-  readonly reapplyTurnDiff?: WebuiTransport["reapplyTurnDiff"];
-  readonly getSessionForkOptions?: WebuiTransport["getSessionForkOptions"];
-  readonly forkSession?: WebuiTransport["forkSession"];
-  readonly getSessionRewindPreview?: WebuiTransport["getSessionRewindPreview"];
-  readonly rewindSession?: WebuiTransport["rewindSession"];
-  readonly editSessionMessage?: WebuiTransport["editSessionMessage"];
+
   readonly getGoal?: (request: WebuiGoalSessionRequest) => Promise<WebuiGoal | undefined>;
   readonly createGoal?: (request: WebuiGoalCreateRequest) => Promise<WebuiGoal>;
-  readonly patchGoal?: WebuiTransport["patchGoal"];
-  readonly clearGoal?: WebuiTransport["clearGoal"];
+
   readonly isGoalEnabled?: () => Promise<WebuiGoalEnabledResult>;
   readonly watchEvents?: WebuiClientEventWatcher;
   readonly listPendingPermissions?: () => Promise<{ readonly requests: readonly WebuiPendingPermission[] }>;
@@ -289,7 +298,7 @@ export function WebuiComposer({
   readonly teamModeOff: boolean;
   readonly onTeamModeOffChange: (teamModeOff: boolean) => void;
   readonly teamModeLocked: boolean;
-}): ReactElement {
+} & WebuiSessionComposerCapabilities): ReactElement {
   const {
     state: runtimeState,
     setStream,

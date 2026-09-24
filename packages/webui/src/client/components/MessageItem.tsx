@@ -20,6 +20,21 @@ import type {
   WebuiTranscriptProcessSegment,
   WebuiTransport,
 } from "../contracts.js";
+
+/** Capability subset the message item consumes. Single source of truth
+ *  lives in `WebuiTransport`; this alias keeps the prop block free of
+ *  per-key `WebuiTransport["x"]` redeclarations. */
+type WebuiMessageItemCapabilities = Pick<
+  WebuiTransport,
+  | "getTurnDiff"
+  | "revertTurnDiff"
+  | "reapplyTurnDiff"
+  | "getSessionForkOptions"
+  | "forkSession"
+  | "getSessionRewindPreview"
+  | "rewindSession"
+  | "editSessionMessage"
+>;
 import { MessageAttachments, type MessageAttachment } from "./MessageAttachments.js";
 import { WebuiAssistantBody } from "./AssistantBody.js";
 import { WebuiIconCommandGoal } from "../icons.js";
@@ -82,17 +97,11 @@ export function MessageItem({
   readonly turnId?: string;
   readonly changeSetId?: string;
   readonly initialDiff?: WebuiTurnDiffView;
-  readonly getTurnDiff?: WebuiTransport["getTurnDiff"];
-  readonly revertTurnDiff?: WebuiTransport["revertTurnDiff"];
-  readonly reapplyTurnDiff?: WebuiTransport["reapplyTurnDiff"];
+
   readonly actions?: WebuiMessageActionCapabilities;
   readonly timestamp?: number;
   readonly isGoal?: boolean;
-  readonly getSessionForkOptions?: WebuiTransport["getSessionForkOptions"];
-  readonly forkSession?: WebuiTransport["forkSession"];
-  readonly getSessionRewindPreview?: WebuiTransport["getSessionRewindPreview"];
-  readonly rewindSession?: WebuiTransport["rewindSession"];
-  readonly editSessionMessage?: WebuiTransport["editSessionMessage"];
+
   readonly onMutationComplete?: () => void;
   readonly userText?: string;
   readonly thinking?: string;
@@ -108,7 +117,7 @@ export function MessageItem({
   readonly totalRequestDurationMs?: number;
   readonly totalOutputTokens?: number;
   readonly wallClockDurationMs?: number;
-}): ReactElement {
+} & WebuiMessageItemCapabilities): ReactElement {
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState(userText ?? "");
   const [rewindOpen, setRewindOpen] = useState(false);

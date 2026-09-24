@@ -21,6 +21,21 @@ import type {
   WebuiTransport,
   WebuiTranscriptItem,
 } from "../contracts.js";
+
+/** Capability subset the transcript passes through to each message item.
+ *  Single source of truth lives in `WebuiTransport`; this alias keeps the
+ *  prop block free of per-key `WebuiTransport["x"]` redeclarations. */
+type WebuiSessionTranscriptCapabilities = Pick<
+  WebuiTransport,
+  | "getTurnDiff"
+  | "revertTurnDiff"
+  | "reapplyTurnDiff"
+  | "getSessionForkOptions"
+  | "forkSession"
+  | "getSessionRewindPreview"
+  | "rewindSession"
+  | "editSessionMessage"
+>;
 import type { WebuiTurnDiffView } from "../../server/port.js";
 import type { WebuiQuestionnaireResponseSummary } from "../projection/message-parts.js";
 import {
@@ -157,15 +172,7 @@ export function WebuiSessionTranscript({
   readonly sessionId: string;
   readonly loadMessages: WebuiClientMessageLoader;
   readonly initialMessages?: WebuiClientMessagePage;
-  readonly getTurnDiff?: WebuiTransport["getTurnDiff"];
-  readonly revertTurnDiff?: WebuiTransport["revertTurnDiff"];
-  readonly reapplyTurnDiff?: WebuiTransport["reapplyTurnDiff"];
-  readonly getSessionForkOptions?: WebuiTransport["getSessionForkOptions"];
-  readonly forkSession?: WebuiTransport["forkSession"];
-  readonly getSessionRewindPreview?: WebuiTransport["getSessionRewindPreview"];
-  readonly rewindSession?: WebuiTransport["rewindSession"];
-  readonly editSessionMessage?: WebuiTransport["editSessionMessage"];
-}): ReactElement {
+} & WebuiSessionTranscriptCapabilities): ReactElement {
   const [page, setPage] = useState<WebuiClientMessagePage>(
     () => initialMessages ?? {},
   );

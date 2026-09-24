@@ -13,6 +13,11 @@ import {
 } from "../projection/goal-state.js";
 import type { WebuiGoal, WebuiGoalStatus } from "../../server/port.js";
 import type { WebuiTransport } from "../contracts.js";
+
+/** Capability subset the goal banner consumes. Single source of truth lives
+ *  in `WebuiTransport`; this alias keeps the prop block free of per-key
+ *  `WebuiTransport["x"]` redeclarations. */
+type WebuiGoalBannerCapabilities = Pick<WebuiTransport, "patchGoal" | "clearGoal">;
 import {
   WebuiIconCommandGoal,
   WebuiIconContextRename,
@@ -36,12 +41,11 @@ export function WebuiGoalBanner({
   interactionBlocked = false,
 }: {
   readonly goal?: WebuiGoal;
-  readonly patchGoal?: WebuiTransport["patchGoal"];
-  readonly clearGoal?: WebuiTransport["clearGoal"];
+
   readonly onCleared?: () => void;
   readonly isGenerating?: boolean;
   readonly interactionBlocked?: boolean;
-}): ReactElement | null {
+} & WebuiGoalBannerCapabilities): ReactElement | null {
   const [editing, setEditing] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const [objective, setObjective] = useState(goal?.objective ?? "");

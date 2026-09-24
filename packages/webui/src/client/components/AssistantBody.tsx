@@ -14,6 +14,14 @@ import type {
   WebuiTranscriptProcessSegment,
   WebuiTransport,
 } from "../contracts.js";
+
+/** Capability subset the assistant body passes through to its diff card.
+ *  Single source of truth lives in `WebuiTransport`; this alias keeps the
+ *  prop block free of per-key `WebuiTransport["x"]` redeclarations. */
+type WebuiAssistantBodyCapabilities = Pick<
+  WebuiTransport,
+  "getTurnDiff" | "revertTurnDiff" | "reapplyTurnDiff"
+>;
 import { WebuiDiffCard } from "./DiffCard.js";
 import {
   WebuiActivityGroup,
@@ -49,9 +57,7 @@ export function WebuiAssistantBody({
   readonly turnId?: string;
   readonly changeSetId?: string;
   readonly initialDiff?: WebuiTurnDiffView;
-  readonly getTurnDiff?: WebuiTransport["getTurnDiff"];
-  readonly revertTurnDiff?: WebuiTransport["revertTurnDiff"];
-  readonly reapplyTurnDiff?: WebuiTransport["reapplyTurnDiff"];
+
   readonly thinking?: string;
   readonly thinkingDurationMs?: number;
   readonly processingStartedAtMs?: number;
@@ -69,7 +75,7 @@ export function WebuiAssistantBody({
   readonly attachments?: readonly MessageAttachment[];
   readonly streaming?: boolean;
   readonly processSegments?: readonly WebuiTranscriptProcessSegment[];
-}): ReactElement {
+} & WebuiAssistantBodyCapabilities): ReactElement {
   const segments = processSegments?.length
     ? processSegments
     : [

@@ -22,6 +22,14 @@ import type {
 } from "../../server/port.js";
 import type { WebuiDiffState, WebuiDiffStateAction, WebuiTransport } from "../contracts.js";
 
+/** Capability subset the diff card consumes. The contract lives in
+ * `WebuiTransport`; this alias keeps the prop block compact and avoids
+ * per-key `WebuiTransport["x"]` redeclarations. */
+type WebuiDiffCardCapabilities = Pick<
+  WebuiTransport,
+  "getTurnDiff" | "revertTurnDiff" | "reapplyTurnDiff"
+>;
+
 export const initialWebuiDiffState: WebuiDiffState = {
   unsupported: false,
   busy: false,
@@ -87,10 +95,7 @@ export function WebuiDiffCard({
   readonly changeSetId?: string;
   readonly initialView?: WebuiTurnDiffView;
   readonly initialState?: Partial<WebuiDiffState>;
-  readonly getTurnDiff?: WebuiTransport["getTurnDiff"];
-  readonly revertTurnDiff?: WebuiTransport["revertTurnDiff"];
-  readonly reapplyTurnDiff?: WebuiTransport["reapplyTurnDiff"];
-}): ReactElement | null {
+} & WebuiDiffCardCapabilities): ReactElement | null {
   const [diffState, setDiffState] = useState<WebuiDiffState>(() => ({
     ...initialWebuiDiffState,
     ...initialState,
