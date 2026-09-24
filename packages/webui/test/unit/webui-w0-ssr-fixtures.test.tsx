@@ -124,9 +124,10 @@ describe("W0 · SSR · WebuiTurnProcess", () => {
       }),
     );
 
-    expect(html).toContain('data-summary-text="共执行 3 秒 · 100 token/s"');
+    expect(html).toContain('data-summary-text="共执行 3 秒"');
     expect(html).toContain('data-testid="turn-output-rate"');
-    expect(html).toContain("输出速度 : 100 token/s");
+    expect(html).toContain(">100 token/s<");
+    expect(html).not.toContain("共执行 3 秒 · 100 token/s");
     expect(html).toContain('aria-expanded="false"');
     // Collapsed: the children are not in the markup at all.
     expect(html).not.toContain('data-testid="turn-process-detail"');

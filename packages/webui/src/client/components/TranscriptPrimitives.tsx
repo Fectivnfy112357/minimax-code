@@ -1,11 +1,9 @@
 // Pure-presentation transcript primitives — leaves of the component tree.
 //
-// W3 tier 1 lift: these 6 components were moved verbatim out of `app.tsx`
-// in W3. The body of every component is byte-identical to what used to
-// live there. **Do not** re-shape the JSX, the class names, the data
-// attributes, the hook order, or the conditional-rendering structure;
-// each of those is load-bearing for the SSR snapshots and the runtime
-// render. See `report-w3-tier1.md` for the move evidence.
+// W3 tier 1 lift: these components were moved out of `app.tsx` in W3. The
+// transcript structure and data attributes remain stable; the live thinking
+// marker is intentionally shared with ActivityIndicator so streaming never
+// renders a second, static animation implementation.
 //
 // Re-exported from `app.tsx` so existing consumers (tests, importers)
 // keep their current import path during the W3 wave. `WebuiToolRow`
@@ -13,6 +11,7 @@
 // by `WebuiToolResults`.
 
 import { useEffect, useState, type ReactElement } from "react";
+import { ActivityIndicator } from "./ActivityIndicator.js";
 import {
   WebuiIconActivity,
   WebuiIconChevronDown,
@@ -272,9 +271,7 @@ export function WebuiTurnProcess({
   const summary = durationLabel
     ? active
       ? `已执行 ${durationLabel}`
-      : outputRateLabel
-        ? `共执行 ${durationLabel} · ${outputRateLabel}`
-        : `共执行 ${durationLabel}`
+      : `共执行 ${durationLabel}`
     : active
       ? "已执行 0 秒"
       : "共执行 0 秒";
@@ -299,10 +296,11 @@ export function WebuiTurnProcess({
         </button>
         {!active && outputRateLabel ? (
           <span
-            className="text-text_default_tertiary text-size_12"
+            className="ml-auto text-text_default_tertiary text-size_12"
             data-testid="turn-output-rate"
           >
-            {`输出速度 : ${outputRateLabel}`}
+            <span className="sr-only">输出速度：</span>
+            {outputRateLabel}
           </span>
         ) : null}
       </div>
@@ -347,7 +345,7 @@ export function WebuiThinkingBlock({
     <details className="webui-thinking-block" data-webui-thinking-block="true">
       <summary className="webui-thinking-summary" data-webui-thinking="true">
         {streaming ? (
-          <span className="webui-thinking-indicator is-active" aria-hidden="true" />
+          <ActivityIndicator aria-hidden="true" />
         ) : null}
         <span>{streaming ? "推理中..." : "已完成推理"}</span>
         {typeof elapsed === "number" && elapsed >= 1 ? (

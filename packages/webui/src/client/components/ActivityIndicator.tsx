@@ -285,6 +285,7 @@ export interface ActivityIndicatorProps {
   visualScale?: number;
   phrases?: ThinkingPhraseSet;
   phraseFallback?: string;
+  "aria-hidden"?: "true" | "false";
 }
 
 export function ActivityIndicator(props: ActivityIndicatorProps): React.JSX.Element {
@@ -299,6 +300,7 @@ export function ActivityIndicator(props: ActivityIndicatorProps): React.JSX.Elem
     visualScale = 1,
     phrases,
     phraseFallback = DEFAULT_THINKING_PHRASE_FALLBACK,
+    "aria-hidden": ariaHidden,
   } = props;
 
   const containerSize = useMemo(() => {
@@ -345,7 +347,11 @@ export function ActivityIndicator(props: ActivityIndicatorProps): React.JSX.Elem
     .trim();
 
   return (
-    <div className={containerClass} data-testid="streaming-rose-loader">
+    <div
+      className={containerClass}
+      data-testid="streaming-rose-loader"
+      aria-hidden={ariaHidden}
+    >
       <div
         className="relative flex shrink-0 items-center justify-center overflow-visible"
         style={{

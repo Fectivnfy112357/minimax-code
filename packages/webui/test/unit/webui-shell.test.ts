@@ -2297,7 +2297,8 @@ describe("WebUI composer transcriptIncomplete", () => {
       }),
     );
     expect(live).toContain("推理中...");
-    expect(live).toContain("webui-thinking-indicator is-active");
+    expect(live).toContain('data-testid="streaming-rose-loader"');
+    expect(live).not.toContain("webui-thinking-indicator");
     expect(live).toContain(">5s<");
   });
 

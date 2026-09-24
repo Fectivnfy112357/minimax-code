@@ -225,8 +225,14 @@ describe("W0 · structural declarations W5 must preserve", () => {
     expect(declaration(messageList.body, "margin-right")).toBe("auto");
 
     const composer = winning(".webui-session-layout .webui-session-composer");
-    expect(declaration(composer.body, "order")).toBe("2");
-    expect(declaration(composer.body, "flex")).toBe("0 0 auto");
+    expect(declaration(composer.body, "display")).toBe("contents");
+
+    const liveColumn = winning(".webui-session-layout .webui-stream-column");
+    expect(declaration(liveColumn.body, "order")).toBe("0");
+    expect(declaration(liveColumn.body, "flex")).toBe("1 1 auto");
+    expect(declaration(liveColumn.body, "max-width")).toBe("768px");
+    expect(declaration(liveColumn.body, "margin-left")).toBe("auto");
+    expect(declaration(liveColumn.body, "margin-right")).toBe("auto");
 
     const composerContent = winning(
       ".webui-session-layout .webui-session-composer-overlay > *",
@@ -284,7 +290,6 @@ describe("W0 · at-rules and animations W5/W6 must not remove", () => {
       "message-appear",
       "signin-card-collapse",
       "signin-day-claimed",
-      "thinking-pulse",
       "webui-settings-content-in",
       "webui-settings-search-highlight",
       "webui-signin-claim-spin",

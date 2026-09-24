@@ -938,12 +938,17 @@ export function WebuiComposer({
                 stream.messages.some((message) => message.role === "user") &&
                 stream.phase === "waiting"
               ) {
-                return <MessageAfterQueryStreamingPlaceholder />;
+                return (
+                  <>
+                    <MessageAfterQueryStreamingPlaceholder />
+                    <ActivityIndicator showLabel labelOverride="思考中…" />
+                  </>
+                );
               }
               // Stream is in flight but no thinking yet — pulse the rose
               // loader so the live column reads as active.
               if (stream.phase === "streaming" || stream.phase === "waiting") {
-                return <ActivityIndicator />;
+                return <ActivityIndicator showLabel labelOverride="思考中…" />;
               }
               return null;
             }
@@ -1002,8 +1007,8 @@ export function WebuiComposer({
                     totalOutputTokens > 0 ? totalOutputTokens : undefined
                   }
                 />
-                {stream.phase === "streaming" && answers.length === 0 && !thinking.trim() ? (
-                  <ActivityIndicator />
+                {(stream.phase === "streaming" || stream.phase === "waiting") && !thinking.trim() ? (
+                  <ActivityIndicator showLabel labelOverride="思考中…" />
                 ) : null}
               </>
             );

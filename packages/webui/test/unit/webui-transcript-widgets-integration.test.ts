@@ -24,6 +24,8 @@ function sessionShell(opts: {
   readonly quota?: WebuiUsageQuotaResult;
   readonly streamingPhase?: "streaming" | "waiting" | "reconnecting" | "refused" | "error";
   readonly streamUserText?: string;
+  readonly streamAssistantAnswer?: string;
+  readonly streamAssistantThinking?: string;
   readonly streamRefusal?: string;
   readonly transcriptIncomplete?: boolean;
 }): string {
@@ -45,8 +47,25 @@ function sessionShell(opts: {
               role: "user" as const,
               timestamp: Date.now(),
             },
+            ...(opts.streamAssistantAnswer
+              ? [{
+                  id: "stream-assistant-1",
+                  answer: opts.streamAssistantAnswer,
+                  thinking: opts.streamAssistantThinking ?? "",
+                  role: "assistant" as const,
+                  timestamp: Date.now(),
+                }]
+              : []),
           ]
-        : [],
+        : opts.streamAssistantAnswer
+          ? [{
+              id: "stream-assistant-1",
+              answer: opts.streamAssistantAnswer,
+              thinking: opts.streamAssistantThinking ?? "",
+              role: "assistant" as const,
+              timestamp: Date.now(),
+            }]
+          : [],
       runtimeEvents: [],
       actionDeltas: [],
       workspaceProgress: current.stream.workspaceProgress,
@@ -195,6 +214,46 @@ describe("WebUI transcript widget wiring", () => {
       streamUserText: "我说一句",
     });
     expect(html).toContain('data-testid="streaming-rose-loader"');
+    expect(html).not.toContain("No messages in this session.");
+  });
+
+  it("keeps the same animated loader after the assistant starts streaming", () => {
+    const html = sessionShell({
+      streamingPhase: "streaming",
+      streamUserText: "我说一句",
+      streamAssistantAnswer: "我开始回复",
+    });
+    expect(html).toContain('data-testid="streaming-rose-loader"');
+    expect(html.match(/data-testid="streaming-rose-loader"/gu)).toHaveLength(1);
+    expect(html).not.toContain("webui-thinking-indicator");
+  });
+
+  it("uses one animated loader when streamed thinking and answer text coexist", () => {
+    const html = sessionShell({
+      streamingPhase: "streaming",
+      streamUserText: "我说一句",
+      streamAssistantThinking: "我正在思考",
+      streamAssistantAnswer: "我开始回复",
+    });
+    expect(html.match(/data-testid="streaming-rose-loader"/gu)).toHaveLength(1);
+    expect(html).not.toContain("webui-thinking-indicator");
+  });
+
+  it("keeps the thinking loader geometry when the assistant frame arrives", () => {
+    const waiting = sessionShell({
+      streamingPhase: "streaming",
+      streamUserText: "我说一句",
+    });
+    const replying = sessionShell({
+      streamingPhase: "streaming",
+      streamUserText: "我说一句",
+      streamAssistantThinking: "我正在思考",
+      streamAssistantAnswer: "我开始回复",
+    });
+    const loaderGeometry =
+      'style="width:27px;height:27px;min-width:27px;min-height:27px"';
+    expect(waiting).toContain(loaderGeometry);
+    expect(replying).toContain(loaderGeometry);
   });
 
   it("renders MessageAfterQueryStreamingPlaceholder while waiting on a pending user turn", () => {
@@ -203,6 +262,9 @@ describe("WebUI transcript widget wiring", () => {
       streamUserText: "我说一句",
     });
     expect(html).toContain('data-testid="message-after-query-streaming-placeholder"');
+    expect(html).toContain('data-testid="streaming-rose-loader"');
+    expect(html).toContain('data-testid="streaming-rose-loader-label"');
+    expect(html).toContain("思考中…");
   });
 
   it("renders MessagePassiveLoadingPlaceholder while reconnecting", () => {

@@ -265,8 +265,8 @@ export function WebuiSessionTranscript({
             Unable to load messages: {error}
           </p>
         ) : null}
-        {loading && items.length === 0 ? <ChatSkeleton /> : null}
-        {!error && !loading && items.length === 0 ? (
+        {!turnLive && loading && items.length === 0 ? <ChatSkeleton /> : null}
+        {!turnLive && !error && !loading && items.length === 0 ? (
           <p className="text-text_default_secondary text-size_14 leading-line_height_20">
             No messages in this session.
           </p>

@@ -1069,19 +1069,27 @@
     margin-right: auto;
     margin-left: auto;
   }
+  /* The composer owns the live stream in React, but its wrapper must not make
+   * that stream a bottom-zone flex item. `display: contents` keeps the
+   * ownership boundary while letting the live column and the absolute
+   * composer overlay participate directly in the session skeleton. */
   .webui-session-layout .webui-session-composer {
-    order: 2;
-    flex: 0 0 auto;
-    margin-top: 0;
-    padding-bottom: var(--spacing_16);
-    background-color: var(--bg_grouped_secondary);
+    display: contents;
   }
 
   /* The live turn's column must scroll itself: the shell around it is
      overflow-hidden, and while the turn runs the transcript above is empty,
      so a long reply would otherwise be clipped with no way to reach it. */
   .webui-session-layout .webui-stream-column {
-    max-height: calc(100vh - 300px);
+    order: 0;
+    min-height: 0;
+    flex: 1 1 auto;
+    width: 100%;
+    max-width: 768px;
+    margin-right: auto;
+    margin-left: auto;
+    box-sizing: border-box;
+    padding: 0 var(--spacing_16) 168px;
     overflow-y: auto;
     overscroll-behavior: contain;
   }
@@ -2164,42 +2172,6 @@
 
   /* ===== desktop message-render parity: thinking pulse, turn clock, stop
      button, questionnaire card, edited-files card ===== */
-  @keyframes thinking-pulse {
-    0%,
-    100% {
-      opacity: 0.4;
-    }
-
-    50% {
-      opacity: 1;
-    }
-  }
-
-  .webui-thinking-indicator {
-    position: relative;
-    display: inline-block;
-    width: 14px;
-    height: 14px;
-    flex: none;
-    border-radius: 4px;
-    background: var(--blue_400);
-  }
-
-  .webui-thinking-indicator::before {
-    content: "";
-    position: absolute;
-    top: 5px;
-    right: 3px;
-    left: 3px;
-    height: 4px;
-    border-radius: 1px;
-    background: rgb(255 255 255 / 92%);
-  }
-
-  .webui-thinking-indicator.is-active {
-    animation: thinking-pulse 1.2s ease-in-out infinite;
-  }
-
   .webui-thinking-elapsed {
     color: var(--text_default_secondary);
     font-variant-numeric: tabular-nums;
