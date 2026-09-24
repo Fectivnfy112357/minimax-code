@@ -52,6 +52,32 @@ export function createOperationRegistry(
   // `unknown_operation` error instead of a "method is not a function" runtime
   // explosion — same wire contract a cold-started TUI emits before its PTY
   // bridge comes up.
+  //
+  // Wire-error contract for the 18 previously-gated operations
+  // -------------------------------------------------------
+  // Before batch C the registry construction was guarded by six capability
+  // groups that depended on optional port methods (`if (port.getSessionDiff
+  // && port.getTurnDiff && ...)`, etc.). A host that lacked one of those
+  // optional methods ended up with an operation that was *not in the
+  // registry*. The dispatcher in `operation-dispatch.ts` looks the registry
+  // up first, so the error code on the wire was `unknown_operation`
+  // ("unknown operation: getSessionDiff"), with code `unknown_operation`,
+  // and the handler never ran.
+  //
+  // Batch C removed the six capability gates. Those 18 operations now
+  // register unconditionally, every WebuiHarnessPort implementor must
+  // supply the matching methods (the type-checked port guarantees it),
+  // and the dispatcher's lookup never misses. When the harness is honest
+  // about a missing capability — e.g. `cliService.getSessionDiff` is
+  // undefined and the host's nested guard throws "session diff is
+  // unavailable" — that throw propagates through the handler's try/catch,
+  // which forwards it as an error frame with code `harness_error`. The
+  // old "X is unavailable" `Promise.reject` forwarders from `service.ts`
+  // (18 of them) were deleted in batch C because they were unreachable:
+  // any operation that reached them would have been unregistered and
+  // short-circuited by the registry lookup; they only ever ran under the
+  // wrong code path (`registry.get(x) ?? <forwarder>`), which the new
+  // type-checked seam makes impossible.
   if (terminal) {
     registerOperation(registry, { operation: createTerminalOperation, handle: handlers.createTerminal });
     registerOperation(registry, { operation: listTerminalsOperation, handle: handlers.listTerminals });

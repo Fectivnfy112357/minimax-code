@@ -105,33 +105,32 @@ export function createOperationHandlers(
       body: await port.createSession(body),
     }),
     listWorkspaceFileTree: async (_context, body) => ({
-      body: (await port.listWorkspaceFileTree(body as never)) as unknown as Record<string, unknown>,
+      body: await port.listWorkspaceFileTree(body),
     }),
     readWorkspaceFile: async (_context, body) => ({
-      body: (await port.readWorkspaceFile(body as never)) as unknown as Record<string, unknown>,
+      body: await port.readWorkspaceFile(body),
     }),
     readCanvas: async (_context, body) => ({
-      body: (await port.readCanvas(body as never)) as unknown as Record<string, unknown>,
+      body: await port.readCanvas(body),
     }),
     applyCanvas: async (_context, body) => ({
-      body: (await port.applyCanvas(body as never)) as unknown as Record<string, unknown>,
+      body: await port.applyCanvas(body),
     }),
     getWorkspaceEnvironment: async (_context, body) => ({
-      body: (await port.getWorkspaceEnvironment(body as never)) as unknown as Record<string, unknown>,
+      body: await port.getWorkspaceEnvironment(body),
     }),
     mutateWorkspaceGit: async (_context, body) => ({
-      body: (await port.mutateWorkspaceGit(body as never)) as unknown as Record<string, unknown>,
+      body: await port.mutateWorkspaceGit(body),
     }),
     createTerminal: async (_context, body) => ({
       body: terminal!.create(String((body as Record<string, unknown>).workspaceDir ?? process.cwd())),
     }),
     listTerminals: async () => ({
-      body: terminal!.list() as unknown as Record<string, unknown>,
+      body: terminal!.list() as readonly { readonly terminalId: string; readonly status: "running" | "exited"; readonly output: string }[],
     }),
-    writeTerminal: async (_context, body) => {
-      const value = body as Record<string, unknown>;
-      return { body: terminal!.write(String(value.terminalId), String(value.data ?? "")) };
-    },
+    writeTerminal: async (_context, body) => ({
+      body: terminal!.write(String(body.terminalId), String(body.data ?? "")),
+    }),
     resizeTerminal: async (_context, body) => {
       const value = body as Record<string, unknown>;
       return { body: terminal!.resize(String(value.terminalId), Number(value.cols), Number(value.rows)) };

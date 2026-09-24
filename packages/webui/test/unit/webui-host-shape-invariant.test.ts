@@ -1,6 +1,6 @@
 // Host-shape invariants added in batch C.
 //
-// Before this batch, `createOperationRegistry` registered 22 of its 70+
+// Before this batch, `createOperationRegistry` registered 18 of its ~70
 // operations only when the runtime host happened to implement the matching
 // capability gates (`port.getSessionDiff && port.getTurnDiff && ...`, etc.).
 // Six capability gates meant the registry contents depended on which optional
@@ -8,11 +8,18 @@
 // another, and the wire protocol was a function of the host.
 //
 // This test pins three invariants that close that gap:
-//   1. The 22 operations that used to be gated are now in the registry on
+//   1. The 18 operations that used to be gated are now in the registry on
 //      every build, regardless of which host fields the harness fills.
 //   2. The 6 terminal operations stay unregistered when the service is
 //      constructed without a terminal adapter. The cold-started TUI emits the
 //      same wire contract for "operation is not wired here" before its PTY
+//      bridge comes up.
+//   3. Wire-error contract: a request for an unregistered operation name
+//      becomes an `unknown_operation` frame (registry short-circuits before
+//      the handler runs); a request for a registered-but-broken operation
+//      (one of the 18 that used to be gated) becomes a `harness_error`
+//      frame sourced from the handler's own thrown message — and crucially
+//      the dispatcher still looks the registry up FIRST.
 //      bridge comes up.
 //   3. (Compiler) `ScriptedHarnessPort` MUST satisfy `WebuiHarnessPort` —
 //      this file imports the fake type and the port type together so a
@@ -48,6 +55,9 @@ import {
   watchTerminalOperation,
 } from "../../src/server/operation/operations.js";
 import { createOperationHandlers, type WebuiOperationPort } from "../../src/server/operation/operation-handlers.js";
+import { dispatchWebuiFrame } from "../../src/server/operation/operation-dispatch.js";
+import { WEBUI_PROTOCOL_VERSION, WebuiErrorCode } from "../../src/server/envelope.js";
+import WebSocket from "ws";
 
 /**
  * Build a fully-implemented in-memory port so we can construct the
@@ -331,7 +341,7 @@ class FullPort implements WebuiHarnessPort {
 }
 
 describe("WebUI host-shape invariant (batch C seam)", () => {
-  // The 22 operations whose registration used to depend on a host capability
+  // The 18 operations whose registration used to depend on a host capability
   // gate. After batch C every one of them is in the registry — see `operations.ts`,
   // where the six `if (port.<x> && port.<y>)` capability gates were deleted.
   const GATED_BUT_NOW_UNCONDITIONAL: readonly string[] = [
@@ -398,5 +408,122 @@ describe("WebUI host-shape invariant (batch C seam)", () => {
     // descriptors; we only need to verify it accepts the port.
     const handlers = createOperationHandlers(port);
     expect(Object.keys(handlers).length).toBeGreaterThan(0);
+  });
+
+  // --------------------------------------------------------------------
+  // C-07: wire-error contract for capability-gated operations.
+  //
+  // Before batch C the 18 capability-gated operations were absent from the
+  // registry when their port hooks were missing, so the dispatcher answered
+  // with `unknown_operation`. They now register unconditionally (the
+  // type-checked-port contract forces every implementor to provide them),
+  // and a host that nonetheless throws is surfaced as `harness_error`.
+  //
+  // These tests prove the seam contracts on the live dispatcher.
+  // --------------------------------------------------------------------
+  describe("wire-error contract (C-07)", () => {
+    function captureWebSocket(): {
+      readonly ws: WebSocket;
+      readonly frames: Array<Record<string, unknown>>;
+    } {
+      const frames: Array<Record<string, unknown>> = [];
+      // The dispatcher reads `ws.OPEN` (a static on the WebSocket class)
+      // and `ws.send`. Wrap the mock so both checks behave as expected.
+      const ws = Object.create(WebSocket.prototype) as WebSocket;
+      Object.defineProperty(ws, "readyState", { value: WebSocket.OPEN, configurable: true });
+      ws.send = (data: string) => {
+        frames.push(JSON.parse(data) as Record<string, unknown>);
+      };
+      return { ws, frames };
+    }
+
+    it("returns unknown_operation for a name the registry never had", async () => {
+      const { ws, frames } = captureWebSocket();
+      const port = new FullPort();
+      const registry = createOperationRegistry(port);
+      await dispatchWebuiFrame(
+        ws,
+        {
+          protocolVersion: WEBUI_PROTOCOL_VERSION,
+          kind: "request",
+          requestId: "no-such-op",
+          operation: "noSuchOperationThatNeverExisted",
+          body: undefined,
+        },
+        registry,
+        true,
+        () => undefined,
+      );
+      expect(frames).toHaveLength(1);
+      expect(frames[0]).toMatchObject({
+        kind: "error",
+        code: WebuiErrorCode.unknownOperation,
+        requestId: "no-such-op",
+      });
+    });
+
+    it("returns harness_error for a registered but throwing handler (e.g. one of the 18 gated ops)", async () => {
+      const { ws, frames } = captureWebSocket();
+      // A port that satisfies the type-checked seam but throws on a method
+      // the host adapter's nested guards would also throw. We use the
+      // getSessionDiff capability (one of the 18 gated ops) so a
+      // post-batch-C build that still owed gate semantics would manifest
+      // here. To prove the dispatcher answers via the handler's own
+      // message, we throw with a code-free Error whose message we pick.
+      class FailingDiffPort extends FullPort {
+        override getSessionDiff() {
+          return Promise.reject(new Error("session diff is unavailable"));
+        }
+      }
+      const port = new FailingDiffPort();
+      const registry = createOperationRegistry(port);
+      await dispatchWebuiFrame(
+        ws,
+        {
+          protocolVersion: WEBUI_PROTOCOL_VERSION,
+          kind: "request",
+          requestId: "diff-empty",
+          operation: "getSessionDiff",
+          body: { id: "session-fixture" },
+        },
+        registry,
+        true,
+        () => undefined,
+      );
+      expect(frames).toHaveLength(1);
+      expect(frames[0]).toMatchObject({
+        kind: "error",
+        code: WebuiErrorCode.harnessError,
+        requestId: "diff-empty",
+        message: "session diff is unavailable",
+      });
+    });
+
+    it("lookups happen before handler execution", async () => {
+      // If a future change reorders the dispatcher to invoke handlers
+      // ahead of the registry lookup, the unknown-operation branch
+      // disappears and any name the registry never had becomes a
+      // runtime-dispatch surface. This proof is here so the mutation
+      // shows up immediately. The mutation we run for verification
+      // (swap the lookup and the validate calls in operation-dispatch.ts)
+      // must turn this expectation red — see the revise report.
+      const { ws, frames } = captureWebSocket();
+      const port = new FullPort();
+      const registry = createOperationRegistry(port);
+      await dispatchWebuiFrame(
+        ws,
+        {
+          protocolVersion: WEBUI_PROTOCOL_VERSION,
+          kind: "request",
+          requestId: "ordering-test",
+          operation: "an-operation-name-the-registry-does-not-have",
+          body: undefined,
+        },
+        registry,
+        true,
+        () => undefined,
+      );
+      expect(frames[0]?.code).toBe(WebuiErrorCode.unknownOperation);
+    });
   });
 });

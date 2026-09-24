@@ -267,11 +267,6 @@ export interface WebuiRuntimeCliService {
   }): Promise<Record<string, unknown>>;
 }
 
-/** Single source of truth for the runtime host's `cliService` slot. */
-export type WebuiHostCliServiceSlot =
-  | WebuiRuntimeCliService
-  | undefined;
-
 export interface WebuiRuntimeHostHandle {
   readonly apiHost: { close(): Promise<void> };
   readonly appVersion?: string;
