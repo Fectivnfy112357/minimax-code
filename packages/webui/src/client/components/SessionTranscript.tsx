@@ -376,11 +376,11 @@ export function WebuiSessionTranscript({
             );
           if (result.length > 0) return result;
           // Fall through to the assistant-group renderer below.
-          // `processSegments` and `wallClockDurationMs` are group-level
-          // facts (one turn spans multiple frames; the group collapse owns
-          // them). `processSegments` is passed via view (the historical
-          // adapter leaves it undefined; SessionTranscript fills it
-          // before rendering the assistant turn here).
+          // `wallClockDurationMs` and `processSegments` are group-level
+          // facts: the first is the group's span and the second preserves
+          // per-message activity rows across the assistant group. The
+          // historical per-message adapter leaves processSegments out;
+          // this group projection supplies it before rendering.
           return (
             <MessageItem
               key={group.messageId}

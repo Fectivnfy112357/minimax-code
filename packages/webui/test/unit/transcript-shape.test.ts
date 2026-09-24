@@ -151,39 +151,41 @@ describe("WEBUI_LIVE_FIELD_TABLE — every populated field on the live fixtures 
 });
 
 describe("WEBUI_FIELD_OWNERSHIP_TABLE — exclusive fields are not double-listed", () => {
-  it("`streaming`, `streamMessageId`, `messageRootId` are owned by live only", () => {
-    const streaming = WEBUI_FIELD_OWNERSHIP_TABLE.find(
-      (row) => row.field === "streaming",
-    );
-    const streamMsgId = WEBUI_FIELD_OWNERSHIP_TABLE.find(
-      (row) => row.field === "streamMessageId / messageRootId",
-    );
-    expect(streaming?.owner).toBe("live");
-    expect(streamMsgId?.owner).toBe("live");
+  const ownerFor = (field: string) =>
+    WEBUI_FIELD_OWNERSHIP_TABLE.filter((row) => row.field === field);
+
+  it("lists each view field exactly once", () => {
+    const fields = [
+      "source", "messageId", "role", "sessionId", "userText", "thinking",
+      "tools", "answers", "timestamp", "isGoal", "totalRequestDurationMs",
+      "totalOutputTokens", "processSegments", "turnId", "thinkingDurationMs",
+      "initialDiff", "actions", "attachments", "assistantMessageId", "streaming",
+      "streamMessageId", "messageRootId", "processingStartedAtMs",
+    ];
+    expect(WEBUI_FIELD_OWNERSHIP_TABLE).toHaveLength(fields.length);
+    for (const field of fields) expect(ownerFor(field)).toHaveLength(1);
   });
 
-  it("`actions` and `initialDiff` are owned by historical only", () => {
-    const actions = WEBUI_FIELD_OWNERSHIP_TABLE.find(
-      (row) => row.field === "actions",
-    );
-    const initialDiff = WEBUI_FIELD_OWNERSHIP_TABLE.find(
-      (row) => row.field === "initialDiff",
-    );
-    expect(actions?.owner).toBe("historical");
-    expect(initialDiff?.owner).toBe("historical");
-  });
-
-  it("shared fields appear on both adapters (id / role / text / thinking / tools)", () => {
+  it("assigns the shared base fields to both paths", () => {
     const sharedFields = [
-      "messageId",
-      "role",
-      "text (msgContent / answer)",
-      "thinking",
-      "tools",
+      "source", "messageId", "role", "sessionId", "userText", "thinking",
+      "tools", "answers", "timestamp", "isGoal", "totalRequestDurationMs",
+      "totalOutputTokens", "processSegments",
     ];
     for (const field of sharedFields) {
-      const row = WEBUI_FIELD_OWNERSHIP_TABLE.find((r) => r.field === field);
-      expect(row?.owner, `field "${field}" must be shared`).toBe("shared");
+      expect(ownerFor(field)[0]?.owner, `field ${field}`).toBe("shared");
+    }
+  });
+
+  it("assigns historical extension fields to history only", () => {
+    for (const field of ["turnId", "thinkingDurationMs", "initialDiff", "actions", "attachments"]) {
+      expect(ownerFor(field)[0]?.owner, `field ${field}`).toBe("historical");
+    }
+  });
+
+  it("assigns live extension fields to the live path only", () => {
+    for (const field of ["assistantMessageId", "streaming", "streamMessageId", "messageRootId", "processingStartedAtMs"]) {
+      expect(ownerFor(field)[0]?.owner, `field ${field}`).toBe("live");
     }
   });
 });
@@ -246,11 +248,10 @@ describe("leaf renderer contracts — the historical and live fixtures cover the
   });
 
   it("historical user fixture does NOT carry `streaming`", () => {
-    // `WebuiClientMessage` has no `streaming` field; the property
-    // access is a precise interface read, not a `Record`-cast.
-    expect(
-      (HISTORICAL_USER as unknown as { streaming?: unknown }).streaming,
-    ).toBeUndefined();
+    // The fixture type extends `WebuiClientMessage & { streaming?: never }`
+    // (see line 30), so `streaming` is a precise interface read on a
+    // field that the wire shape does not carry, without a cast.
+    expect(HISTORICAL_USER.streaming).toBeUndefined();
   });
 });
 
@@ -295,7 +296,7 @@ describe("WEBUI_FIELD_OWNERSHIP_TABLE — accessor helpers for the leaf renderer
       (r) => r.field === "initialDiff",
     );
     expect(row?.owner).toBe("historical");
-    expect(row?.notes).toMatch(/historical/);
+    expect(row?.notes).toMatch(/persisted/);
   });
 
   it("the live-only fields carry a `live` owner marker", () => {
@@ -304,7 +305,9 @@ describe("WEBUI_FIELD_OWNERSHIP_TABLE — accessor helpers for the leaf renderer
     );
     expect(liveOnly.length).toBeGreaterThan(0);
     for (const row of liveOnly) {
-      expect(row.field).toMatch(/streaming|streamMessageId|messageRootId/);
+      expect(row.field).toMatch(
+        /assistantMessageId|streaming|streamMessageId|messageRootId|processingStartedAtMs/,
+      );
     }
   });
 });

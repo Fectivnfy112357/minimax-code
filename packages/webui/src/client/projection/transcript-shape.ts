@@ -106,19 +106,29 @@ export const WEBUI_LIVE_FIELD_TABLE: readonly WebuiLiveFieldRow[] = [
 ] as const;
 
 export const WEBUI_FIELD_OWNERSHIP_TABLE: readonly WebuiFieldOwnershipRow[] = [
-  { field: "messageId", owner: "shared", notes: "Server-assigned id; both adapters must agree (the contract on land)." },
-  { field: "role", owner: "shared", notes: "'user' / 'assistant' — both paths surface it." },
-  { field: "text (msgContent / answer)", owner: "shared", notes: "The transcript text; live stream replaces historical until the turn lands." },
-  { field: "thinking", owner: "shared", notes: "Live stream carries the in-flight text; historical carries the recorded text." },
-  { field: "tools", owner: "shared", notes: "Tool calls ride both paths (live frames + historical record)." },
-  { field: "attachments", owner: "shared", notes: "Live may carry fewer attachments than the final historical record." },
-  { field: "timestamp", owner: "shared", notes: "Both paths surface it; historical is authoritative after land." },
-  { field: "isGoal", owner: "shared", notes: "Right-aligned goal banner; both adapters must agree." },
-  { field: "usage", owner: "shared", notes: "Live reports per-message usage on agent_message; historical carries the final usage." },
-  { field: "actions", owner: "historical", notes: "fork / rewind / edit capabilities are only persisted in the historical message." },
-  { field: "initialDiff", owner: "historical", notes: "fileChanges only persist in the historical message; live never carries diffs." },
-  { field: "streaming", owner: "live", notes: "Only the live adapter sets `streaming: true`; historical is always `false`." },
-  { field: "streamMessageId / messageRootId", owner: "live", notes: "In-flight data attrs; never present on the historical record." },
+  { field: "source", owner: "shared", notes: "Both adapters discriminate the view by source." },
+  { field: "messageId", owner: "shared", notes: "Server-assigned id; both adapters surface it." },
+  { field: "role", owner: "shared", notes: "Both historical and live views identify user or assistant." },
+  { field: "sessionId", owner: "shared", notes: "Historical adapter requires it; live assistant receives it from the caller." },
+  { field: "userText", owner: "shared", notes: "Historical user parts and the live user frame supply it." },
+  { field: "thinking", owner: "shared", notes: "Live stream carries in-flight text; historical carries recorded text." },
+  { field: "tools", owner: "shared", notes: "Tool calls appear in live frames and historical records." },
+  { field: "answers", owner: "shared", notes: "Assistant answers are projected by both adapters." },
+  { field: "timestamp", owner: "shared", notes: "Both adapters can surface message timestamps." },
+  { field: "isGoal", owner: "shared", notes: "Both adapters can mark a goal view." },
+  { field: "totalRequestDurationMs", owner: "shared", notes: "Read from historical usage or aggregated from live assistant frames." },
+  { field: "totalOutputTokens", owner: "shared", notes: "Read from historical usage or aggregated from live assistant frames." },
+  { field: "processSegments", owner: "shared", notes: "Historical assistant groups enrich the per-message adapter result; live assistant adapter supplies segments directly." },
+  { field: "turnId", owner: "historical", notes: "Persisted message or group key; live turns merge without a turn id." },
+  { field: "thinkingDurationMs", owner: "historical", notes: "Persisted thinking duration; live stream has no duration field." },
+  { field: "initialDiff", owner: "historical", notes: "Diff is projected from persisted file changes; live never carries it." },
+  { field: "actions", owner: "historical", notes: "Fork, rewind and edit capabilities are persisted on historical messages." },
+  { field: "attachments", owner: "historical", notes: "Attachments are read from persisted historical messages." },
+  { field: "assistantMessageId", owner: "live", notes: "Identifies the last in-flight assistant frame." },
+  { field: "streaming", owner: "live", notes: "Only live views carry the streaming state." },
+  { field: "streamMessageId", owner: "live", notes: "Identifies the in-flight message stream." },
+  { field: "messageRootId", owner: "live", notes: "Identifies the in-flight message root." },
+  { field: "processingStartedAtMs", owner: "live", notes: "Runtime timestamp for the current live processing interval." },
 ] as const;
 
 // ── Shared leaf renderer input contract ──────────────────────────────
@@ -141,72 +151,68 @@ export type WebuiTurnViewCapabilities = Pick<
 >;
 
 /**
- * The minimum normalised turn view — truly shared fields only.
+ * The normalised turn view shared by historical and live rendering.
  *
- * Field-by-field ownership table (line numbers cite the reads in
- * `MessageItem.tsx` after the E-revise narrow):
+ * Ownership rule: `WebuiTurnViewBase` contains fields read by the shared
+ * leaf renderer on both paths. A historical per-message adapter may be
+ * enriched by `SessionTranscript` with group-level facts before rendering;
+ * `processSegments` is the one such field and remains in the base because
+ * the live adapter also supplies it. Fields only produced/read on one path
+ * live on that path's extension (`WebuiHistoricalTurnView` or
+ * `WebuiLiveTurnView`). The union `WebuiTurnView` is the consumer-facing
+ * type accepted by `MessageItem`.
  *
- *   | field                | read by historical path?              | read by live path?                  | verdict  |
- *   |----------------------|---------------------------------------|-------------------------------------|----------|
- *   | source               | historical adapter sets "historical"  | live adapter sets "live"            | shared   |
- *   | messageId            | from `message.msgId`                   | from `last.id`                      | shared   |
- *   | role                 | from normalised role                  | always "assistant" (assistant view) | shared   |
- *   | sessionId            | from caller (transcript scope)        | from caller (composer scope)        | shared   |
- *   | turnId               | from `message.turnId`                  | n/a (live merges one turn)          | shared*  |
- *   | userText             | from userItems[0].text                 | from `user.answer`                  | shared   |
- *   | thinking             | joined from thinkingItems              | joined from assistant frames        | shared   |
- *   | thinkingDurationMs   | from thinkingItems[0].durationMs       | n/a (live has no duration yet)      | shared*  |
- *   | tools                | flatMap tool-items                     | flatMap toolCalls                   | shared   |
- *   | answers              | assistantItems.map text                | assistant.map answer (non-empty)    | shared   |
- *   | timestamp            | normalised.timestamp                  | message.timestamp                   | shared   |
- *   | isGoal               | from source/kind/items                 | from `message.isGoal`               | shared   |
- *   | totalRequestDurationMs | from message.usage                  | from assistant.usage sum            | shared   |
- *   | totalOutputTokens    | from message.usage                     | from assistant.usage sum            | shared   |
- *   | processSegments      | group-level projector fills it on historical | live adapter joins assistant frames | shared |
- *   | initialDiff          | from lastDiff/fallbackDiff             | n/a (live never carries diff)      | historical-only |
- *   | actions              | from firstItem.actions                 | n/a (live never carries actions)   | historical-only |
- *   | attachments          | from projectMessageAttachments        | n/a (live frames don't carry attachments) | historical-only |
- *   | assistantMessageId   | n/a (historical is per-message)       | from `last.id` (turn-merge key)     | live-only |
- *   | streaming            | always undefined on historical        | from `args.streaming`               | live-only |
- *   | streamMessageId      | n/a (historical has its own id)        | "merged" literal                    | live-only |
- *   | messageRootId        | n/a                                    | "merged" literal                    | live-only |
- *   | processingStartedAtMs| n/a (historical doesn't track it)     | from `args.processingStartedAtMs`   | live-only |
- *   | processSegments      | session collapse uses group-level helper, NOT adapter | derived from assistant frames | live-only |
+ * One row per field. Producer and consumer references are source line
+ * numbers, not inferred from optionality. Verdict matches the type above.
  *
- * `wallClockDurationMs` is *group-level* (sum-of-frame span), not per-message.
- * Neither adapter produces it; `SessionTranscript.tsx` computes it on the
- * `group` and passes it as the one remaining non-view MessageItem prop
- * (documented at the call site).
+ *   | field | historical producer (source line) | live producer (source line) | MessageItem read (source line) | verdict |
+ *   |---|---|---|---|---|
+ *   | source | historical adapter `transcript-shape.ts:326` | live adapters `transcript-shape.ts:418,452` | `MessageItem.tsx:87` | shared base |
+ *   | messageId | historical adapter `transcript-shape.ts:327` | live adapters `transcript-shape.ts:419,453` | `MessageItem.tsx:85` | shared base |
+ *   | role | historical adapter `transcript-shape.ts:328` | live adapters `transcript-shape.ts:420,454` | `MessageItem.tsx:86` | shared base |
+ *   | sessionId | historical adapter `transcript-shape.ts:329` | live assistant adapter `transcript-shape.ts:421`; caller `SessionComposer.tsx:1238` | `MessageItem.tsx:95` | shared base |
+ *   | userText | historical adapter `transcript-shape.ts:331-333` | live user adapter `transcript-shape.ts:455` | `MessageItem.tsx:96` | shared base |
+ *   | thinking | historical adapter `transcript-shape.ts:334-336` | live assistant adapter `transcript-shape.ts:422` | `MessageItem.tsx:97` | shared base |
+ *   | tools | historical adapter `transcript-shape.ts:340` | live assistant adapter `transcript-shape.ts:423` | `MessageItem.tsx:98` | shared base |
+ *   | answers | historical adapter `transcript-shape.ts:341-343` | live assistant adapter `transcript-shape.ts:424` | `MessageItem.tsx:99` | shared base |
+ *   | timestamp | historical adapter `transcript-shape.ts:303-304` | live user adapter `transcript-shape.ts:457` | `MessageItem.tsx:100` | shared base |
+ *   | isGoal | historical adapter `transcript-shape.ts:305-308,344` | live user adapter `transcript-shape.ts:458` | `MessageItem.tsx:101` | shared base |
+ *   | totalRequestDurationMs | historical adapter `transcript-shape.ts:315-319,345-348` | live assistant adapter `transcript-shape.ts:390-399,433` | `MessageItem.tsx:102` | shared base |
+ *   | totalOutputTokens | historical adapter `transcript-shape.ts:320-324,348` | live assistant adapter `transcript-shape.ts:400-409,434` | `MessageItem.tsx:103` | shared base |
+ *   | processSegments | historical group projector `transcript-projection.ts:39-72`, applied at `SessionTranscript.tsx:394` | live assistant adapter `transcript-shape.ts:410-416,432` | `MessageItem.tsx:118` | shared base (group-enriched history + live adapter) |
+ *   | turnId | historical adapter `transcript-shape.ts:314,330` and group fallback `SessionTranscript.tsx:393` | none | `MessageItem.tsx:106` | historical extension |
+ *   | thinkingDurationMs | historical adapter `transcript-shape.ts:337-339`; group projector `transcript-projection.ts:49-56` | none | `MessageItem.tsx:107` | historical extension |
+ *   | initialDiff | historical adapter `transcript-shape.ts:287-290,351` | none | `MessageItem.tsx:108` | historical extension |
+ *   | actions | historical adapter `transcript-shape.ts:291-293,349` | none | `MessageItem.tsx:109` | historical extension |
+ *   | attachments | historical adapter `transcript-shape.ts:309,350` | none | `MessageItem.tsx:110` | historical extension |
+ *   | assistantMessageId | none | live assistant adapter `transcript-shape.ts:425` | `MessageItem.tsx:113` | live extension |
+ *   | streaming | none | live assistant adapter `transcript-shape.ts:426` | `MessageItem.tsx:114` | live extension |
+ *   | streamMessageId | none | live adapters `transcript-shape.ts:427,456` | `MessageItem.tsx:115` | live extension |
+ *   | messageRootId | none | live assistant adapter `transcript-shape.ts:428` | `MessageItem.tsx:116` | live extension |
+ *   | processingStartedAtMs | none | live assistant adapter `transcript-shape.ts:429-431` | `MessageItem.tsx:117` | live extension |
+ *
+ * `wallClockDurationMs` is *group-level* (sum-of-frame span), not
+ * per-message. Neither adapter produces it; `SessionTranscript.tsx`
+ * computes it on the `group` and passes it as a non-view MessageItem prop.
  *
  * `changeSetId` is carried in the wire shape and the historical
- * message-projection reads it for the diff, but it is never surfaced to
- * `MessageItem`. Removed from the leaf renderer prop block entirely.
- *
- * The base type below carries **only the shared fields**. The two
- * extensions add the side-specific fields; the union `WebuiTurnView` is
- * the consumer-facing type `MessageItem.view` accepts.
+ * message-projection reads it for the diff, but it is never surfaced
+ * to `MessageItem`. Removed from the leaf renderer prop block entirely.
  */
 export interface WebuiTurnViewBase {
   readonly source: "historical" | "live";
   readonly messageId: string;
   readonly role: "user" | "assistant";
   readonly sessionId?: string;
-  readonly turnId?: string;
   readonly userText?: string;
   readonly thinking?: string;
-  readonly thinkingDurationMs?: number;
   readonly tools?: readonly Record<string, unknown>[];
   readonly answers?: readonly string[];
   readonly timestamp?: number;
   readonly isGoal?: boolean;
   readonly totalRequestDurationMs?: number;
   readonly totalOutputTokens?: number;
-  /**
-   * Per-segment disclosure list (Desktop-style process detail row).
-   * Historical group collapse and the live adapter both produce it; the
-   * per-message adapter in `projectHistoricalTurnView` leaves it
-   * undefined because group-level projection owns it.
-   */
+  /** Live adapter or historical assistant-group projector. */
   readonly processSegments?: readonly WebuiTranscriptProcessSegment[];
 }
 
@@ -216,6 +222,8 @@ export interface WebuiTurnViewBase {
  */
 export interface WebuiHistoricalTurnView extends WebuiTurnViewBase {
   readonly source: "historical";
+  readonly turnId?: string;
+  readonly thinkingDurationMs?: number;
   readonly initialDiff?: WebuiTurnDiffView;
   readonly actions?: WebuiMessageActionCapabilities;
   readonly attachments?: readonly WebuiMessageAttachment[];

@@ -93,28 +93,28 @@ export function MessageItem({
     : undefined;
   // Shared fields are read directly from the union base.
   const sessionId = view.sessionId;
-  const turnId = view.turnId;
   const userText = view.userText;
   const thinking = view.thinking;
-  const thinkingDurationMs = view.thinkingDurationMs;
   const tools = view.tools;
   const answers = view.answers;
   const timestamp = view.timestamp;
   const isGoal = view.isGoal;
   const totalRequestDurationMs = view.totalRequestDurationMs;
   const totalOutputTokens = view.totalOutputTokens;
-  // Historical-only.
+  // Historical-only (Plan A: `turnId` / `thinkingDurationMs` /
+  // `initialDiff` / `actions` / `attachments`).
+  const turnId = historicalView?.turnId;
+  const thinkingDurationMs = historicalView?.thinkingDurationMs;
   const initialDiff = historicalView?.initialDiff;
   const actions = historicalView?.actions;
   const attachments = historicalView?.attachments;
-  // Live-only.
+  // Live-only fields. `processSegments` is shared on the view because
+  // history supplies it at group level and the live adapter supplies it.
   const assistantMessageId = liveView?.assistantMessageId;
   const streaming = liveView?.streaming;
   const streamMessageId = liveView?.streamMessageId;
   const messageRootId = liveView?.messageRootId;
   const processingStartedAtMs = liveView?.processingStartedAtMs;
-  // processSegments is on the shared base (live adapter + group-level
-  // historical projector both fill it).
   const processSegments = view.processSegments;
 
   const [editing, setEditing] = useState(false);
