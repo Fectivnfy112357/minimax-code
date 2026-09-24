@@ -79,13 +79,13 @@ function renderActivityParts(
       } else if (tools.length > 0) {
         rows.push(<WebuiActivityGroup key={`${messageId}-tools-${index}`} tools={tools} authoritativeDiffAvailable={authoritativeDiffAvailable} />);
       } else {
-        thoughts.forEach((thought, thoughtIndex) => rows.push(<WebuiThinkingBlock key={`${messageId}-thinking-${index}-${thoughtIndex}`} text={thought.text} streaming={streaming} processingStartedAtMs={processingStartedAtMs} summaryLabel={streaming ? "推理中..." : "思考 1 次"} />));
+        thoughts.forEach((thought, thoughtIndex) => rows.push(<WebuiThinkingBlock key={`${messageId}-thinking-${index}-${thoughtIndex}`} text={thought.text} streaming={streaming} processingStartedAtMs={processingStartedAtMs} summaryLabel={streaming ? "推理中..." : "思考 1 次"} showDetailHeading />));
       }
       index = cursor - 1;
     } else if (part.type === "text") {
       rows.push(<div className="webui-assistant-answer" key={`${messageId}-ordered-text-${index}`} data-webui-message-kind="assistant"><WebuiMarkdown source={part.text} /></div>);
     } else if (part.type === "cognitive" || part.type === "compaction") {
-      rows.push(<WebuiThinkingBlock key={`${messageId}-${part.type}-${index}`} text={part.text} streaming={streaming} processingStartedAtMs={processingStartedAtMs} summaryLabel={part.type === "compaction" ? "上下文整理" : "思考过程"} />);
+      rows.push(<WebuiThinkingBlock key={`${messageId}-${part.type}-${index}`} text={part.text} streaming={streaming} processingStartedAtMs={processingStartedAtMs} summaryLabel={part.type === "compaction" ? "上下文整理" : "思考过程"} showDetailHeading={part.type !== "compaction"} />);
     } else if (part.type === "delegation") {
       rows.push(<div className="webui-agent-delegation" key={`${messageId}-delegation-${index}`} data-webui-agent-activity="delegation" data-active={streaming && index === parts.length - 1 ? "true" : undefined}><span className="webui-agent-delegation-summary"><span className="webui-agent-delegation-avatar" aria-hidden="true">{String(part.message.fromAgent ?? "Agent").slice(0, 1).toUpperCase()}</span><span className="webui-agent-activity-title">{`${String(part.message.fromAgent ?? "Agent")} 发给 ${String(part.message.toAgent ?? "Agent")}`}</span></span>{typeof part.message.content === "string" ? <WebuiMarkdown source={part.message.content} /> : null}</div>);
     } else {

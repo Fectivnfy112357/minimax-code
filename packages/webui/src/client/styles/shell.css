@@ -1235,7 +1235,7 @@
   /* The assistant's process disclosure: a summary line, a hairline, and the
    * collapsible body that carries the thinking and the tool steps. */
   .webui-turn-process-separator {
-    margin-top: var(--spacing_8);
+    margin-top: var(--spacing_16);
     border-bottom: 0.5px solid var(--border_default);
   }
 
@@ -1279,6 +1279,7 @@
     font-weight: 400;
     line-height: 22px;
   }
+  .webui-thinking-summary .webui-tool-icon { color: var(--text_default_tertiary); }
   .webui-thinking-summary:hover,
   .webui-tool-row-summary:hover {
     color: var(--text_default_secondary);
@@ -1329,8 +1330,14 @@
   .activity-group[open] .activity-group-chevron { transform: rotate(90deg); }
   .activity-group-body {
     position: relative;
-    margin-top: var(--spacing_8);
-    padding-left: 24px;
+    margin-top: var(--spacing_16);
+    padding-left: 0;
+  }
+  .activity-group-items {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: var(--spacing_8);
   }
   .timeline-spine {
     position: absolute;
@@ -1365,6 +1372,42 @@
     font-size: 14px;
     line-height: 20px;
   }
+  .webui-thinking-detail-heading {
+    display: flex;
+    min-height: 20px;
+    align-items: center;
+    gap: var(--spacing_8);
+    margin: 0 0 var(--spacing_8) -24px;
+    color: var(--text_default_tertiary);
+    font-size: 14px;
+    line-height: 20px;
+  }
+  .webui-thinking-detail-content {
+    position: relative;
+  }
+  .webui-thinking-detail-content.is-clamped {
+    max-height: 224px;
+    overflow: hidden;
+  }
+  .webui-thinking-detail-content.is-clamped::after {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    height: 40px;
+    background: linear-gradient(180deg, transparent, var(--bg_default_primary));
+    content: "";
+    pointer-events: none;
+  }
+  .webui-thinking-expand {
+    display: block;
+    margin-top: var(--spacing_4);
+    color: var(--text_default_tertiary);
+    font-size: 14px;
+    line-height: 20px;
+    text-align: left;
+  }
+  .webui-thinking-expand:hover { color: var(--text_default_secondary); }
   .webui-thinking-detail .webui-markdown {
     font-size: 14px;
     line-height: 20px;
