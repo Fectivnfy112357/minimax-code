@@ -16,9 +16,18 @@ import type {
   WebuiVersionInfo,
 } from "../../server/port.js";
 import type { WebuiTransport } from "../contracts.js";
-import { SettingsModal } from "./SettingsModal.js";
+import { SettingsModal, type WebuiSettingsModalCapabilities } from "./SettingsModal.js";
 
 type AccountStatus = Record<string, unknown>;
+
+/** Capability subset the user menu actually reads through `transport`.
+ *  The menu itself only needs `getAccountStatus` and `getUsageQuota`, but
+ *  the same reference is forwarded to `<SettingsModal>` which needs the
+ *  full 9-member set — so the menu accepts that same set to avoid a second
+ *  type split at the shell. `getSigninPanel` and `claimSignin` are not in
+ *  this contract (they live in `WebuiTransport` but the brief keeps them
+ *  as separate props on the menu for now), so they stay as siblings. */
+type WebuiUserMenuCapabilities = WebuiSettingsModalCapabilities;
 
 interface UserMenuProps {
   readonly collapsed: boolean;
@@ -26,11 +35,10 @@ interface UserMenuProps {
   readonly dataDir?: string;
   readonly version?: WebuiVersionInfo;
   readonly sessionId?: string;
-  /** Single capability source for the menu's own panels (account status,
-   *  signin, usage quota). The settings modal receives the same transport
-   *  reference, so we no longer hand-curate the capability subset the
-   *  menu exposes. */
-  readonly transport?: WebuiTransport;
+  /** Capability source for the menu's own panels and the settings modal.
+   *  Typed as the narrow 9-member contract so neither the menu nor the
+   *  modal can accidentally start reading members they do not consume. */
+  readonly transport?: WebuiUserMenuCapabilities;
   readonly getSigninPanel?: () => Promise<WebuiSigninPanelView>;
   readonly claimSignin?: () => Promise<WebuiClaimSigninView>;
 }

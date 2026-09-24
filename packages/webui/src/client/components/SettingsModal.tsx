@@ -26,16 +26,35 @@ function SettingRow({ title, description, children, testId, disabled = false }: 
 function Divider(): ReactElement { return <div className="webui-generic-divider"><span /></div>; }
 function Section({ title, testId, children, preference = false }: { readonly title: string; readonly testId?: string; readonly children: ReactNode; readonly preference?: boolean }): ReactElement { return <section data-testid={testId} className={`webui-generic-section${preference ? " is-preference" : ""}`}><h3>{title}</h3><div className="webui-generic-card">{children}</div></section>; }
 
+/** Capability subset the settings modal actually reads: 9 transport
+ *  members plus dataDir / version / sessionId. The single source of truth
+ *  for capability shape is `WebuiTransport`; this `Pick<…>` keeps the modal's
+ *  real dependency visible on the prop type instead of swallowing the full
+ *  68-key contract. Optional semantics are preserved: every picked key
+ *  remains `?` because the source field is optional. */
+export type WebuiSettingsModalCapabilities = Pick<
+  WebuiTransport,
+  | "listModels"
+  | "selectModel"
+  | "getUsageQuota"
+  | "getAccountStatus"
+  | "listUserModelProviders"
+  | "listArchivedSessions"
+  | "getMiniMaxApiKeyStatus"
+  | "signOut"
+  | "deleteSession"
+>;
+
 interface SettingsModalProps {
   readonly open: boolean;
   readonly onClose: () => void;
   readonly dataDir?: string;
   readonly version?: WebuiVersionInfo;
   readonly sessionId?: string;
-  /** Single capability source for everything the modal needs. Settings
-   *  reads each capability through `transport?.X` so the modal is no longer
-   *  coupled to a hand-curated subset of transport fields. */
-  readonly transport?: WebuiTransport;
+  /** Capability source for the modal. Typed as the narrow 9-member
+   *  contract so the modal cannot accidentally start reading members it
+   *  does not consume. */
+  readonly transport?: WebuiSettingsModalCapabilities;
 }
 
 export function SettingsModal({ open, onClose, dataDir, version, sessionId, transport }: SettingsModalProps): ReactElement | null {
