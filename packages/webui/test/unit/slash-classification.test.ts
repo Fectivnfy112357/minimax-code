@@ -8,6 +8,7 @@ import {
   sectionWebuiSlashPalette,
   type SlashCommandEntry,
 } from "../../src/client/slash-palette.js";
+import { resolveWebuiSubmissionIntent } from "../../src/client/projection/composer-state.js";
 
 /**
  * Pure tests for the slash palette decision layer.
@@ -168,67 +169,190 @@ describe("sectionWebuiSlashPalette — order snapshot (default + skills sections
   });
 });
 
-describe("disabled entries do not produce run-command operations", () => {
-  // The contract: a `supported: false` row must not reach the run-command
-  // intent path. Even when its name is in WEBUI_RUN_COMMAND_NAMES
-  // (hypothetically disabled for the runCommand port), the submit path
-  // falls through to the user-message path. The classification table
-  // above already pins the `inert-unsupported` state; this block pins
-  // the operational consequence.
+describe("resolveWebuiSubmissionIntent — operational consequence: disabled / inert entries do not reach run-command intent", () => {
+  // The classification table above already pins the `inert-unsupported`
+  // and `inert-wired` states. This block pins the *operational*
+  // consequence: driving `resolveWebuiSubmissionIntent` directly with
+  // every entry in `WEBUI_BUILTIN_COMMANDS ∪ WEBUI_SKILL_FIXTURES` as
+  // the slash command match, the resolver must never produce a
+  // `{ kind: "run-command", ... }` intent for entries whose
+  // classification is not `runnable`. The set is the full registry — no
+  // "spot check" on plan / fork / memory only — so a future addition of
+  // a runnable entry is visible (new runnable → new run-command intent)
+  // and a future regression (e.g. a supported:false entry sneaking into
+  // run-command) is captured.
+  const allEntries: SlashCommandEntry[] = [
+    ...WEBUI_BUILTIN_COMMANDS,
+    ...WEBUI_SKILL_FIXTURES,
+  ];
 
-  it("`plan` (disabled in WEBUI_BUILTIN_COMMANDS) does NOT classify as runnable", () => {
-    const plan = WEBUI_BUILTIN_COMMANDS.find((entry) => entry.name === "plan");
-    expect(plan?.supported).toBe(false);
-    expect(isWebuiRunnableCommand(plan as SlashCommandEntry)).toBe(false);
-    expect(classifyWebuiSlashCommand(plan as SlashCommandEntry)).toBe(
-      "inert-unsupported",
-    );
+  for (const entry of allEntries) {
+    const classification = classifyWebuiSlashCommand(entry);
+    it(`"${entry.name}" (${classification}) — resolver intent is operational, not just classified`, () => {
+      // Drive the resolver the way the composer would: a draft that, if
+      // the entry were runnable, would otherwise take path 3
+      // (run-command). `commandInvocationInput` is non-empty so paths 1/2
+      // (goal-only) don't steal the test for the `/goal` command — path 2
+      // does fire for `goal` because its name is special-cased, which is
+      // itself a "not run-command" outcome.
+      const intent = resolveWebuiSubmissionIntent({
+        draft: `/${entry.name} payload`,
+        commandMatch: entry,
+        commandInvocationName: entry.name,
+        commandInvocationInput: "payload",
+        goalMode: false,
+      });
+      if (classification === "runnable") {
+        // The operational promise: a runnable entry reaches the host.
+        expect(intent?.kind).toBe("run-command");
+        if (intent?.kind === "run-command") {
+          expect(intent.command.name).toBe(entry.name);
+          expect(intent.input).toBe("payload");
+        }
+      } else {
+        // The operational promise (negative): every non-runnable entry
+        // — inert-wired (skills) and inert-unsupported (plan / fork /
+        // memory) — must NOT reach the run-command intent.
+        expect(intent?.kind).not.toBe("run-command");
+      }
+    });
+  }
+
+  it("summary — exactly the runnable entries produce a run-command intent (registry-wide)", () => {
+    // Pull the run-command intents out of a single resolver pass over
+    // the full registry. The set must equal the classification's
+    // `runnable` rows. A future regression that lets inert-wired or
+    // inert-unsupported rows sneak into run-command would show up here
+    // as the set growing past the expected two rows.
+    const runCommandIntents: { name: string; input?: string }[] = [];
+    for (const entry of allEntries) {
+      const intent = resolveWebuiSubmissionIntent({
+        draft: `/${entry.name} payload`,
+        commandMatch: entry,
+        commandInvocationName: entry.name,
+        commandInvocationInput: "payload",
+        goalMode: false,
+      });
+      if (intent?.kind === "run-command") {
+        runCommandIntents.push({
+          name: intent.command.name,
+          ...(intent.input !== undefined ? { input: intent.input } : {}),
+        });
+      }
+    }
+    // Two built-ins (`compact`, `new`) are runnable; the rest of the
+    // registry — `plan`, `fork`, `memory`, `goal`, and every skill
+    // fixture — must NOT appear here.
+    expect(runCommandIntents.map((row) => row.name).sort()).toEqual([
+      "compact",
+      "new",
+    ]);
+  });
+});
+
+describe("host `runCommand` stub counter — disabled entries trigger zero host calls", () => {
+  // The composer component's `submit` function dispatches on
+  // `intent.kind`. For `run-command` it calls `runCommand(...)`; for every
+  // other kind it goes through a different path (goal / submit-turn /
+  // activate-goal-mode). The test mirrors the dispatcher's run-command
+  // branch as a stub and drives the resolver with every registry entry;
+  // the stub's call count must equal the number of runnable rows.
+  //
+  // This is the "stub counter" assertion the runbook asked for: it pins
+  // the operational promise on the same code path the production
+  // component takes, without mounting React. The component-side
+  // `runCommand` call is not in `submitWebuiComposerTurn`'s signature
+  // (the helper doesn't see the run-command path — the React submit
+  // function owns it), so we replicate the dispatch here.
+
+  const allEntries: SlashCommandEntry[] = [
+    ...WEBUI_BUILTIN_COMMANDS,
+    ...WEBUI_SKILL_FIXTURES,
+  ];
+
+  async function dispatchEntry(
+    entry: SlashCommandEntry,
+    runCommandStub: (args: { command: string; input?: string }) => Promise<unknown>,
+  ): Promise<void> {
+    const intent = resolveWebuiSubmissionIntent({
+      draft: `/${entry.name} payload`,
+      commandMatch: entry,
+      commandInvocationName: entry.name,
+      commandInvocationInput: "payload",
+      goalMode: false,
+    });
+    // Mirror SessionComposer.tsx submit()'s `if (intent.kind === "run-command")`
+    // branch — every other kind falls through to a different executor
+    // (goal / submit-turn), which this test does not invoke.
+    if (intent?.kind === "run-command") {
+      await runCommandStub({
+        command: intent.command.name,
+        ...(intent.input !== undefined ? { input: intent.input } : {}),
+      });
+    }
+  }
+
+  it("zero calls for `supported: false` built-ins (plan / fork / memory)", async () => {
+    const calls: { command: string; input?: string }[] = [];
+    const stub = async (args: { command: string; input?: string }) => {
+      calls.push(args);
+      return { output: "ok" };
+    };
+    for (const name of ["plan", "fork", "memory"] as const) {
+      const entry = WEBUI_BUILTIN_COMMANDS.find(
+        (candidate) => candidate.name === name,
+      );
+      expect(entry).toBeDefined();
+      await dispatchEntry(entry as SlashCommandEntry, stub);
+    }
+    expect(calls).toEqual([]);
   });
 
-  it("`fork` (disabled in WEBUI_BUILTIN_COMMANDS) does NOT classify as runnable", () => {
-    const fork = WEBUI_BUILTIN_COMMANDS.find((entry) => entry.name === "fork");
-    expect(fork?.supported).toBe(false);
-    expect(isWebuiRunnableCommand(fork as SlashCommandEntry)).toBe(false);
-    expect(classifyWebuiSlashCommand(fork as SlashCommandEntry)).toBe(
-      "inert-unsupported",
-    );
+  it("zero calls for every skill fixture (ask-matt / code-review / codebase-design / diagnosing-bugs)", async () => {
+    const calls: { command: string; input?: string }[] = [];
+    const stub = async (args: { command: string; input?: string }) => {
+      calls.push(args);
+      return { output: "ok" };
+    };
+    for (const entry of WEBUI_SKILL_FIXTURES) {
+      await dispatchEntry(entry, stub);
+    }
+    expect(calls).toEqual([]);
   });
 
-  it("`memory` (disabled in WEBUI_BUILTIN_COMMANDS) does NOT classify as runnable", () => {
-    const memory = WEBUI_BUILTIN_COMMANDS.find(
-      (entry) => entry.name === "memory",
-    );
-    expect(memory?.supported).toBe(false);
-    expect(isWebuiRunnableCommand(memory as SlashCommandEntry)).toBe(false);
-    expect(classifyWebuiSlashCommand(memory as SlashCommandEntry)).toBe(
-      "inert-unsupported",
-    );
-  });
-
-  it("only `new` / `compact` (of the wired built-ins) classify as runnable; `goal` is `inert-wired` (composerMode path)", () => {
-    // Of the six WEBUI_BUILTIN_COMMANDS, three are `supported: true`:
-    // `new`, `compact`, `goal`. Of those three, only `new` and `compact`
-    // have names that appear in WEBUI_RUN_COMMAND_NAMES — `goal` is
-    // wired but its name is absent from the runCommand list, so the
-    // submit path takes the rule 1/2 `composerMode: "goal"` route instead
-    // of the run-command path. This is exactly the inert-wired state the
-    // classification table describes.
-    const wiredRuntimes = WEBUI_BUILTIN_COMMANDS.filter(
-      (entry) =>
-        entry.supported &&
-        WEBUI_RUN_COMMAND_NAMES.includes(
-          entry.name as (typeof WEBUI_RUN_COMMAND_NAMES)[number],
-        ),
-    ).map((entry) => entry.name);
-    expect(wiredRuntimes.sort()).toEqual(["compact", "new"]);
-
+  it("zero calls for the inert-wired `goal` entry — submit path routes it through composerMode, not runCommand", async () => {
+    const calls: { command: string; input?: string }[] = [];
+    const stub = async (args: { command: string; input?: string }) => {
+      calls.push(args);
+      return { output: "ok" };
+    };
     const goalEntry = WEBUI_BUILTIN_COMMANDS.find(
-      (entry) => entry.name === "goal",
+      (candidate) => candidate.name === "goal",
     );
-    expect(goalEntry?.supported).toBe(true);
-    expect(classifyWebuiSlashCommand(goalEntry as SlashCommandEntry)).toBe(
-      "inert-wired",
-    );
+    expect(goalEntry).toBeDefined();
+    await dispatchEntry(goalEntry as SlashCommandEntry, stub);
+    expect(calls).toEqual([]);
+  });
+
+  it("registry-wide — only `compact` and `new` reach the runCommand stub (counter)", async () => {
+    const calls: { command: string; input?: string }[] = [];
+    const stub = async (args: { command: string; input?: string }) => {
+      calls.push(args);
+      return { output: "ok" };
+    };
+    for (const entry of allEntries) {
+      await dispatchEntry(entry, stub);
+    }
+    // Two expected hits — `compact` and `new`. Every other entry in the
+    // registry must NOT increment the counter. The pin: a regression
+    // that lets inert-wired (skills, `goal`) or inert-unsupported
+    // (`plan`, `fork`, `memory`) rows through path 3 would surface here
+    // as the counter growing past 2.
+    expect(calls.length).toBe(2);
+    expect(calls.map((row) => row.command).sort()).toEqual(["compact", "new"]);
+    for (const call of calls) {
+      expect(call.input).toBe("payload");
+    }
   });
 });
 
