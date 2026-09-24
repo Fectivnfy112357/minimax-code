@@ -182,73 +182,21 @@ export function WebuiClientFoundationApp(
   } = props;
   // Each method comes from `transport`. Re-binding to the same local
   // name as before keeps the rest of the function body identical.
+  // Local rebinds: each name below is consumed by a shell-side effect or
+  // handler below this declaration, so it is a real local capability, not
+  // a pure conduit. Everything else that used to be rebound here is now
+  // read directly off `transport` at the JSX consumption point — see the
+  // 67-rebind classification table in the revision report.
   const loadSessions = transport?.loadSessions;
   const loadSessionTree = transport?.loadSessionTree;
-  const listArchivedSessions = transport?.listArchivedSessions;
   const loadMessages = transport?.loadMessages;
-  const getTurnDiff = transport?.getTurnDiff;
-  const revertTurnDiff = transport?.revertTurnDiff;
-  const reapplyTurnDiff = transport?.reapplyTurnDiff;
-  const getSessionRewindPreview = transport?.getSessionRewindPreview;
-  const rewindSession = transport?.rewindSession;
-  const editSessionMessage = transport?.editSessionMessage;
-  const isGoalEnabled = transport?.isGoalEnabled;
-  const getGoal = transport?.getGoal;
-  const createGoal = transport?.createGoal;
-  const patchGoal = transport?.patchGoal;
-  const clearGoal = transport?.clearGoal;
-  const listWorkspaceFileTree = transport?.listWorkspaceFileTree;
-  const readWorkspaceFile = transport?.readWorkspaceFile;
-  const getWorkspaceEnvironment = transport?.getWorkspaceEnvironment;
-  const mutateWorkspaceGit = transport?.mutateWorkspaceGit;
-  const readCanvas = transport?.readCanvas;
-  const applyCanvas = transport?.applyCanvas;
-  const createTerminal = transport?.createTerminal;
-  const listTerminals = transport?.listTerminals;
-  const writeTerminal = transport?.writeTerminal;
-  const disposeTerminal = transport?.disposeTerminal;
-  const watchTerminal = transport?.watchTerminal;
-  const createSession = transport?.createSession;
-  const sendMessage = transport?.sendMessage;
-  const enqueueMessage = transport?.enqueueMessage;
-  const resumeSession = transport?.resumeSession;
-  const watchEvents = transport?.watchEvents;
-  const listPendingPermissions = transport?.listPendingPermissions;
-  const getPendingQuestionnaire = transport?.getPendingQuestionnaire;
-  const replyPermission = transport?.replyPermission;
-  const replyQuestionnaire = transport?.replyQuestionnaire;
-  const dismissQuestionnaire = transport?.dismissQuestionnaire;
-  const abortSession = transport?.abortSession;
-  const listQueueMessages = transport?.listQueueMessages;
-  const deleteQueueItem = transport?.deleteQueueItem;
-  const listModels = transport?.listModels;
-  const listSkills = transport?.listSkills;
-  const selectModel = transport?.selectModel;
-  const getSessionUsage = transport?.getSessionUsage;
   const getUsageQuota = transport?.getUsageQuota;
-  const getSigninPanel = transport?.getSigninPanel;
-  const claimSignin = transport?.claimSignin;
-  const getAccountStatus = transport?.getAccountStatus;
-  const signOut = transport?.signOut;
   const getVersion = transport?.version;
   const archiveSession = transport?.archiveSession;
   const deleteSession = transport?.deleteSession;
   const updateSession = transport?.updateSession;
   const getSessionForkOptions = transport?.getSessionForkOptions;
   const forkSession = transport?.forkSession;
-  const listUserModelProviders = transport?.listUserModelProviders;
-  const createUserModelProvider = transport?.createUserModelProvider;
-  const updateUserModelProvider = transport?.updateUserModelProvider;
-  const deleteUserModelProvider = transport?.deleteUserModelProvider;
-  const testUserModelProvider = transport?.testUserModelProvider;
-  const testUserModel = transport?.testUserModel;
-  const discoverUserModelsCandidate = transport?.discoverUserModelsCandidate;
-  const saveUserModelProviderCandidate = transport?.saveUserModelProviderCandidate;
-  const listProviderPresets = transport?.listProviderPresets;
-  const getMiniMaxApiKeyStatus = transport?.getMiniMaxApiKeyStatus;
-  const upsertMiniMaxApiKey = transport?.upsertMiniMaxApiKey;
-  const getCodexOAuthStatus = transport?.getCodexOAuthStatus;
-  const runCommand = transport?.runCommand;
 
   const [runtimeVersion, setRuntimeVersion] = useState(version);
   useEffect(() => { if (!runtimeVersion && getVersion) void getVersion().then(setRuntimeVersion); }, [getVersion, runtimeVersion]);
@@ -790,8 +738,8 @@ export function WebuiClientFoundationApp(
                   version={runtimeVersion}
                   sessionId={selectedSessionId}
                   transport={transport}
-                  getSigninPanel={getSigninPanel}
-                  claimSignin={claimSignin}
+                  getSigninPanel={transport?.getSigninPanel}
+                  claimSignin={transport?.claimSignin}
                 />
               </div>
             </aside>
@@ -813,7 +761,7 @@ export function WebuiClientFoundationApp(
             className={`relative flex min-h-0 min-w-0 flex-1 flex-row ${!homeMode && workspaceOverviewOpen && !workspacePanelOpen ? "webui-session-surface-with-workspace" : ""}`}
           >
             {!homeMode ? <WebuiWorkspacePanelControls filePanelOpen={workspacePanelOpen} workspaceOpen={workspaceOverviewOpen && !workspacePanelOpen} onOpenFiles={() => { setWorkspacePanelTab("files"); setWorkspacePanelOpen((value) => !value); }} onToggleWorkspace={() => setWorkspaceOverviewOpen((value) => !value)} /> : null}
-            {!homeMode && workspaceOverviewOpen && !workspacePanelOpen ? <WebuiWorkspaceOverview workspaceDir={selectedSession?.workspaceDir} isDefaultWorkspace={selectedSession?.isDefaultWorkspace} todos={progressTodos} subagents={progressSubagents} showProgress={!homeMode} showEmptyProgress={true} getWorkspaceEnvironment={getWorkspaceEnvironment} mutateWorkspaceGit={mutateWorkspaceGit} environmentCollapsed={workspaceEnvironmentCollapsed} progressCollapsed={workspaceProgressCollapsed} subagentsCollapsed={workspaceSubagentsCollapsed} onToggleEnvironment={() => setWorkspaceEnvironmentCollapsed((value) => !value)} onToggleProgress={() => setWorkspaceProgressCollapsed((value) => !value)} onToggleSubagents={() => setWorkspaceSubagentsCollapsed((value) => !value)} onMemberClick={handleWorkspaceSubagentClick} onOpenChanges={() => { setWorkspacePanelTab("files"); setWorkspacePanelOpen(true); }} onOpenTerminal={() => { setWorkspacePanelTab("terminal"); setWorkspacePanelOpen(true); }} /> : null}
+            {!homeMode && workspaceOverviewOpen && !workspacePanelOpen ? <WebuiWorkspaceOverview workspaceDir={selectedSession?.workspaceDir} isDefaultWorkspace={selectedSession?.isDefaultWorkspace} todos={progressTodos} subagents={progressSubagents} showProgress={!homeMode} showEmptyProgress={true} getWorkspaceEnvironment={transport?.getWorkspaceEnvironment} mutateWorkspaceGit={transport?.mutateWorkspaceGit} environmentCollapsed={workspaceEnvironmentCollapsed} progressCollapsed={workspaceProgressCollapsed} subagentsCollapsed={workspaceSubagentsCollapsed} onToggleEnvironment={() => setWorkspaceEnvironmentCollapsed((value) => !value)} onToggleProgress={() => setWorkspaceProgressCollapsed((value) => !value)} onToggleSubagents={() => setWorkspaceSubagentsCollapsed((value) => !value)} onMemberClick={handleWorkspaceSubagentClick} onOpenChanges={() => { setWorkspacePanelTab("files"); setWorkspacePanelOpen(true); }} onOpenTerminal={() => { setWorkspacePanelTab("terminal"); setWorkspacePanelOpen(true); }} /> : null}
             <div className="relative flex h-full min-w-0 flex-1 flex-col">
               <div
                 className="pointer-events-none absolute inset-x-0 top-6 z-[60] flex justify-center"
@@ -883,42 +831,42 @@ export function WebuiClientFoundationApp(
                     sessionId={selectedSessionId}
                     sessionLayout={!homeMode}
                     agentName={selectedAgentName}
-                    createSession={createSession}
+                    createSession={transport?.createSession}
                     createSessionWorkspaceDir={newTaskWorkspaceDir}
                     onWorkspaceChange={handleWorkspaceChange}
                     workspaceMenuOpen={workspaceMenuOpen}
                     setWorkspaceMenuOpen={setWorkspaceMenuOpen}
-                    runCommand={runCommand}
-                    sendMessage={sendMessage}
-                    enqueueMessage={enqueueMessage}
-                    resumeSession={resumeSession}
+                    runCommand={transport?.runCommand}
+                    sendMessage={transport?.sendMessage}
+                    enqueueMessage={transport?.enqueueMessage}
+                    resumeSession={transport?.resumeSession}
                     loadMessages={loadMessages}
-                    getTurnDiff={getTurnDiff}
-                    revertTurnDiff={revertTurnDiff}
-                    reapplyTurnDiff={reapplyTurnDiff}
+                    getTurnDiff={transport?.getTurnDiff}
+                    revertTurnDiff={transport?.revertTurnDiff}
+                    reapplyTurnDiff={transport?.reapplyTurnDiff}
                     getSessionForkOptions={getSessionForkOptions}
                     forkSession={forkSession}
-                    getSessionRewindPreview={getSessionRewindPreview}
-                    rewindSession={rewindSession}
-                    editSessionMessage={editSessionMessage}
-                    getGoal={getGoal}
-                    createGoal={createGoal}
-                    patchGoal={patchGoal}
-                    clearGoal={clearGoal}
-                    isGoalEnabled={isGoalEnabled}
-                    watchEvents={watchEvents}
-                    listPendingPermissions={listPendingPermissions}
-                    getPendingQuestionnaire={getPendingQuestionnaire}
-                    replyPermission={replyPermission}
-                    replyQuestionnaire={replyQuestionnaire}
-                    dismissQuestionnaire={dismissQuestionnaire}
-                    abortSession={abortSession}
-                    listQueueMessages={listQueueMessages}
-                    deleteQueueItem={deleteQueueItem}
-                    listModels={listModels}
-                    listSkills={listSkills}
-                    selectModel={selectModel}
-                    getAccountStatus={getAccountStatus}
+                    getSessionRewindPreview={transport?.getSessionRewindPreview}
+                    rewindSession={transport?.rewindSession}
+                    editSessionMessage={transport?.editSessionMessage}
+                    getGoal={transport?.getGoal}
+                    createGoal={transport?.createGoal}
+                    patchGoal={transport?.patchGoal}
+                    clearGoal={transport?.clearGoal}
+                    isGoalEnabled={transport?.isGoalEnabled}
+                    watchEvents={transport?.watchEvents}
+                    listPendingPermissions={transport?.listPendingPermissions}
+                    getPendingQuestionnaire={transport?.getPendingQuestionnaire}
+                    replyPermission={transport?.replyPermission}
+                    replyQuestionnaire={transport?.replyQuestionnaire}
+                    dismissQuestionnaire={transport?.dismissQuestionnaire}
+                    abortSession={transport?.abortSession}
+                    listQueueMessages={transport?.listQueueMessages}
+                    deleteQueueItem={transport?.deleteQueueItem}
+                    listModels={transport?.listModels}
+                    listSkills={transport?.listSkills}
+                    selectModel={transport?.selectModel}
+                    getAccountStatus={transport?.getAccountStatus}
                     draft={draft}
                     onDraftChange={setDraft}
                     teamModeOff={composerTeamModeOff}
@@ -933,14 +881,14 @@ export function WebuiClientFoundationApp(
                         sessionId={selectedSessionId}
                         loadMessages={loadMessages}
                         {...(initialMessages ? { initialMessages } : {})}
-                        getTurnDiff={getTurnDiff}
-                        revertTurnDiff={revertTurnDiff}
-                        reapplyTurnDiff={reapplyTurnDiff}
+                        getTurnDiff={transport?.getTurnDiff}
+                        revertTurnDiff={transport?.revertTurnDiff}
+                        reapplyTurnDiff={transport?.reapplyTurnDiff}
                         getSessionForkOptions={getSessionForkOptions}
                         forkSession={forkSession}
-                        getSessionRewindPreview={getSessionRewindPreview}
-                        rewindSession={rewindSession}
-                        editSessionMessage={editSessionMessage}
+                        getSessionRewindPreview={transport?.getSessionRewindPreview}
+                        rewindSession={transport?.rewindSession}
+                        editSessionMessage={transport?.editSessionMessage}
                       />
                       </Transcript>
                     ) : null}
@@ -955,7 +903,7 @@ export function WebuiClientFoundationApp(
                 </div>
               </div>
             </div>
-            {!homeMode && workspacePanelOpen ? <WebuiWorkspacePanel sessionId={selectedSessionId} workspaceDir={selectedSession?.workspaceDir} listWorkspaceFileTree={listWorkspaceFileTree} readWorkspaceFile={readWorkspaceFile} readCanvas={readCanvas} applyCanvas={applyCanvas} createTerminal={createTerminal} listTerminals={listTerminals} writeTerminal={writeTerminal} disposeTerminal={disposeTerminal} watchTerminal={watchTerminal} todos={progressTodos} defaultTab={workspacePanelTab} onClose={() => setWorkspacePanelOpen(false)} /> : null}
+            {!homeMode && workspacePanelOpen ? <WebuiWorkspacePanel sessionId={selectedSessionId} workspaceDir={selectedSession?.workspaceDir} listWorkspaceFileTree={transport?.listWorkspaceFileTree} readWorkspaceFile={transport?.readWorkspaceFile} readCanvas={transport?.readCanvas} applyCanvas={transport?.applyCanvas} createTerminal={transport?.createTerminal} listTerminals={transport?.listTerminals} writeTerminal={transport?.writeTerminal} disposeTerminal={transport?.disposeTerminal} watchTerminal={transport?.watchTerminal} todos={progressTodos} defaultTab={workspacePanelTab} onClose={() => setWorkspacePanelOpen(false)} /> : null}
           </main>
         </div>
       </div>
