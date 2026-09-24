@@ -438,7 +438,7 @@ export function WebuiTurnProcess({
       </div>
       <div className="mt-2 border-b-[0.5px] border-border_default" data-testid="turn-process-separator" aria-hidden="true" />
       {hasExpandableContent ? (
-        <div className="mt-3 space-y-4" data-testid="turn-process-detail" hidden={!contentExpanded}>
+        <div className="mt-2 space-y-4" data-testid="turn-process-detail" hidden={!contentExpanded}>
           {typeof children === "function" ? children(contentExpanded) : contentExpanded ? children : null}
         </div>
       ) : null}

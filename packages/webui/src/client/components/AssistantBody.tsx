@@ -270,7 +270,7 @@ export function WebuiAssistantBody({
           initiallyExpanded={processInitiallyExpanded}
           children={renderProcessContent}
           collapsedContent={(expanded) => !expanded && primaryAnswerPart
-            ? <div className="webui-assistant-answer" data-webui-message-kind="assistant"><WebuiMarkdown source={primaryAnswerPart.text} /></div>
+            ? <div className="mt-2 webui-assistant-answer" data-webui-message-kind="assistant"><WebuiMarkdown source={primaryAnswerPart.text} /></div>
             : null}
         />
       ) : null}
