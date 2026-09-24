@@ -20,7 +20,7 @@
 
 @layer components {
   .webui-workspace-panel { position: relative; z-index: 30; width: 288px; flex: 0 0 288px; min-height: 0; overflow: hidden; border-left: 1px solid var(--border_default); background: var(--bg_default_primary); color: var(--text_default_primary); }
-  .webui-workspace-section-group { position: absolute; top: 56px; right: 12px; z-index: 40; display: flex; width: 288px; flex-shrink: 0; flex-direction: column; overflow: hidden; border: .5px solid var(--border_default); border-radius: 16px; background: var(--bg_grouped_secondary_elevated); padding: 6px; box-shadow: 0 6px 24px rgb(0 0 0 / 8%); color: var(--text_default_primary); }
+  .webui-workspace-section-group { position: absolute; top: 56px; right: 12px; z-index: 40; display: flex; width: 288px; max-height: calc(100vh - 68px); min-height: 0; flex-shrink: 0; flex-direction: column; overflow-x: hidden; overflow-y: auto; border: .5px solid var(--border_default); border-radius: 16px; background: var(--bg_grouped_secondary_elevated); padding: 6px; box-shadow: 0 6px 24px rgb(0 0 0 / 8%); color: var(--text_default_primary); }
   .webui-environment-panel, .webui-progress-panel, .webui-subagents-panel { display: flex; flex-shrink: 0; flex-direction: column; overflow: hidden; }
   .webui-environment-panel + .webui-progress-panel { border-top: 1px solid var(--border_light); }
   .webui-progress-panel + .webui-subagents-panel { border-top: 1px solid var(--border_light); }
@@ -28,7 +28,9 @@
   .webui-environment-workspace { overflow: hidden; padding: 0 0 4px; color: var(--text_default_tertiary); font-size: var(--size_12); line-height: 18px; text-overflow: ellipsis; white-space: nowrap; }
   .webui-environment-actions { display: flex; flex-direction: column; gap: 1px; }
   .webui-environment-action { display: flex; min-height: 34px; width: 100%; align-items: center; gap: var(--spacing_8); border: 0; border-radius: var(--radius_8); background: transparent; padding: 0 2px; color: var(--text_default_primary); font-size: var(--size_14); text-align: left; }
-  .webui-environment-action small { margin-left: auto; color: var(--text_default_tertiary); font-size: var(--size_12); }
+  .webui-environment-action small { display: inline-flex; flex-shrink: 0; gap: var(--spacing_8); margin-left: auto; font-size: var(--size_12); }
+  .webui-environment-action small .webui-diff-additions { color: var(--text_label_positive_secondary_default); }
+  .webui-environment-action small .webui-diff-deletions { color: var(--text_label_danger_secondary_default); }
   .webui-environment-action:not(:disabled):hover { background: var(--bg_interaction_tertiary_hover); }
   .webui-environment-action:disabled { cursor: default; color: var(--text_default_tertiary); opacity: .72; }
   .webui-commit-dialog { position: fixed; top: 50%; left: 50%; z-index: 100; display: flex; width: min(420px, calc(100vw - 32px)); transform: translate(-50%, -50%); flex-direction: column; gap: var(--spacing_12); border: 1px solid var(--border_default); border-radius: var(--radius_12); background: var(--bg_grouped_secondary_elevated); padding: var(--spacing_16); box-shadow: 0 12px 40px rgb(0 0 0 / 18%); color: var(--text_default_primary); }
@@ -949,25 +951,32 @@
     outline-offset: 2px;
   }
 
-  /* Secondary action button: the muted "Load older" control. Uses the
-   * grouped-secondary surface so it sits in the layout without competing
-   * for the eye. */
+  /* Compact transcript pagination control. Keep it quiet until hover so
+   * older history is available without competing with the conversation. */
   .webui-button-secondary {
+    display: inline-flex;
+    min-height: 36px;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing_6);
     background-color: var(--bg_grouped_secondary);
-    color: var(--text_default_primary);
-    border-radius: var(--radius_8);
+    color: var(--text_default_secondary);
+    border-radius: var(--radius_full);
     padding: var(--spacing_6) var(--spacing_12);
     line-height: var(--line_height_20);
     border: 1px solid var(--border_default);
-    transition: background-color 120ms ease, border-color 120ms ease;
+    cursor: pointer;
+    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
   }
   .webui-button-secondary:hover:not(:disabled) {
     background-color: var(--bg_grouped_primary);
     border-color: var(--border_heavy);
+    color: var(--text_default_primary);
   }
   .webui-button-secondary:disabled {
     color: var(--text_default_tertiary);
     cursor: not-allowed;
+    opacity: 0.7;
   }
   .webui-button-secondary:focus-visible {
     outline: 2px solid var(--border_accent);

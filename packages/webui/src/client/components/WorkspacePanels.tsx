@@ -8,6 +8,7 @@ import type {
   WebuiWorkspaceFileContent,
   WebuiWorkspaceGitMutationRequest,
 } from "../../server/port.js";
+import type { WebuiClientEventWatcher } from "../contracts.js";
 import {
   projectWebuiWorkspaceHistory,
   type WebuiWorkspaceSubagent,
@@ -37,7 +38,7 @@ export function WebuiProgressPanel({ todos, showProgress = true, showEmptyProgre
         <div className="min-h-0 overflow-hidden">
           {todos.length === 0 ? <p className="webui-progress-empty">{DESKTOP_COPY.progressEmpty}</p> : todos.map((todo, index) => <div className={`webui-progress-row webui-progress-row--${todo.status}`} key={`${todo.content}-${index}`}>
             <span className="webui-progress-marker">{todo.status === "completed" ? <WebuiIconCheck className="size-3" /> : index + 1}</span>
-            <span className={todo.status === "completed" ? "line-through text-text_default_tertiary" : ""}>{todo.content}</span>
+            <span className={`min-w-0 flex-1 truncate ${todo.status === "completed" ? "line-through text-text_default_tertiary" : ""}`}>{todo.content}</span>
           </div>)}
         </div>
       </div>
@@ -106,11 +107,12 @@ function WorkspaceCommitDialog({ environment, workspaceDir, mutateWorkspaceGit, 
   </div>;
 }
 
-export function WebuiEnvironmentPanel({ workspaceDir, isDefaultWorkspace = false, workspaceEnvironment, getWorkspaceEnvironment, mutateWorkspaceGit, collapsed = false, onToggle, onOpenChanges, onOpenTerminal }: {
+export function WebuiEnvironmentPanel({ workspaceDir, isDefaultWorkspace = false, workspaceEnvironment, getWorkspaceEnvironment, watchEvents, mutateWorkspaceGit, collapsed = false, onToggle, onOpenChanges, onOpenTerminal }: {
   readonly workspaceDir?: string;
   readonly isDefaultWorkspace?: boolean;
   readonly workspaceEnvironment?: WebuiWorkspaceEnvironment;
   readonly getWorkspaceEnvironment?: (request: { readonly workspaceDir: string }) => Promise<WebuiWorkspaceEnvironment>;
+  readonly watchEvents?: WebuiClientEventWatcher;
   readonly mutateWorkspaceGit?: (request: WebuiWorkspaceGitMutationRequest) => Promise<Record<string, unknown>>;
   readonly collapsed?: boolean;
   readonly onToggle?: () => void;
@@ -120,21 +122,41 @@ export function WebuiEnvironmentPanel({ workspaceDir, isDefaultWorkspace = false
   const [environment, setEnvironment] = useState<WebuiWorkspaceEnvironment | undefined>(workspaceEnvironment);
   const [commitOpen, setCommitOpen] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
+  const environmentWorkspaceDir = useRef(workspaceDir);
   useEffect(() => {
     let cancelled = false;
+    if (environmentWorkspaceDir.current !== workspaceDir) {
+      environmentWorkspaceDir.current = workspaceDir;
+      setEnvironment(undefined);
+    }
     if (workspaceEnvironment) {
       setEnvironment(workspaceEnvironment);
       return () => { cancelled = true; };
     }
-    setEnvironment(undefined);
     if (!workspaceDir || isDefaultWorkspace || !getWorkspaceEnvironment) return () => { cancelled = true; };
     void getWorkspaceEnvironment({ workspaceDir }).then((next) => { if (!cancelled) setEnvironment(next); }).catch(() => { if (!cancelled) setEnvironment(undefined); });
     return () => { cancelled = true; };
   }, [getWorkspaceEnvironment, isDefaultWorkspace, reloadToken, workspaceDir, workspaceEnvironment]);
+  useEffect(() => {
+    if (!workspaceDir || isDefaultWorkspace || !getWorkspaceEnvironment || !watchEvents) return undefined;
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+    const unsubscribe = watchEvents((event) => {
+      if (event.type !== "workspace.git.changed") return;
+      const changedWorkspace = event.payload.workspace;
+      const aliases = event.payload.aliases;
+      if (changedWorkspace !== workspaceDir && !(Array.isArray(aliases) && aliases.includes(workspaceDir))) return;
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => setReloadToken((current) => current + 1), 350);
+    });
+    return () => {
+      unsubscribe();
+      if (refreshTimer) clearTimeout(refreshTimer);
+    };
+  }, [getWorkspaceEnvironment, isDefaultWorkspace, watchEvents, workspaceDir]);
   if (!workspaceDir || isDefaultWorkspace || (!getWorkspaceEnvironment && !workspaceEnvironment) || !environment?.isGitRepo) return null;
   const hasChanges = environment.changedFiles > 0;
   const canMutate = Boolean(mutateWorkspaceGit && !environment.changesError && !environment.metadataError && (hasChanges || environment.canPush));
-  const statsReady = environment.lineStatsStatus === "ready";
+  const hasLineChanges = environment.lineStatsStatus === "ready" && (environment.insertions > 0 || environment.deletions > 0);
   return <>
     <div className="webui-environment-panel" data-webui-environment-panel="true" data-workspace-section="true">
       <button type="button" className="webui-workspace-section-title" onClick={onToggle} aria-expanded={!collapsed}>
@@ -145,7 +167,7 @@ export function WebuiEnvironmentPanel({ workspaceDir, isDefaultWorkspace = false
         <div className="webui-environment-workspace" title={workspaceDir}>{environment.branch || " "}</div>
         <div className="webui-environment-actions">
           <button type="button" className="webui-environment-action" onClick={onOpenChanges} disabled={!onOpenChanges} title={environment.changesError ?? undefined}>
-            <WebuiIconRunLocation className="size-5" /><span>{DESKTOP_COPY.changes}</span>{hasChanges && statsReady ? <small>+{environment.insertions} -{environment.deletions}</small> : null}
+            <WebuiIconRunLocation className="size-5" /><span>{DESKTOP_COPY.changes}</span>{hasLineChanges ? <small aria-label={`新增 ${environment.insertions} 行，删除 ${environment.deletions} 行`}><span className="webui-diff-additions">+{environment.insertions}</span><span className="webui-diff-deletions">-{environment.deletions}</span></small> : null}
           </button>
           <button type="button" className="webui-environment-action" onClick={() => setCommitOpen(true)} disabled={!canMutate} title={!mutateWorkspaceGit ? DESKTOP_COPY.unsupported : environment.metadataError ?? environment.changesError}>
             <WebuiIconFile className="size-5" /><span>{DESKTOP_COPY.commit}</span>
@@ -168,9 +190,9 @@ export function WebuiWorkspacePanelControls({ filePanelOpen, workspaceOpen, onOp
   </div>;
 }
 
-export function WebuiWorkspaceOverview({ workspaceDir, isDefaultWorkspace = false, workspaceEnvironment, todos, subagents = [], showProgress = true, showEmptyProgress = true, getWorkspaceEnvironment, mutateWorkspaceGit, environmentCollapsed = false, progressCollapsed = false, subagentsCollapsed = false, onToggleEnvironment, onToggleProgress, onToggleSubagents, onMemberClick, onOpenChanges, onOpenTerminal }: { readonly workspaceDir?: string; readonly isDefaultWorkspace?: boolean; readonly workspaceEnvironment?: WebuiWorkspaceEnvironment; readonly todos: readonly WebuiTodo[]; readonly subagents?: readonly WebuiWorkspaceSubagent[]; readonly showProgress?: boolean; readonly showEmptyProgress?: boolean; readonly getWorkspaceEnvironment?: (request: { readonly workspaceDir: string }) => Promise<WebuiWorkspaceEnvironment>; readonly mutateWorkspaceGit?: (request: WebuiWorkspaceGitMutationRequest) => Promise<Record<string, unknown>>; readonly environmentCollapsed?: boolean; readonly progressCollapsed?: boolean; readonly subagentsCollapsed?: boolean; readonly onToggleEnvironment?: () => void; readonly onToggleProgress?: () => void; readonly onToggleSubagents?: () => void; readonly onMemberClick?: (subagent: WebuiWorkspaceSubagent) => void; readonly onOpenChanges?: () => void; readonly onOpenTerminal?: () => void }): ReactElement {
+export function WebuiWorkspaceOverview({ workspaceDir, isDefaultWorkspace = false, workspaceEnvironment, todos, subagents = [], showProgress = true, showEmptyProgress = true, getWorkspaceEnvironment, watchEvents, mutateWorkspaceGit, environmentCollapsed = false, progressCollapsed = false, subagentsCollapsed = false, onToggleEnvironment, onToggleProgress, onToggleSubagents, onMemberClick, onOpenChanges, onOpenTerminal }: { readonly workspaceDir?: string; readonly isDefaultWorkspace?: boolean; readonly workspaceEnvironment?: WebuiWorkspaceEnvironment; readonly todos: readonly WebuiTodo[]; readonly subagents?: readonly WebuiWorkspaceSubagent[]; readonly showProgress?: boolean; readonly showEmptyProgress?: boolean; readonly getWorkspaceEnvironment?: (request: { readonly workspaceDir: string }) => Promise<WebuiWorkspaceEnvironment>; readonly watchEvents?: WebuiClientEventWatcher; readonly mutateWorkspaceGit?: (request: WebuiWorkspaceGitMutationRequest) => Promise<Record<string, unknown>>; readonly environmentCollapsed?: boolean; readonly progressCollapsed?: boolean; readonly subagentsCollapsed?: boolean; readonly onToggleEnvironment?: () => void; readonly onToggleProgress?: () => void; readonly onToggleSubagents?: () => void; readonly onMemberClick?: (subagent: WebuiWorkspaceSubagent) => void; readonly onOpenChanges?: () => void; readonly onOpenTerminal?: () => void }): ReactElement {
   return <div className="webui-workspace-section-group" data-testid="workspace-section-group">
-    <WebuiEnvironmentPanel workspaceDir={workspaceDir} isDefaultWorkspace={isDefaultWorkspace} workspaceEnvironment={workspaceEnvironment} getWorkspaceEnvironment={getWorkspaceEnvironment} mutateWorkspaceGit={mutateWorkspaceGit} collapsed={environmentCollapsed} onToggle={onToggleEnvironment} onOpenChanges={onOpenChanges} onOpenTerminal={onOpenTerminal} />
+    <WebuiEnvironmentPanel workspaceDir={workspaceDir} isDefaultWorkspace={isDefaultWorkspace} workspaceEnvironment={workspaceEnvironment} getWorkspaceEnvironment={getWorkspaceEnvironment} watchEvents={watchEvents} mutateWorkspaceGit={mutateWorkspaceGit} collapsed={environmentCollapsed} onToggle={onToggleEnvironment} onOpenChanges={onOpenChanges} onOpenTerminal={onOpenTerminal} />
     <WebuiProgressPanel todos={todos} showProgress={showProgress} showEmptyProgress={showEmptyProgress} collapsed={progressCollapsed} onToggle={onToggleProgress} />
     <WebuiSubagentsPanel subagents={subagents} collapsed={subagentsCollapsed} onToggle={onToggleSubagents} onMemberClick={onMemberClick} />
   </div>;

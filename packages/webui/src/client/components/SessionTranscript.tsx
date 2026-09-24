@@ -8,7 +8,7 @@
 // existing consumers (`webui-shell.test.ts`, importers via `app.tsx`)
 // keep their current import path during the W3 wave.
 
-import { useEffect, useMemo, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { ChatSkeleton } from "./TranscriptSkeletons.js";
 import { MessageViewportStreamingLoader } from "./ActivityIndicator.js";
 import { TurnNavigator, type TurnSummary } from "./TurnNavigator.js";
@@ -183,6 +183,7 @@ export function WebuiSessionTranscript({
   );
   const [loading, setLoading] = useState(initialMessages === undefined);
   const [error, setError] = useState<string | undefined>();
+  const transcriptRef = useRef<HTMLElement | null>(null);
   const { stream } = useSessionRuntimeState(sessionId).state;
   const streamPhase = stream.phase;
   // One live column per turn: while the turn runs the composer renders it
@@ -261,9 +262,27 @@ export function WebuiSessionTranscript({
   const loadOlder =
     page.hasMore && page.nextCursor
       ? () => {
+          if (loading) return;
+          const viewport = transcriptRef.current?.closest<HTMLElement>(
+            '[data-webui-session-scroll="true"]',
+          );
+          const previousScrollTop = viewport?.scrollTop;
           setLoading(true);
+          setError(undefined);
           void loadMessages({ id: sessionId, before: page.nextCursor })
             .then((olderPage) => {
+              if (
+                (olderPage.messages?.length ?? 0) === 0 ||
+                (olderPage.hasMore && olderPage.nextCursor === page.nextCursor)
+              ) {
+                setError("没有找到更早的消息，请刷新会话后重试。");
+                setPage((current) => ({
+                  ...current,
+                  hasMore: false,
+                  nextCursor: undefined,
+                }));
+                return;
+              }
               setPage((current) => ({
                 messages: [
                   ...(olderPage.messages ?? []),
@@ -272,12 +291,20 @@ export function WebuiSessionTranscript({
                 nextCursor: olderPage.nextCursor,
                 hasMore: olderPage.hasMore,
               }));
+              requestAnimationFrame(() => {
+                if (viewport?.isConnected && previousScrollTop !== undefined)
+                  viewport.scrollTop = previousScrollTop;
+              });
+            })
+            .catch((reason: unknown) => {
+              setError(reason instanceof Error ? reason.message : String(reason));
             })
             .finally(() => setLoading(false));
         }
       : undefined;
   return (
     <section
+      ref={transcriptRef}
       aria-label="Transcript"
       data-webui-transcript={sessionId}
       data-webui-transcript-empty-live={
@@ -309,14 +336,29 @@ export function WebuiSessionTranscript({
           </p>
         ) : null}
         {loadOlder ? (
-          <div className="flex justify-start">
+          <div className="flex w-full justify-center py-1">
             <button
               type="button"
               onClick={loadOlder}
               disabled={loading}
-              className="webui-button-secondary text-text_default_primary text-size_14 leading-line_height_20"
+              className="webui-button-secondary text-size_14 leading-line_height_20"
+              aria-label={loading ? "正在加载更早消息" : "加载更早消息"}
             >
-              Load older
+              <svg
+                viewBox="0 0 16 16"
+                aria-hidden="true"
+                className="size-4 flex-none"
+              >
+                <path
+                  d="m4 10 4-4 4 4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              <span>{loading ? "正在加载…" : "加载更早消息"}</span>
             </button>
           </div>
         ) : null}
