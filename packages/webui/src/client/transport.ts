@@ -9,6 +9,7 @@ import type {
   WebuiClientSessionResumer,
   WebuiClientSessionTreeLoader,
   WebuiClientSessionTreePage,
+  WebuiTransport,
 } from "./contracts.js";
 import type {
   WebuiInteractionReplyResult,
@@ -83,134 +84,15 @@ export function createWebuiTransport({
   websocketUrl: baseWebsocketUrl,
   token,
   webSocket = defaultWebSocket(),
-}: WebuiTransportOptions): {
-  version: () => Promise<WebuiVersionInfo>;
-  loadSessions: WebuiClientSessionLoader;
-  loadSessionTree: WebuiClientSessionTreeLoader;
-  listArchivedSessions: () => Promise<WebuiClientSessionPage>;
-  archiveSession: (request: { readonly id: string }) => Promise<{ readonly success?: boolean }>;
-  deleteSession: (request: { readonly id: string }) => Promise<{ readonly success?: boolean }>;
-  updateSession: (request: import("../server/port.js").WebuiUpdateSessionRequest) => Promise<import("../server/port.js").WebuiUpdateSessionResult>;
-  getSessionForkOptions: (request: import("../server/port.js").WebuiGetSessionForkOptionsRequest) => Promise<import("../server/port.js").WebuiGetSessionForkOptionsResult>;
-  forkSession: (request: import("../server/port.js").WebuiForkSessionRequest) => Promise<import("../server/port.js").WebuiForkSessionResult>;
-  loadMessages: WebuiClientMessageLoader;
-  getSessionDiff: (request: WebuiGetSessionDiffRequest) => Promise<WebuiGetSessionDiffResult>;
-  getTurnDiff: (request: WebuiGetTurnDiffRequest) => Promise<WebuiGetTurnDiffResult>;
-  revertTurnDiff: (request: WebuiRevertTurnDiffRequest) => Promise<WebuiRevertTurnDiffResult>;
-  reapplyTurnDiff: (request: WebuiReapplyTurnDiffRequest) => Promise<WebuiReapplyTurnDiffResult>;
-  getSessionRewindPreview: (request: WebuiGetSessionRewindPreviewRequest) => Promise<WebuiGetSessionRewindPreviewResult>;
-  rewindSession: (request: WebuiRewindSessionRequest) => Promise<WebuiRewindSessionResult>;
-  editSessionMessage: (request: WebuiEditSessionMessageRequest) => Promise<WebuiEditSessionMessageResult>;
-  isGoalEnabled: () => Promise<WebuiGoalEnabledResult>;
-  getGoal: (request: { readonly sessionId: string }) => Promise<WebuiGoal | undefined>;
-  createGoal: (request: WebuiGoalCreateRequest) => Promise<WebuiGoal>;
-  patchGoal: (request: WebuiGoalPatchRequest) => Promise<WebuiGoal>;
-  clearGoal: (request: { readonly sessionId: string }) => Promise<{ readonly success: boolean }>;
-  listWorkspaceFileTree: (request: { readonly workspaceDir: string; readonly path?: string }) => Promise<readonly import("../server/port.js").WebuiWorkspaceFile[]>;
-  readWorkspaceFile: (request: { readonly workspaceDir: string; readonly path: string }) => Promise<import("../server/port.js").WebuiWorkspaceFileContent>;
-  getWorkspaceEnvironment: (request: { readonly workspaceDir: string }) => Promise<import("../server/port.js").WebuiWorkspaceEnvironment>;
-  mutateWorkspaceGit: (request: import("../server/port.js").WebuiWorkspaceGitMutationRequest) => Promise<Record<string, unknown>>;
-  readCanvas: (request: { readonly sessionId: string }) => Promise<import("../server/port.js").WebuiCanvasDocument>;
-  applyCanvas: (request: { readonly sessionId: string; readonly operation: Record<string, unknown> }) => Promise<{ readonly operationId: string; readonly document: import("../server/port.js").WebuiCanvasDocument }>;
-  createTerminal: (request: { readonly workspaceDir: string }) => Promise<{ readonly terminalId: string; readonly status: string }>;
-  listTerminals: () => Promise<readonly Record<string, unknown>[]>;
-  writeTerminal: (request: { readonly terminalId: string; readonly data: string }) => Promise<{ readonly success: boolean }>;
-  disposeTerminal: (request: { readonly terminalId: string }) => Promise<{ readonly success: boolean }>;
-  watchTerminal: (request: { readonly terminalId: string }, onFrame: (frame: WebuiTerminalFrame) => void) => () => void;
-  createSession: (
-    request: WebuiClientCreateSessionRequest,
-  ) => Promise<WebuiClientCreateSessionResult>;
-  sendMessage: WebuiClientMessageSender;
-  enqueueMessage: (
-    request: WebuiEnqueueMessageRequest,
-  ) => Promise<WebuiEnqueueMessageResult>;
-  resumeSession: WebuiClientSessionResumer;
-  watchEvents: WebuiClientEventWatcher;
-  listPendingPermissions: () => Promise<{
-    readonly requests: readonly WebuiPendingPermission[];
-  }>;
-  getPendingQuestionnaire: (request: {
-    readonly name: string;
-    readonly sessionId: string;
-  }) => Promise<{ readonly request?: WebuiQuestionnaireRequest }>;
-  replyPermission: (request: {
-    readonly name: string;
-    readonly requestId: string;
-    readonly reply: "allowOnce" | "allowAlways" | "deny";
-  }) => Promise<WebuiInteractionReplyResult>;
-  replyQuestionnaire: (request: {
-    readonly name: string;
-    readonly requestId: string;
-    readonly schemaVersion: number;
-    readonly answers: readonly WebuiQuestionnaireAnswer[];
-  }) => Promise<WebuiInteractionReplyResult>;
-  dismissQuestionnaire: (request: {
-    readonly name: string;
-    readonly requestId: string;
-  }) => Promise<WebuiInteractionReplyResult>;
-  abortSession: (request: {
-    readonly id: string;
-  }) => Promise<{ readonly success?: boolean }>;
-  listQueueMessages: (request: { readonly id: string }) => Promise<{
-    readonly items?: readonly WebuiQueueItem[];
-    readonly paused?: boolean;
-    readonly pendingCount?: number;
-  }>;
-  deleteQueueItem: (request: {
-    readonly id: string;
-    readonly itemId: string;
-  }) => Promise<{ readonly item?: WebuiQueueItem }>;
-  listModels: (request?: {
-    readonly sessionId?: string;
-  }) => Promise<readonly WebuiModelEntry[]>;
-  listSkills: (request?: {
-    readonly agentName?: string;
-  }) => Promise<{
-    readonly skills: readonly {
-      readonly name: string;
-      readonly displayName?: string;
-      readonly description?: string;
-    }[];
-  }>;
-  selectModel: (request: {
-    readonly providerId: string;
-    readonly modelId: string;
-    readonly variant?: string;
-    readonly contextLimit?: number;
-    readonly sessionId?: string;
-  }) => Promise<{ readonly success?: boolean }>;
-  getSessionUsage: (request: {
-    readonly id: string;
-  }) => Promise<Record<string, unknown>>;
-  getUsageQuota: (request?: {
-    readonly forceRefresh?: boolean;
-  }) => Promise<import("../server/port.js").WebuiUsageQuotaResult>;
-  getSigninPanel: () => Promise<import("../server/port.js").WebuiSigninPanelView>;
-  claimSignin: () => Promise<import("../server/port.js").WebuiClaimSigninView>;
-  getAccountStatus: (request?: {
-    readonly sessionId?: string;
-  }) => Promise<Record<string, unknown>>;
-  listUserModelProviders: () => Promise<readonly Record<string, unknown>[]>;
-  createUserModelProvider: (request: Record<string, unknown>) => Promise<unknown>;
-  updateUserModelProvider: (request: Record<string, unknown>) => Promise<unknown>;
-  deleteUserModelProvider: (providerId: string) => Promise<unknown>;
-  testUserModelProvider: (providerId: string) => Promise<unknown>;
-  testUserModel: (request: { readonly providerId: string; readonly modelId: string }) => Promise<unknown>;
-  discoverUserModelsCandidate: (request: Record<string, unknown>) => Promise<unknown>;
-  saveUserModelProviderCandidate: (request: Record<string, unknown>) => Promise<unknown>;
-  listProviderPresets: () => Promise<readonly Record<string, unknown>[]>;
-  getMiniMaxApiKeyStatus: () => Promise<Record<string, unknown>>;
-  upsertMiniMaxApiKey: (request: { readonly apiKey: string; readonly saveAndUse?: boolean }) => Promise<unknown>;
-  getCodexOAuthStatus: () => Promise<Record<string, unknown>>;
-  signOut: () => Promise<{ readonly success?: boolean }>;
-  runCommand: (request: {
-    readonly command: "help" | "new" | "compact" | "status" | "usage" | "model";
-    readonly input?: string;
-    readonly sessionId?: string;
-    readonly agentName?: string;
-    readonly workspaceDir?: string;
-  }) => Promise<Record<string, unknown>>;
-} {
+}: WebuiTransportOptions): Required<WebuiTransport> {
+  /* The `Required<WebuiTransport>` return type together with the
+   * `satisfies Required<WebuiTransport>` clause on the literal below forces
+   * the wire contract and the implementation to stay in lock-step: a
+   * missing member, a typo'd key, or a signature drift on either side
+   * breaks the build. The `Required` qualifier is scoped to this
+   * implementation boundary; the `WebuiTransport` capability contract
+   * consumed by components keeps its optional semantics. */
+
   const websocketUrl = () =>
     `${baseWebsocketUrl.replace(/\/$/u, "")}/?token=${encodeURIComponent(token)}`;
 
@@ -474,5 +356,5 @@ export function createWebuiTransport({
     getCodexOAuthStatus: () => request("getCodexOAuthStatus", undefined),
     signOut: () => request("signOut", {}),
     runCommand: (body) => request("runCommand", body),
-  };
+  } satisfies Required<WebuiTransport>;
 }

@@ -24,6 +24,8 @@ import type {
   WebuiGoalPatchRequest,
   WebuiGoalSessionRequest,
   WebuiGoalStatus,
+  WebuiGetSessionDiffRequest,
+  WebuiGetSessionDiffResult,
   WebuiGetSessionForkOptionsRequest,
   WebuiGetSessionForkOptionsResult,
   WebuiGetSessionRewindPreviewRequest,
@@ -325,6 +327,9 @@ export interface WebuiTransport {
   readonly loadSessions?: WebuiClientSessionLoader;
   readonly loadSessionTree?: WebuiClientSessionTreeLoader;
   readonly loadMessages?: WebuiClientMessageLoader;
+  readonly getSessionDiff?: (
+    request: WebuiGetSessionDiffRequest,
+  ) => Promise<WebuiGetSessionDiffResult>;
   readonly getTurnDiff?: (
     request: WebuiGetTurnDiffRequest,
   ) => Promise<WebuiGetTurnDiffResult>;
@@ -512,6 +517,8 @@ export type {
   WebuiEnqueueMessageResult,
   WebuiFileDiffInfoView,
   WebuiForkSessionRequest,
+  WebuiGetSessionDiffRequest,
+  WebuiGetSessionDiffResult,
   WebuiGetSessionForkOptionsRequest,
   WebuiGetSessionForkOptionsResult,
   WebuiGetSessionRewindPreviewRequest,
