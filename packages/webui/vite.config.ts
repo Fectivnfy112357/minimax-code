@@ -2,11 +2,27 @@ import { defineConfig } from "vite";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { readExtraction } from "../../scripts/lib/release-metadata.mjs";
+import { packageExportEntries } from "../../scripts/lib/package-exports.mjs";
 
 const serverPort = Number(process.env.WEBUI_SERVER_PORT ?? 8787);
 const webuiRoot = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(webuiRoot, "..", "..");
 const clientRoot = path.join(webuiRoot, "src", "client");
-const stylesheetPath = path.resolve(webuiRoot, "..", "..", "dist-webui", "client", "styles.css");
+const stylesheetPath = path.resolve(repoRoot, "dist-webui", "client", "styles.css");
+
+// Workspace packages publish `exports` pointing at `dist/`, which a source
+// checkout never builds. The esbuild build and the Vitest config both map
+// specifiers back to `src/` through `package-exports.mjs`; the dev server
+// needs the same mapping or bare imports like `@mavis/shared/daily-signin`
+// fail to resolve against the missing `dist/`.
+const { packageRoots } = readExtraction(repoRoot);
+const workspaceAlias = packageExportEntries(repoRoot, packageRoots).map(
+  ({ specifier, file }) => ({
+    find: new RegExp(`^${specifier.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`),
+    replacement: path.join(repoRoot, file),
+  }),
+);
 
 function webuiRuntimePlugin() {
   return {
@@ -73,6 +89,9 @@ function webuiRuntimePlugin() {
 
 export default defineConfig({
   root: "src/client",
+  resolve: {
+    alias: workspaceAlias,
+  },
   esbuild: {
     jsx: "automatic",
   },
