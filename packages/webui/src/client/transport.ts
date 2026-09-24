@@ -9,6 +9,7 @@ import type {
   WebuiClientSessionResumer,
   WebuiClientSessionTreeLoader,
   WebuiClientSessionTreePage,
+  WebuiClientProject,
   WebuiTransport,
 } from "./contracts.js";
 import type {
@@ -275,6 +276,7 @@ export function createWebuiTransport({
 
   return {
     version: () => request<WebuiVersionInfo>("version", undefined),
+    loadProjects: () => request<readonly WebuiClientProject[]>("listRecentProjects", { limit: 100 }),
     loadSessions: (cursor) =>
       request<WebuiClientSessionPage>("listSessions", {
         name: "main",

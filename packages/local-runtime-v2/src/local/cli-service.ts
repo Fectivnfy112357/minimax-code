@@ -125,6 +125,10 @@ export class CliService {
     return this.options.applications.session.query.listSessions(ctx, req);
   }
 
+  listRecentProjects(limit = 100) {
+    return this.options.applications.session.query.listRecentProjects(limit);
+  }
+
   createSession(
     req: CreateSessionReq,
     ctx: ProcessLocalContext = {},

@@ -36,6 +36,7 @@ import type {
   WebuiModelEntry,
   WebuiPendingPermission,
   WebuiQueueItem,
+  WebuiRecentProject,
   WebuiQuestionnaireAnswer,
   WebuiQuestionnaireOption,
   WebuiQuestionnaireRequest,
@@ -162,6 +163,8 @@ export interface WebuiClientSessionPage {
   readonly hasMore: boolean;
   readonly nextCursor?: string;
 }
+
+export type WebuiClientProject = WebuiRecentProject;
 
 export interface WebuiClientSessionTreeNode {
   readonly session: WebuiClientSession;
@@ -323,6 +326,7 @@ export interface WebuiModelSelectionRequest {
 
 export interface WebuiTransport {
   readonly version?: () => Promise<WebuiVersionInfo>;
+  readonly loadProjects?: () => Promise<readonly WebuiClientProject[]>;
   readonly listArchivedSessions?: () => Promise<WebuiClientSessionPage>;
   readonly loadSessions?: WebuiClientSessionLoader;
   readonly loadSessionTree?: WebuiClientSessionTreeLoader;

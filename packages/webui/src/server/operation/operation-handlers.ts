@@ -27,6 +27,7 @@ export type WebuiOperationPort = Pick<
   WebuiHarnessPort,
   | "version"
   | "listSessions"
+  | "listRecentProjects"
   | "getSessionTree"
   | "archiveSession"
   | "deleteSession"
@@ -223,6 +224,10 @@ export function createOperationHandlers(
     patchGoal: async (_context, body) => ({ body: await port.patchGoal(body) }),
     clearGoal: async (_context, body) => ({ body: await port.clearGoal(body) }),
     listSessions: async (_context, body) => ({ body: await port.listSessions(body) }),
+    listRecentProjects: async (_context, body) => {
+      if (!port.listRecentProjects) throw new Error("runtime host does not expose project listing");
+      return { body: await port.listRecentProjects(body) };
+    },
     getSessionTree: async (_context, body) => ({ body: await port.getSessionTree(body) }),
     sendMessage: async (context, body) => {
       const stream = await port.sendMessage(body, context.signal);

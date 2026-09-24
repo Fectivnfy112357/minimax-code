@@ -60,6 +60,7 @@ import type {
   WebuiClientSession,
   WebuiClientSessionPage,
   WebuiClientSessionTreePage,
+  WebuiClientProject,
   WebuiTransport,
 } from "../contracts.js";
 import type { WebuiTodo } from "./WorkspacePanels.js";
@@ -197,16 +198,29 @@ export function WebuiClientFoundationApp(
   const updateSession = transport?.updateSession;
   const getSessionForkOptions = transport?.getSessionForkOptions;
   const forkSession = transport?.forkSession;
+  const loadProjects = transport?.loadProjects;
 
   const [runtimeVersion, setRuntimeVersion] = useState(version);
   useEffect(() => { if (!runtimeVersion && getVersion) void getVersion().then(setRuntimeVersion); }, [getVersion, runtimeVersion]);
   const [page, setPage] = useState<WebuiClientSessionPage>(
     sessionPage ?? { sessions: [], hasMore: false },
   );
+  const [projectRecords, setProjectRecords] = useState<readonly WebuiClientProject[] | undefined>();
   const [treePage, setTreePage] = useState<WebuiClientSessionTreePage>(
     () => ({ sessions: [], hasMore: false }),
   );
   const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    if (!loadProjects) return;
+    let cancelled = false;
+    void loadProjects().then((projects) => {
+      if (!cancelled) setProjectRecords(projects);
+    }).catch(() => {
+      // Keep the session-derived view available when a runtime predates the
+      // project-list operation.
+    });
+    return () => { cancelled = true; };
+  }, [loadProjects]);
   const [selectedSessionId, setSelectedSessionId] =
     useSelectedSessionId(locationHash);
   const [draft, setDraft] = useState("");
@@ -712,6 +726,7 @@ export function WebuiClientFoundationApp(
                       <WebuiProjectList
                         page={page}
                         treePage={treePage.sessions.length > 0 ? treePage : undefined}
+                        projectRecords={projectRecords}
                         loading={loading}
                         onLoadMore={loadMore}
                         selectedSessionId={selectedSessionId}

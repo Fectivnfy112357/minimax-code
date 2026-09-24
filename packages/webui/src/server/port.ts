@@ -55,6 +55,18 @@ export interface WebuiSessionPage {
   readonly nextCursor?: string;
 }
 
+export interface WebuiRecentProject {
+  readonly projectId: number;
+  readonly projectKind: "default" | "workspace";
+  readonly workspaceDir: string | null;
+  readonly pinned: boolean;
+  readonly hidden: boolean;
+  readonly orderIndex: number;
+  readonly recentAtMs: number | null;
+  readonly latestActivityAtMs: number;
+  readonly sessionCount: number;
+}
+
 export interface WebuiSessionTreeRequest {
   readonly name: string;
   readonly limit?: number;
@@ -651,6 +663,7 @@ export type WebuiRunCommandResult =
 
 export interface WebuiHarnessPort {
   version(): WebuiVersionInfo;
+  listRecentProjects?(request: { readonly limit?: number }): Promise<readonly WebuiRecentProject[]>;
   listSessions(request: WebuiSessionListRequest): Promise<WebuiSessionPage>;
   getSessionTree(request: WebuiSessionTreeRequest): Promise<WebuiSessionTreePage>;
   archiveSession(request: { readonly id: string }): Promise<{ readonly success?: boolean }>;

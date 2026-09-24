@@ -122,6 +122,7 @@ export const initializeApplications: InitializeApplications = (options) => {
   });
   const query = new SessionQueryApplication({
     service: options.sessionSystem.session.query,
+    projects: options.sessionSystem.project,
   });
   const content = new SessionContentApplication({
     messages: options.sessionSystem.messages.query,

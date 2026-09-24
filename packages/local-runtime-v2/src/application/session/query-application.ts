@@ -16,17 +16,24 @@ import {
 import type { ApplicationContext } from "../context.js";
 import { AppError } from "../errors.js";
 import { toSessionInfoView, toSessionTreeChildView } from "./wire.js";
+import type { ProjectService } from "../../service/session-system/projects/service.js";
 
 export interface SessionQueryApplicationOptions {
   readonly service: Pick<
     SessionQueryService,
     "list" | "search" | "tree" | "get"
   >;
+  readonly projects?: Pick<ProjectService, "listRecent">;
 }
 
 /** Local Session query; parameters come from the service contract and results are built by local view converters. */
 export class SessionQueryApplication {
   constructor(private readonly options: SessionQueryApplicationOptions) {}
+
+  listRecentProjects(limit = 100) {
+    if (!this.options.projects) throw new Error("Project listing is unavailable.");
+    return this.options.projects.listRecent(limit);
+  }
 
   async listSessions(
     _context: ApplicationContext,

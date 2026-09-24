@@ -32,6 +32,7 @@ import type {
   WebuiClientSession,
   WebuiClientSessionPage,
   WebuiClientSessionTreePage,
+  WebuiClientProject,
 } from "../contracts.js";
 import { teamModeCopy, type TeamModeSessionChoices } from "../team-mode.js";
 
@@ -42,6 +43,7 @@ export interface WebuiProjectGroup {
   readonly latestSessionId: string;
   readonly sessionIds: readonly string[];
   readonly updatedAt: number;
+  readonly pinned?: boolean;
 }
 
 /**
@@ -113,6 +115,7 @@ export function sessionHash(sessionId: string): string {
 export function WebuiProjectList({
   page,
   treePage,
+  projectRecords,
   loading,
   onLoadMore,
   selectedSessionId,
@@ -133,6 +136,7 @@ export function WebuiProjectList({
 }: {
   readonly page: WebuiClientSessionPage;
   readonly treePage?: WebuiClientSessionTreePage;
+  readonly projectRecords?: readonly WebuiClientProject[];
   readonly loading: boolean;
   readonly onLoadMore?: () => void;
   readonly selectedSessionId?: string;
@@ -166,13 +170,38 @@ export function WebuiProjectList({
   }, [treePage]);
   const projects = useMemo(
     () => {
-      const grouped = groupWebuiSessionsByWorkspace(page.sessions);
+      const grouped = projectRecords
+        ? (() => {
+            const sessionsByWorkspace = new Map<string, WebuiClientSession[]>();
+            for (const session of page.sessions) {
+              const key = session.isDefaultWorkspace
+                ? "__webui_unassigned_project__"
+                : session.workspaceDir?.trim() || "__webui_unassigned_project__";
+              const values = sessionsByWorkspace.get(key) ?? [];
+              values.push(session);
+              sessionsByWorkspace.set(key, values);
+            }
+            return projectRecords.filter((project) => !project.hidden).map((project) => {
+              const key = project.workspaceDir ?? "__webui_unassigned_project__";
+              const sessions = sessionsByWorkspace.get(key) ?? [];
+              return {
+                key,
+                name: workspaceProjectName(project.workspaceDir ?? undefined),
+                ...(project.workspaceDir ? { workspaceDir: project.workspaceDir } : {}),
+                latestSessionId: sessions[0]?.sessionId ?? "",
+                sessionIds: sessions.map(({ sessionId }) => sessionId),
+                updatedAt: project.recentAtMs ?? project.latestActivityAtMs,
+                pinned: project.pinned,
+              };
+            });
+          })()
+        : groupWebuiSessionsByWorkspace(page.sessions);
       return [...grouped].sort((left, right) => {
-        const pinDelta = Number(Boolean(pinnedProjects?.[right.key])) - Number(Boolean(pinnedProjects?.[left.key]));
+        const pinDelta = Number(Boolean(pinnedProjects?.[right.key] ?? right.pinned)) - Number(Boolean(pinnedProjects?.[left.key] ?? left.pinned));
         return pinDelta || right.updatedAt - left.updatedAt;
       });
     },
-    [page.sessions, pinnedProjects],
+    [page.sessions, pinnedProjects, projectRecords],
   );
   const [expandedProjects, setExpandedProjects] = useState<ReadonlySet<string>>(
     () => new Set(),
