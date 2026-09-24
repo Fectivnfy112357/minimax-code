@@ -13,10 +13,12 @@
     "dev:server": "node ../../scripts/run-webui-server.mjs",
     "typecheck:server": "tsc -p tsconfig.server.json --noEmit",
     "typecheck:client": "tsc -p tsconfig.client.json --noEmit",
+    "typecheck:test": "tsc -p tsconfig.test.json --noEmit",
     "build:styles": "node ../../scripts/build-webui-styles.mjs",
     "test": "node ../../scripts/run-vitest-suite.mjs webui"
   },
   "dependencies": {
+    "@mavis/config": "workspace:*",
     "@mavis/local-runtime-v2": "workspace:*",
     "@mavis/mcode-tools-host": "workspace:*",
     "@mavis/oauth-core": "workspace:0.2.1-beta.7",

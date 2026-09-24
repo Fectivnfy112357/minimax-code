@@ -59,6 +59,12 @@ export interface WebuiAssembledHost {
   readonly apiHost: { close(): Promise<void> };
   readonly dataDir: string;
   readonly appVersion?: string;
+  readonly invalidateAuth: () => void;
+  readonly getUsageQuota: (request?: {
+    readonly forceRefresh?: boolean;
+  }) => Promise<import("./port.js").WebuiUsageQuotaResult>;
+  readonly getSigninPanel: () => Promise<import("./port.js").WebuiSigninPanelView>;
+  readonly claimSignin: () => Promise<import("./port.js").WebuiClaimSigninView>;
   readonly cliService?: {
     listSessions(
       request: import("./port.js").WebuiSessionListRequest,
@@ -291,7 +297,12 @@ export interface WebuiForwardedRuntimeHostOptions {
  */
 export type WebuiRuntimeHostFactory = (
   options: CreateLocalRuntimeHostOptions,
-) => Promise<WebuiAssembledHost>;
+) => Promise<
+  Omit<
+    WebuiAssembledHost,
+    "invalidateAuth" | "getUsageQuota" | "getSigninPanel" | "claimSignin"
+  >
+>;
 
 export interface CreateWebuiRuntimeHostOptions {
   /**
@@ -431,7 +442,10 @@ export async function createWebuiRuntimeHost(
   // `packages/local-runtime/src/runtime/host-factory-types.ts:32-47`); the
   // cast below is narrowly scoped to the factory boundary and exists only
   // because the typecheck can't see the upstream shape.
-  let host: WebuiAssembledHost;
+  let host: Omit<
+    WebuiAssembledHost,
+    "invalidateAuth" | "getUsageQuota" | "getSigninPanel" | "claimSignin"
+  >;
   try {
     host = await factory(
       forwardedOptions as unknown as CreateLocalRuntimeHostOptions,
@@ -598,5 +612,8 @@ const defaultWebuiRuntimeHostFactory: WebuiRuntimeHostFactory = async (
   const { createLocalRuntimeHostV2 } = await import("@mavis/local-runtime-v2");
   return (await createLocalRuntimeHostV2(
     options,
-  )) as unknown as WebuiAssembledHost;
+  )) as unknown as Omit<
+    WebuiAssembledHost,
+    "invalidateAuth" | "getUsageQuota" | "getSigninPanel" | "claimSignin"
+  >;
 };

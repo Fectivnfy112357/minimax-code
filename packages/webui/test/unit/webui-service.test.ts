@@ -8,7 +8,7 @@
 // 0006) while the wire side exercises the real `ws` package.
 
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { once, type once as onceFn } from "node:events";
+import { once } from "node:events";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -25,12 +25,19 @@ import {
   WEBUI_PROTOCOL_VERSION,
   WebuiService,
   isWebuiFrame,
+  type WebuiCreateSessionResult,
+  type WebuiEnqueueMessageRequest,
   type WebuiHarnessPort,
   type WebuiMessagesRequest,
   type WebuiMessagesResult,
   type WebuiCreateSessionRequest,
   type WebuiSessionLookupRequest,
+  type WebuiSessionLookupResult,
   type WebuiSessionListRequest,
+  type WebuiSessionListItem,
+  type WebuiSessionPage,
+  type WebuiSessionTreePage,
+  type WebuiSessionTreeRequest,
   type WebuiVersionInfo,
   type WebuiSendMessageRequest,
   type WebuiSendMessageResult,
@@ -40,12 +47,17 @@ import {
   type WebuiPermissionDecision,
   type WebuiGetSessionDiffRequest,
   type WebuiGetTurnDiffRequest,
+  type WebuiErrorFrame,
 } from "../../src/server/index.js";
 import { createWebuiTransport } from "../../src/client/transport.js";
 import { WebuiTerminalManager } from "../../src/server/terminal.js";
 
 type CloseEvent = [number, Buffer];
-type OncePromise<T> = ReturnType<typeof onceFn<T>>;
+// `once` from `node:events` is overloaded and not generic, so
+// `ReturnType<typeof onceFn<T>>` does not type-check; the concrete
+// return shape is `Promise<unknown[]>` (the args tuple), which is
+// all the assertions in this file actually need.
+type OncePromise<T> = Promise<T[]>;
 
 class ScriptedHarnessPort implements WebuiHarnessPort {
   private versionInfo: WebuiVersionInfo = {
@@ -62,10 +74,10 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
     source: [{ dataJson: '{"type":10}' }, { dataJson: "[DONE]" }],
   };
   public lastResumeRequest: WebuiResumeSessionRequest | undefined;
-  public lastEnqueueRequest: Record<string, unknown> | undefined;
-  public lastPermissionReply: Record<string, unknown> | undefined;
-  public lastQuestionnaireReply: Record<string, unknown> | undefined;
-  public lastQuestionnaireDismissal: Record<string, unknown> | undefined;
+  public lastEnqueueRequest: WebuiEnqueueMessageRequest | undefined;
+  public lastPermissionReply: unknown;
+  public lastQuestionnaireReply: unknown;
+  public lastQuestionnaireDismissal: unknown;
   public abortCalls = 0;
   public diffRequests: Array<{ readonly operation: string; readonly body: unknown }> = [];
   public sendObserved: Promise<void>;
@@ -88,8 +100,22 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
     return this.versionInfo;
   }
 
-  async listSessions(request: WebuiSessionListRequest) {
-    if (request.onlyArchived) return { sessions: [{ sessionId: "archived-fixture", agentName: "main", createdAt: 1, updatedAt: 2, archived: true, title: "Archived fixture" }], hasMore: false };
+  async listSessions(request: WebuiSessionListRequest): Promise<WebuiSessionPage> {
+    if (request.onlyArchived) {
+      const sessions: WebuiSessionListItem[] = [{
+        sessionId: "archived-fixture",
+        agentName: "main",
+        createdAt: 1,
+        updatedAt: 2,
+        archived: true,
+        title: "Archived fixture",
+      }];
+      return { sessions, hasMore: false };
+    }
+    return { sessions: [], hasMore: false };
+  }
+
+  async getSessionTree(_request: WebuiSessionTreeRequest): Promise<WebuiSessionTreePage> {
     return { sessions: [], hasMore: false };
   }
 
@@ -99,11 +125,11 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
   async getSessionForkOptions() { return { canFork: true, worktreeVisible: true, worktreeEligible: true }; }
   async forkSession() { return { session: { sessionId: "forked-fixture" } }; }
 
-  async createSession(_request: WebuiCreateSessionRequest) {
+  async createSession(_request: WebuiCreateSessionRequest): Promise<WebuiCreateSessionResult> {
     return { sessionId: "created-session" };
   }
 
-  async getSession(_request: WebuiSessionLookupRequest) {
+  async getSession(_request: WebuiSessionLookupRequest): Promise<WebuiSessionLookupResult> {
     return { session: { sessionId: "fixture-session" } };
   }
 
@@ -165,7 +191,7 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
     return this.sendResult;
   }
 
-  async enqueueMessage(request: Record<string, unknown>) {
+  async enqueueMessage(request: WebuiEnqueueMessageRequest) {
     this.lastEnqueueRequest = request;
     return { itemId: "queued-fixture", status: "queued", position: 1 };
   }
@@ -237,6 +263,10 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
     return [];
   }
 
+  async listSkills() {
+    return { skills: [] };
+  }
+
   async selectModel() {
     return { success: true };
   }
@@ -281,6 +311,8 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
   async upsertMiniMaxApiKey() { return { success: true }; }
   async getCodexOAuthStatus() { return { connected: false }; }
 
+  async requestCompaction() { return { success: true }; }
+
   async close(): Promise<void> {
     this.closed = true;
   }
@@ -288,8 +320,8 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
 
 class ClosingSocket {
   private readonly listeners = new Map<
-    string,
-    Array<(event: unknown) => void>
+    "open" | "message" | "error" | "close",
+    Array<(event: { data?: unknown }) => void>
   >();
   private closed = false;
 
@@ -297,7 +329,10 @@ class ClosingSocket {
     queueMicrotask(() => this.emit("open", {}));
   }
 
-  addEventListener(type: string, listener: (event: unknown) => void): void {
+  addEventListener(
+    type: "open" | "message" | "error" | "close",
+    listener: (event: { data?: unknown }) => void,
+  ): void {
     const listeners = this.listeners.get(type) ?? [];
     listeners.push(listener);
     this.listeners.set(type, listeners);
@@ -313,7 +348,10 @@ class ClosingSocket {
     this.emit("close", {});
   }
 
-  private emit(type: string, event: unknown): void {
+  private emit(
+    type: "open" | "message" | "error" | "close",
+    event: { data?: unknown },
+  ): void {
     for (const listener of this.listeners.get(type) ?? []) listener(event);
   }
 }
@@ -499,6 +537,7 @@ describe("WebUI service", () => {
     expect(isWebuiFrame(response)).toBe(true);
     if (!isWebuiFrame(response)) return;
     expect(response.kind).toBe("response");
+    if (response.kind !== "response") throw new Error("expected response frame");
     expect(response.protocolVersion).toBe(WEBUI_PROTOCOL_VERSION);
     expect(response.requestId).toBe("req-version-1");
     const body = response.body as { version: string; protocolVersion: number };
@@ -1155,9 +1194,11 @@ describe("WebUI service", () => {
         hasMore: false,
       },
     ];
-    port.listSessions = async (request) => {
+    port.listSessions = async (request): Promise<WebuiSessionPage> => {
       calls.push(request);
-      return pages[calls.length - 1];
+      const page = pages[calls.length - 1];
+      if (!page) throw new Error("expected page");
+      return page;
     };
     const { url } = await bootService();
     const { ws, upgrade } = openClient(url);
@@ -1180,7 +1221,7 @@ describe("WebUI service", () => {
       "cursor-2",
     );
     expect(
-      (second as { body: (typeof pages)[1] }).body.sessions[0].sessionId,
+      (second as { body: (typeof pages)[1] }).body.sessions[0]?.sessionId,
     ).toBe("old");
     expect(calls).toEqual([
       { name: "main", limit: 1 },
@@ -1273,6 +1314,7 @@ describe("WebUI service", () => {
     });
     if (!isWebuiFrame(response)) throw new Error("expected frame");
     expect(response.kind).toBe("error");
+    if (response.kind !== "error") throw new Error("expected error frame");
     expect(response.code).toBe(WebuiErrorCode.invalidBody);
     ws.close();
   });
@@ -1330,7 +1372,7 @@ describe("WebUI service", () => {
       "before-1",
     );
     expect(
-      (second as { body: WebuiMessagesResult }).body.messages?.[0].msgId,
+      (second as { body: WebuiMessagesResult }).body.messages?.[0]?.msgId,
     ).toBe("older");
     expect(sessionCalls).toEqual([{ id: "session-1" }]);
     expect(messageCalls).toEqual([
@@ -1353,6 +1395,7 @@ describe("WebUI service", () => {
     });
     if (!isWebuiFrame(response)) throw new Error("expected frame");
     expect(response.kind).toBe("error");
+    if (response.kind !== "error") throw new Error("expected error frame");
     expect(response.code).toBe(WebuiErrorCode.invalidBody);
     ws.close();
   });
@@ -1390,6 +1433,7 @@ describe("WebUI service", () => {
     const response = await requestOnce(ws, request);
     if (!isWebuiFrame(response)) throw new Error("expected frame");
     expect(response.kind).toBe("error");
+    if (response.kind !== "error") throw new Error("expected error frame");
     expect(response.code).toBe(WebuiErrorCode.unknownOperation);
     ws.close();
   });
@@ -1408,6 +1452,7 @@ describe("WebUI service", () => {
     const response = await requestOnce(ws, request);
     if (!isWebuiFrame(response)) throw new Error("expected frame");
     expect(response.kind).toBe("error");
+    if (response.kind !== "error") throw new Error("expected error frame");
     expect(response.code).toBe(WebuiErrorCode.invalidBody);
     ws.close();
   });
@@ -1426,6 +1471,7 @@ describe("WebUI service", () => {
     const response = await requestOnce(ws, request);
     if (!isWebuiFrame(response)) throw new Error("expected frame");
     expect(response.kind).toBe("error");
+    if (response.kind !== "error") throw new Error("expected error frame");
     expect(response.code).toBe(WebuiErrorCode.protocolMismatch);
     ws.close();
   });
@@ -1455,6 +1501,7 @@ describe("WebUI service", () => {
     const response = await responsePromise;
     if (!isWebuiFrame(response)) throw new Error("expected frame");
     expect(response.kind).toBe("error");
+    if (response.kind !== "error") throw new Error("expected error frame");
     expect(response.code).toBe(WebuiErrorCode.invalidEnvelope);
     ws.close();
   });
@@ -2254,10 +2301,14 @@ describe("WebUI operation body validation", () => {
     const { registerOperation, versionOperation } =
       await import("../../src/server/index.js");
     const registry = new Map();
+    // The runtime check inside `registerOperation` inspects
+    // `typeof operation.validate`, so the fixture intentionally omits
+    // the `validate` function and is forged with a double cast to
+    // bypass the interface — this is the fixture under test, not a
+    // way to silence the typecheck of the real port contract.
     const validatorlessOperation = {
       name: "noValidator",
-      // no validate function — registration must fail closed
-    } as unknown as { name: string; validate: unknown };
+    } as unknown as import("../../src/server/index.js").WebuiOperation<unknown>;
     expect(() =>
       registerOperation(registry, {
         operation: validatorlessOperation,
@@ -2303,6 +2354,132 @@ describe("WebUI shutdown order (criterion 7)", () => {
       },
       async enqueueMessage() {
         return { itemId: "shutdown-queued", status: "queued", position: 1 };
+      },
+      // The remaining 38 members of `WebuiHarnessPort` are not exercised
+      // by the shutdown ordering assertion; they are still required by
+      // the contract and provided here as fully-typed stubs returning
+      // safe defaults so a forgotten member surfaces as a compile error
+      // rather than a runtime `undefined is not a function`.
+      async getSessionTree() {
+        return { sessions: [], hasMore: false };
+      },
+      async archiveSession() {
+        return { success: true };
+      },
+      async deleteSession() {
+        return { success: true };
+      },
+      async updateSession() {
+        return { session: { sessionId: "shutdown-fixture", title: "Recording fixture" } };
+      },
+      async getSessionForkOptions() {
+        return { canFork: false, worktreeVisible: false, worktreeEligible: false };
+      },
+      async forkSession() {
+        return { session: { sessionId: "shutdown-fixture" } };
+      },
+      async sendMessage() {
+        return { ok: true as const, source: [] };
+      },
+      async resumeSession() {
+        return { ok: true as const, source: [] };
+      },
+      async *watchEvents(): AsyncIterable<WebuiRuntimeEvent> {
+        // empty — no events are emitted during this shutdown test
+      },
+      async listPendingPermissions() {
+        return { requests: [] };
+      },
+      async getPendingQuestionnaire() {
+        return {};
+      },
+      async replyPermission() {
+        return { success: true };
+      },
+      async replyQuestionnaire() {
+        return { ok: true };
+      },
+      async dismissQuestionnaire() {
+        return { ok: true };
+      },
+      async abortSession() {
+        return { success: true };
+      },
+      async listQueueMessages() {
+        return { items: [], paused: false, pendingCount: 0 };
+      },
+      async deleteQueueItem() {
+        return {};
+      },
+      async listModels() {
+        return [];
+      },
+      async listSkills() {
+        return { skills: [] };
+      },
+      async selectModel() {
+        return { success: true };
+      },
+      async getSessionUsage() {
+        return {};
+      },
+      async getAccountStatus() {
+        return { available: true };
+      },
+      async listUserModelProviders() {
+        return [];
+      },
+      async createUserModelProvider() {
+        return {};
+      },
+      async updateUserModelProvider() {
+        return { success: true };
+      },
+      async deleteUserModelProvider() {
+        return { success: true };
+      },
+      async testUserModelProvider() {
+        return { success: true, status: { state: "ok" } };
+      },
+      async testUserModel() {
+        return { success: true, status: { state: "ok" } };
+      },
+      async discoverUserModelsCandidate() {
+        return [];
+      },
+      async saveUserModelProviderCandidate() {
+        return { success: true };
+      },
+      async listProviderPresets() {
+        return [];
+      },
+      async getMiniMaxApiKeyStatus() {
+        return { hasApiKey: false };
+      },
+      async upsertMiniMaxApiKey() {
+        return { success: true };
+      },
+      async getCodexOAuthStatus() {
+        return { connected: false };
+      },
+      async requestCompaction() {
+        return { success: true };
+      },
+      async getUsageQuota() {
+        return { signedIn: false as const };
+      },
+      async getSigninPanel() {
+        return { scene: 0, days: [] };
+      },
+      async claimSignin() {
+        return {
+          claim_id: "stub",
+          claim_result: 2,
+          day_no: 1,
+          points: 0,
+          expire_at_ms: 0,
+          panel: { scene: 0, days: [] },
+        };
       },
       async close() {
         // The service awaits wsServer.close() and httpServer.close()
@@ -2391,6 +2568,132 @@ describe("WebUI shutdown order (criterion 7)", () => {
           position: 1,
         };
       },
+      // The remaining 38 members of `WebuiHarnessPort` are not exercised
+      // by the post-shutdown handler assertion; they are still required
+      // by the contract and provided here as fully-typed stubs returning
+      // safe defaults so a forgotten member surfaces as a compile error
+      // rather than a runtime `undefined is not a function`.
+      async getSessionTree() {
+        return { sessions: [], hasMore: false };
+      },
+      async archiveSession() {
+        return { success: true };
+      },
+      async deleteSession() {
+        return { success: true };
+      },
+      async updateSession() {
+        return { session: { sessionId: "shutdown-fixture", title: "Recording fixture" } };
+      },
+      async getSessionForkOptions() {
+        return { canFork: false, worktreeVisible: false, worktreeEligible: false };
+      },
+      async forkSession() {
+        return { session: { sessionId: "shutdown-fixture" } };
+      },
+      async sendMessage() {
+        return { ok: true as const, source: [] };
+      },
+      async resumeSession() {
+        return { ok: true as const, source: [] };
+      },
+      async *watchEvents(): AsyncIterable<WebuiRuntimeEvent> {
+        // empty — no events are emitted during this post-shutdown test
+      },
+      async listPendingPermissions() {
+        return { requests: [] };
+      },
+      async getPendingQuestionnaire() {
+        return {};
+      },
+      async replyPermission() {
+        return { success: true };
+      },
+      async replyQuestionnaire() {
+        return { ok: true };
+      },
+      async dismissQuestionnaire() {
+        return { ok: true };
+      },
+      async abortSession() {
+        return { success: true };
+      },
+      async listQueueMessages() {
+        return { items: [], paused: false, pendingCount: 0 };
+      },
+      async deleteQueueItem() {
+        return {};
+      },
+      async listModels() {
+        return [];
+      },
+      async listSkills() {
+        return { skills: [] };
+      },
+      async selectModel() {
+        return { success: true };
+      },
+      async getSessionUsage() {
+        return {};
+      },
+      async getAccountStatus() {
+        return { available: true };
+      },
+      async listUserModelProviders() {
+        return [];
+      },
+      async createUserModelProvider() {
+        return {};
+      },
+      async updateUserModelProvider() {
+        return { success: true };
+      },
+      async deleteUserModelProvider() {
+        return { success: true };
+      },
+      async testUserModelProvider() {
+        return { success: true, status: { state: "ok" } };
+      },
+      async testUserModel() {
+        return { success: true, status: { state: "ok" } };
+      },
+      async discoverUserModelsCandidate() {
+        return [];
+      },
+      async saveUserModelProviderCandidate() {
+        return { success: true };
+      },
+      async listProviderPresets() {
+        return [];
+      },
+      async getMiniMaxApiKeyStatus() {
+        return { hasApiKey: false };
+      },
+      async upsertMiniMaxApiKey() {
+        return { success: true };
+      },
+      async getCodexOAuthStatus() {
+        return { connected: false };
+      },
+      async requestCompaction() {
+        return { success: true };
+      },
+      async getUsageQuota() {
+        return { signedIn: false as const };
+      },
+      async getSigninPanel() {
+        return { scene: 0, days: [] };
+      },
+      async claimSignin() {
+        return {
+          claim_id: "stub",
+          claim_result: 2,
+          day_no: 1,
+          points: 0,
+          expire_at_ms: 0,
+          panel: { scene: 0, days: [] },
+        };
+      },
       async close() {
         await closeGate;
       },
@@ -2462,6 +2765,7 @@ describe("WebUI shutdown order (criterion 7)", () => {
       expect(isWebuiFrame(result)).toBe(true);
       if (!isWebuiFrame(result)) throw new Error("expected frame");
       expect(result.kind).toBe("error");
+      if (result.kind !== "error") throw new Error("expected error frame");
       expect(result.code).toBe(WebuiErrorCode.shuttingDown);
     } else {
       // Close event outcome: handler was prevented from running.

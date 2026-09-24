@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.server.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true
+  },
+  "include": [
+    "test/unit/webui-service.test.ts",
+    "src/server/**/*.ts",
+    "src/shared/**/*.ts",
+    "src/client/contracts.ts",
+    "src/client/transport.ts"
+  ]
+}

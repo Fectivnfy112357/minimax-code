@@ -27,7 +27,7 @@
     "dev:webui": "pnpm --filter @mavis/webui dev",
     "check:webui-boundary": "node scripts/check-webui-boundary.mjs",
     "test:webui": "node scripts/run-vitest-suite.mjs webui",
-    "typecheck:webui": "pnpm --filter @mavis/webui typecheck:server && pnpm --filter @mavis/webui typecheck:client",
+    "typecheck:webui": "pnpm --filter @mavis/webui typecheck:server && pnpm --filter @mavis/webui typecheck:client && pnpm --filter @mavis/webui typecheck:test",
     "check:source": "node scripts/source-inventory.mjs",
     "test:capabilities": "node scripts/run-vitest-suite.mjs capability",
     "test:artifact": "node --test test/public-artifact.test.mjs",
