@@ -270,6 +270,14 @@ export type WebuiTranscriptItem =
       readonly timestamp?: number;
     };
 
+/** One Desktop-style thinking/tool segment inside an assistant turn. */
+export interface WebuiTranscriptProcessSegment {
+  readonly messageId: string;
+  readonly thinking?: string;
+  readonly thinkingDurationMs?: number;
+  readonly tools?: readonly Record<string, unknown>[];
+}
+
 export interface WebuiDiffState {
   readonly view?: WebuiTurnDiffView;
   readonly unsupported: boolean;

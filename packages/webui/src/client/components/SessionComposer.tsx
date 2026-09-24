@@ -55,6 +55,7 @@ import {
 } from "./ModelPicker.js";
 import {
   WebuiIconAttach,
+  WebuiIconCommandGoal,
   WebuiIconFolder,
   WebuiIconSend,
 } from "../icons.js";
@@ -72,6 +73,7 @@ import { readUsageNumber } from "../projection/message-projection.js";
 import { stripQuestionnaireResponse } from "../projection/message-parts.js";
 import {
   buildWebuiComposerHandlers,
+  submitWebuiGoal,
   submitWebuiComposerTurn,
 } from "../projection/composer-state.js";
 import {
@@ -301,7 +303,8 @@ export function WebuiComposer({
     useState<WebuiQuestionnaireRequest>();
   const [goal, setGoal] = useState<WebuiGoal>();
   const [goalEnabled, setGoalEnabled] = useState(true);
-  const [replaceObjective, setReplaceObjective] = useState<string>();
+  const [goalMode, setGoalMode] = useState(false);
+  const [goalSubmitting, setGoalSubmitting] = useState(false);
   const [interactionError, setInteractionError] = useState<string>();
   const [queueItems, setQueueItems] = useState<readonly WebuiQueueItem[]>([]);
   const [queuePaused, setQueuePaused] = useState(false);
@@ -408,7 +411,11 @@ export function WebuiComposer({
     }
     let cancelled = false;
     void isGoalEnabled()
-      .then((result) => { if (!cancelled) setGoalEnabled(result.enabled); })
+      .then((result) => {
+        if (cancelled) return;
+        setGoalEnabled(result.enabled);
+        if (!result.enabled) setGoalMode(false);
+      })
       .catch(() => { if (!cancelled) setGoalEnabled(false); });
     return () => { cancelled = true; };
   }, [isGoalEnabled]);
@@ -416,12 +423,17 @@ export function WebuiComposer({
   useEffect(() => {
     if (!sessionId || !getGoal || !goalEnabled) {
       setGoal(undefined);
+      setGoalMode(false);
       return undefined;
     }
+    setGoal(undefined);
+    setGoalMode(false);
     let cancelled = false;
     void getGoal({ sessionId })
       .then((nextGoal) => {
-        if (!cancelled) setGoal(nextGoal);
+        if (cancelled) return;
+        setGoal(nextGoal);
+        if (nextGoal) setGoalMode(nextGoal.status !== "complete");
       })
       .catch(() => {
         if (!cancelled) setGoal(undefined);
@@ -699,7 +711,29 @@ export function WebuiComposer({
       document.removeEventListener("pointerdown", onPointerDown);
     };
   }, [slashPanelOpen, onDraftChange]);
+  const activateGoalMode = () => {
+    if (!goalEnabled || !createGoal) return;
+    setGoalMode(true);
+    onDraftChange("");
+    textareaRef.current?.focus();
+  };
+  const cancelGoalMode = () => {
+    setGoalMode(false);
+    if (!goal) onDraftChange("");
+    textareaRef.current?.focus();
+  };
+  const handleDraftChange = (next: string) => {
+    if (next.trim().toLowerCase() === "/goal") {
+      activateGoalMode();
+      return;
+    }
+    onDraftChange(next);
+  };
   const chooseCommand = (command: string) => {
+    if (command === "goal") {
+      activateGoalMode();
+      return;
+    }
     onDraftChange(`/${command} `);
     textareaRef.current?.focus();
   };
@@ -890,11 +924,49 @@ export function WebuiComposer({
   });
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const trimmedDraft = draft.trim();
     const command = commandInvocation
       ? slashSectioned.find(
           (item) => item.name === commandInvocation[1],
         )
       : undefined;
+    const directGoalObjective =
+      command?.name === "goal" ? commandInvocation?.[2]?.trim() : undefined;
+    if (command?.name === "goal" && !goalMode && !directGoalObjective) {
+      activateGoalMode();
+      return;
+    }
+    if ((goalMode || directGoalObjective) && (trimmedDraft || directGoalObjective)) {
+      const objective = directGoalObjective ?? trimmedDraft;
+      if (!createGoal || !goalEnabled) return;
+      setGoalSubmitting(true);
+      setInteractionError(undefined);
+      try {
+        const nextGoal = await submitWebuiGoal(
+          {
+            sessionId,
+            objective,
+            currentGoal: goal,
+            createGoal,
+            patchGoal,
+            createSession,
+            createSessionWorkspaceDir,
+            teamModeOff,
+          },
+          onSessionCreated,
+        );
+        setGoal(nextGoal);
+        setGoalMode(nextGoal.status !== "complete");
+        onDraftChange("");
+      } catch (error) {
+        setInteractionError(
+          error instanceof Error ? error.message : String(error),
+        );
+      } finally {
+        setGoalSubmitting(false);
+      }
+      return;
+    }
     if (runCommand && command && isWebuiRunnableCommand(command)) {
       setCommandRunning(true);
       setInteractionError(undefined);
@@ -944,28 +1016,9 @@ export function WebuiComposer({
       handlers,
     );
   };
-  const createGoalFromPrompt = () => {
-    if (!sessionId || !createGoal || typeof window === "undefined") return;
-    const objective = window.prompt("描述你想完成的目标")?.trim();
-    if (!objective) return;
-    if (goal) {
-      setReplaceObjective(objective);
-      return;
-    }
-    void createGoal({ sessionId, objective })
-      .then(setGoal)
-      .catch((error: unknown) => setInteractionError(error instanceof Error ? error.message : String(error)));
-  };
-  const confirmGoalReplacement = async () => {
-    if (!sessionId || !replaceObjective || !createGoal || !clearGoal) return;
-    try {
-      await clearGoal({ sessionId });
-      const nextGoal = await createGoal({ sessionId, objective: replaceObjective });
-      setGoal(nextGoal);
-      setReplaceObjective(undefined);
-    } catch (error) {
-      setInteractionError(error instanceof Error ? error.message : String(error));
-    }
+  const clearLocalGoal = () => {
+    setGoal(undefined);
+    setGoalMode(false);
   };
   return (
     <section
@@ -973,9 +1026,6 @@ export function WebuiComposer({
       className={`w-full ${sessionLayout ? "webui-session-composer" : ""}`}
       data-webui-session-composer={sessionLayout ? "true" : undefined}
     >
-      {sessionId && goalEnabled && goal ? <WebuiGoalBanner goal={goal} patchGoal={patchGoal} clearGoal={clearGoal} onReplace={createGoalFromPrompt} interactionBlocked={Boolean(questionnaire || permissions.length > 0)} /> : null}
-      {sessionId && goalEnabled && !goal && createGoal ? <button type="button" className="webui-goal-create" data-testid="thread-goal-create" onClick={createGoalFromPrompt}>设置目标</button> : null}
-      {replaceObjective ? <div className="webui-goal-confirm" data-testid="goal-replace-confirm" role="dialog"><strong>替换当前目标？</strong><p>用本次文字和注释替换已保存的目标。</p><button type="button" onClick={() => setReplaceObjective(undefined)}>取消</button><button type="button" data-testid="goal-replace-confirm-confirm" onClick={() => void confirmGoalReplacement()}>替换目标</button></div> : null}
       {sessionId ? (
         <WebuiInteractionPanel
           sessionId={sessionId}
@@ -1152,6 +1202,17 @@ export function WebuiComposer({
                   totalOutputTokens={
                     totalOutputTokens > 0 ? totalOutputTokens : undefined
                   }
+                  processSegments={assistant
+                    .map((message) => ({
+                      messageId: message.id,
+                      ...(message.thinking.trim()
+                        ? { thinking: message.thinking }
+                        : {}),
+                      ...(message.toolCalls?.length
+                        ? { tools: message.toolCalls }
+                        : {}),
+                    }))
+                    .filter((segment) => segment.thinking || segment.tools?.length)}
                 />
                 {(stream.phase === "streaming" || stream.phase === "waiting") && !thinking.trim() ? (
                   <ActivityIndicator showLabel labelOverride="思考中…" />
@@ -1200,6 +1261,7 @@ export function WebuiComposer({
         data-webui-composer-region="true"
         data-webui-session-composer-overlay={sessionLayout ? "true" : undefined}
       >
+        {sessionId && goalEnabled && goal ? <WebuiGoalBanner goal={goal} patchGoal={patchGoal} clearGoal={clearGoal} onCleared={clearLocalGoal} interactionBlocked={Boolean(questionnaire || permissions.length > 0)} /> : null}
         <form onSubmit={submit} data-webui-composer="true" className="w-full">
           <div className="message-input-home-container flex flex-col items-center gap-1.5 rounded-[20px] bg-bg_default_scrim pb-2">
             <div className="w-full rounded-[20px] border border-border_default bg-bg_grouped_secondary_elevated p-3 webui-composer-card">
@@ -1213,8 +1275,13 @@ export function WebuiComposer({
                   name="content"
                   rows={2}
                   value={draft}
-                  onChange={(event) => onDraftChange(event.target.value)}
+                  onChange={(event) => handleDraftChange(event.target.value)}
                   onKeyDown={(event) => {
+                    if (event.key === "Escape" && goalMode) {
+                      event.preventDefault();
+                      cancelGoalMode();
+                      return;
+                    }
                     if (event.key === "Escape" && commandMatch) {
                       // 镜像桌面端 aD 的 Escape 处理：清掉 draft 中的 "/xxx" 段
                       // 让 commandMatch 不再命中，popover 自动关闭。保留 / 之前的
@@ -1244,7 +1311,7 @@ export function WebuiComposer({
                     }
                   }}
                   disabled={!canCompose && !canQueue}
-                  placeholder="输入消息…（输入 / 唤起命令）"
+                  placeholder={goalMode ? "描述你想完成的目标" : "输入消息…（输入 / 唤起命令）"}
                   className="webui-textarea webui-composer-input text-text_default_primary"
                   data-webui-composer-input="true"
                 />
@@ -1324,6 +1391,20 @@ export function WebuiComposer({
                 >
                   <WebuiIconAttach />
                 </button>
+                {goalEnabled && createGoal ? (
+                  <button
+                    type="button"
+                    className={`webui-goal-mode-button${goalMode ? " is-active" : ""}`}
+                    aria-pressed={goalMode}
+                    aria-label={goalMode ? "取消目标模式" : "目标"}
+                    data-testid="composer-goal-mode"
+                    disabled={goalSubmitting || Boolean(questionnaire || permissions.length > 0)}
+                    onClick={() => (goalMode ? cancelGoalMode() : activateGoalMode())}
+                  >
+                    <WebuiIconCommandGoal />
+                    <span>目标</span>
+                  </button>
+                ) : null}
                 <div className="ml-auto flex items-center gap-1">
                   <WebuiModelPicker
                     models={enabledModels}
@@ -1345,7 +1426,7 @@ export function WebuiComposer({
                   ) : (
                     <button
                       type="submit"
-                      disabled={!sendable || commandRunning}
+                      disabled={!sendable || commandRunning || goalSubmitting}
                       aria-label="发送"
                       data-webui-composer-submit="true"
                       className="webui-send-button"

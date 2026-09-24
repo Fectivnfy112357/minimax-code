@@ -126,6 +126,9 @@ function upsertMessage(
     "thinking_content",
     "thinkingContent",
     "thinking",
+    "reasoning_content",
+    "reasoningContent",
+    "thought_content",
   ]);
   const calls = toolCalls(value);
   const usage = usageRecord(value);

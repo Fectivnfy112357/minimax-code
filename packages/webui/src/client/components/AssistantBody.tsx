@@ -10,7 +10,10 @@ import type { ReactElement } from "react";
 import { WebuiMarkdown } from "../markdown.js";
 import { MessageAttachments, type MessageAttachment } from "./MessageAttachments.js";
 import type { WebuiTurnDiffView } from "../../server/port.js";
-import type { WebuiTransport } from "../contracts.js";
+import type {
+  WebuiTranscriptProcessSegment,
+  WebuiTransport,
+} from "../contracts.js";
 import { WebuiDiffCard } from "./DiffCard.js";
 import {
   WebuiActivityGroup,
@@ -38,6 +41,7 @@ export function WebuiAssistantBody({
   answers,
   attachments,
   streaming = false,
+  processSegments,
 }: {
   readonly messageId: string;
   readonly sessionId?: string;
@@ -64,7 +68,18 @@ export function WebuiAssistantBody({
   readonly answers: readonly string[];
   readonly attachments?: readonly MessageAttachment[];
   readonly streaming?: boolean;
+  readonly processSegments?: readonly WebuiTranscriptProcessSegment[];
 }): ReactElement {
+  const segments = processSegments?.length
+    ? processSegments
+    : [
+        {
+          messageId,
+          ...(thinking ? { thinking } : {}),
+          ...(thinkingDurationMs !== undefined ? { thinkingDurationMs } : {}),
+          ...(tools?.length ? { tools } : {}),
+        } satisfies WebuiTranscriptProcessSegment,
+      ];
   return (
     <div
       className="webui-assistant-body text-sm space-y-4"
@@ -85,16 +100,33 @@ export function WebuiAssistantBody({
           requestDurationMs={totalRequestDurationMs}
           wallClockDurationMs={wallClockDurationMs}
         >
-          <div className="activity-group-content">
-            {thinking ? (
-              <WebuiThinkingBlock
-                text={thinking}
-                durationMs={thinkingDurationMs}
-                streaming={streaming}
-                processingStartedAtMs={processingStartedAtMs}
-              />
-            ) : null}
-            {tools?.length ? <WebuiActivityGroup tools={tools} authoritativeDiffAvailable={Boolean(getTurnDiff)} streaming={streaming} /> : null}
+          <div className="activity-group-content webui-turn-process-segments">
+            {segments.map((segment) => {
+              const toolCount = segment.tools?.length ?? 0;
+              const summaryLabel = segment.thinking
+                ? `思考 1 次${toolCount > 0 ? `, 使用 ${toolCount} 个工具` : ""}`
+                : undefined;
+              return (
+                <div className="webui-turn-process-segment" key={segment.messageId}>
+                  {segment.thinking ? (
+                    <WebuiThinkingBlock
+                      text={segment.thinking}
+                      durationMs={segment.thinkingDurationMs}
+                      streaming={streaming}
+                      processingStartedAtMs={processingStartedAtMs}
+                      summaryLabel={summaryLabel}
+                    />
+                  ) : null}
+                  {segment.tools?.length ? (
+                    <WebuiActivityGroup
+                      tools={segment.tools}
+                      authoritativeDiffAvailable={Boolean(getTurnDiff)}
+                      streaming={streaming}
+                    />
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
         </WebuiTurnProcess>
       ) : null}

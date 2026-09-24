@@ -14,7 +14,10 @@ import type {
   WebuiQuestionnaireRequest,
   WebuiRuntimeEvent,
 } from "../../server/port.js";
-import type { WebuiTranscriptItem } from "../contracts.js";
+import type {
+  WebuiTranscriptItem,
+  WebuiTranscriptProcessSegment,
+} from "../contracts.js";
 import { readUsageNumber } from "./message-projection.js";
 
 /** A render block: one user bubble, or one assistant turn. The transcript
@@ -30,6 +33,43 @@ export interface WebuiTranscriptGroup {
    *  `user` timestamp in the same turn (across group boundaries) to the
    *  newest `assistant` timestamp. */
   readonly wallClockDurationMs?: number;
+}
+
+/** Preserve the per-message activity segments that Desktop renders as rows. */
+export function projectWebuiProcessSegments(
+  items: readonly WebuiTranscriptItem[],
+): readonly WebuiTranscriptProcessSegment[] {
+  const segments: WebuiTranscriptProcessSegment[] = [];
+  const byMessageId = new Map<string, WebuiTranscriptProcessSegment>();
+  for (const item of items) {
+    if (item.kind !== "thinking" && item.kind !== "tool") continue;
+    const current = byMessageId.get(item.messageId) ?? {
+      messageId: item.messageId,
+    };
+    const next: WebuiTranscriptProcessSegment = item.kind === "thinking"
+      ? {
+          ...current,
+          thinking: item.text,
+          ...(item.durationMs !== undefined
+            ? { thinkingDurationMs: item.durationMs }
+            : {}),
+        }
+      : {
+          ...current,
+          tools: [...(current.tools ?? []), ...(
+            item as Extract<WebuiTranscriptItem, { kind: "tool" }>
+          ).tools],
+        };
+    if (!byMessageId.has(item.messageId)) segments.push(next);
+    else {
+      const index = segments.findIndex(
+        (segment) => segment.messageId === item.messageId,
+      );
+      if (index >= 0) segments[index] = next;
+    }
+    byMessageId.set(item.messageId, next);
+  }
+  return segments;
 }
 
 /**
@@ -92,6 +132,15 @@ export function groupWebuiTranscriptItems(
     const tokens = readUsageNumber(usage, "outputTokens", "output_tokens");
     if (typeof tokens === "number") {
       group.totalOutputTokens = (group.totalOutputTokens ?? 0) + tokens;
+    }
+    const duration = readUsageNumber(
+      usage,
+      "requestDurationMs",
+      "request_duration_ms",
+    );
+    if (typeof duration === "number") {
+      group.totalRequestDurationMs =
+        (group.totalRequestDurationMs ?? 0) + duration;
     }
   };
   for (const item of items) {

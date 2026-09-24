@@ -112,7 +112,7 @@ describe("W0 · SSR · WebuiTurnProcess", () => {
     expect(html).not.toContain('data-testid="turn-output-rate"');
   });
 
-  it("collapses the finished form and derives the output rate", () => {
+  it("keeps finished activity rows visible and derives the output rate", () => {
     const html = render(
       createElement(WebuiTurnProcess, {
         active: false,
@@ -128,10 +128,9 @@ describe("W0 · SSR · WebuiTurnProcess", () => {
     expect(html).toContain('data-testid="turn-output-rate"');
     expect(html).toContain(">100 token/s<");
     expect(html).not.toContain("共执行 3 秒 · 100 token/s");
-    expect(html).toContain('aria-expanded="false"');
-    // Collapsed: the children are not in the markup at all.
-    expect(html).not.toContain('data-testid="turn-process-detail"');
-    expect(html).not.toContain("turn-child");
+    expect(html).toContain('aria-expanded="true"');
+    expect(html).toContain('data-testid="turn-process-detail"');
+    expect(html).toContain("turn-child");
   });
 
   it("falls back to the wall-clock span and then to zero seconds", () => {

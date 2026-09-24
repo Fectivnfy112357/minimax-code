@@ -16,9 +16,13 @@ import type {
   WebuiGetSessionRewindPreviewResult,
   WebuiTurnDiffView,
 } from "../../server/port.js";
-import type { WebuiTransport } from "../contracts.js";
+import type {
+  WebuiTranscriptProcessSegment,
+  WebuiTransport,
+} from "../contracts.js";
 import { MessageAttachments, type MessageAttachment } from "./MessageAttachments.js";
 import { WebuiAssistantBody } from "./AssistantBody.js";
+import { WebuiIconCommandGoal } from "../icons.js";
 import {
   WebuiMessageActions,
   WebuiRewindDialog,
@@ -69,6 +73,7 @@ export function MessageItem({
   streaming = false,
   streamMessageId,
   messageRootId,
+  processSegments,
 }: {
   readonly messageId: string;
   readonly role: "user" | "assistant";
@@ -99,6 +104,7 @@ export function MessageItem({
   readonly streaming?: boolean;
   readonly streamMessageId?: string;
   readonly messageRootId?: string;
+  readonly processSegments?: readonly WebuiTranscriptProcessSegment[];
   readonly totalRequestDurationMs?: number;
   readonly totalOutputTokens?: number;
   readonly wallClockDurationMs?: number;
@@ -201,6 +207,12 @@ export function MessageItem({
                   data-webui-message-kind="user"
                   data-webui-user-text="true"
                 >
+                  {isGoal ? (
+                    <span className="webui-user-goal-label" data-webui-goal-label="true">
+                      <WebuiIconCommandGoal aria-hidden="true" />
+                      <span>Goal</span>
+                    </span>
+                  ) : null}
                   <span>{userText ?? ""}</span>
                 </p>
               </div>
@@ -242,6 +254,7 @@ export function MessageItem({
         totalRequestDurationMs={totalRequestDurationMs}
         totalOutputTokens={totalOutputTokens}
         wallClockDurationMs={wallClockDurationMs}
+        processSegments={processSegments}
       />
       <WebuiMessageActions {...actionProps} />
       {forkOpen ? <div className="webui-message-dialog" role="dialog" aria-modal="true" data-testid="fork-dialog"><div className="webui-message-dialog-surface"><h3>复制为新会话</h3><p>{forkOptions?.unavailableReason ?? "保留当前上下文，在新会话中继续"}</p><input aria-label="会话名称" value={forkTitle} onChange={(event) => setForkTitle(event.target.value)} placeholder="使用简短且不同的名称，便于识别" disabled={forkOptions?.canFork === false} /><div className="webui-message-dialog-actions"><button type="button" onClick={() => setForkOpen(false)} disabled={mutationBusy}>取消</button><button type="button" onClick={confirmFork} disabled={mutationBusy || forkOptions?.canFork === false}>复制并进入</button></div></div></div> : null}

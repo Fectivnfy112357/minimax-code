@@ -6,9 +6,9 @@
 // desktop's `eR` + memory splice, and the filter is the same four-rank
 // scoring the desktop uses. Behaviour fields (`composerMode` / `sendIntent`
 // / `directAction`) are kept verbatim so a future harness port can wire
-// them without renaming; today the WebUI only acts on the supported
-// built-ins (new, compact), and the rest render in the desktop's row
-// shape with `aria-disabled` so the visual stays 1:1.
+// them without renaming; the WebUI handles the local goal composer mode and
+// the runCommand-backed built-ins, while the remaining entries render in the
+// desktop's row shape with `aria-disabled` so the visual stays 1:1.
 //
 // Source attribution: `docs/webui-visual-language.md` (visual language),
 // ADR 0009 (reuse the desktop's vocabulary), `chunks/10118-*` (palette
@@ -104,7 +104,7 @@ export const WEBUI_BUILTIN_COMMANDS: readonly SlashCommandEntry[] = [
     source_type: -1,
     composerMode: "goal",
     icon: WebuiIconCommandGoal,
-    supported: false,
+    supported: true,
   },
   {
     name: "plan",

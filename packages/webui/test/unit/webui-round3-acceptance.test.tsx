@@ -30,6 +30,7 @@ import {
   buildWebuiGoalEditPatch,
   buildWebuiGoalStatusPatch,
   projectWebuiThreadGoalMessage,
+  WEBUI_GOAL_STATUS_COPY,
 } from "../../src/client/projection/goal-state.js";
 import {
   canAdvanceWebuiQuestionnaireStep,
@@ -265,23 +266,23 @@ function goal(status: WebuiGoal["status"], wait?: WebuiGoal["executionWait"]): W
 describe("round-3 goal and questionnaire behavior", () => {
   it("renders all goal states and wait reasons with the correct status copy", () => {
     for (const status of ["active", "paused", "blocked", "complete", "budget_limited", "usage_limited"] as const) {
-      const html = renderToStaticMarkup(createElement(WebuiGoalBanner, { goal: goal(status), onReplace: () => undefined }));
+      const html = renderToStaticMarkup(createElement(WebuiGoalBanner, { goal: goal(status) }));
       expect(html).toContain(`data-goal-status="${status}"`);
-      expect(html).toContain(`>${({ active: "进行中", paused: "已停止", blocked: "受阻", complete: "已完成", budget_limited: "已达上限", usage_limited: "服务商受限" } as const)[status]}<`);
+      expect(html).toContain(`>${WEBUI_GOAL_STATUS_COPY[status]}<`);
     }
     const waiting = renderToStaticMarkup(createElement(WebuiGoalBanner, { goal: goal("active", { reason: "permission", sinceMs: 1 }) }));
     expect(waiting).toContain("等待你确认权限");
   });
 
-  it("validates goal edits, status actions, clear confirmation, and replacement affordances", () => {
+  it("validates goal edits, status actions, clear confirmation, and desktop actions", () => {
     expect(buildWebuiGoalEditPatch("  objective  ", "50K")).toEqual({ ok: true, patch: { objective: "objective", tokenBudget: 50000 } });
     expect(buildWebuiGoalEditPatch(" ", "50K")).toMatchObject({ ok: false });
     expect(buildWebuiGoalEditPatch("objective", "not-a-budget")).toMatchObject({ ok: false });
     expect(buildWebuiGoalStatusPatch("paused")).toEqual({ status: "paused" });
-    const html = renderToStaticMarkup(createElement(WebuiGoalBanner, { goal: goal("active"), onReplace: () => undefined }));
+    const html = renderToStaticMarkup(createElement(WebuiGoalBanner, { goal: goal("active") }));
     expect(html).toContain("thread-goal-banner-pause");
     expect(html).toContain("thread-goal-banner-clear");
-    expect(html).toContain("thread-goal-banner-replace-button");
+    expect(html).toContain("thread-goal-banner-edit-button");
   });
 
   it("projects objective_updated, steering, and updated goal events into one user message", () => {
@@ -384,6 +385,32 @@ describe("round-3 stream state and transcript render units", () => {
     expect(renderToStaticMarkup(createElement(MessageItem, {
       messageId: "m1", role: "assistant", answers: ["hello"], streaming: false,
     }))).toContain("hello");
+  });
+
+  it("renders Goal identity and Desktop-style visible process segments", () => {
+    const goalMarkup = renderToStaticMarkup(createElement(MessageItem, {
+      messageId: "goal-message",
+      role: "user",
+      userText: "你好",
+      isGoal: true,
+    }));
+    expect(goalMarkup).toContain('data-webui-goal-label="true"');
+    expect(goalMarkup).toContain(">Goal<");
+
+    const assistantMarkup = renderToStaticMarkup(createElement(MessageItem, {
+      messageId: "assistant-message",
+      role: "assistant",
+      thinking: "第一段思考",
+      answers: ["答复"],
+      processSegments: [
+        { messageId: "segment-1", thinking: "第一段思考" },
+        { messageId: "segment-2", thinking: "第二段思考", tools: [{ name: "read" }] },
+      ],
+    }));
+    expect(assistantMarkup).toContain('data-testid="turn-process-detail"');
+    expect(assistantMarkup).toContain("思考 1 次");
+    expect(assistantMarkup).toContain("使用 1 个工具");
+    expect(assistantMarkup).toContain("答复");
   });
 
   it("drives a session error to the error rendering boundary", () => {

@@ -225,39 +225,40 @@ export function deriveConversationUsageNotice(
 export function projectWebuiMessage(
   message: WebuiClientMessage,
 ): WebuiTranscriptItem[] {
+  const normalized = normalizeWebuiClientMessage(message);
   const thinkingItems: WebuiTranscriptItem[] = [];
   const toolItems: WebuiTranscriptItem[] = [];
   const answerItems: WebuiTranscriptItem[] = [];
   const questionnaireItems: WebuiTranscriptItem[] = [];
-  const attachments = projectMessageAttachments(message.attachments);
+  const attachments = projectMessageAttachments(normalized.attachments);
   // Pull the raw message-level usage (matches `TokenUsage` from agent-core).
   // The message-parts projector already strips the questionnaire XML block
   // before producing text parts, so the user bubble never surfaces raw
   // `<questionnaire-response>` markup.
-  const messageUsage = readMessageUsage(message);
-  for (const part of projectMessageParts(message)) {
-    const turn = message.turnId ? { turnId: message.turnId } : {};
+  const messageUsage = readMessageUsage(normalized);
+  for (const part of projectMessageParts(normalized)) {
+    const turn = normalized.turnId ? { turnId: normalized.turnId } : {};
     if (part.type === "thinking")
       thinkingItems.push({
         kind: "thinking",
         text: part.content,
-        messageId: message.msgId,
+        messageId: normalized.msgId,
         ...turn,
         ...(part.durationMs !== undefined ? { durationMs: part.durationMs } : {}),
-        ...(message.actions ? { actions: message.actions } : {}),
-        ...(message.timestamp !== undefined ? { timestamp: message.timestamp } : {}),
+        ...(normalized.actions ? { actions: normalized.actions } : {}),
+        ...(normalized.timestamp !== undefined ? { timestamp: normalized.timestamp } : {}),
         ...(attachments ? { attachments } : {}),
         ...(messageUsage ? { usage: messageUsage } : {}),
       });
     else if (part.type === "text")
       answerItems.push({
-        kind: message.role === "user" ? "user" : "assistant",
+        kind: normalized.role === "user" ? "user" : "assistant",
         text: part.content,
-        messageId: message.msgId,
+        messageId: normalized.msgId,
         ...turn,
-        ...(message.actions ? { actions: message.actions } : {}),
-        ...(message.timestamp !== undefined ? { timestamp: message.timestamp } : {}),
-        ...(message.source === "thread-goal" || message.kind === "goal"
+        ...(normalized.actions ? { actions: normalized.actions } : {}),
+        ...(normalized.timestamp !== undefined ? { timestamp: normalized.timestamp } : {}),
+        ...(normalized.source === "thread-goal" || normalized.kind === "goal"
           ? { isGoal: true }
           : {}),
         ...(attachments ? { attachments } : {}),
@@ -267,17 +268,17 @@ export function projectWebuiMessage(
       toolItems.push({
         kind: "tool",
         tools: [part.toolCall],
-        messageId: message.msgId,
+        messageId: normalized.msgId,
         ...turn,
         ...(messageUsage ? { usage: messageUsage } : {}),
       });
     else if (part.type === "questionnaire_response")
       questionnaireItems.push({
         kind: "questionnaire_response",
-        messageId: message.msgId,
+        messageId: normalized.msgId,
         ...turn,
         summary: part.summary,
-        ...(message.timestamp !== undefined ? { timestamp: message.timestamp } : {}),
+        ...(normalized.timestamp !== undefined ? { timestamp: normalized.timestamp } : {}),
       });
   }
   // The pure parts layer preserves Desktop's source order. The legacy
@@ -302,6 +303,63 @@ export function projectWebuiMessage(
   return output;
 }
 
+/** Normalize flattened and persisted raw message shapes at the projection seam. */
+function normalizeWebuiClientMessage(
+  message: WebuiClientMessage,
+): WebuiClientMessage {
+  const direct = message as unknown as Record<string, unknown>;
+  const rawCandidates: Record<string, unknown>[] = [];
+  if (typeof message.rawJson === "string") {
+    try {
+      const parsed = recordValue(JSON.parse(message.rawJson));
+      for (const candidate of [
+        parsed,
+        recordValue(parsed?.message),
+        recordValue(parsed?.agent_message),
+        recordValue(parsed?.agentMessage),
+        recordValue(parsed?.data),
+      ]) {
+        if (candidate) rawCandidates.push(candidate);
+      }
+    } catch {
+      // Keep using direct fields when rawJson is malformed.
+    }
+  }
+  const read = (...keys: readonly string[]): unknown => {
+    for (const key of keys) {
+      if (direct[key] !== undefined) return direct[key];
+    }
+    for (const candidate of rawCandidates) {
+      for (const key of keys) {
+        if (candidate[key] !== undefined) return candidate[key];
+      }
+    }
+    return undefined;
+  };
+  const msgContent = read("msgContent", "msg_content", "content");
+  const thinkingContent = read(
+    "thinkingContent",
+    "thinking_content",
+    "reasoningContent",
+    "reasoning_content",
+    "thinking",
+  );
+  const thinkingDurationMs = read("thinkingDurationMs", "thinking_duration_ms");
+  const toolCalls = read("toolCalls", "tool_calls");
+  const timestamp = read("timestamp");
+  return {
+    ...message,
+    ...(typeof msgContent === "string" ? { msgContent } : {}),
+    ...(typeof thinkingContent === "string" ? { thinkingContent } : {}),
+    ...(typeof thinkingDurationMs === "number" ? { thinkingDurationMs } : {}),
+    ...(Array.isArray(toolCalls) ? { toolCalls } : {}),
+    ...(typeof read("role") === "string" ? { role: read("role") as string } : {}),
+    ...(typeof read("source") === "string" ? { source: read("source") as string } : {}),
+    ...(typeof read("kind") === "string" ? { kind: read("kind") as string } : {}),
+    ...(typeof timestamp === "number" ? { timestamp } : {}),
+  };
+}
+
 /**
  * Read the per-message usage block — prefers the live wire frame's
  * camelCase `usage` object, falls back to the persisted snake_case `rawJson`
@@ -315,9 +373,18 @@ export function readMessageUsage(
     return direct as Record<string, unknown>;
   if (typeof message.rawJson === "string") {
     try {
-      const raw = JSON.parse(message.rawJson) as { usage?: unknown };
-      if (raw.usage && typeof raw.usage === "object" && !Array.isArray(raw.usage))
-        return raw.usage as Record<string, unknown>;
+      const raw = recordValue(JSON.parse(message.rawJson));
+      const candidates = [
+        raw,
+        recordValue(raw?.message),
+        recordValue(raw?.agent_message),
+        recordValue(raw?.agentMessage),
+        recordValue(raw?.data),
+      ];
+      for (const candidate of candidates) {
+        const usage = recordValue(candidate?.usage) ?? recordValue(candidate?.Usage);
+        if (usage) return usage;
+      }
     } catch {
       return undefined;
     }

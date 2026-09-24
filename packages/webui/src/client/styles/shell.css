@@ -1157,6 +1157,22 @@
     margin-right: auto;
     margin-left: auto;
   }
+  .webui-session-layout .webui-session-composer-overlay > .webui-goal-banner {
+    position: relative;
+    z-index: 20;
+    margin-bottom: 10px;
+    padding: 12px 18px 10px;
+    border-radius: 22px;
+    background: var(--bg_grouped_secondary_elevated);
+    box-shadow: 0 8px 24px rgb(0 0 0 / 8%);
+  }
+  .webui-session-layout
+    .webui-session-composer-overlay
+    > form
+    .message-input-home-container {
+    gap: 0;
+    padding-bottom: 0;
+  }
   .webui-session-layout .webui-session-bottom-padding {
     order: 3;
     height: var(--webui-composer-bottom-padding, 168px);
@@ -1180,6 +1196,19 @@
     white-space: pre-wrap;
     overflow-wrap: break-word;
     color: var(--text_default_primary);
+  }
+  .webui-user-goal-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-right: 6px;
+    color: var(--icon_default_accent);
+    font-weight: 500;
+  }
+  .webui-user-goal-label svg {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 16px;
   }
   .webui-user-text-clamp {
     max-height: 240px;
@@ -1330,6 +1359,14 @@
     font-size: 14px;
     line-height: 20px;
     color: var(--text_default_tertiary);
+  }
+  .webui-turn-process-segments {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing_16);
+  }
+  .webui-turn-process-segment {
+    min-width: 0;
   }
   .webui-thinking-detail .webui-markdown :is(strong, b) {
     font-weight: 400;
@@ -2777,11 +2814,12 @@
     flex-direction: column;
     gap: 8px;
     width: 100%;
-    margin-bottom: 8px;
-    padding: 10px 12px;
-    border: 0.5px solid var(--border_default);
-    border-radius: 12px;
-    background: var(--bg_default_secondary);
+    margin-bottom: 10px;
+    padding: 14px 18px;
+    border: 0;
+    border-radius: 22px;
+    background: var(--bg_grouped_secondary_elevated);
+    box-shadow: 0 8px 24px rgb(0 0 0 / 8%);
   }
 
   .webui-goal-banner-content-row,
@@ -2798,22 +2836,38 @@
   }
 
   .webui-goal-banner-objective-group {
+    flex: 1;
     min-width: 0;
   }
 
-  .webui-goal-banner-objective-group strong {
+  .webui-goal-banner-icon {
+    display: inline-flex;
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    color: var(--icon_default_accent);
+  }
+
+  .webui-goal-banner-icon svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .webui-goal-banner-objective-group strong,
+  .webui-goal-objective {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .webui-goal-objective {
+    flex: 1;
     min-width: 0;
     overflow: hidden;
     padding: 0;
     border: 0;
     background: transparent;
-    color: var(--text_default_secondary);
+    color: var(--text_default_primary);
     font: inherit;
     text-align: left;
     text-overflow: ellipsis;
@@ -2827,6 +2881,42 @@
   .webui-goal-updated {
     color: var(--text_default_secondary);
     font-size: 12px;
+  }
+
+  .webui-goal-status {
+    flex: 0 0 auto;
+    color: var(--icon_default_accent);
+    font-weight: 500;
+  }
+
+  .webui-goal-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--icon_default_tertiary);
+    cursor: pointer;
+  }
+
+  .webui-goal-action:hover:not(:disabled),
+  .webui-goal-action:focus-visible {
+    background: var(--bg_interaction_tertiary_hover);
+    color: var(--text_default_primary);
+  }
+
+  .webui-goal-action:disabled {
+    cursor: default;
+    opacity: 0.45;
+  }
+
+  .webui-goal-action svg {
+    width: 18px;
+    height: 18px;
   }
 
   .webui-goal-wait {
@@ -2912,16 +3002,34 @@
     margin: 4px 8px;
   }
 
-  .webui-goal-create {
-    align-self: flex-start;
+  .webui-goal-mode-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
     min-height: 28px;
-    padding: 0 10px;
-    border: 1px solid var(--border_default);
+    padding: 0 8px;
+    border: 0;
     border-radius: 8px;
     background: transparent;
     color: var(--text_default_secondary);
-    font-size: 12px;
+    font-size: 14px;
     cursor: pointer;
+  }
+
+  .webui-goal-mode-button svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .webui-goal-mode-button:hover:not(:disabled),
+  .webui-goal-mode-button.is-active {
+    background: rgb(0 132 255 / 10%);
+    color: var(--icon_default_accent);
+  }
+
+  .webui-goal-mode-button:disabled {
+    cursor: default;
+    opacity: 0.45;
   }
 
   @media (prefers-reduced-motion: reduce) {

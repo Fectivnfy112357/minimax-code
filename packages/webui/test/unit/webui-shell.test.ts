@@ -58,12 +58,13 @@ import {
 import {
   buildWebuiComposerHandlers,
   createdSessionId,
+  submitWebuiGoal,
   submitWebuiComposerTurn,
 } from "../../src/client/projection/composer-state.js";
 import { projectWebuiMessage } from "../../src/client/projection/message-projection.js";
 import { buildWebuiQuestionnaireAnswers } from "../../src/client/projection/questionnaire-state.js";
 import { groupWebuiTranscriptItems } from "../../src/client/projection/transcript-projection.js";
-import type { WebuiQuestionnaireRequest } from "../../src/server/port.js";
+import type { WebuiGoal, WebuiQuestionnaireRequest } from "../../src/server/port.js";
 import {
   migrateSessionRuntimeState,
   readSessionRuntimeState,
@@ -320,6 +321,21 @@ describe("WebUI shell", () => {
       })[0].kind,
     ).toBe("user");
     expect(projectWebuiMessage({ msgId: "empty" })).toEqual([]);
+  });
+
+  it("recovers thinking and usage from persisted raw JSON fields", () => {
+    const items = projectWebuiMessage({
+      msgId: "raw-history",
+      msgContent: "最终答复",
+      rawJson: JSON.stringify({
+        thinking_content: "被持久化的思考",
+        usage: { request_duration_ms: 18_000, output_tokens: 1_746 },
+      }),
+    });
+    expect(items.map((item) => item.kind)).toEqual(["thinking", "assistant"]);
+    const groups = groupWebuiTranscriptItems(items);
+    expect(groups[0]?.totalRequestDurationMs).toBe(18_000);
+    expect(groups[0]?.totalOutputTokens).toBe(1_746);
   });
 
   it("renders an empty transcript without treating it as an error", () => {
@@ -1487,6 +1503,63 @@ describe("WebUI composer app-to-helper seam", () => {
     };
     return { setStream, getState: () => state };
   }
+
+  it("creates a home-session goal and patches an existing goal through the goal RPCs", async () => {
+    const nextGoal = (sessionId: string, objective: string): WebuiGoal => ({
+      goalId: "goal-1",
+      sessionId,
+      objective,
+      status: "active",
+      createdAt: 1,
+      updatedAt: 1,
+      tokensUsed: 0,
+      turnsUsed: 0,
+      timeUsedSeconds: 0,
+      tokenBudget: null,
+      statusReason: null,
+    });
+    const createGoal = vi.fn(async (request: { sessionId: string; objective: string }) =>
+      nextGoal(request.sessionId, request.objective),
+    );
+    const createSession = vi.fn(async () => ({ sessionId: "new-session" }));
+    const onSessionCreated = vi.fn();
+    await submitWebuiGoal(
+      {
+        objective: "  ship the feature  ",
+        createGoal,
+        createSession,
+        createSessionWorkspaceDir: "/workspace",
+        teamModeOff: true,
+      },
+      onSessionCreated,
+    );
+    expect(createSession).toHaveBeenCalledWith({
+      name: "main",
+      workspaceDir: "/workspace",
+      teamModeOff: true,
+    });
+    expect(createGoal).toHaveBeenCalledWith({
+      sessionId: "new-session",
+      objective: "ship the feature",
+    });
+    expect(onSessionCreated).toHaveBeenCalledWith("new-session");
+
+    const patchGoal = vi.fn(async (request: { sessionId: string; objective: string }) =>
+      nextGoal(request.sessionId, request.objective),
+    );
+    const currentGoal = nextGoal("existing-session", "old");
+    await submitWebuiGoal({
+      sessionId: "existing-session",
+      objective: "new objective",
+      currentGoal,
+      createGoal,
+      patchGoal,
+    });
+    expect(patchGoal).toHaveBeenCalledWith({
+      sessionId: "existing-session",
+      objective: "new objective",
+    });
+  });
 
   it("buildWebuiComposerHandlers passes every field through unchanged", () => {
     // R13: the handler assembly is a named unit. A regression that

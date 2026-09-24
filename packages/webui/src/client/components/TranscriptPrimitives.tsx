@@ -228,7 +228,9 @@ export function WebuiTurnProcess({
   readonly wallClockDurationMs?: number;
   readonly children: ReactElement;
 }): ReactElement {
-  const [expanded, setExpanded] = useState(active);
+  // Desktop keeps the turn's activity rows visible after completion; each
+  // thinking/tool row has its own disclosure instead.
+  const [expanded, setExpanded] = useState(true);
   const [, forceTick] = useState(0);
   useEffect(() => {
     if (!active) return undefined;
@@ -325,11 +327,13 @@ export function WebuiThinkingBlock({
   durationMs,
   streaming = false,
   processingStartedAtMs,
+  summaryLabel,
 }: {
   readonly text: string;
   readonly durationMs?: number;
   readonly streaming?: boolean;
   readonly processingStartedAtMs?: number;
+  readonly summaryLabel?: string;
 }): ReactElement | null {
   const [, forceTick] = useState(0);
   useEffect(() => {
@@ -353,7 +357,7 @@ export function WebuiThinkingBlock({
         {streaming ? (
           <ActivityIndicator aria-hidden="true" />
         ) : null}
-        <span>{streaming ? "推理中..." : "已完成推理"}</span>
+        <span>{summaryLabel ?? (streaming ? "推理中..." : "已完成推理")}</span>
         {typeof elapsed === "number" && elapsed >= 1 ? (
           <span className="webui-thinking-elapsed">{elapsed}s</span>
         ) : null}

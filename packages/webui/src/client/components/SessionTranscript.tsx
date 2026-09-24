@@ -23,7 +23,10 @@ import type {
 } from "../contracts.js";
 import type { WebuiTurnDiffView } from "../../server/port.js";
 import type { WebuiQuestionnaireResponseSummary } from "../projection/message-parts.js";
-import { groupWebuiTranscriptItems } from "../projection/transcript-projection.js";
+import {
+  groupWebuiTranscriptItems,
+  projectWebuiProcessSegments,
+} from "../projection/transcript-projection.js";
 import { projectWebuiMessage } from "../projection/message-projection.js";
 
 /**
@@ -383,6 +386,7 @@ export function WebuiSessionTranscript({
               thinkingDurationMs={thinkingItems[0]?.durationMs}
               tools={tools.length > 0 ? tools : undefined}
               answers={answers.map((item) => item.text)}
+              processSegments={projectWebuiProcessSegments(group.items)}
               attachments={answers[0]?.attachments}
               totalRequestDurationMs={group.totalRequestDurationMs}
               totalOutputTokens={group.totalOutputTokens}

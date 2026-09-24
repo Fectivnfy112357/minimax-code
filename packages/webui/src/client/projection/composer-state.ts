@@ -15,6 +15,11 @@ import type {
   WebuiClientMessageEnqueuer,
   WebuiClientSessionCreator,
 } from "../contracts.js";
+import type {
+  WebuiGoal,
+  WebuiGoalCreateRequest,
+  WebuiGoalPatchRequest,
+} from "../../server/port.js";
 import { formatWebuiError } from "../value-readers.js";
 import { initialWebuiStreamState } from "../stream.js";
 import {
@@ -74,6 +79,48 @@ export function buildWebuiComposerHandlers(args: {
     onSessionCreated: args.onSessionCreated,
     onQueued: args.onQueued,
   };
+}
+
+export interface WebuiGoalSubmitArgs {
+  readonly sessionId?: string;
+  readonly objective: string;
+  readonly currentGoal?: WebuiGoal;
+  readonly createGoal: (request: WebuiGoalCreateRequest) => Promise<WebuiGoal>;
+  readonly patchGoal?: (request: WebuiGoalPatchRequest) => Promise<WebuiGoal>;
+  readonly createSession?: WebuiClientSessionCreator;
+  readonly createSessionWorkspaceDir?: string;
+  readonly teamModeOff?: boolean;
+}
+
+/**
+ * Submit the Desktop-style goal composer action without sending the objective
+ * as a normal chat message. A home composer creates the session first, then
+ * uses the existing goal RPC; an existing goal is updated through patchGoal.
+ */
+export async function submitWebuiGoal(
+  args: WebuiGoalSubmitArgs,
+  onSessionCreated?: (sessionId: string) => void,
+): Promise<WebuiGoal> {
+  const objective = args.objective.trim();
+  if (!objective) throw new Error("目标内容不能为空");
+  let sessionId = args.sessionId;
+  if (!sessionId) {
+    if (!args.createSession) throw new Error("无法创建目标会话");
+    const result = await args.createSession({
+      name: "main",
+      ...(args.createSessionWorkspaceDir
+        ? { workspaceDir: args.createSessionWorkspaceDir }
+        : {}),
+      teamModeOff: args.teamModeOff,
+    });
+    sessionId = createdSessionId(result);
+    if (!sessionId) throw new Error("创建目标会话未返回会话 ID");
+    onSessionCreated?.(sessionId);
+  }
+  if (args.currentGoal && args.patchGoal) {
+    return args.patchGoal({ sessionId, objective });
+  }
+  return args.createGoal({ sessionId, objective });
 }
 
 /**
