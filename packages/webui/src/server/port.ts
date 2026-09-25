@@ -778,7 +778,7 @@ export interface WebuiHarnessPort {
   createUserModelProvider(request: Record<string, unknown>): Promise<unknown>;
   updateUserModelProvider(request: Record<string, unknown>): Promise<unknown>;
   deleteUserModelProvider(providerId: string): Promise<unknown>;
-  testUserModelProvider(providerId: string): Promise<unknown>;
+  testUserModelProvider(request: { readonly providerId: string; readonly apiKey?: string }): Promise<unknown>;
   testUserModel(request: { readonly providerId: string; readonly modelId: string }): Promise<unknown>;
   discoverUserModelsCandidate(request: Record<string, unknown>): Promise<unknown>;
   saveUserModelProviderCandidate(request: Record<string, unknown>): Promise<unknown>;
@@ -786,6 +786,13 @@ export interface WebuiHarnessPort {
   getMiniMaxApiKeyStatus(): Promise<Record<string, unknown>>;
   upsertMiniMaxApiKey(request: { readonly apiKey: string; readonly saveAndUse?: boolean }): Promise<unknown>;
   getCodexOAuthStatus(): Promise<Record<string, unknown>>;
+  getMiniMaxModelSource(): Promise<"token_plan" | "minimax_api_key">;
+  setMiniMaxModelSource(request: { readonly source: "token_plan" | "minimax_api_key" }): Promise<"token_plan" | "minimax_api_key">;
+  testUserModelCandidate(request: { readonly candidate: Record<string, unknown>; readonly modelId: string }): Promise<unknown>;
+  revealModelProviderApiKey(request: { readonly providerId: string }): Promise<string>;
+  startCodexOAuthLogin(request?: Record<string, unknown>): Promise<unknown>;
+  cancelCodexOAuthLogin(request: { readonly loginId: string }): Promise<unknown>;
+  refreshModels(): Promise<unknown>;
   /**
    * Release anything the port owns. The service calls this after closing
    * every transport-side resource so the harness can tear itself down in
@@ -858,6 +865,12 @@ export type WebuiUsageQuotaResult =
       readonly hasTokenPlan?: boolean;
       /** Raw credit balance as the account API reports it (string or numeric string). */
       readonly creditBalance?: string;
+      readonly tokenPlanTier?: string;
+      readonly tokenPlanExpiresAt?: number;
+      readonly upgradeAction?: string;
+      readonly willRenewal?: boolean;
+      readonly purchasedCredits?: string;
+      readonly freeCredits?: string;
       readonly quota?: WebuiUsageQuotaView;
     };
 

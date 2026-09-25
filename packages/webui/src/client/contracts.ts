@@ -519,7 +519,7 @@ export interface WebuiTransport {
     request: Record<string, unknown>,
   ) => Promise<unknown>;
   readonly deleteUserModelProvider?: (providerId: string) => Promise<unknown>;
-  readonly testUserModelProvider?: (providerId: string) => Promise<unknown>;
+  readonly testUserModelProvider?: (request: { readonly providerId: string; readonly apiKey?: string }) => Promise<unknown>;
   readonly testUserModel?: (request: {
     readonly providerId: string;
     readonly modelId: string;
@@ -537,6 +537,13 @@ export interface WebuiTransport {
     readonly saveAndUse?: boolean;
   }) => Promise<unknown>;
   readonly getCodexOAuthStatus?: () => Promise<Record<string, unknown>>;
+  readonly getMiniMaxModelSource?: () => Promise<"token_plan" | "minimax_api_key">;
+  readonly setMiniMaxModelSource?: (source: "token_plan" | "minimax_api_key") => Promise<"token_plan" | "minimax_api_key">;
+  readonly testUserModelCandidate?: (request: { readonly candidate: Record<string, unknown>; readonly modelId: string }) => Promise<unknown>;
+  readonly revealModelProviderApiKey?: (request: { readonly providerId: string }) => Promise<string>;
+  readonly startCodexOAuthLogin?: (request?: Record<string, unknown>) => Promise<unknown>;
+  readonly cancelCodexOAuthLogin?: (request: { readonly loginId: string }) => Promise<unknown>;
+  readonly refreshModels?: () => Promise<unknown>;
   readonly runCommand?: (request: {
     readonly command: "help" | "new" | "compact" | "status" | "usage" | "model";
     readonly input?: string;

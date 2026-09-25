@@ -71,6 +71,9 @@ type CloseEvent = [number, Buffer];
 type OncePromise<T> = Promise<T[]>;
 
 class ScriptedHarnessPort implements WebuiHarnessPort {
+  lastProviderTest?: { readonly providerId: string; readonly apiKey?: string };
+  lastModelTest?: { readonly providerId: string; readonly modelId: string };
+  providerMutations: Array<{ readonly operation: string; readonly request: unknown }> = [];
   private versionInfo: WebuiVersionInfo = {
     version: "0.1.0-test",
     protocolVersion: WEBUI_PROTOCOL_VERSION,
@@ -370,18 +373,24 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
   }
 
   async listUserModelProviders() { return [{ providerId: "fixture-provider", name: "Fixture" }]; }
-  async createUserModelProvider(request: Record<string, unknown>) { return { success: true, providerId: request.providerId }; }
-  async updateUserModelProvider() { return { success: true }; }
-  async deleteUserModelProvider() { return { success: true }; }
-  async testUserModelProvider() { return { success: true, status: { state: "ok" } }; }
-  async testUserModel() { return { success: true, status: { state: "ok" } }; }
-  async discoverUserModelsCandidate() { return []; }
-  async saveUserModelProviderCandidate() { return { success: true }; }
+  async createUserModelProvider(request: Record<string, unknown>) { this.providerMutations.push({ operation: "create", request }); return { success: true, providerId: request.providerId }; }
+  async updateUserModelProvider(request: Record<string, unknown>) { this.providerMutations.push({ operation: "update", request }); return { success: true }; }
+  async deleteUserModelProvider(providerId: string) { this.providerMutations.push({ operation: "delete", request: providerId }); return { success: true }; }
+  async testUserModelProvider(request: { readonly providerId: string; readonly apiKey?: string }) { this.lastProviderTest = request; return { success: true, status: { state: "ok" } }; }
+  async testUserModel(request: { readonly providerId: string; readonly modelId: string }) { this.lastModelTest = request; return { success: true, status: { state: "ok" } }; }
+  async discoverUserModelsCandidate(request: Record<string, unknown>) { this.providerMutations.push({ operation: "discover", request }); return [{ modelId: "discovered-model" }]; }
+  async saveUserModelProviderCandidate(request: Record<string, unknown>) { this.providerMutations.push({ operation: "save-candidate", request }); return { success: true }; }
   async listProviderPresets() { return []; }
   async getMiniMaxApiKeyStatus() { return { hasApiKey: false }; }
   async upsertMiniMaxApiKey() { return { success: true }; }
   async getCodexOAuthStatus() { return { connected: false }; }
-
+  async getMiniMaxModelSource() { return "token_plan" as const; }
+  async setMiniMaxModelSource(request: { source: "token_plan" | "minimax_api_key" }) { return request.source; }
+  async testUserModelCandidate(request: { readonly candidate: Record<string, unknown>; readonly modelId: string }) { this.providerMutations.push({ operation: "test-candidate", request }); return { success: true }; }
+  async revealModelProviderApiKey() { return ""; }
+  async startCodexOAuthLogin() { return { loginId: "fixture" }; }
+  async cancelCodexOAuthLogin() { return { connected: false }; }
+  async refreshModels() { return { models: [] }; }
   async requestCompaction() { return { success: true }; }
 
   async close(): Promise<void> {
@@ -1847,6 +1856,8 @@ describe("WebUI operation allowlist", () => {
         "updateUserModelProvider", "deleteUserModelProvider", "testUserModelProvider", "testUserModel",
         "discoverUserModelsCandidate", "saveUserModelProviderCandidate", "listProviderPresets",
         "getMiniMaxApiKeyStatus", "upsertMiniMaxApiKey", "getCodexOAuthStatus",
+        "getMiniMaxModelSource", "setMiniMaxModelSource", "testUserModelCandidate",
+        "revealModelProviderApiKey", "startCodexOAuthLogin", "cancelCodexOAuthLogin", "refreshModels",
       ]) expect(registry.has(operation)).toBe(true);
     } finally {
       await service.close();
@@ -1859,16 +1870,40 @@ describe("WebUI operation allowlist", () => {
     const registry = createOperationRegistry(port);
     const result = async (name: string, body: unknown) => (await registry.get(name)?.handle({ requestId: name }, body)) as { readonly body: unknown };
     expect(await result("listUserModelProviders", undefined)).toMatchObject({ body: [{ providerId: "fixture-provider" }] });
-    expect(await result("createUserModelProvider", { providerId: "synthetic-provider" })).toMatchObject({ body: { success: true } });
-    expect(await result("updateUserModelProvider", { providerId: "synthetic-provider" })).toMatchObject({ body: { success: true } });
+    const createRequest = { providerId: "synthetic-provider", name: "Synthetic", baseUrl: "https://invalid.example", headers: { "X-First": "one", "X-Second": "two" } };
+    expect(await result("createUserModelProvider", createRequest)).toMatchObject({ body: { success: true } });
+    const toggleRequest = { providerId: "synthetic-provider", models: [{ modelId: "fixture-model", enabled: false }] };
+    expect(await result("updateUserModelProvider", toggleRequest)).toMatchObject({ body: { success: true } });
+    const reorderRequest = { providerId: "synthetic-provider", models: [{ modelId: "model-b" }, { modelId: "model-a" }] };
+    expect(await result("updateUserModelProvider", reorderRequest)).toMatchObject({ body: { success: true } });
     expect(await result("deleteUserModelProvider", { providerId: "synthetic-provider" })).toMatchObject({ body: { success: true } });
-    expect(await result("testUserModelProvider", { providerId: "fixture-provider" })).toMatchObject({ body: { success: true } });
-    expect(await result("testUserModel", { providerId: "fixture-provider", modelId: "fixture-model" })).toMatchObject({ body: { success: true } });
-    expect(await result("discoverUserModelsCandidate", { providerId: "fixture-provider" })).toMatchObject({ body: [] });
-    expect(await result("saveUserModelProviderCandidate", { providerId: "synthetic-provider" })).toMatchObject({ body: { success: true } });
+    expect(await result("testUserModelProvider", { providerId: "fixture-provider", apiKey: "unsaved-key" })).toMatchObject({ body: { success: true } });
+    expect(port.lastProviderTest).toEqual({ providerId: "fixture-provider", apiKey: "unsaved-key" });
+    const modelTestRequest = { providerId: "fixture-provider", modelId: "fixture-model" };
+    expect(await result("testUserModel", modelTestRequest)).toMatchObject({ body: { success: true } });
+    expect(port.lastModelTest).toEqual(modelTestRequest);
+    const discoverRequest = { providerId: "synthetic-provider", expectedRevision: "rev-1", baseUrl: "https://invalid.example" };
+    expect(await result("discoverUserModelsCandidate", discoverRequest)).toMatchObject({ body: [{ modelId: "discovered-model" }] });
+    const candidate = { providerId: "synthetic-provider", expectedRevision: "rev-1", name: "Synthetic", baseUrl: "https://invalid.example", apiKey: "unsaved-secret", headers: { "X-First": "one", "X-Second": "two" }, models: [{ modelId: "fixture-model" }] };
+    const candidateTestRequest = { candidate, modelId: "fixture-model" };
+    expect(await result("testUserModelCandidate", candidateTestRequest)).toMatchObject({ body: { success: true } });
+    const saveRequest = { candidate, modelId: "fixture-model", saveAndUse: false, skipConnectionTest: false };
+    expect(await result("saveUserModelProviderCandidate", saveRequest)).toMatchObject({ body: { success: true } });
+    expect(port.providerMutations).toEqual([
+      { operation: "create", request: createRequest },
+      { operation: "update", request: toggleRequest },
+      { operation: "update", request: reorderRequest },
+      { operation: "delete", request: "synthetic-provider" },
+      { operation: "discover", request: discoverRequest },
+      { operation: "test-candidate", request: candidateTestRequest },
+      { operation: "save-candidate", request: saveRequest },
+    ]);
     expect(await result("listProviderPresets", undefined)).toMatchObject({ body: [] });
     expect(await result("getMiniMaxApiKeyStatus", undefined)).toMatchObject({ body: { hasApiKey: false } });
     expect(await result("getCodexOAuthStatus", undefined)).toMatchObject({ body: { connected: false } });
+    expect(await result("getMiniMaxModelSource", undefined)).toMatchObject({ body: "token_plan" });
+    expect(await result("setMiniMaxModelSource", { source: "minimax_api_key" })).toMatchObject({ body: "minimax_api_key" });
+    expect(await result("refreshModels", undefined)).toMatchObject({ body: { models: [] } });
   });
 
   it("routes workspace environment reads and git mutations through the registry", async () => {
@@ -2533,6 +2568,13 @@ describe("WebUI shutdown order (criterion 7)", () => {
       async getCodexOAuthStatus() {
         return { connected: false };
       },
+      async getMiniMaxModelSource() { return "token_plan" as const; },
+      async setMiniMaxModelSource(request: { source: "token_plan" | "minimax_api_key" }) { return request.source; },
+      async testUserModelCandidate() { return { success: true }; },
+      async revealModelProviderApiKey() { return ""; },
+      async startCodexOAuthLogin() { return { loginId: "fixture" }; },
+      async cancelCodexOAuthLogin() { return { connected: false }; },
+      async refreshModels() { return { models: [] }; },
       async requestCompaction() {
         return { success: true };
       },
@@ -2873,6 +2915,13 @@ describe("WebUI shutdown order (criterion 7)", () => {
       async getCodexOAuthStatus() {
         return { connected: false };
       },
+      async getMiniMaxModelSource() { return "token_plan" as const; },
+      async setMiniMaxModelSource(request: { source: "token_plan" | "minimax_api_key" }) { return request.source; },
+      async testUserModelCandidate() { return { success: true }; },
+      async revealModelProviderApiKey() { return ""; },
+      async startCodexOAuthLogin() { return { loginId: "fixture" }; },
+      async cancelCodexOAuthLogin() { return { connected: false }; },
+      async refreshModels() { return { models: [] }; },
       async requestCompaction() {
         return { success: true };
       },

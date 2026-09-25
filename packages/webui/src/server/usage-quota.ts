@@ -102,6 +102,12 @@ interface BillingContext {
   readonly hasTokenPlan?: boolean;
   readonly opGroupId?: string;
   readonly creditBalance?: string;
+  readonly tokenPlanTier?: string;
+  readonly tokenPlanExpiresAt?: number;
+  readonly upgradeAction?: string;
+  readonly willRenewal?: boolean;
+  readonly purchasedCredits?: string;
+  readonly freeCredits?: string;
 }
 
 interface CacheEntry<V> {
@@ -160,6 +166,12 @@ export class UsageQuotaClient {
         ...(billing.creditBalance !== undefined
           ? { creditBalance: billing.creditBalance }
           : {}),
+        ...(billing.tokenPlanTier ? { tokenPlanTier: billing.tokenPlanTier } : {}),
+        ...(billing.tokenPlanExpiresAt !== undefined ? { tokenPlanExpiresAt: billing.tokenPlanExpiresAt } : {}),
+        ...(billing.upgradeAction ? { upgradeAction: billing.upgradeAction } : {}),
+        ...(billing.willRenewal !== undefined ? { willRenewal: billing.willRenewal } : {}),
+        ...(billing.purchasedCredits !== undefined ? { purchasedCredits: billing.purchasedCredits } : {}),
+        ...(billing.freeCredits !== undefined ? { freeCredits: billing.freeCredits } : {}),
       };
     }
     const quota = await this.resolveQuota(token, billing.opGroupId, force).catch(
@@ -171,6 +183,12 @@ export class UsageQuotaClient {
       ...(billing.creditBalance !== undefined
         ? { creditBalance: billing.creditBalance }
         : {}),
+      ...(billing.tokenPlanTier ? { tokenPlanTier: billing.tokenPlanTier } : {}),
+      ...(billing.tokenPlanExpiresAt !== undefined ? { tokenPlanExpiresAt: billing.tokenPlanExpiresAt } : {}),
+      ...(billing.upgradeAction ? { upgradeAction: billing.upgradeAction } : {}),
+      ...(billing.willRenewal !== undefined ? { willRenewal: billing.willRenewal } : {}),
+      ...(billing.purchasedCredits !== undefined ? { purchasedCredits: billing.purchasedCredits } : {}),
+      ...(billing.freeCredits !== undefined ? { freeCredits: billing.freeCredits } : {}),
       ...(quota ? { quota } : {}),
     };
   }
@@ -216,10 +234,16 @@ export class UsageQuotaClient {
   private async fetchBillingContext(token: UsageQuotaTokenContext): Promise<BillingContext> {
     let personalWorkspace:
       | {
-          workspaceId: number | string;
-          opGroupId?: string;
-          hasTokenPlan?: boolean;
-          creditBalance?: string;
+        workspaceId: number | string;
+        opGroupId?: string;
+        hasTokenPlan?: boolean;
+        creditBalance?: string;
+        tokenPlanTier?: string;
+        tokenPlanExpiresAt?: number;
+        upgradeAction?: string;
+        willRenewal?: boolean;
+        purchasedCredits?: string;
+        freeCredits?: string;
         }
       | undefined;
     try {
@@ -248,6 +272,12 @@ export class UsageQuotaClient {
         ? { creditBalance: personalWorkspace.creditBalance }
         : {}),
       ...(personalWorkspace.opGroupId ? { opGroupId: personalWorkspace.opGroupId } : {}),
+      ...(personalWorkspace.tokenPlanTier ? { tokenPlanTier: personalWorkspace.tokenPlanTier } : {}),
+      ...(personalWorkspace.tokenPlanExpiresAt !== undefined ? { tokenPlanExpiresAt: personalWorkspace.tokenPlanExpiresAt } : {}),
+      ...(personalWorkspace.upgradeAction ? { upgradeAction: personalWorkspace.upgradeAction } : {}),
+      ...(personalWorkspace.willRenewal !== undefined ? { willRenewal: personalWorkspace.willRenewal } : {}),
+      ...(personalWorkspace.purchasedCredits !== undefined ? { purchasedCredits: personalWorkspace.purchasedCredits } : {}),
+      ...(personalWorkspace.freeCredits !== undefined ? { freeCredits: personalWorkspace.freeCredits } : {}),
     };
     try {
       const scoped = await this.postMatrixJson(
@@ -447,6 +477,12 @@ interface ProjectedMembership {
   readonly hasTokenPlan?: boolean;
   readonly opGroupId?: string;
   readonly creditBalance?: string;
+  readonly tokenPlanTier?: string;
+  readonly tokenPlanExpiresAt?: number;
+  readonly upgradeAction?: string;
+  readonly willRenewal?: boolean;
+  readonly purchasedCredits?: string;
+  readonly freeCredits?: string;
 }
 
 /** Reads the fields the desktop popover derives `hasTokenPlan`/credits from. */
@@ -458,10 +494,23 @@ function projectMembership(body: Record<string, unknown>): ProjectedMembership {
   const creditBalance =
     readString(creditSummary, undefined, "total_remaining_amount") ??
     readNumberishString(body, data, "opcredit_balance");
+  const tokenPlanTier = readString(body, data, "token_plan_tier");
+  const tokenPlanExpiresAt = finiteNumber(body.token_plan_expires_at ?? data?.token_plan_expires_at);
+  const upgradeAction = readString(body, data, "upgrade_action");
+  const willRenewalValue = body.will_renewal ?? data?.will_renewal;
+  const willRenewal = typeof willRenewalValue === "boolean" ? willRenewalValue : undefined;
+  const purchasedCredits = readString(creditSummary, undefined, "purchased_remaining_amount");
+  const freeCredits = readString(creditSummary, undefined, "free_remaining_amount");
   return {
     ...(hasTokenPlan !== undefined ? { hasTokenPlan } : {}),
     ...(opGroupId ? { opGroupId } : {}),
     ...(creditBalance !== undefined ? { creditBalance } : {}),
+    ...(tokenPlanTier ? { tokenPlanTier } : {}),
+    ...(tokenPlanExpiresAt !== undefined ? { tokenPlanExpiresAt } : {}),
+    ...(upgradeAction ? { upgradeAction } : {}),
+    ...(willRenewal !== undefined ? { willRenewal } : {}),
+    ...(purchasedCredits !== undefined ? { purchasedCredits } : {}),
+    ...(freeCredits !== undefined ? { freeCredits } : {}),
   };
 }
 
@@ -473,6 +522,12 @@ function projectPersonalWorkspace(
       opGroupId?: string;
       hasTokenPlan?: boolean;
       creditBalance?: string;
+      tokenPlanTier?: string;
+      tokenPlanExpiresAt?: number;
+      upgradeAction?: string;
+      willRenewal?: boolean;
+      purchasedCredits?: string;
+      freeCredits?: string;
     }
   | undefined {
   const data = asRecord(body.data);
@@ -496,6 +551,12 @@ function projectPersonalWorkspace(
       ...(membership.creditBalance !== undefined
         ? { creditBalance: membership.creditBalance }
         : {}),
+      ...(membership.tokenPlanTier ? { tokenPlanTier: membership.tokenPlanTier } : {}),
+      ...(membership.tokenPlanExpiresAt !== undefined ? { tokenPlanExpiresAt: membership.tokenPlanExpiresAt } : {}),
+      ...(membership.upgradeAction ? { upgradeAction: membership.upgradeAction } : {}),
+      ...(membership.willRenewal !== undefined ? { willRenewal: membership.willRenewal } : {}),
+      ...(membership.purchasedCredits !== undefined ? { purchasedCredits: membership.purchasedCredits } : {}),
+      ...(membership.freeCredits !== undefined ? { freeCredits: membership.freeCredits } : {}),
     };
   }
   return undefined;
@@ -513,10 +574,22 @@ function mergeMembership(
         : undefined;
   const creditBalance = scoped.creditBalance ?? personal.creditBalance;
   const opGroupId = personal.opGroupId ?? scoped.opGroupId;
+  const tokenPlanTier = scoped.tokenPlanTier ?? personal.tokenPlanTier;
+  const tokenPlanExpiresAt = scoped.tokenPlanExpiresAt ?? personal.tokenPlanExpiresAt;
+  const upgradeAction = scoped.upgradeAction ?? personal.upgradeAction;
+  const willRenewal = scoped.willRenewal ?? personal.willRenewal;
+  const purchasedCredits = scoped.purchasedCredits ?? personal.purchasedCredits;
+  const freeCredits = scoped.freeCredits ?? personal.freeCredits;
   return {
     ...(hasTokenPlan !== undefined ? { hasTokenPlan } : {}),
     ...(opGroupId ? { opGroupId } : {}),
     ...(creditBalance !== undefined ? { creditBalance } : {}),
+    ...(tokenPlanTier ? { tokenPlanTier } : {}),
+    ...(tokenPlanExpiresAt !== undefined ? { tokenPlanExpiresAt } : {}),
+    ...(upgradeAction ? { upgradeAction } : {}),
+    ...(willRenewal !== undefined ? { willRenewal } : {}),
+    ...(purchasedCredits !== undefined ? { purchasedCredits } : {}),
+    ...(freeCredits !== undefined ? { freeCredits } : {}),
   };
 }
 

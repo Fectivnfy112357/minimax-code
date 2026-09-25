@@ -243,6 +243,9 @@ describe("UsageQuotaClient", () => {
       signedIn: true,
       hasTokenPlan: true,
       creditBalance: "7726",
+      tokenPlanTier: "Max Plan",
+      tokenPlanExpiresAt: 1792281600000,
+      upgradeAction: "Month",
     });
   });
 

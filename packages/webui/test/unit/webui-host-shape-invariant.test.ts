@@ -326,6 +326,13 @@ class FullPort implements WebuiHarnessPort {
   async getCodexOAuthStatus() {
     return { connected: false };
   }
+  async getMiniMaxModelSource() { return "token_plan" as const; }
+  async setMiniMaxModelSource(request: { source: "token_plan" | "minimax_api_key" }) { return request.source; }
+  async testUserModelCandidate() { return { success: true }; }
+  async revealModelProviderApiKey() { return ""; }
+  async startCodexOAuthLogin() { return { loginId: "fixture" }; }
+  async cancelCodexOAuthLogin() { return { connected: false }; }
+  async refreshModels() { return { models: [] }; }
   async invalidateAuth() {
     // no-op: the full-port invariant never actually invalidates.
   }

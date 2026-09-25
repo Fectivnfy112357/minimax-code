@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { renderToStaticMarkup } from "react-dom/server";
 import { DESKTOP_SETTINGS_TABS, filterSettingsTabs, GENERIC_FILE_ROW_ORDER, GENERIC_RADIO_CONTRACT, GENERIC_SECTION_TEST_IDS, resolveThemePreference, SETTINGS_GROUPS, SETTINGS_ICON_PATHS } from "../../src/client/components/SettingsModal.js";
+import { DisabledBillingActions, UsageModelSettings } from "../../src/client/components/settings/UsageModelSettings.js";
+import { reorderModelIds } from "../../src/client/projection/model-reorder.js";
+import { formatResetLabel, getActiveSourceBadge, projectProviderHeaders } from "../../src/client/projection/usage-settings.js";
 
 describe("desktop settings registry", () => {
   it("keeps the electron tab order, labels, and groups", () => {
@@ -39,5 +43,48 @@ describe("desktop settings registry", () => {
     expect(GENERIC_FILE_ROW_ORDER).toEqual(["file-open-in-new-tab-switch", "file-line-wrap-switch"]);
     expect(GENERIC_RADIO_CONTRACT).toEqual({ position: "absolute right-4 top-[22px]", accentToken: "icon_default_accent" });
     for (const tab of DESKTOP_SETTINGS_TABS) expect(SETTINGS_ICON_PATHS[tab.icon]).toBeTruthy();
+  });
+
+  it("renders the usage source shell and its loading branch without a DOM runtime", () => {
+    const markup = renderToStaticMarkup(<UsageModelSettings capabilities={{}} />);
+    expect(markup).toContain("Token Plan");
+    expect(markup).toContain("加载中…");
+  });
+
+  it("keeps every cloud billing control inert and leaves credit fallback unchecked", () => {
+    const markup = renderToStaticMarkup(<DisabledBillingActions />);
+    expect((markup.match(/disabled=""/gu) ?? []).length).toBe(8);
+    expect(markup).toContain("Disabled (not yet wired)");
+    expect(markup).toContain('aria-checked="false"');
+    expect(markup).toMatch(/<button(?=[^>]*disabled="")(?=[^>]*title="Disabled \(not yet wired\)")[^>]*><span[^>]*>明细<\/span>/u);
+  });
+
+  it("reorders model ids by stable identity and leaves missing ids untouched", () => {
+    expect(reorderModelIds(["a", "b", "c"], "a", "c")).toEqual(["b", "c", "a"]);
+    expect(reorderModelIds(["a", "b", "c"], "missing", "c")).toEqual(["a", "b", "c"]);
+  });
+
+  it("does not claim an active source until the source read resolves", () => {
+    expect(getActiveSourceBadge(false, "token_plan", true)).toBeUndefined();
+    expect(getActiveSourceBadge(true, "token_plan", true)).toBe("使用中");
+    expect(getActiveSourceBadge(true, "minimax_api_key", true)).toBe("未启用");
+  });
+
+  it("formats reset countdowns at and below the one-minute boundary", () => {
+    const now = 1_000_000;
+    expect(formatResetLabel(now + 59_000, now)).toBe("59秒");
+    expect(formatResetLabel(now + 60_000, now)).toBe("1分后重置");
+    expect(formatResetLabel(now, now)).toBeUndefined();
+  });
+
+  it("preserves all saved headers unless an individual row is removed or renamed", () => {
+    const original = ["X-First", "X-Second"];
+    expect(projectProviderHeaders([
+      { id: "1", name: "X-First", value: "one", persistedName: "X-First" },
+      { id: "2", name: "X-Second", value: "", persistedName: "X-Second" },
+    ], original)).toEqual({ headers: { "X-First": "one" } });
+    expect(projectProviderHeaders([
+      { id: "1", name: "X-Renamed", value: "new", persistedName: "X-First" },
+    ], original)).toEqual({ headers: { "X-Renamed": "new" }, removeHeaders: ["X-First", "X-Second"] });
   });
 });

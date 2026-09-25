@@ -87,6 +87,13 @@ export type WebuiOperationPort = Pick<
   | "getMiniMaxApiKeyStatus"
   | "upsertMiniMaxApiKey"
   | "getCodexOAuthStatus"
+  | "getMiniMaxModelSource"
+  | "setMiniMaxModelSource"
+  | "testUserModelCandidate"
+  | "revealModelProviderApiKey"
+  | "startCodexOAuthLogin"
+  | "cancelCodexOAuthLogin"
+  | "refreshModels"
   | "requestCompaction"
   | "invalidateAuth"
 >;
@@ -168,7 +175,7 @@ export function createOperationHandlers(
     createUserModelProvider: async (_context, body) => ({ body: await port.createUserModelProvider(body) }),
     updateUserModelProvider: async (_context, body) => ({ body: await port.updateUserModelProvider(body) }),
     deleteUserModelProvider: async (_context, body) => ({ body: await port.deleteUserModelProvider((body as Record<string, unknown>).providerId as string) }),
-    testUserModelProvider: async (_context, body) => ({ body: await port.testUserModelProvider((body as Record<string, unknown>).providerId as string) }),
+    testUserModelProvider: async (_context, body) => ({ body: await port.testUserModelProvider(body) }),
     testUserModel: async (_context, body) => ({ body: await port.testUserModel(body) }),
     discoverUserModelsCandidate: async (_context, body) => ({ body: await port.discoverUserModelsCandidate(body) }),
     saveUserModelProviderCandidate: async (_context, body) => ({ body: await port.saveUserModelProviderCandidate(body) }),
@@ -176,6 +183,13 @@ export function createOperationHandlers(
     getMiniMaxApiKeyStatus: async () => ({ body: await port.getMiniMaxApiKeyStatus() }),
     upsertMiniMaxApiKey: async (_context, body) => ({ body: await port.upsertMiniMaxApiKey(body) }),
     getCodexOAuthStatus: async () => ({ body: await port.getCodexOAuthStatus() }),
+    getMiniMaxModelSource: async () => ({ body: await port.getMiniMaxModelSource() }),
+    setMiniMaxModelSource: async (_context, body) => ({ body: await port.setMiniMaxModelSource(body) }),
+    testUserModelCandidate: async (_context, body) => ({ body: await port.testUserModelCandidate(body as { candidate: Record<string, unknown>; modelId: string }) }),
+    revealModelProviderApiKey: async (_context, body) => ({ body: await port.revealModelProviderApiKey(body) }),
+    startCodexOAuthLogin: async (_context, body) => ({ body: await port.startCodexOAuthLogin(body) }),
+    cancelCodexOAuthLogin: async (_context, body) => ({ body: await port.cancelCodexOAuthLogin(body) }),
+    refreshModels: async () => ({ body: await port.refreshModels() }),
     runCommand: async (_context, body) => ({ body: await runWebuiCommand(port, body) }),
     signOut: async () => {
       await port.invalidateAuth();

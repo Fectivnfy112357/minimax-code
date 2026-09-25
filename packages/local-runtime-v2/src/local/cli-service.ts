@@ -890,6 +890,35 @@ export class CliService {
     ).testProvider(input);
   }
 
+  testUserModelCandidate(
+    input: Parameters<
+      NonNullable<LocalRuntimeApplication["modelProviders"]>["testUserModelCandidate"]
+    >[0],
+  ) {
+    return this.requireCapability(
+      "modelProviders",
+      "Model Provider",
+    ).testUserModelCandidate(input);
+  }
+
+  revealModelProviderApiKey(
+    input: Parameters<
+      NonNullable<LocalRuntimeApplication["modelProviders"]>["revealModelProviderApiKey"]
+    >[0],
+  ) {
+    return this.requireCapability(
+      "modelProviders",
+      "Model Provider",
+    ).revealModelProviderApiKey(input);
+  }
+
+  refreshModels() {
+    return this.requireCapability(
+      "modelProviders",
+      "Model Provider",
+    ).refreshModels();
+  }
+
   testUserModel(
     input: Parameters<
       NonNullable<LocalRuntimeApplication["modelProviders"]>["testModel"]

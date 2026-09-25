@@ -177,6 +177,8 @@ describe("createProcessLocalApplication capabilities", () => {
         provider: { providerId: "custom_provider:openai" },
       })),
       updateUserProvider: vi.fn(),
+      testUserModelCandidate: vi.fn(async () => ({ ok: true, status: { state: "available" } })),
+      revealModelProviderApiKey: vi.fn(() => "sk-revealed"),
       deleteUserProvider: vi.fn(),
       testProvider: vi.fn(async () => ({
         ok: true,
@@ -210,6 +212,7 @@ describe("createProcessLocalApplication capabilities", () => {
         providerId: "openai-codex" as const,
         authUrl: "https://auth.example",
       })),
+      refreshModels: vi.fn(async () => ({ models: [{ modelId: "gpt-5.6" }] })),
     };
 
     const application = createProcessLocalApplication({
@@ -271,6 +274,14 @@ describe("createProcessLocalApplication capabilities", () => {
     expect(listProviderPresets).toHaveBeenCalledOnce();
     expect(oauth.getStatus).toHaveBeenCalledOnce();
     expect(oauth.startLogin).toHaveBeenCalledWith({ method: "device_code" });
+    await expect(application.modelProviders?.refreshModels()).resolves.toEqual({ models: [{ modelId: "gpt-5.6" }] });
+    expect(oauth.refreshModels).toHaveBeenCalledOnce();
+    expect(application.modelProviders?.revealModelProviderApiKey({ providerId: "custom_provider:work" })).toBe("sk-revealed");
+    expect(modelProviders.revealModelProviderApiKey).toHaveBeenCalledWith({ providerId: "custom_provider:work" });
+    await expect(application.modelProviders?.testUserModelCandidate({ candidate: { baseUrl: "https://models.example/v1" }, modelId: "model-1" })).resolves.toMatchObject({ ok: true });
+    expect(modelProviders.testUserModelCandidate).toHaveBeenCalledWith({ baseUrl: "https://models.example/v1" }, "model-1");
+    await application.modelProviders?.testProvider({ providerId: "custom_provider:work", apiKey: "sk-unsaved" });
+    expect(modelProviders.testProvider).toHaveBeenCalledWith("custom_provider:work", { apiKeyOverride: "sk-unsaved" });
     await application.modelProviders?.cancelCodexOAuthLogin("attempt-1");
     expect(oauth.cancelLogin).toHaveBeenCalledWith("attempt-1");
     await expect(

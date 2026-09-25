@@ -27,6 +27,7 @@ import type {
   CodexOAuthLoginOptions,
   CodexOAuthStatus,
   UserModelInputView,
+  UserModelProviderCandidateView,
 } from "../../service/model-system/index.js";
 
 export type ProcessLocalModelInput = Omit<UserModelInputView, "modalities"> & {
@@ -275,6 +276,7 @@ export interface LocalRuntimeApplication {
       baseUrl: string;
       apiKey: string;
       apiFormat?: string;
+      headers?: Record<string, string>;
       models?: readonly ProcessLocalModelInput[];
       saveAndUse?: boolean;
     }): Promise<unknown>;
@@ -291,6 +293,8 @@ export interface LocalRuntimeApplication {
         baseUrl: string;
         apiKey?: string;
         apiFormat?: string;
+        headers?: Record<string, string>;
+        removeHeaders?: string[];
         models?: readonly ProcessLocalModelInput[];
       };
       modelId?: string;
@@ -307,12 +311,17 @@ export interface LocalRuntimeApplication {
       baseUrl?: string;
       apiKey?: string;
       apiFormat?: string;
+      headers?: Record<string, string>;
+      removeHeaders?: string[];
       enabled?: boolean;
       models?: readonly ProcessLocalModelInput[];
       saveAndUse?: boolean;
     }): Promise<unknown>;
     delete(input: { providerId: string }): Promise<void>;
-    testProvider(input: { providerId: string }): Promise<unknown>;
+    testProvider(input: { providerId: string; apiKey?: string }): Promise<unknown>;
+    testUserModelCandidate(input: { candidate: UserModelProviderCandidateView; modelId: string }): Promise<unknown>;
+    revealModelProviderApiKey(input: { providerId: string }): string;
+    refreshModels(): Promise<unknown>;
     testModel(input: { providerId: string; modelId: string }): Promise<unknown>;
   };
 }

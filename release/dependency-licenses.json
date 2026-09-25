@@ -259,6 +259,38 @@
       "homepage": "https://github.com/bcoe/v8-coverage#readme"
     },
     {
+      "name": "@dnd-kit/accessibility",
+      "versions": [
+        "3.1.1"
+      ],
+      "license": "MIT",
+      "homepage": "https://github.com/clauderic/dnd-kit#readme"
+    },
+    {
+      "name": "@dnd-kit/core",
+      "versions": [
+        "6.3.1"
+      ],
+      "license": "MIT",
+      "homepage": "https://github.com/clauderic/dnd-kit#readme"
+    },
+    {
+      "name": "@dnd-kit/sortable",
+      "versions": [
+        "10.0.0"
+      ],
+      "license": "MIT",
+      "homepage": "https://github.com/clauderic/dnd-kit#readme"
+    },
+    {
+      "name": "@dnd-kit/utilities",
+      "versions": [
+        "3.2.2"
+      ],
+      "license": "MIT",
+      "homepage": "https://github.com/clauderic/dnd-kit#readme"
+    },
+    {
       "name": "@esbuild/darwin-arm64",
       "versions": [
         "0.28.2"

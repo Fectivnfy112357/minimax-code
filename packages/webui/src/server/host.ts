@@ -242,7 +242,7 @@ export interface WebuiRuntimeCliService {
   createUserModelProvider(request: Record<string, unknown>): Promise<unknown>;
   updateUserModelProvider(request: Record<string, unknown>): Promise<unknown>;
   deleteUserModelProvider(request: { readonly providerId: string }): Promise<unknown>;
-  testUserModelProvider(request: { readonly providerId: string }): Promise<unknown>;
+  testUserModelProvider(request: { readonly providerId: string; readonly apiKey?: string }): Promise<unknown>;
   testUserModel(request: { readonly providerId: string; readonly modelId: string }): Promise<unknown>;
   discoverUserModelsCandidate(request: Record<string, unknown>): Promise<unknown>;
   saveUserModelProviderCandidate(request: Record<string, unknown>): Promise<unknown>;
@@ -250,6 +250,13 @@ export interface WebuiRuntimeCliService {
   getMiniMaxApiKeyStatus(): Promise<Record<string, unknown>>;
   upsertMiniMaxApiKey(request: { readonly apiKey: string; readonly saveAndUse?: boolean }): Promise<unknown>;
   getCodexOAuthStatus(): Promise<Record<string, unknown>>;
+  getMiniMaxModelSource(): Promise<"token_plan" | "minimax_api_key">;
+  setMiniMaxModelSource(request: { readonly source: "token_plan" | "minimax_api_key" }): Promise<"token_plan" | "minimax_api_key">;
+  testUserModelCandidate(request: { readonly candidate: Record<string, unknown>; readonly modelId: string }): Promise<unknown>;
+  revealModelProviderApiKey(request: { readonly providerId: string }): Promise<string>;
+  startCodexOAuthLogin(request?: Record<string, unknown>): Promise<unknown>;
+  cancelCodexOAuthLogin(request: { readonly loginId: string }): Promise<unknown>;
+  refreshModels(): Promise<unknown>;
   /**
    * Compaction is opt-in on the live harness: the `CliService` exposes it
    * only when the host has a meaningful reducer, and the WebUI surface
@@ -519,9 +526,16 @@ export function createHarnessPortFromHost(
     async deleteUserModelProvider(providerId) {
       return requireCliService(host).deleteUserModelProvider({ providerId });
     },
-    async testUserModelProvider(providerId) {
-      return requireCliService(host).testUserModelProvider({ providerId });
+    async testUserModelProvider(request) {
+      return requireCliService(host).testUserModelProvider(request);
     },
+    async getMiniMaxModelSource() { return requireCliService(host).getMiniMaxModelSource(); },
+    async setMiniMaxModelSource(request) { return requireCliService(host).setMiniMaxModelSource(request); },
+    async testUserModelCandidate(request) { return requireCliService(host).testUserModelCandidate(request); },
+    async revealModelProviderApiKey(request) { return requireCliService(host).revealModelProviderApiKey(request); },
+    async startCodexOAuthLogin(request) { return requireCliService(host).startCodexOAuthLogin(request); },
+    async cancelCodexOAuthLogin(request) { return requireCliService(host).cancelCodexOAuthLogin(request); },
+    async refreshModels() { return requireCliService(host).refreshModels(); },
     async testUserModel(request) {
       return requireCliService(host).testUserModel({ providerId: request.providerId, modelId: request.modelId });
     },
