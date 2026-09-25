@@ -333,8 +333,13 @@ export function WebuiTurnProcess({
   readonly initiallyExpanded?: boolean;
 }): ReactElement {
   const [expanded, setExpanded] = useState(initiallyExpanded);
+  const wasActive = useRef(active);
+  useEffect(() => {
+    if (wasActive.current && !active) setExpanded(false);
+    wasActive.current = active;
+  }, [active]);
   const canToggle = hasExpandableContent && !forceExpanded && !disabled;
-  const contentExpanded = forceExpanded || disabled || expanded;
+  const contentExpanded = forceExpanded || disabled || active || expanded;
   const [, forceTick] = useState(0);
   useEffect(() => {
     if (!active) return undefined;
