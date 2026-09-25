@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { useEffect, useRef, useState, type ReactElement } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import type {
@@ -7,14 +7,20 @@ import type {
   WebuiWorkspaceFile,
   WebuiWorkspaceFileContent,
   WebuiWorkspaceGitMutationRequest,
+  WebuiWorkspaceReviewDiffs,
+  WebuiWorkspaceReviewFileContent,
+  WebuiWorkspaceReviewSearchResult,
+  WebuiWorkspaceReviewSummary,
 } from "../../server/port.js";
+import type { WorkspacePanelCommand, WorkspacePanelState, WorkspacePanelTab } from "../projection/workspace-panel-state.js";
+import { focusWebuiFileLine, webuiFileLineTargetId } from "../projection/file-line-navigation.js";
 import type { WebuiClientEventWatcher } from "../contracts.js";
 import {
   projectWebuiWorkspaceHistory,
   type WebuiWorkspaceSubagent,
   type WebuiWorkspaceTodo,
 } from "../projection/workspace-progress.js";
-import { WebuiIconCheck, WebuiIconChevronDown, WebuiIconChevronLeft, WebuiIconClose, WebuiIconFile, WebuiIconFolder, WebuiIconGlobe, WebuiIconRunLocation, WebuiIconSidebarToggle } from "../icons.js";
+import { WebuiIconCheck, WebuiIconChevronDown, WebuiIconChevronLeft, WebuiIconClose, WebuiIconFile, WebuiIconFolder, WebuiIconRunLocation, WebuiIconSidebarToggle } from "../icons.js";
 
 export type WebuiTodo = WebuiWorkspaceTodo;
 const DESKTOP_COPY = { environment: "环境信息", progress: "进度", progressEmpty: "跟踪较长任务的进度", newTerminal: "新建终端", terminalLimit: "最多可以打开 5 个终端", terminalLabel: "终端", terminalExited: "已退出", terminalEmptyTitle: "还没有终端", terminalEmptyDescription: "可直接在右侧面板中启动当前工作区的 Shell。", canvasEmptyTitle: "把文件放到画布上", canvasEmptyDescription: "添加图片或其他工作区文件，然后自由排列和调整大小。", fileClose: "关闭", changes: "变更", commit: "提交或推送", openTerminal: "打开终端", unsupported: "WebUI 尚未接入此操作" } as const;
@@ -184,7 +190,6 @@ export function WebuiEnvironmentPanel({ workspaceDir, isDefaultWorkspace = false
 
 export function WebuiWorkspacePanelControls({ filePanelOpen, workspaceOpen, onOpenFiles, onToggleWorkspace }: { readonly filePanelOpen: boolean; readonly workspaceOpen: boolean; readonly onOpenFiles: () => void; readonly onToggleWorkspace: () => void }): ReactElement {
   return <div className="webui-workspace-panel-controls" data-testid="workspace-panel-controls">
-    <button type="button" className="webui-workspace-icon-button" data-webui-placeholder-chrome="browser-entry" aria-label="浏览器" aria-disabled="true" disabled><WebuiIconGlobe className="size-5" /></button>
     <button type="button" className={`webui-workspace-icon-button ${filePanelOpen ? "is-active" : ""}`} aria-label="打开文件" aria-pressed={filePanelOpen} onClick={onOpenFiles}><WebuiIconFolder className="size-5" /></button>
     <button type="button" className={`webui-workspace-icon-button ${workspaceOpen ? "is-active" : ""}`} aria-label="工作区" aria-pressed={workspaceOpen} onClick={onToggleWorkspace}><WebuiIconSidebarToggle className="size-5" /></button>
   </div>;
@@ -205,7 +210,9 @@ function FileTree({ files, onOpen }: { readonly files: readonly WebuiWorkspaceFi
   </div>)}</div>;
 }
 
-export function WebuiWorkspacePanel({ sessionId, workspaceDir, listWorkspaceFileTree, readWorkspaceFile, readCanvas, applyCanvas, createTerminal, listTerminals, writeTerminal, disposeTerminal, watchTerminal, todos = [], defaultTab = "files", onClose }: {
+export function WebuiWorkspacePanel({ state, dispatch, sessionId, workspaceDir, listWorkspaceFileTree, readWorkspaceFile, readCanvas, applyCanvas, createTerminal, listTerminals, writeTerminal, disposeTerminal, watchTerminal, watchEvents, getWorkspaceReviewSummary, listWorkspaceReviewFileDiffs, getWorkspaceReviewFileContent, searchWorkspaceReviewDiffs, workspaceContent, onClose }: {
+  readonly state: WorkspacePanelState;
+  readonly dispatch: (command: WorkspacePanelCommand) => void;
   readonly sessionId?: string; readonly workspaceDir?: string;
   readonly listWorkspaceFileTree?: (request: { workspaceDir: string; path?: string }) => Promise<readonly WebuiWorkspaceFile[]>;
   readonly readWorkspaceFile?: (request: { workspaceDir: string; path: string }) => Promise<WebuiWorkspaceFileContent>;
@@ -216,13 +223,34 @@ export function WebuiWorkspacePanel({ sessionId, workspaceDir, listWorkspaceFile
   readonly writeTerminal?: (request: { terminalId: string; data: string }) => Promise<unknown>;
   readonly disposeTerminal?: (request: { terminalId: string }) => Promise<unknown>;
   readonly watchTerminal?: (request: { terminalId: string }, onFrame: (frame: { terminalId: string; data: string; exited: boolean }) => void) => () => void;
-  readonly todos?: readonly WebuiTodo[];
-  readonly defaultTab?: "files" | "canvas" | "terminal";
+  readonly watchEvents?: WebuiClientEventWatcher;
+  readonly getWorkspaceReviewSummary?: (request: { readonly workspaceDir: string }) => Promise<WebuiWorkspaceReviewSummary>;
+  readonly listWorkspaceReviewFileDiffs?: (request: { readonly workspaceDir: string; readonly reviewSnapshotId: string; readonly fileIds: readonly string[] }) => Promise<WebuiWorkspaceReviewDiffs>;
+  readonly getWorkspaceReviewFileContent?: (request: { readonly workspaceDir: string; readonly reviewSnapshotId: string; readonly fileId: string; readonly side: "old" | "new" }) => Promise<WebuiWorkspaceReviewFileContent>;
+  readonly searchWorkspaceReviewDiffs?: (request: { readonly workspaceDir: string; readonly reviewSnapshotId: string; readonly query: string; readonly includeUntrackedFiles: boolean; readonly pageIndex?: number; readonly pageSize?: number }) => Promise<WebuiWorkspaceReviewSearchResult>;
+  readonly workspaceContent?: ReactElement;
   readonly onClose?: () => void;
 }): ReactElement {
-  const [tab, setTab] = useState<"files" | "canvas" | "terminal">(defaultTab);
+  const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId);
+  const tab = activeTab?.kind ?? "files";
   const [files, setFiles] = useState<readonly WebuiWorkspaceFile[]>([]);
-  const [file, setFile] = useState<{ path: string; content: WebuiWorkspaceFileContent }>();
+  const [fileTreeState, setFileTreeState] = useState<{ readonly workspaceDir?: string; readonly loading: boolean; readonly error?: string }>({ loading: false });
+  const [fileResults, setFileResults] = useState<Record<string, { loading: boolean; content?: WebuiWorkspaceFileContent; error?: string }>>({});
+  const [reviewSummary, setReviewSummary] = useState<{ readonly tabId: string; readonly summary?: WebuiWorkspaceReviewSummary; readonly error?: string; readonly loading: boolean; readonly stale?: boolean }>();
+  const [reviewDiff, setReviewDiff] = useState<{ readonly tabId: string; readonly snapshotId: string; readonly path: string; readonly loading: boolean; readonly diff?: string; readonly error?: string }>();
+  const [reviewContent, setReviewContent] = useState<{ readonly tabId: string; readonly snapshotId: string; readonly path: string; readonly loading: boolean; readonly old?: WebuiWorkspaceReviewFileContent; readonly current?: WebuiWorkspaceReviewFileContent; readonly error?: string }>();
+  const [reviewSearchQuery, setReviewSearchQuery] = useState("");
+  const [reviewSearch, setReviewSearch] = useState<{ readonly tabId: string; readonly snapshotId: string; readonly loading: boolean; readonly result?: WebuiWorkspaceReviewSearchResult; readonly error?: string }>();
+  const [reviewRefreshToken, setReviewRefreshToken] = useState(0);
+  const retriedSnapshots = useRef(new Set<string>());
+  const currentPanelState = useRef(state);
+  currentPanelState.current = state;
+  const refreshStaleReview = (tabId: string, snapshotId: string) => {
+    const retryKey = `${tabId}:${snapshotId}`;
+    if (retriedSnapshots.current.has(retryKey)) return;
+    retriedSnapshots.current.add(retryKey);
+    setReviewRefreshToken((value) => value + 1);
+  };
   const [canvas, setCanvas] = useState<WebuiCanvasDocument>();
   const [zoom, setZoom] = useState(1);
   const [terminals, setTerminals] = useState<readonly Record<string, unknown>[]>([]);
@@ -231,9 +259,142 @@ export function WebuiWorkspacePanel({ sessionId, workspaceDir, listWorkspaceFile
   const terminalHost = useRef<HTMLDivElement>(null);
   const terminalInstance = useRef<Terminal>();
   const terminalStop = useRef<(() => void) | undefined>();
-  useEffect(() => { if (workspaceDir && listWorkspaceFileTree) void listWorkspaceFileTree({ workspaceDir }).then(setFiles).catch(() => setFiles([])); }, [workspaceDir, listWorkspaceFileTree]);
-  useEffect(() => { if (sessionId && readCanvas) void readCanvas({ sessionId }).then(setCanvas).catch(() => setCanvas(undefined)); }, [sessionId, readCanvas]);
-  useEffect(() => { if (listTerminals) void listTerminals().then(setTerminals).catch(() => setTerminals([])); }, [listTerminals]);
+  const activeWorkspace = activeTab && "workspaceDir" in activeTab ? activeTab.workspaceDir : workspaceDir;
+  useEffect(() => {
+    if (!activeWorkspace || !listWorkspaceFileTree) { setFiles([]); setFileTreeState({ workspaceDir: activeWorkspace, loading: false, ...(!listWorkspaceFileTree ? { error: "文件浏览能力暂不可用。" } : {}) }); return undefined; }
+    let cancelled = false;
+    setFiles([]);
+    setFileTreeState({ workspaceDir: activeWorkspace, loading: true });
+    void listWorkspaceFileTree({ workspaceDir: activeWorkspace }).then((next) => { if (!cancelled) { setFiles(next); setFileTreeState({ workspaceDir: activeWorkspace, loading: false }); } }).catch((reason: unknown) => { if (!cancelled) { setFiles([]); setFileTreeState({ workspaceDir: activeWorkspace, loading: false, error: reason instanceof Error ? reason.message : String(reason) }); } });
+    return () => { cancelled = true; };
+  }, [activeWorkspace, activeTab?.id, listWorkspaceFileTree]);
+  useEffect(() => {
+    if (activeTab?.kind !== "file-preview" || !readWorkspaceFile) return undefined;
+    let cancelled = false;
+    setFileResults((current) => ({ ...current, [activeTab.id]: { loading: true } }));
+    void readWorkspaceFile({ workspaceDir: activeTab.workspaceDir, path: activeTab.path }).then((content) => {
+      if (!cancelled) setFileResults((current) => ({ ...current, [activeTab.id]: { loading: false, content } }));
+    }).catch((reason: unknown) => {
+      if (!cancelled) setFileResults((current) => ({ ...current, [activeTab.id]: { loading: false, error: reason instanceof Error ? reason.message : String(reason) } }));
+    });
+    return () => { cancelled = true; };
+  }, [activeTab?.id, readWorkspaceFile]);
+  useEffect(() => {
+    if (activeTab?.kind !== "file-preview" || activeTab.lineStart === undefined || fileResults[activeTab.id]?.loading || !fileResults[activeTab.id]?.content || fileResults[activeTab.id]?.error) return;
+    const target = document.getElementById(webuiFileLineTargetId(activeTab.id, activeTab.lineStart));
+    if (target) focusWebuiFileLine(target);
+  }, [activeTab?.id, activeTab?.kind === "file-preview" ? activeTab.lineStart : undefined, fileResults]);
+  useEffect(() => {
+    if (activeTab?.kind !== "review" || activeTab.source !== "workspace") return undefined;
+    if (!getWorkspaceReviewSummary) {
+      setReviewSummary({ tabId: activeTab.id, loading: false, error: "工作区变更审查能力暂不可用。" });
+      return undefined;
+    }
+    let cancelled = false;
+    setReviewSummary((current) => ({ tabId: activeTab.id, summary: current?.tabId === activeTab.id ? current.summary : undefined, loading: true, stale: current?.tabId === activeTab.id && Boolean(current.summary) }));
+    void getWorkspaceReviewSummary({ workspaceDir: activeTab.workspaceDir }).then((summary) => {
+      if (cancelled) return;
+      setReviewSummary({ tabId: activeTab.id, summary, loading: false });
+      dispatch({ type: "set-review-snapshot", tabId: activeTab.id, reviewSnapshotId: summary.reviewSnapshotId });
+    }).catch((reason: unknown) => { if (!cancelled) setReviewSummary((current) => ({ tabId: activeTab.id, summary: current?.tabId === activeTab.id ? current.summary : undefined, loading: false, stale: current?.tabId === activeTab.id && Boolean(current.summary), error: reason instanceof Error ? reason.message : String(reason) })); });
+    return () => { cancelled = true; };
+  }, [activeTab?.id, activeTab?.kind === "review" && activeTab.source === "workspace" ? activeTab.workspaceDir : undefined, getWorkspaceReviewSummary, dispatch, reviewRefreshToken]);
+  useEffect(() => {
+    if (activeTab?.kind !== "review" || activeTab.source !== "workspace" || !watchEvents) return undefined;
+    return watchEvents((event) => {
+      if (event.type !== "workspace.git.changed") return;
+      const aliases = event.payload.aliases;
+      if (event.payload.workspace === activeTab.workspaceDir || (Array.isArray(aliases) && aliases.includes(activeTab.workspaceDir))) setReviewRefreshToken((value) => value + 1);
+    });
+  }, [activeTab?.id, activeTab?.kind === "review" && activeTab.source === "workspace" ? activeTab.workspaceDir : undefined, watchEvents]);
+  const workspaceReviewSelectedPath = activeTab?.kind === "review" && activeTab.source === "workspace" ? activeTab.selectedPath : undefined;
+  const workspaceReviewFiles = reviewSummary !== undefined && reviewSummary.tabId === activeTab?.id ? reviewSummary.summary?.files ?? [] : [];
+  const turnReviewFiles = activeTab?.kind === "review" && activeTab.source === "turn" ? activeTab.files ?? [] : [];
+  const selectedReviewPath = activeTab?.kind === "review" && activeTab.source === "workspace"
+    ? workspaceReviewFiles.some((file) => file.path === workspaceReviewSelectedPath) ? workspaceReviewSelectedPath : workspaceReviewFiles[0]?.path
+    : activeTab?.kind === "review" && activeTab.source === "turn" ? activeTab.selectedPath ?? turnReviewFiles[0]?.file : undefined;
+  const selectedReviewFile = activeTab?.kind === "review" && activeTab.source === "workspace" ? workspaceReviewFiles.find((file) => file.path === selectedReviewPath) : undefined;
+  useEffect(() => {
+    if (activeTab?.kind !== "review" || activeTab.source !== "workspace" || !selectedReviewPath || selectedReviewPath === activeTab.selectedPath) return;
+    dispatch({ type: "select-review-file", tabId: activeTab.id, path: selectedReviewPath });
+  }, [activeTab?.id, activeTab?.kind === "review" && activeTab.source === "workspace" ? activeTab.selectedPath : undefined, selectedReviewPath, dispatch]);
+  useEffect(() => {
+    if (activeTab?.kind !== "review" || activeTab.source !== "workspace" || !selectedReviewFile || !activeTab.reviewSnapshotId) return undefined;
+    if (!listWorkspaceReviewFileDiffs) {
+      setReviewDiff({ tabId: activeTab.id, snapshotId: activeTab.reviewSnapshotId, path: selectedReviewFile.path, loading: false, error: "工作区文件差异能力暂不可用。" });
+      return undefined;
+    }
+    let cancelled = false;
+    setReviewDiff({ tabId: activeTab.id, snapshotId: activeTab.reviewSnapshotId!, path: selectedReviewFile.path, loading: true });
+    void listWorkspaceReviewFileDiffs({ workspaceDir: activeTab.workspaceDir, reviewSnapshotId: activeTab.reviewSnapshotId, fileIds: [selectedReviewFile.fileId] }).then((result) => {
+      if (cancelled) return;
+      if (result.reviewSnapshotId !== activeTab.reviewSnapshotId) {
+        setReviewDiff({ tabId: activeTab.id, snapshotId: activeTab.reviewSnapshotId!, path: selectedReviewFile.path, loading: false, error: "工作区变更已更新，正在刷新审查…" });
+        refreshStaleReview(activeTab.id, activeTab.reviewSnapshotId!);
+        return;
+      }
+      const fileDiff = result.diffs.find((item) => item.fileId === selectedReviewFile.fileId);
+      setReviewDiff({ tabId: activeTab.id, snapshotId: activeTab.reviewSnapshotId!, path: selectedReviewFile.path, loading: false, diff: fileDiff?.diff?.diff ?? fileDiff?.diff?.content, error: fileDiff?.error ?? fileDiff?.errorCode });
+    }).catch((reason: unknown) => {
+      if (!cancelled) {
+        setReviewDiff({ tabId: activeTab.id, snapshotId: activeTab.reviewSnapshotId!, path: selectedReviewFile.path, loading: false, error: reason instanceof Error ? reason.message : String(reason) });
+        refreshStaleReview(activeTab.id, activeTab.reviewSnapshotId!);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [activeTab?.id, activeTab?.kind === "review" && activeTab.source === "workspace" ? activeTab.reviewSnapshotId : undefined, activeTab?.kind === "review" && activeTab.source === "workspace" ? activeTab.workspaceDir : undefined, selectedReviewFile?.fileId, selectedReviewPath, listWorkspaceReviewFileDiffs]);
+  useEffect(() => {
+    if (activeTab?.kind !== "review" || activeTab.source !== "workspace" || !selectedReviewFile || !activeTab.reviewSnapshotId) return undefined;
+    if (!getWorkspaceReviewFileContent) {
+      setReviewContent({ tabId: activeTab.id, snapshotId: activeTab.reviewSnapshotId, path: selectedReviewFile.path, loading: false, error: "工作区文件内容能力暂不可用。" });
+      return undefined;
+    }
+    let cancelled = false;
+    setReviewContent({ tabId: activeTab.id, snapshotId: activeTab.reviewSnapshotId, path: selectedReviewFile.path, loading: true });
+    const readSide = (side: "old" | "new") => getWorkspaceReviewFileContent({ workspaceDir: activeTab.workspaceDir, reviewSnapshotId: activeTab.reviewSnapshotId!, fileId: selectedReviewFile.fileId, side });
+    void Promise.all([readSide("old"), readSide("new")]).then(([old, current]) => {
+      if (cancelled) return;
+      setReviewContent({ tabId: activeTab.id, snapshotId: activeTab.reviewSnapshotId!, path: selectedReviewFile.path, loading: false, old, current });
+    }).catch((reason: unknown) => {
+      if (!cancelled) {
+        setReviewContent({ tabId: activeTab.id, snapshotId: activeTab.reviewSnapshotId!, path: selectedReviewFile.path, loading: false, error: reason instanceof Error ? reason.message : String(reason) });
+        refreshStaleReview(activeTab.id, activeTab.reviewSnapshotId!);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [activeTab?.id, activeTab?.kind === "review" && activeTab.source === "workspace" ? activeTab.reviewSnapshotId : undefined, activeTab?.kind === "review" && activeTab.source === "workspace" ? activeTab.workspaceDir : undefined, selectedReviewFile?.fileId, selectedReviewPath, getWorkspaceReviewFileContent]);
+  const runReviewSearch = () => {
+    if (activeTab?.kind !== "review" || activeTab.source !== "workspace" || !activeTab.reviewSnapshotId || !searchWorkspaceReviewDiffs) return;
+    const tabId = activeTab.id;
+    const snapshotId = activeTab.reviewSnapshotId;
+    setReviewSearch({ tabId, snapshotId, loading: true });
+    void searchWorkspaceReviewDiffs({ workspaceDir: activeTab.workspaceDir, reviewSnapshotId: snapshotId, query: reviewSearchQuery, includeUntrackedFiles: true }).then((result) => {
+      if (result.reviewSnapshotId !== snapshotId) {
+        setReviewSearch({ tabId, snapshotId, loading: false, error: "工作区变更已更新，正在刷新审查…" });
+        refreshStaleReview(tabId, snapshotId);
+        return;
+      }
+      const currentTab = currentPanelState.current.tabs.find((tab) => tab.id === tabId);
+      if (currentTab?.kind !== "review" || currentTab.source !== "workspace" || currentTab.reviewSnapshotId !== snapshotId) return;
+      setReviewSearch({ tabId, snapshotId, loading: false, result });
+    }).catch((reason: unknown) => {
+      setReviewSearch({ tabId, snapshotId, loading: false, error: reason instanceof Error ? reason.message : String(reason) });
+      refreshStaleReview(tabId, snapshotId);
+    });
+  };
+  const activeSessionId = activeTab && "sessionId" in activeTab ? activeTab.sessionId : sessionId;
+  useEffect(() => {
+    if (!activeSessionId || !readCanvas) { setCanvas(undefined); return undefined; }
+    let cancelled = false;
+    void readCanvas({ sessionId: activeSessionId }).then((next) => { if (!cancelled) setCanvas(next); }).catch(() => { if (!cancelled) setCanvas(undefined); });
+    return () => { cancelled = true; };
+  }, [activeSessionId, activeTab?.id, readCanvas]);
+  useEffect(() => {
+    if (!listTerminals) return undefined;
+    let cancelled = false;
+    void listTerminals().then((next) => { if (!cancelled) setTerminals(next); }).catch(() => { if (!cancelled) setTerminals([]); });
+    return () => { cancelled = true; };
+  }, [listTerminals, activeTab?.id, activeWorkspace]);
   useEffect(() => () => { terminalStop.current?.(); terminalInstance.current?.dispose(); }, []);
   useEffect(() => {
     const active = terminals.find((candidate) => String(candidate.terminalId) === activeTerminalId) ?? terminals[0];
@@ -252,17 +413,19 @@ export function WebuiWorkspacePanel({ sessionId, workspaceDir, listWorkspaceFile
     const input = terminal.onData((data) => { if (writeTerminal) void writeTerminal({ terminalId: String(active.terminalId), data }); });
     return () => { input.dispose(); observer.disconnect(); terminalStop.current?.(); terminalStop.current = undefined; terminal.dispose(); terminalInstance.current = undefined; };
   }, [activeTerminalId, terminals, watchTerminal, writeTerminal]);
-  const tabs = useMemo(() => [{ id: "files" as const, label: "查看文件" }, { id: "canvas" as const, label: "画布" }, { id: "terminal" as const, label: "终端" }], []);
-  return <aside className="webui-workspace-panel" data-testid="workspace-panel">
-    <div className="webui-workspace-panel-header"><div className="webui-workspace-tabs" role="tablist">{tabs.map((item) => <button key={item.id} type="button" role="tab" aria-selected={tab === item.id} className={tab === item.id ? "is-active" : ""} onClick={() => setTab(item.id)}>{item.label}</button>)}</div><button type="button" className="webui-workspace-panel-close" aria-label="关闭" onClick={onClose}><WebuiIconClose className="size-4" /></button></div>
-    {tab === "files" ? <div className="webui-workspace-content">
-      <FileTree files={files} onOpen={(entry) => { if (workspaceDir && readWorkspaceFile && entry.type !== "directory") void readWorkspaceFile({ workspaceDir, path: entry.path }).then((content) => setFile({ path: entry.path, content })); }} />
-      {file ? <div className="webui-file-viewer"><div className="file-tab group/tab-close h-8 w-40 min-w-20 rounded-lg bg-bg_interaction_tertiary_selected"><WebuiIconFile className="size-[14px]" />{file.path}<button type="button" aria-label={DESKTOP_COPY.fileClose} className="file-tab-close opacity-0 transition-opacity group-hover/tab-close:opacity-100" onClick={() => setFile(undefined)}><WebuiIconClose className="size-[14px]" /></button></div><pre>{file.content.error ?? file.content.content}</pre></div> : null}
-    </div> : null}
+  const tabLabel = (item: WorkspacePanelTab): string => item.kind === "file-preview" ? item.path.split("/").at(-1) ?? item.path : item.kind === "review" && item.source === "turn" ? "Review" : ({ workspace: "工作区", files: "查看文件", review: "变更", canvas: "画布", terminal: "终端" } as const)[item.kind];
+  return <aside className={`webui-workspace-panel ${state.expanded ? "is-expanded" : ""}`} data-testid="workspace-panel" data-active-tab={tab}>
+    <div className="webui-workspace-panel-header"><div className="webui-workspace-tabs" role="tablist">{state.tabs.map((item) => <div key={item.id} className={`webui-workspace-tab ${state.activeTabId === item.id ? "is-active" : ""}`}><button type="button" role="tab" aria-selected={state.activeTabId === item.id} onClick={() => dispatch({ type: "select-tab", tabId: item.id })}>{tabLabel(item)}</button><button type="button" aria-label={`${tabLabel(item)} ${DESKTOP_COPY.fileClose}`} onClick={() => dispatch({ type: "close-tab", tabId: item.id })}><WebuiIconClose className="size-3" /></button></div>)}<button type="button" aria-label="添加标签" onClick={() => dispatch({ type: "toggle-add-menu" })}>+</button></div><div className="webui-workspace-panel-actions"><button type="button" aria-label={state.expanded ? "收起面板" : "展开面板"} onClick={() => dispatch({ type: "toggle-expanded" })}><WebuiIconSidebarToggle className="size-4" /></button><button type="button" className="webui-workspace-panel-close" aria-label="关闭面板" onClick={onClose}><WebuiIconClose className="size-4" /></button></div></div>
+    {state.addMenuOpen ? <div className="webui-workspace-add-menu" role="menu">{(["files", "canvas", "terminal"] as const).map((kind) => <button type="button" role="menuitem" key={kind} onClick={() => dispatch({ type: "open-tab", kind, sessionId, workspaceDir })}>{({ files: "查看文件", canvas: "画布", terminal: "终端" } as const)[kind]}</button>)}</div> : null}
+    {tab === "workspace" ? <div className="webui-workspace-content">{workspaceContent}</div> : null}
+    {tab === "files" ? <div className="webui-workspace-content">{fileTreeState.workspaceDir !== activeWorkspace || fileTreeState.loading ? <p role="status">正在加载文件…</p> : fileTreeState.error ? <p role="alert">{fileTreeState.error}</p> : files.length ? <FileTree files={files} onOpen={(entry) => { const context = activeTab && "sessionId" in activeTab ? activeTab.sessionId : sessionId; if (activeWorkspace && context && entry.type !== "directory") dispatch({ type: "open-file", sessionId: context, workspaceDir: activeWorkspace, path: entry.path }); }} /> : <p>此工作区没有可显示的文件。</p>}</div> : null}
+    {tab === "file-preview" && activeTab?.kind === "file-preview" ? <div className="webui-workspace-content"><h3>{activeTab.path}</h3>{fileResults[activeTab.id]?.loading ? <p role="status">正在加载文件…</p> : fileResults[activeTab.id]?.error ? <p role="alert">{fileResults[activeTab.id]?.error}</p> : fileResults[activeTab.id]?.content?.type === "binary" ? <p>无法在文本预览中显示二进制文件。</p> : fileResults[activeTab.id]?.content ? fileResults[activeTab.id]?.content?.error ? <p role="alert">{fileResults[activeTab.id]?.content?.error}</p> : <pre>{fileResults[activeTab.id]?.content?.content?.split("\n").map((line, index) => <span key={index} id={index + 1 === activeTab.lineStart ? webuiFileLineTargetId(activeTab.id, index + 1) : undefined} tabIndex={index + 1 === activeTab.lineStart ? -1 : undefined} data-line={index + 1} data-scroll-target-line={index + 1 === activeTab.lineStart ? "true" : undefined} className={index + 1 >= (activeTab.lineStart ?? 0) && index + 1 <= (activeTab.lineEnd ?? activeTab.lineStart ?? 0) ? "webui-file-preview-line-active" : ""}>{line}{"\n"}</span>)}</pre> : <p>文件读取能力暂不可用。</p>}</div> : null}
+    {tab === "review" && activeTab?.kind === "review" && activeTab.source === "workspace" ? <div className="webui-workspace-content" data-testid="workspace-review"><h3>变更审查</h3>{reviewSummary?.tabId !== activeTab.id || reviewSummary.loading && !reviewSummary.summary ? <p role="status">正在收集变更…</p> : reviewSummary.error && !reviewSummary.summary ? <p role="alert">{reviewSummary.error}</p> : reviewSummary.summary?.files.length ? <><form onSubmit={(event) => { event.preventDefault(); runReviewSearch(); }}><input aria-label="搜索变更" value={reviewSearchQuery} onChange={(event) => setReviewSearchQuery(event.currentTarget.value)} /><button type="submit" disabled={!searchWorkspaceReviewDiffs || reviewSearch?.loading}>搜索</button></form>{reviewSummary.stale || reviewSummary.error ? <p role="status">变更列表可能已过期{reviewSummary.error ? `：${reviewSummary.error}` : "，正在刷新…"}</p> : null}{reviewSearch?.tabId === activeTab.id && reviewSearch.snapshotId === activeTab.reviewSnapshotId ? reviewSearch.loading ? <p role="status">正在搜索变更…</p> : reviewSearch.error ? <p role="alert">{reviewSearch.error}</p> : reviewSearch.result ? <ul data-testid="workspace-review-search-results">{reviewSearch.result.matchedFiles.map((match) => <li key={match.fileId}><button type="button" onClick={() => dispatch({ type: "select-review-file", tabId: activeTab.id, path: match.path })}>{match.path} <small>{match.matchCount}</small></button></li>)}</ul> : null : null}<ul>{reviewSummary.summary.files.map((file) => <li key={file.fileId}><button type="button" aria-current={selectedReviewPath === file.path ? "true" : undefined} onClick={() => dispatch({ type: "select-review-file", tabId: activeTab.id, path: file.path })}>{file.path} <small>+{file.additions} −{file.deletions}</small></button></li>)}</ul><section>{reviewDiff?.tabId !== activeTab.id || reviewDiff.snapshotId !== activeTab.reviewSnapshotId || reviewDiff.path !== selectedReviewPath || reviewDiff.loading ? <p role="status">正在加载差异…</p> : reviewDiff.error ? <p role="alert">{reviewDiff.error}</p> : reviewDiff.diff ? <pre>{reviewDiff.diff}</pre> : <p>此文件没有可预览的文本差异。</p>}{reviewContent?.tabId !== activeTab.id || reviewContent.snapshotId !== activeTab.reviewSnapshotId || reviewContent.path !== selectedReviewPath || reviewContent.loading ? <p role="status">正在加载文件内容…</p> : reviewContent.error ? <p role="alert">{reviewContent.error}</p> : <div data-testid="workspace-review-file-content"><section><h4>变更前</h4>{reviewContent.old?.type === "binary" ? <p>二进制文件</p> : <pre>{reviewContent.old?.content ?? ""}</pre>}</section><section><h4>变更后</h4>{reviewContent.current?.type === "binary" ? <p>二进制文件</p> : <pre>{reviewContent.current?.content ?? ""}</pre>}</section></div>}</section></> : !reviewSummary.summary?.files.length && !reviewSummary.loading ? <p>当前没有变更。</p> : null}</div> : null}
+    {tab === "review" && activeTab?.kind === "review" && activeTab.source === "turn" ? <div className="webui-workspace-content" data-testid="turn-review-panel" data-session-id={activeTab.sessionId} data-message-id={activeTab.messageId} data-turn-id={activeTab.turnId} data-change-set-id={activeTab.changeSetId}><h3>本轮改动</h3>{turnReviewFiles.length ? <><ul>{turnReviewFiles.map((file) => <li key={file.file}><button type="button" aria-current={selectedReviewPath === file.file ? "true" : undefined} onClick={() => dispatch({ type: "select-review-file", tabId: activeTab.id, path: file.file })}>{file.file}</button></li>)}</ul>{turnReviewFiles.find((file) => file.file === selectedReviewPath)?.diff ? <pre>{turnReviewFiles.find((file) => file.file === selectedReviewPath)?.diff}</pre> : <p>当前运行时没有提供该文件的 patch 预览。</p>}</> : <p>本轮没有可审查的文件差异。</p>}</div> : null}
     {tab === "canvas" ? <div className="webui-canvas-content" onWheel={(event) => { event.preventDefault(); setZoom((value) => Math.max(.4, Math.min(2, value + (event.deltaY > 0 ? -.1 : .1)))); }}>
       {!canvas?.nodes.length ? <><strong>{DESKTOP_COPY.canvasEmptyTitle}</strong><p>{DESKTOP_COPY.canvasEmptyDescription}</p></> : <div className="webui-canvas-stage" style={{ transform: `scale(${zoom})` }}>{canvas.nodes.map((node) => <div className="webui-canvas-node" key={String(node.id)}>{String((node.file as Record<string, unknown> | undefined)?.fileName ?? node.id)}</div>)}</div>}
       <span className="webui-canvas-zoom">{Math.round(zoom * 100)}%</span>
     </div> : null}
-    {tab === "terminal" ? <div className="webui-terminal-empty">{terminals.length === 0 ? <><strong>{DESKTOP_COPY.terminalEmptyTitle}</strong><p>{DESKTOP_COPY.terminalEmptyDescription}</p></> : <><div className="webui-terminal-tabs">{terminals.map((terminal, index) => <button type="button" key={String(terminal.terminalId)} className={`file-tab group/tab-close h-8 w-40 min-w-20 ${String(terminal.terminalId) === (activeTerminalId ?? String(terminals[0]?.terminalId)) ? "bg-bg_interaction_tertiary_selected" : ""}`} onClick={() => setActiveTerminalId(String(terminal.terminalId))}><span>#{index + 1}</span>{terminal.status === "exited" ? DESKTOP_COPY.terminalExited : DESKTOP_COPY.terminalLabel}<span className="file-tab-close opacity-0 group-hover/tab-close:opacity-100"><WebuiIconClose className="size-[14px]" /></span></button>)}</div><div ref={terminalHost} className="webui-xterm-host" />{terminalError ? <p role="alert">{terminalError}</p> : null}<div className="webui-terminal-actions"><button type="button" onClick={() => { if (!workspaceDir || !createTerminal) return; void createTerminal({ workspaceDir }).then((created) => { setActiveTerminalId(created.terminalId); return listTerminals?.().then(setTerminals); }).catch((error: unknown) => setTerminalError(error instanceof Error ? error.message : String(error))); }}>{DESKTOP_COPY.newTerminal}</button><button type="button" onClick={() => { const active = terminals.find((candidate) => String(candidate.terminalId) === (activeTerminalId ?? String(terminals[0]?.terminalId))); if (active && disposeTerminal) void disposeTerminal({ terminalId: String(active.terminalId) }).then(() => listTerminals?.().then(setTerminals)); }}>{DESKTOP_COPY.fileClose}</button></div></> }{terminals.length === 0 ? <button type="button" onClick={() => { if (!workspaceDir || !createTerminal) return; void createTerminal({ workspaceDir }).then((created) => { setActiveTerminalId(created.terminalId); return listTerminals?.().then(setTerminals); }).catch((error: unknown) => setTerminalError(error instanceof Error ? error.message : String(error))); }}>{DESKTOP_COPY.newTerminal}</button> : null}</div> : null}
+    {tab === "terminal" ? <div className="webui-terminal-empty">{terminals.length === 0 ? <><strong>{DESKTOP_COPY.terminalEmptyTitle}</strong><p>{DESKTOP_COPY.terminalEmptyDescription}</p></> : <><div className="webui-terminal-tabs">{terminals.map((terminal, index) => <button type="button" key={String(terminal.terminalId)} className={`file-tab group/tab-close h-8 w-40 min-w-20 ${String(terminal.terminalId) === (activeTerminalId ?? String(terminals[0]?.terminalId)) ? "bg-bg_interaction_tertiary_selected" : ""}`} onClick={() => setActiveTerminalId(String(terminal.terminalId))}><span>#{index + 1}</span>{terminal.status === "exited" ? DESKTOP_COPY.terminalExited : DESKTOP_COPY.terminalLabel}<span className="file-tab-close opacity-0 group-hover/tab-close:opacity-100"><WebuiIconClose className="size-[14px]" /></span></button>)}</div><div ref={terminalHost} className="webui-xterm-host" />{terminalError ? <p role="alert">{terminalError}</p> : null}<div className="webui-terminal-actions"><button type="button" onClick={() => { if (!activeWorkspace || !createTerminal) return; void createTerminal({ workspaceDir: activeWorkspace }).then((created) => { setActiveTerminalId(created.terminalId); return listTerminals?.().then(setTerminals); }).catch((error: unknown) => setTerminalError(error instanceof Error ? error.message : String(error))); }}>{DESKTOP_COPY.newTerminal}</button><button type="button" onClick={() => { const active = terminals.find((candidate) => String(candidate.terminalId) === (activeTerminalId ?? String(terminals[0]?.terminalId))); if (active && disposeTerminal) void disposeTerminal({ terminalId: String(active.terminalId) }).then(() => listTerminals?.().then(setTerminals)); }}>{DESKTOP_COPY.fileClose}</button></div></> }{terminals.length === 0 ? <button type="button" onClick={() => { if (!activeWorkspace || !createTerminal) return; void createTerminal({ workspaceDir: activeWorkspace }).then((created) => { setActiveTerminalId(created.terminalId); return listTerminals?.().then(setTerminals); }).catch((error: unknown) => setTerminalError(error instanceof Error ? error.message : String(error))); }}>{DESKTOP_COPY.newTerminal}</button> : null}</div> : null}
   </aside>;
 }

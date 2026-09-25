@@ -6,9 +6,13 @@ import type {
   WebuiWorkspaceFile,
   WebuiWorkspaceFileContent,
   WebuiWorkspaceGitMutationRequest,
+  WebuiWorkspaceReviewDiffs,
+  WebuiWorkspaceReviewFileContent,
+  WebuiWorkspaceReviewSearchResult,
+  WebuiWorkspaceReviewSummary,
 } from "../port.js";
 import { validateObjectBody } from "./common.js";
-import { LIST_WORKSPACE_FILE_TREE_OPERATION_NAME, READ_WORKSPACE_FILE_OPERATION_NAME, GET_WORKSPACE_ENVIRONMENT_OPERATION_NAME, MUTATE_WORKSPACE_GIT_OPERATION_NAME, READ_CANVAS_OPERATION_NAME, APPLY_CANVAS_OPERATION_NAME, CREATE_TERMINAL_OPERATION_NAME, LIST_TERMINALS_OPERATION_NAME, WRITE_TERMINAL_OPERATION_NAME, RESIZE_TERMINAL_OPERATION_NAME, DISPOSE_TERMINAL_OPERATION_NAME, WATCH_TERMINAL_OPERATION_NAME } from "./names.js";
+import { LIST_WORKSPACE_FILE_TREE_OPERATION_NAME, READ_WORKSPACE_FILE_OPERATION_NAME, GET_WORKSPACE_ENVIRONMENT_OPERATION_NAME, MUTATE_WORKSPACE_GIT_OPERATION_NAME, GET_WORKSPACE_REVIEW_SUMMARY_OPERATION_NAME, LIST_WORKSPACE_REVIEW_FILE_DIFFS_OPERATION_NAME, GET_WORKSPACE_REVIEW_FILE_CONTENT_OPERATION_NAME, SEARCH_WORKSPACE_REVIEW_DIFFS_OPERATION_NAME, READ_CANVAS_OPERATION_NAME, APPLY_CANVAS_OPERATION_NAME, CREATE_TERMINAL_OPERATION_NAME, LIST_TERMINALS_OPERATION_NAME, WRITE_TERMINAL_OPERATION_NAME, RESIZE_TERMINAL_OPERATION_NAME, DISPOSE_TERMINAL_OPERATION_NAME, WATCH_TERMINAL_OPERATION_NAME } from "./names.js";
 
 interface ListWorkspaceFileTreeBody {
   readonly workspaceDir: string;
@@ -84,6 +88,58 @@ export const mutateWorkspaceGitOperation: WebuiOperation<WebuiWorkspaceGitMutati
     if (action !== "push" && (typeof message !== "string" || !message.trim()))
       return { ok: false, code: WebuiErrorCode.invalidBody, message: "message is required for commit actions" };
     return { ok: true, body: { workspaceDir, action, ...(message === undefined ? {} : { message }) } };
+  },
+};
+
+export const getWorkspaceReviewSummaryOperation: WebuiOperation<{ readonly workspaceDir: string }, WebuiWorkspaceReviewSummary> = {
+  name: GET_WORKSPACE_REVIEW_SUMMARY_OPERATION_NAME,
+  validate: (body) => {
+    const result = validateObjectBody(GET_WORKSPACE_REVIEW_SUMMARY_OPERATION_NAME, body);
+    if (!result.ok) return result;
+    return typeof result.body.workspaceDir === "string" && result.body.workspaceDir.trim()
+      ? { ok: true, body: { workspaceDir: result.body.workspaceDir } }
+      : { ok: false, code: WebuiErrorCode.invalidBody, message: "workspaceDir is required" };
+  },
+};
+
+export const listWorkspaceReviewFileDiffsOperation: WebuiOperation<{ readonly workspaceDir: string; readonly reviewSnapshotId: string; readonly fileIds: readonly string[] }, WebuiWorkspaceReviewDiffs> = {
+  name: LIST_WORKSPACE_REVIEW_FILE_DIFFS_OPERATION_NAME,
+  validate: (body) => {
+    const result = validateObjectBody(LIST_WORKSPACE_REVIEW_FILE_DIFFS_OPERATION_NAME, body);
+    if (!result.ok) return result;
+    const { workspaceDir, reviewSnapshotId, fileIds } = result.body;
+    if (typeof workspaceDir !== "string" || !workspaceDir.trim() || typeof reviewSnapshotId !== "string" || !reviewSnapshotId.trim())
+      return { ok: false, code: WebuiErrorCode.invalidBody, message: "workspaceDir and reviewSnapshotId are required" };
+    if (!Array.isArray(fileIds) || fileIds.length === 0 || fileIds.some((fileId) => typeof fileId !== "string" || !fileId.trim()))
+      return { ok: false, code: WebuiErrorCode.invalidBody, message: "fileIds must be a non-empty string array" };
+    return { ok: true, body: { workspaceDir, reviewSnapshotId, fileIds: fileIds as string[] } };
+  },
+};
+export const getWorkspaceReviewFileContentOperation: WebuiOperation<{ readonly workspaceDir: string; readonly reviewSnapshotId: string; readonly fileId: string; readonly side: "old" | "new" }, WebuiWorkspaceReviewFileContent> = {
+  name: GET_WORKSPACE_REVIEW_FILE_CONTENT_OPERATION_NAME,
+  validate: (body) => {
+    const result = validateObjectBody(GET_WORKSPACE_REVIEW_FILE_CONTENT_OPERATION_NAME, body);
+    if (!result.ok) return result;
+    const { workspaceDir, reviewSnapshotId, fileId, side } = result.body;
+    if (typeof workspaceDir !== "string" || !workspaceDir.trim() || typeof reviewSnapshotId !== "string" || !reviewSnapshotId.trim() || typeof fileId !== "string" || !fileId.trim())
+      return { ok: false, code: WebuiErrorCode.invalidBody, message: "workspaceDir, reviewSnapshotId, and fileId are required" };
+    if (side !== "old" && side !== "new") return { ok: false, code: WebuiErrorCode.invalidBody, message: "side must be old or new" };
+    return { ok: true, body: { workspaceDir, reviewSnapshotId, fileId, side } };
+  },
+};
+export const searchWorkspaceReviewDiffsOperation: WebuiOperation<{ readonly workspaceDir: string; readonly reviewSnapshotId: string; readonly query: string; readonly includeUntrackedFiles: boolean; readonly pageIndex?: number; readonly pageSize?: number }, WebuiWorkspaceReviewSearchResult> = {
+  name: SEARCH_WORKSPACE_REVIEW_DIFFS_OPERATION_NAME,
+  validate: (body) => {
+    const result = validateObjectBody(SEARCH_WORKSPACE_REVIEW_DIFFS_OPERATION_NAME, body);
+    if (!result.ok) return result;
+    const { workspaceDir, reviewSnapshotId, query, includeUntrackedFiles, pageIndex, pageSize } = result.body;
+    if (typeof workspaceDir !== "string" || !workspaceDir.trim() || typeof reviewSnapshotId !== "string" || !reviewSnapshotId.trim())
+      return { ok: false, code: WebuiErrorCode.invalidBody, message: "workspaceDir and reviewSnapshotId are required" };
+    if (typeof query !== "string") return { ok: false, code: WebuiErrorCode.invalidBody, message: "query must be a string" };
+    if (typeof includeUntrackedFiles !== "boolean") return { ok: false, code: WebuiErrorCode.invalidBody, message: "includeUntrackedFiles must be a boolean" };
+    if (pageIndex !== undefined && (!Number.isInteger(pageIndex) || (pageIndex as number) < 0)) return { ok: false, code: WebuiErrorCode.invalidBody, message: "pageIndex must be a non-negative integer" };
+    if (pageSize !== undefined && (!Number.isInteger(pageSize) || (pageSize as number) < 1)) return { ok: false, code: WebuiErrorCode.invalidBody, message: "pageSize must be a positive integer" };
+    return { ok: true, body: { workspaceDir, reviewSnapshotId, query, includeUntrackedFiles, ...(typeof pageIndex === "number" ? { pageIndex } : {}), ...(typeof pageSize === "number" ? { pageSize } : {}) } };
   },
 };
 export const readCanvasOperation: WebuiOperation<ReadCanvasBody, WebuiCanvasDocument> = {

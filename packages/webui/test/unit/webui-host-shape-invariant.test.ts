@@ -58,6 +58,7 @@ import { createOperationHandlers, type WebuiOperationPort } from "../../src/serv
 import { dispatchWebuiFrame } from "../../src/server/operation/operation-dispatch.js";
 import { WEBUI_PROTOCOL_VERSION, WebuiErrorCode } from "../../src/server/envelope.js";
 import WebSocket from "ws";
+import { createHarnessPortFromHost } from "../../src/server/host.js";
 
 /**
  * Build a fully-implemented in-memory port so we can construct the
@@ -199,6 +200,18 @@ class FullPort implements WebuiHarnessPort {
   }
   async mutateWorkspaceGit() {
     return { success: true };
+  }
+  async getWorkspaceReviewSummary() {
+    return { repositoryId: "invariant", reviewSnapshotId: "invariant", files: [], totals: { files: 0, additions: 0, deletions: 0 } };
+  }
+  async listWorkspaceReviewFileDiffs(request: { readonly reviewSnapshotId: string }) {
+    return { reviewSnapshotId: request.reviewSnapshotId, diffs: [] };
+  }
+  async getWorkspaceReviewFileContent(request: { readonly reviewSnapshotId: string; readonly fileId: string; readonly side: "old" | "new" }) {
+    return { reviewSnapshotId: request.reviewSnapshotId, fileId: request.fileId, path: "invariant", side: request.side, type: "text" as const, content: "" };
+  }
+  async searchWorkspaceReviewDiffs(request: { readonly reviewSnapshotId: string; readonly pageIndex?: number; readonly pageSize?: number }) {
+    return { reviewSnapshotId: request.reviewSnapshotId, matchedFiles: [], totalMatches: 0, totalMatchedFiles: 0, pageIndex: request.pageIndex ?? 0, pageSize: request.pageSize ?? 20, matchesBeforePage: 0, hasPreviousPage: false, hasNextPage: false };
   }
   async readCanvas() {
     return {
@@ -348,6 +361,48 @@ class FullPort implements WebuiHarnessPort {
 }
 
 describe("WebUI host-shape invariant (batch C seam)", () => {
+  it("forwards workspace review requests and snapshot ids through the runtime host", async () => {
+    const calls: Array<{ readonly method: string; readonly request: unknown }> = [];
+    const summary = { repositoryId: "repo-1", reviewSnapshotId: "snapshot-7", files: [], totals: { files: 0, additions: 0, deletions: 0 } };
+    const fileDiffs = { reviewSnapshotId: "snapshot-7", diffs: [] };
+    const host = {
+      cliService: {
+        getWorkspaceReviewSummary: async (workspaceDir: string) => {
+          calls.push({ method: "summary", request: workspaceDir });
+          return summary;
+        },
+        listWorkspaceReviewFileDiffs: async (request: unknown) => {
+          calls.push({ method: "diffs", request });
+          return fileDiffs;
+        },
+        getWorkspaceReviewFileContent: async (request: unknown) => {
+          calls.push({ method: "content", request });
+          return { reviewSnapshotId: "snapshot-7", fileId: "file-1", path: "src/index.ts", side: "new", type: "text", content: "" };
+        },
+        searchWorkspaceReviewDiffs: async (request: unknown) => {
+          calls.push({ method: "search", request });
+          return { reviewSnapshotId: "snapshot-7", matchedFiles: [], totalMatches: 0, totalMatchedFiles: 0, pageIndex: 0, pageSize: 20, matchesBeforePage: 0, hasPreviousPage: false, hasNextPage: false };
+        },
+      },
+    } as never;
+    const port = createHarnessPortFromHost(host);
+    await expect(port.getWorkspaceReviewSummary({ workspaceDir: "/repo" })).resolves.toBe(summary);
+    await expect(port.listWorkspaceReviewFileDiffs({ workspaceDir: "/repo", reviewSnapshotId: "snapshot-7", fileIds: ["file-1"] })).resolves.toBe(fileDiffs);
+    await expect(port.getWorkspaceReviewFileContent({ workspaceDir: "/repo", reviewSnapshotId: "snapshot-7", fileId: "file-1", side: "new" })).resolves.toMatchObject({ reviewSnapshotId: "snapshot-7" });
+    await expect(port.searchWorkspaceReviewDiffs({ workspaceDir: "/repo", reviewSnapshotId: "snapshot-7", query: "needle", includeUntrackedFiles: true })).resolves.toMatchObject({ reviewSnapshotId: "snapshot-7" });
+    expect(calls).toEqual([
+      { method: "summary", request: "/repo" },
+      { method: "diffs", request: { workspaceDir: "/repo", reviewSnapshotId: "snapshot-7", fileIds: ["file-1"] } },
+      { method: "content", request: { workspaceDir: "/repo", reviewSnapshotId: "snapshot-7", fileId: "file-1", side: "new" } },
+      { method: "search", request: { workspaceDir: "/repo", reviewSnapshotId: "snapshot-7", query: "needle", includeUntrackedFiles: true } },
+    ]);
+
+    const failingPort = createHarnessPortFromHost({ cliService: {
+      getWorkspaceReviewSummary: async () => { throw new Error("summary unavailable"); },
+    } } as never);
+    await expect(failingPort.getWorkspaceReviewSummary({ workspaceDir: "/repo" })).rejects.toThrow("summary unavailable");
+  });
+
   // The 18 operations whose registration used to depend on a host capability
   // gate. After batch C every one of them is in the registry — see `operations.ts`,
   // where the six `if (port.<x> && port.<y>)` capability gates were deleted.

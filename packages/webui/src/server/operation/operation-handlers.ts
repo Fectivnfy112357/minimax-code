@@ -53,6 +53,10 @@ export type WebuiOperationPort = Pick<
   | "readWorkspaceFile"
   | "getWorkspaceEnvironment"
   | "mutateWorkspaceGit"
+  | "getWorkspaceReviewSummary"
+  | "listWorkspaceReviewFileDiffs"
+  | "getWorkspaceReviewFileContent"
+  | "searchWorkspaceReviewDiffs"
   | "readCanvas"
   | "applyCanvas"
   | "sendMessage"
@@ -130,6 +134,10 @@ export function createOperationHandlers(
     mutateWorkspaceGit: async (_context, body) => ({
       body: await port.mutateWorkspaceGit(body),
     }),
+    getWorkspaceReviewSummary: async (_context, body) => ({ body: await port.getWorkspaceReviewSummary(body) }),
+    listWorkspaceReviewFileDiffs: async (_context, body) => ({ body: await port.listWorkspaceReviewFileDiffs(body) }),
+    getWorkspaceReviewFileContent: async (_context, body) => ({ body: await port.getWorkspaceReviewFileContent(body) }),
+    searchWorkspaceReviewDiffs: async (_context, body) => ({ body: await port.searchWorkspaceReviewDiffs(body) }),
     createTerminal: async (_context, body) => ({
       body: terminal!.create(String((body as Record<string, unknown>).workspaceDir ?? process.cwd())),
     }),

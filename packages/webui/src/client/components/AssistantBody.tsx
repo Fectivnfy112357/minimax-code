@@ -8,6 +8,8 @@
 
 import { useState, type ReactElement } from "react";
 import { WebuiMarkdown } from "../markdown.js";
+import type { WebuiMessageFileReference } from "../projection/message-file-reference.js";
+import { webuiActivitySummary } from "../projection/tool-projection.js";
 import { MessageAttachments, type MessageAttachment } from "./MessageAttachments.js";
 import type { WebuiTurnDiffView } from "../../server/port.js";
 import type {
@@ -38,13 +40,14 @@ function renderActivityParts(
   authoritativeDiffAvailable: boolean,
   processExpanded: boolean,
   processingStartedAtMs?: number,
+  onOpenFile?: (reference: WebuiMessageFileReference) => void,
+  collapsedVisiblePart?: WebuiTranscriptActivityPart,
 ): ReactElement[] {
   const rows: ReactElement[] = [];
   for (let index = 0; index < parts.length; index += 1) {
     const part = parts[index];
     if (!part) continue;
-    if (part.type === "text" && !processExpanded) continue;
-    if (!processExpanded && part.type !== "text") continue;
+    if (part.type === "text" && !processExpanded && part === collapsedVisiblePart) continue;
     if (part.type === "tool" || part.type === "thinking") {
       const activityItems: WebuiActivityGroupItem[] = [];
       let cursor = index;
@@ -79,15 +82,15 @@ function renderActivityParts(
       } else if (tools.length > 0) {
         rows.push(<WebuiActivityGroup key={`${messageId}-tools-${index}`} tools={tools} authoritativeDiffAvailable={authoritativeDiffAvailable} />);
       } else {
-        thoughts.forEach((thought, thoughtIndex) => rows.push(<WebuiThinkingBlock key={`${messageId}-thinking-${index}-${thoughtIndex}`} text={thought.text} streaming={streaming} processingStartedAtMs={processingStartedAtMs} summaryLabel="思考 1 次" showDetailHeading />));
+        thoughts.forEach((thought, thoughtIndex) => rows.push(<WebuiThinkingBlock key={`${messageId}-thinking-${index}-${thoughtIndex}`} text={thought.text} durationMs={thought.durationMs} streaming={streaming} processingStartedAtMs={processingStartedAtMs} summaryLabel="思考 1 次" showDetailHeading />));
       }
       index = cursor - 1;
     } else if (part.type === "text") {
-      rows.push(<div className="webui-assistant-answer" key={`${messageId}-ordered-text-${index}`} data-webui-message-kind="assistant"><WebuiMarkdown source={part.text} /></div>);
+      rows.push(<div className="webui-assistant-answer" key={`${messageId}-ordered-text-${index}`} data-webui-message-kind="assistant"><WebuiMarkdown source={part.text} onOpenFile={onOpenFile} /></div>);
     } else if (part.type === "cognitive" || part.type === "compaction") {
       rows.push(<WebuiThinkingBlock key={`${messageId}-${part.type}-${index}`} text={part.text} streaming={streaming} processingStartedAtMs={processingStartedAtMs} summaryLabel={part.type === "compaction" ? "上下文整理" : "思考过程"} showDetailHeading={part.type !== "compaction"} />);
     } else if (part.type === "delegation") {
-      rows.push(<div className="webui-agent-delegation" key={`${messageId}-delegation-${index}`} data-webui-agent-activity="delegation" data-active={streaming && index === parts.length - 1 ? "true" : undefined}><span className="webui-agent-delegation-summary"><span className="webui-agent-delegation-avatar" aria-hidden="true">{String(part.message.fromAgent ?? "Agent").slice(0, 1).toUpperCase()}</span><span className="webui-agent-activity-title">{`${String(part.message.fromAgent ?? "Agent")} 发给 ${String(part.message.toAgent ?? "Agent")}`}</span></span>{typeof part.message.content === "string" ? <WebuiMarkdown source={part.message.content} /> : null}</div>);
+      rows.push(<div className="webui-agent-delegation" key={`${messageId}-delegation-${index}`} data-webui-agent-activity="delegation" data-active={streaming && index === parts.length - 1 ? "true" : undefined}><span className="webui-agent-delegation-summary"><span className="webui-agent-delegation-avatar" aria-hidden="true">{String(part.message.fromAgent ?? "Agent").slice(0, 1).toUpperCase()}</span><span className="webui-agent-activity-title">{`${String(part.message.fromAgent ?? "Agent")} 发给 ${String(part.message.toAgent ?? "Agent")}`}</span></span>{typeof part.message.content === "string" ? <WebuiMarkdown source={part.message.content} onOpenFile={onOpenFile} /> : null}</div>);
     } else {
       const agents: Record<string, unknown>[] = [];
       while (parts[index]?.type === "agent_joined") {
@@ -155,6 +158,8 @@ export function WebuiAssistantBody({
   getTurnDiff,
   revertTurnDiff,
   reapplyTurnDiff,
+  onOpenFile,
+  onOpenTurnReview,
   thinking,
   thinkingDurationMs,
   processingStartedAtMs,
@@ -171,6 +176,8 @@ export function WebuiAssistantBody({
 }: {
   readonly messageId: string;
   readonly sessionId?: string;
+  readonly onOpenFile?: (reference: WebuiMessageFileReference) => void;
+  readonly onOpenTurnReview?: (view: WebuiTurnDiffView, selectedPath?: string) => void;
   readonly assistantMessageId?: string;
   readonly turnId?: string;
   readonly changeSetId?: string;
@@ -225,6 +232,16 @@ export function WebuiAssistantBody({
       ...(segment.tools ?? []).map((tool) => ({ type: "tool", tool }) satisfies WebuiTranscriptActivityPart),
     ];
   });
+  const processSummaryParts = [
+    ...(() => {
+      const count = orderedProcessParts.filter((part) => part.type === "thinking").length;
+      return count > 0 ? [`思考 ${count} 次`] : [];
+    })(),
+    ...(() => {
+      const toolsInProcess = orderedProcessParts.flatMap((part) => part.type === "tool" ? [part.tool] : []);
+      return toolsInProcess.length > 0 ? [webuiActivitySummary(toolsInProcess)] : [];
+    })(),
+  ];
   const hasExpandableProcessContent = Boolean(
     thinking?.trim() ||
     tools?.length ||
@@ -236,14 +253,15 @@ export function WebuiAssistantBody({
     typeof wallClockDurationMs === "number";
   const renderProcessContent = (processExpanded: boolean) => (
     <div className="activity-group-content webui-turn-process-segments">
-      {processExpanded ? renderActivityParts(
-        messageId,
-        orderedProcessParts,
-        streaming,
-        Boolean(getTurnDiff),
-        true,
-        processingStartedAtMs,
-      ) : null}
+      {segments.map((segment, index) => {
+        const segmentParts = segment.activityParts?.length
+          ? segment.activityParts
+          : [
+              ...(segment.thinking?.trim() ? [{ type: "thinking", text: segment.thinking, ...(segment.thinkingDurationMs !== undefined ? { durationMs: segment.thinkingDurationMs } : {}) } satisfies WebuiTranscriptActivityPart] : []),
+              ...(segment.tools ?? []).map((tool) => ({ type: "tool", tool }) satisfies WebuiTranscriptActivityPart),
+            ];
+        return <div key={`${segment.messageId}-${index}`} className="webui-turn-process-segment">{renderActivityParts(segment.messageId, segmentParts, streaming, Boolean(getTurnDiff), processExpanded, processingStartedAtMs, onOpenFile, primaryAnswerPart)}</div>;
+      })}
     </div>
   );
   return (
@@ -266,17 +284,18 @@ export function WebuiAssistantBody({
           requestDurationMs={totalRequestDurationMs}
           wallClockDurationMs={wallClockDurationMs}
           hasExpandableContent={hasExpandableProcessContent}
+          summaryPrefix={processSummaryParts.join("，")}
           forceExpanded={processForceExpanded}
           initiallyExpanded={processInitiallyExpanded}
           children={renderProcessContent}
           collapsedContent={(expanded) => !expanded && primaryAnswerPart
-            ? <div className="mt-2 webui-assistant-answer" data-webui-message-kind="assistant"><WebuiMarkdown source={primaryAnswerPart.text} /></div>
+            ? <div className="mt-2 webui-assistant-answer" data-webui-message-kind="assistant"><WebuiMarkdown source={primaryAnswerPart.text} onOpenFile={onOpenFile} /></div>
             : null}
         />
       ) : null}
       {primaryAnswerPart && !hasExpandableProcessContent ? (
         <div className="webui-assistant-answer" data-webui-message-kind="assistant">
-          <WebuiMarkdown source={primaryAnswerPart.text} />
+          <WebuiMarkdown source={primaryAnswerPart.text} onOpenFile={onOpenFile} />
         </div>
       ) : processTextParts.length > 0 ? null : answers.map((answer, index) => (
         <div
@@ -284,7 +303,7 @@ export function WebuiAssistantBody({
           className="webui-assistant-answer"
           data-webui-message-kind="assistant"
         >
-          <WebuiMarkdown source={answer} />
+          <WebuiMarkdown source={answer} onOpenFile={onOpenFile} />
         </div>
       ))}
       {/* Desktop places the diff card after the assistant body so the
@@ -298,6 +317,7 @@ export function WebuiAssistantBody({
         getTurnDiff={getTurnDiff}
         revertTurnDiff={revertTurnDiff}
         reapplyTurnDiff={reapplyTurnDiff}
+        onReview={onOpenTurnReview}
       />
       {attachments?.length ? (
         <MessageAttachments attachments={attachments} />

@@ -52,6 +52,10 @@ import type {
   WebuiStreamFrame,
   WebuiTerminalFrame,
   WebuiTurnDiffView,
+  WebuiWorkspaceReviewDiffs,
+  WebuiWorkspaceReviewFileContent,
+  WebuiWorkspaceReviewSearchResult,
+  WebuiWorkspaceReviewSummary,
   WebuiUpdateSessionRequest,
   WebuiUpdateSessionResult,
   WebuiUsageQuotaResult,
@@ -406,6 +410,10 @@ export interface WebuiTransport {
   readonly mutateWorkspaceGit?: (
     request: WebuiWorkspaceGitMutationRequest,
   ) => Promise<Record<string, unknown>>;
+  readonly getWorkspaceReviewSummary?: (request: { readonly workspaceDir: string }) => Promise<WebuiWorkspaceReviewSummary>;
+  readonly listWorkspaceReviewFileDiffs?: (request: { readonly workspaceDir: string; readonly reviewSnapshotId: string; readonly fileIds: readonly string[] }) => Promise<WebuiWorkspaceReviewDiffs>;
+  readonly getWorkspaceReviewFileContent?: (request: { readonly workspaceDir: string; readonly reviewSnapshotId: string; readonly fileId: string; readonly side: "old" | "new" }) => Promise<WebuiWorkspaceReviewFileContent>;
+  readonly searchWorkspaceReviewDiffs?: (request: { readonly workspaceDir: string; readonly reviewSnapshotId: string; readonly query: string; readonly includeUntrackedFiles: boolean; readonly pageIndex?: number; readonly pageSize?: number }) => Promise<WebuiWorkspaceReviewSearchResult>;
   readonly readCanvas?: (request: {
     readonly sessionId: string;
   }) => Promise<WebuiCanvasDocument>;

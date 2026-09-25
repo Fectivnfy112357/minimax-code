@@ -8,6 +8,7 @@
 // 0006) while the wire side exercises the real `ws` package.
 
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import assert from "node:assert/strict";
 import { once } from "node:events";
 import os from "node:os";
 import path from "node:path";
@@ -62,6 +63,7 @@ import type {
 } from "../../src/server/port.js";
 import { createWebuiTransport } from "../../src/client/transport.js";
 import { WebuiTerminalManager } from "../../src/server/terminal.js";
+import { getWorkspaceReviewSummaryOperation, listWorkspaceReviewFileDiffsOperation, getWorkspaceReviewFileContentOperation, searchWorkspaceReviewDiffsOperation } from "../../src/server/operation/workspace.js";
 
 type CloseEvent = [number, Buffer];
 // `once` from `node:events` is overloaded and not generic, so
@@ -94,6 +96,8 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
   public lastQuestionnaireDismissal: unknown;
   public abortCalls = 0;
   public diffRequests: Array<{ readonly operation: string; readonly body: unknown }> = [];
+  public reviewRequests: Array<{ readonly operation: string; readonly body: unknown }> = [];
+  public reviewError: Error | undefined;
   public sendObserved: Promise<void>;
   private resolveSendObserved!: () => void;
 
@@ -243,6 +247,26 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
 
   async mutateWorkspaceGit() {
     return { success: true };
+  }
+  async getWorkspaceReviewSummary(request: { readonly workspaceDir: string }) {
+    this.reviewRequests.push({ operation: "getWorkspaceReviewSummary", body: request });
+    if (this.reviewError) throw this.reviewError;
+    return { repositoryId: "fixture-repo", reviewSnapshotId: "fixture-snapshot", files: [{ fileId: "file-1", path: "src/index.ts", status: "modified" as const, additions: 1, deletions: 0 }], totals: { files: 1, additions: 1, deletions: 0 } };
+  }
+  async listWorkspaceReviewFileDiffs(request: { readonly workspaceDir: string; readonly reviewSnapshotId: string; readonly fileIds: readonly string[] }) {
+    this.reviewRequests.push({ operation: "listWorkspaceReviewFileDiffs", body: request });
+    if (this.reviewError) throw this.reviewError;
+    return { reviewSnapshotId: request.reviewSnapshotId, diffs: [] };
+  }
+  async getWorkspaceReviewFileContent(request: { readonly workspaceDir: string; readonly reviewSnapshotId: string; readonly fileId: string; readonly side: "old" | "new" }) {
+    this.reviewRequests.push({ operation: "getWorkspaceReviewFileContent", body: request });
+    if (this.reviewError) throw this.reviewError;
+    return { reviewSnapshotId: request.reviewSnapshotId, fileId: request.fileId, path: "src/index.ts", side: request.side, type: "text" as const, content: "fixture source" };
+  }
+  async searchWorkspaceReviewDiffs(request: { readonly workspaceDir: string; readonly reviewSnapshotId: string; readonly query: string; readonly includeUntrackedFiles: boolean; readonly pageIndex?: number; readonly pageSize?: number }) {
+    this.reviewRequests.push({ operation: "searchWorkspaceReviewDiffs", body: request });
+    if (this.reviewError) throw this.reviewError;
+    return { reviewSnapshotId: request.reviewSnapshotId, matchedFiles: [{ fileId: "file-1", path: "src/index.ts", matchCount: 1 }], totalMatches: 1, totalMatchedFiles: 1, pageIndex: request.pageIndex ?? 0, pageSize: request.pageSize ?? 20, matchesBeforePage: 0, hasPreviousPage: false, hasNextPage: false };
   }
 
   async readWorkspaceFile(request: { readonly workspaceDir: string; readonly path: string }) {
@@ -1499,6 +1523,80 @@ describe("WebUI service", () => {
     ws.close();
   });
 
+  it("validates and forwards workspace review requests with their snapshot identity", async () => {
+    assert.deepEqual(getWorkspaceReviewSummaryOperation.validate({ workspaceDir: " " }), {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: "workspaceDir is required",
+    });
+    assert.deepEqual(listWorkspaceReviewFileDiffsOperation.validate({ workspaceDir: "/repo", fileIds: ["file-1"] }), {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: "workspaceDir and reviewSnapshotId are required",
+    });
+    assert.deepEqual(listWorkspaceReviewFileDiffsOperation.validate({ workspaceDir: "/repo", reviewSnapshotId: "snap-1", fileIds: [] }), {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: "fileIds must be a non-empty string array",
+    });
+    assert.deepEqual(getWorkspaceReviewFileContentOperation.validate({ workspaceDir: "/repo", reviewSnapshotId: "snap-1", fileId: "file-1", side: "other" }), {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: "side must be old or new",
+    });
+    assert.deepEqual(searchWorkspaceReviewDiffsOperation.validate({ workspaceDir: "/repo", reviewSnapshotId: "snap-1", includeUntrackedFiles: true }), {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: "query must be a string",
+    });
+    assert.deepEqual(searchWorkspaceReviewDiffsOperation.validate({ workspaceDir: "/repo", reviewSnapshotId: "snap-1", query: "needle", includeUntrackedFiles: "yes" }), {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: "includeUntrackedFiles must be a boolean",
+    });
+    assert.deepEqual(searchWorkspaceReviewDiffsOperation.validate({ workspaceDir: "/repo", reviewSnapshotId: "snap-1", query: "needle", includeUntrackedFiles: true, pageIndex: -1 }), {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: "pageIndex must be a non-negative integer",
+    });
+    assert.deepEqual(searchWorkspaceReviewDiffsOperation.validate({ workspaceDir: "/repo", reviewSnapshotId: "snap-1", query: "needle", includeUntrackedFiles: true, pageSize: 0 }), {
+      ok: false,
+      code: WebuiErrorCode.invalidBody,
+      message: "pageSize must be a positive integer",
+    });
+
+    const { url } = await bootService();
+    const { ws, upgrade } = openClient(url);
+    await upgrade;
+    const request = (requestId: string, operation: string, body: unknown) =>
+      requestOnce(ws, { protocolVersion: WEBUI_PROTOCOL_VERSION, kind: "request", requestId, operation, body });
+    const summary = await request("req-review-summary", "getWorkspaceReviewSummary", { workspaceDir: "/repo" });
+    expect((summary as { body: { reviewSnapshotId: string; files: unknown[] } }).body).toMatchObject({ reviewSnapshotId: "fixture-snapshot", files: [{ fileId: "file-1" }] });
+    const diffs = await request("req-review-diffs", "listWorkspaceReviewFileDiffs", { workspaceDir: "/repo", reviewSnapshotId: "fixture-snapshot", fileIds: ["file-1"] });
+    expect((diffs as { body: { reviewSnapshotId: string } }).body.reviewSnapshotId).toBe("fixture-snapshot");
+    const content = await request("req-review-content", "getWorkspaceReviewFileContent", { workspaceDir: "/repo", reviewSnapshotId: "fixture-snapshot", fileId: "file-1", side: "new" });
+    expect((content as { body: { content: string; reviewSnapshotId: string } }).body).toMatchObject({ content: "fixture source", reviewSnapshotId: "fixture-snapshot" });
+    const search = await request("req-review-search", "searchWorkspaceReviewDiffs", { workspaceDir: "/repo", reviewSnapshotId: "fixture-snapshot", query: "needle", includeUntrackedFiles: true });
+    expect((search as { body: { matchedFiles: unknown[]; reviewSnapshotId: string } }).body).toMatchObject({ reviewSnapshotId: "fixture-snapshot", matchedFiles: [{ path: "src/index.ts" }] });
+    expect(port.reviewRequests).toEqual([
+      { operation: "getWorkspaceReviewSummary", body: { workspaceDir: "/repo" } },
+      { operation: "listWorkspaceReviewFileDiffs", body: { workspaceDir: "/repo", reviewSnapshotId: "fixture-snapshot", fileIds: ["file-1"] } },
+      { operation: "getWorkspaceReviewFileContent", body: { workspaceDir: "/repo", reviewSnapshotId: "fixture-snapshot", fileId: "file-1", side: "new" } },
+      { operation: "searchWorkspaceReviewDiffs", body: { workspaceDir: "/repo", reviewSnapshotId: "fixture-snapshot", query: "needle", includeUntrackedFiles: true } },
+    ]);
+    ws.close();
+  });
+
+  it("surfaces workspace review runtime errors as harness errors", async () => {
+    port.reviewError = new Error("review snapshot expired");
+    const { url } = await bootService();
+    const { ws, upgrade } = openClient(url);
+    await upgrade;
+    const response = await requestOnce(ws, { protocolVersion: WEBUI_PROTOCOL_VERSION, kind: "request", requestId: "req-review-error", operation: "listWorkspaceReviewFileDiffs", body: { workspaceDir: "/repo", reviewSnapshotId: "expired", fileIds: ["file-1"] } });
+    expect(response).toMatchObject({ kind: "error", code: WebuiErrorCode.harnessError, message: "review snapshot expired" });
+    ws.close();
+  });
+
   it("rejects a request whose operation is outside the allowlist", async () => {
     const { url } = await bootService();
     const { ws, upgrade } = openClient(url);
@@ -2633,6 +2731,18 @@ describe("WebUI shutdown order (criterion 7)", () => {
       async mutateWorkspaceGit() {
         return { success: true };
       },
+      async getWorkspaceReviewSummary() {
+        return { repositoryId: "shutdown", reviewSnapshotId: "shutdown", files: [], totals: { files: 0, additions: 0, deletions: 0 } };
+      },
+      async listWorkspaceReviewFileDiffs(request: { readonly reviewSnapshotId: string }) {
+        return { reviewSnapshotId: request.reviewSnapshotId, diffs: [] };
+      },
+      async getWorkspaceReviewFileContent(request: { readonly reviewSnapshotId: string; readonly fileId: string; readonly side: "old" | "new" }) {
+        return { reviewSnapshotId: request.reviewSnapshotId, fileId: request.fileId, path: "recording", side: request.side, type: "text" as const, content: "" };
+      },
+      async searchWorkspaceReviewDiffs(request: { readonly reviewSnapshotId: string; readonly pageIndex?: number; readonly pageSize?: number }) {
+        return { reviewSnapshotId: request.reviewSnapshotId, matchedFiles: [], totalMatches: 0, totalMatchedFiles: 0, pageIndex: request.pageIndex ?? 0, pageSize: request.pageSize ?? 20, matchesBeforePage: 0, hasPreviousPage: false, hasNextPage: false };
+      },
       async readCanvas() {
         return {
           schemaVersion: 1,
@@ -2979,6 +3089,18 @@ describe("WebUI shutdown order (criterion 7)", () => {
       },
       async mutateWorkspaceGit() {
         return { success: true };
+      },
+      async getWorkspaceReviewSummary() {
+        return { repositoryId: "shutdown", reviewSnapshotId: "shutdown", files: [], totals: { files: 0, additions: 0, deletions: 0 } };
+      },
+      async listWorkspaceReviewFileDiffs(request: { readonly reviewSnapshotId: string }) {
+        return { reviewSnapshotId: request.reviewSnapshotId, diffs: [] };
+      },
+      async getWorkspaceReviewFileContent(request: { readonly reviewSnapshotId: string; readonly fileId: string; readonly side: "old" | "new" }) {
+        return { reviewSnapshotId: request.reviewSnapshotId, fileId: request.fileId, path: "recording", side: request.side, type: "text" as const, content: "" };
+      },
+      async searchWorkspaceReviewDiffs(request: { readonly reviewSnapshotId: string; readonly pageIndex?: number; readonly pageSize?: number }) {
+        return { reviewSnapshotId: request.reviewSnapshotId, matchedFiles: [], totalMatches: 0, totalMatchedFiles: 0, pageIndex: request.pageIndex ?? 0, pageSize: request.pageSize ?? 20, matchesBeforePage: 0, hasPreviousPage: false, hasNextPage: false };
       },
       async readCanvas() {
         return {

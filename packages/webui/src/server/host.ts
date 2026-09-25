@@ -39,6 +39,10 @@ import type {
   WebuiWorkspaceFileContent,
   WebuiWorkspaceEnvironment,
   WebuiWorkspaceGitMutationRequest,
+  WebuiWorkspaceReviewDiffs,
+  WebuiWorkspaceReviewFileContent,
+  WebuiWorkspaceReviewSearchResult,
+  WebuiWorkspaceReviewSummary,
   WebuiCanvasDocument,
   WebuiModelEntry,
   WebuiGetSessionDiffRequest,
@@ -157,6 +161,10 @@ export interface WebuiRuntimeCliService {
   readWorkspaceFile?(request: { readonly workspaceDir: string; readonly path: string }): Promise<WebuiWorkspaceFileContent>;
   getWorkspaceGitEnvironment?(workspaceDir: string): Promise<{ readonly metadata: Record<string, unknown>; readonly changes: Record<string, unknown> }>;
   mutateWorkspaceGit?(request: WebuiWorkspaceGitMutationRequest): Promise<Record<string, unknown>>;
+  getWorkspaceReviewSummary?(workspaceDir: string): Promise<WebuiWorkspaceReviewSummary>;
+  listWorkspaceReviewFileDiffs?(input: { readonly workspaceDir: string; readonly reviewSnapshotId: string; readonly fileIds: string[] }): Promise<WebuiWorkspaceReviewDiffs>;
+  getWorkspaceReviewFileContent?(input: { readonly workspaceDir: string; readonly reviewSnapshotId: string; readonly fileId: string; readonly side: "old" | "new" }): Promise<WebuiWorkspaceReviewFileContent>;
+  searchWorkspaceReviewDiffs?(input: { readonly workspaceDir: string; readonly reviewSnapshotId: string; readonly query: string; readonly includeUntrackedFiles: boolean; readonly pageIndex?: number; readonly pageSize?: number }): Promise<WebuiWorkspaceReviewSearchResult>;
   readCanvas?(request: { readonly sessionId: string }): Promise<WebuiCanvasDocument>;
   applyCanvas?(request: { readonly sessionId: string; readonly operation: Record<string, unknown> }): Promise<{ readonly operationId: string; readonly document: WebuiCanvasDocument }>;
   sendMessage(
@@ -425,6 +433,26 @@ export function createHarnessPortFromHost(
       if (!cliService.mutateWorkspaceGit)
         throw new Error("runtime host does not expose Workspace git mutations");
       return cliService.mutateWorkspaceGit(request);
+    },
+    async getWorkspaceReviewSummary(request) {
+      const cliService = requireCliService(host);
+      if (!cliService.getWorkspaceReviewSummary) throw new Error("runtime host does not expose Workspace review summaries");
+      return cliService.getWorkspaceReviewSummary(request.workspaceDir) as Promise<WebuiWorkspaceReviewSummary>;
+    },
+    async listWorkspaceReviewFileDiffs(request) {
+      const cliService = requireCliService(host);
+      if (!cliService.listWorkspaceReviewFileDiffs) throw new Error("runtime host does not expose Workspace review file diffs");
+      return cliService.listWorkspaceReviewFileDiffs({ ...request, fileIds: [...request.fileIds] }) as Promise<WebuiWorkspaceReviewDiffs>;
+    },
+    async getWorkspaceReviewFileContent(request) {
+      const cliService = requireCliService(host);
+      if (!cliService.getWorkspaceReviewFileContent) throw new Error("runtime host does not expose Workspace review file content");
+      return cliService.getWorkspaceReviewFileContent(request) as Promise<WebuiWorkspaceReviewFileContent>;
+    },
+    async searchWorkspaceReviewDiffs(request) {
+      const cliService = requireCliService(host);
+      if (!cliService.searchWorkspaceReviewDiffs) throw new Error("runtime host does not expose Workspace review search");
+      return cliService.searchWorkspaceReviewDiffs(request) as Promise<WebuiWorkspaceReviewSearchResult>;
     },
     async readCanvas(request) {
       return requireCliService(host).readCanvas!(request) as Promise<WebuiCanvasDocument>;

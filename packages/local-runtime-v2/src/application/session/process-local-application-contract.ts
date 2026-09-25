@@ -21,6 +21,7 @@ import type {
 } from "@mavis/protocol/local";
 import type { MiniAppSurfaceSummary } from "@mavis/shared/miniapp-surface";
 import type { SessionReportManifest } from "../../service/session-system/index.js";
+import type { WorkspaceReviewFileContent, WorkspaceReviewFileDiff, WorkspaceReviewSearchResult, WorkspaceReviewSummary } from "../../service/workspace/contracts.js";
 import type {
   ByokProviderPresetView,
   CodexOAuthStartResult,
@@ -196,6 +197,10 @@ export interface LocalRuntimeApplication {
         workspaceDir: string,
         branch: string,
       ): Promise<Record<string, unknown> | undefined>;
+      getReviewSummary?(workspaceDir: string, source: { readonly type: "workspace" }): Promise<WorkspaceReviewSummary>;
+      listReviewFileDiffs?(workspaceDir: string, source: { readonly type: "workspace" }, request: { readonly reviewSnapshotId: string; readonly fileIds?: string[] }): Promise<{ readonly reviewSnapshotId: string; readonly diffs: readonly WorkspaceReviewFileDiff[] }>;
+      getReviewFileContent?(workspaceDir: string, source: { readonly type: "workspace" }, request: { readonly reviewSnapshotId: string; readonly fileId: string; readonly side: "old" | "new" }): Promise<WorkspaceReviewFileContent>;
+      searchReviewDiffs?(workspaceDir: string, source: { readonly type: "workspace" }, request: { readonly reviewSnapshotId: string; readonly query: string; readonly includeUntrackedFiles: boolean; readonly pageIndex?: number; readonly pageSize?: number }): Promise<WorkspaceReviewSearchResult>;
     };
     listFileTree?(input: {
       workspaceDir: string;

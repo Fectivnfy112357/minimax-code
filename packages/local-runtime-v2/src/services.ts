@@ -513,6 +513,7 @@ export async function createRuntimeServices(
   const application = composeProcessLocalApplication({
     eventBus: options.eventBus,
     usageCommits: sessionSystem.usage.commits,
+    workspaceReview: workspace.git,
     compatibility: options.compatibility,
     listRuntimeSkills: (request) => skill.listRuntimeSkills(request),
     plugins: owners.plugin.plugin,

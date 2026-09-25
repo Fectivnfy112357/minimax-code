@@ -83,6 +83,7 @@ import {
   type WebuiStreamState,
 } from "../../src/client/stream.js";
 import { projectWebuiTodos, WebuiProgressPanel, WebuiSubagentsPanel, WebuiWorkspaceOverview, WebuiWorkspacePanel, WebuiWorkspacePanelControls } from "../../src/client/components/WorkspacePanels.js";
+import { initialWorkspacePanelState, reduceWorkspacePanelState } from "../../src/client/projection/workspace-panel-state.js";
 
 import type {
   WebuiStreamFrame,
@@ -121,10 +122,15 @@ function renderSessionShell(): string {
 const INERT_NAV_LABELS = ["插件", "定时", "网站", "远程"];
 
 describe("WebUI shell", () => {
-  it("projects the latest desktop todowrite state and exposes only the three workspace tabs", () => {
+  it("projects desktop workspace state and exposes only the supported add-menu tabs", () => {
     expect(projectWebuiTodos([{ toolCalls: [{ name: "todowrite", input: { todos: [{ content: "完成面板", status: "in_progress" }] } }] }])).toEqual([{ content: "完成面板", status: "in_progress" }]);
     expect(projectWebuiTodos([{ msgContent: JSON.stringify({ eventType: "todo_updated", todos: [{ content: "事件进度", status: "completed", priority: "high" }] }) }])).toEqual([{ content: "事件进度", status: "completed", priority: "high" }]);
-    const markup = renderToStaticMarkup(createElement(WebuiWorkspacePanel, { workspaceDir: "/tmp", todos: [] }));
+    let state = initialWorkspacePanelState;
+    state = reduceWorkspacePanelState(state, { type: "open-tab", kind: "files" });
+    state = reduceWorkspacePanelState(state, { type: "open-tab", kind: "canvas" });
+    state = reduceWorkspacePanelState(state, { type: "open-tab", kind: "terminal" });
+    state = reduceWorkspacePanelState(state, { type: "toggle-add-menu" });
+    const markup = renderToStaticMarkup(createElement(WebuiWorkspacePanel, { state, dispatch: () => undefined, workspaceDir: "/tmp" }));
     expect(markup).toContain('data-testid="workspace-panel"');
     expect(markup).toContain("查看文件");
     expect(markup).toContain("画布");
@@ -144,7 +150,7 @@ describe("WebUI shell", () => {
     expect(markup).toContain('data-webui-subagents-panel="true"');
   });
 
-  it("keeps the desktop environment/progress card separate from the file panel", () => {
+  it("renders the environment/progress content inside the single right panel structure", () => {
     const environment: WebuiWorkspaceEnvironment = { isGitRepo: true, branch: "webui", changedFiles: 2, insertions: 4, deletions: 1, lineStatsStatus: "ready", canPush: true };
     const overview = renderToStaticMarkup(createElement(WebuiWorkspaceOverview, { workspaceDir: "/tmp/project", workspaceEnvironment: environment, todos: [] }));
     expect(overview).toContain('data-testid="workspace-section-group"');
@@ -164,7 +170,7 @@ describe("WebUI shell", () => {
     const controls = renderToStaticMarkup(createElement(WebuiWorkspacePanelControls, { filePanelOpen: false, workspaceOpen: true, onOpenFiles: () => undefined, onToggleWorkspace: () => undefined }));
     expect(controls).toContain('aria-label="打开文件"');
     expect(controls).toContain('aria-label="工作区"');
-    expect(controls).toContain('aria-label="浏览器"');
+    expect(controls).not.toContain('aria-label="浏览器"');
   });
 
   it("does not render Desktop's environment section for a non-git session", () => {
@@ -384,8 +390,8 @@ describe("WebUI shell", () => {
     // turn-2 and turn-3 are adjacent assistant messages: one merged block.
     expect(groups[1].items.map((item) => item.kind)).toEqual([
       "thinking",
-      "tool",
       "assistant",
+      "tool",
       "assistant",
     ]);
     expect(groupWebuiTranscriptItems([])).toEqual([]);
@@ -2419,11 +2425,11 @@ describe("WebUI composer transcriptIncomplete", () => {
     expect(groups[0]?.items[0]?.kind).toBe("user");
     expect(groups[1]?.items.map((item) => item.kind)).toEqual([
       "thinking",
-      "tool",
       "assistant",
+      "tool",
       "thinking",
-      "tool",
       "assistant",
+      "tool",
     ]);
 
     const html = renderToStaticMarkup(

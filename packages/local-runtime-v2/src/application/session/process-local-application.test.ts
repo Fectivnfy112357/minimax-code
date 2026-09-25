@@ -2,7 +2,46 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { LocalRuntimeApplication } from "./process-local-application-contract.js";
 import { createProcessLocalApplication } from "./process-local-application.js";
+import { composeProcessLocalApplication } from "./process-local-composition.js";
 import { toSessionMessageView } from "./content-application.js";
+
+describe("composeProcessLocalApplication workspace ownership", () => {
+  it("forwards the V2 WorkspaceGitService through the CLI application seam", async () => {
+    const workspaceGit = {
+      getReviewSummary: vi.fn(),
+      listReviewFileDiffs: vi.fn(),
+      getReviewFileContent: vi.fn(),
+      searchReviewDiffs: vi.fn(),
+    };
+    const legacyWorkspaceGit = { getMetadata: vi.fn() };
+    const application = composeProcessLocalApplication({
+      eventBus: { subscribe: vi.fn(() => () => undefined) },
+      usageCommits: undefined,
+      workspaceReview: workspaceGit as never,
+      compatibility: {
+        skills: { listSkills: vi.fn(), listRuntimeSkills: vi.fn() },
+        peripherals: { workspace: { git: legacyWorkspaceGit } },
+      } as never,
+      listRuntimeSkills: vi.fn(),
+      plugins: {} as never,
+      pluginControl: {} as never,
+      miniApp: undefined,
+      planEntryEnabled: () => false,
+      mcp: {} as never,
+      modelProvider: {
+        application: {} as never,
+        providers: {} as never,
+        listProviderPresets: vi.fn(),
+        oauth: {} as never,
+      },
+    });
+
+    expect(application.workspace?.git.getReviewSummary).toBeDefined();
+    expect(application.workspace?.git.getMetadata).toBe(legacyWorkspaceGit.getMetadata);
+    await application.workspace?.git.getReviewSummary?.("/repo", { type: "workspace" });
+    expect(workspaceGit.getReviewSummary).toHaveBeenCalledWith("/repo", { type: "workspace" });
+  });
+});
 
 describe("SessionContentApplication history message serialization", () => {
   it("keeps ordered activity parts in the opaque rawJson channel", () => {

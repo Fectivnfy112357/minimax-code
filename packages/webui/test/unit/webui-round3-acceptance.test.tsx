@@ -440,7 +440,7 @@ describe("round-3 stream state and transcript render units", () => {
     }));
     expect(assistantMarkup).toContain('data-testid="turn-process-detail"');
     expect(assistantMarkup).toContain("思考 1 次");
-    expect(assistantMarkup).toContain("使用 1 个工具");
+    expect(assistantMarkup).toContain("查看 1 个文件");
     expect(assistantMarkup).toContain("答复");
   });
 

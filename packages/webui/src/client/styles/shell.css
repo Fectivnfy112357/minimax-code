@@ -19,8 +19,24 @@
  */
 
 @layer components {
-  .webui-workspace-panel { position: relative; z-index: 30; width: 288px; flex: 0 0 288px; min-height: 0; overflow: hidden; border-left: 1px solid var(--border_default); background: var(--bg_default_primary); color: var(--text_default_primary); }
-  .webui-workspace-section-group { position: absolute; top: 56px; right: 12px; z-index: 40; display: flex; width: 288px; max-height: calc(100vh - 68px); min-height: 0; flex-shrink: 0; flex-direction: column; overflow-x: hidden; overflow-y: auto; border: .5px solid var(--border_default); border-radius: 16px; background: var(--bg_grouped_secondary_elevated); padding: 6px; box-shadow: 0 6px 24px rgb(0 0 0 / 8%); color: var(--text_default_primary); }
+  .webui-workspace-panel { position: relative; z-index: 30; display: flex; width: 288px; flex: 0 0 288px; min-height: 0; flex-direction: column; overflow: hidden; border-left: 1px solid var(--border_default); background: var(--bg_default_primary); color: var(--text_default_primary); }
+  .webui-workspace-panel.is-expanded { width: min(720px, 60vw); flex-basis: min(720px, 60vw); }
+  .webui-workspace-panel-header, .webui-workspace-panel-actions, .webui-workspace-tabs, .webui-workspace-tab { display: flex; align-items: center; }
+  .webui-workspace-panel-header { min-height: 48px; justify-content: space-between; gap: var(--spacing_8); border-bottom: 1px solid var(--border_default); padding: 0 var(--spacing_8); }
+  .webui-workspace-tabs { min-width: 0; flex: 1; gap: var(--spacing_4); overflow-x: auto; }
+  .webui-workspace-tab { max-width: 180px; flex: 0 0 auto; gap: var(--spacing_4); border-radius: var(--radius_8); background: var(--bg_default_secondary); color: var(--text_default_secondary); }
+  .webui-workspace-tab.is-active { background: var(--bg_interaction_tertiary_selected); color: var(--text_default_primary); }
+  .webui-workspace-tab button, .webui-workspace-tabs > button, .webui-workspace-panel-actions button, .webui-workspace-add-menu button { display: inline-flex; align-items: center; justify-content: center; border: 0; background: transparent; padding: var(--spacing_8); color: inherit; }
+  .webui-workspace-tab button:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .webui-workspace-panel-actions { flex: 0 0 auto; gap: var(--spacing_4); }
+  .webui-workspace-add-menu { position: absolute; top: 42px; left: var(--spacing_8); z-index: 40; display: flex; min-width: 150px; flex-direction: column; border: 1px solid var(--border_default); border-radius: var(--radius_8); background: var(--bg_grouped_secondary_elevated); box-shadow: 0 6px 24px rgb(0 0 0 / 12%); }
+  .webui-workspace-add-menu button { justify-content: flex-start; }
+  .webui-workspace-content { min-height: 0; flex: 1; overflow: auto; padding: var(--spacing_12); }
+  .webui-workspace-content pre { overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .webui-file-preview-line-active { display: inline-block; width: 100%; background: var(--bg_interaction_tertiary_selected); }
+  .webui-workspace-content [aria-current="true"] { color: var(--text_label_accent_default); }
+  .webui-workspace-content ul { list-style: none; margin: 0; padding: 0; }
+  .webui-workspace-section-group { position: relative; display: flex; width: 100%; max-height: none; min-height: 0; flex-shrink: 0; flex-direction: column; overflow-x: hidden; overflow-y: auto; border: .5px solid var(--border_default); border-radius: 16px; background: var(--bg_grouped_secondary_elevated); padding: 6px; box-shadow: 0 6px 24px rgb(0 0 0 / 8%); color: var(--text_default_primary); }
   .webui-environment-panel, .webui-progress-panel, .webui-subagents-panel { display: flex; flex-shrink: 0; flex-direction: column; overflow: hidden; }
   .webui-environment-panel + .webui-progress-panel { border-top: 1px solid var(--border_light); }
   .webui-progress-panel + .webui-subagents-panel { border-top: 1px solid var(--border_light); }
@@ -62,13 +78,9 @@
   .webui-subagent-status { display: inline-flex; width: 18px; height: 18px; flex: 0 0 18px; align-items: center; justify-content: center; border-radius: 50%; color: var(--text_default_tertiary); font-size: 14px; font-weight: var(--weight_medium); }
   .webui-subagent-status--completed { background: var(--icon_default_secondary); color: var(--text_default_inverted); }
   .webui-subagent-status--error { color: var(--text_label_danger_secondary_default); }
-  .webui-workspace-panel-header { display: flex; align-items: center; border-bottom: 1px solid var(--border_default); }
   .webui-workspace-panel-close { display: flex; width: 32px; height: 32px; flex: 0 0 32px; align-items: center; justify-content: center; border: 0; border-radius: var(--radius_8); background: transparent; color: var(--icon_default_tertiary); }
   .webui-workspace-panel-close:hover { background: var(--bg_interaction_tertiary_hover); color: var(--icon_default_primary); }
-  .webui-workspace-tabs { display: flex; min-width: 0; flex: 1; gap: 2px; padding: var(--spacing_8); }
-  .webui-workspace-tabs button { flex: 1; border: 0; border-radius: var(--radius_8); background: transparent; padding: var(--spacing_8) var(--spacing_4); color: var(--text_default_secondary); font-size: var(--size_12); }
-  .webui-workspace-tabs button.is-active { background: var(--bg_interaction_tertiary_selected); color: var(--text_default_primary); }
-  .webui-workspace-content { min-height: 0; height: calc(100% - 52px); overflow: auto; padding: var(--spacing_8); }
+  .webui-workspace-content { min-height: 0; flex: 1; overflow: auto; padding: var(--spacing_8); }
   .webui-file-tree-row { width: 100%; border: 0; background: transparent; padding: 4px; color: var(--text_default_secondary); text-align: left; font-size: var(--size_12); }
   .webui-file-tree-row:hover { background: var(--bg_interaction_tertiary_hover); color: var(--text_default_primary); }
   .webui-file-viewer { margin-top: var(--spacing_8); }

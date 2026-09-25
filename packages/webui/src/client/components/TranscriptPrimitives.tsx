@@ -226,16 +226,18 @@ export function WebuiActivityGroup({
   tools,
   authoritativeDiffAvailable = false,
   activityItems,
+  initiallyExpanded = false,
 }: {
   readonly tools: readonly Record<string, unknown>[];
   readonly authoritativeDiffAvailable?: boolean;
   readonly activityItems?: readonly WebuiActivityGroupItem[];
+  readonly initiallyExpanded?: boolean;
 }): ReactElement | null {
   const active = tools.some((tool) => {
     const status = toolCallStatus(tool);
     return status === "pending" || status === "running";
   });
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(initiallyExpanded);
   useEffect(() => {
     if (!active) setExpanded(false);
   }, [active]);
@@ -245,6 +247,8 @@ export function WebuiActivityGroup({
     ...(thinkingCount > 0 ? [`思考 ${thinkingCount} 次`] : []),
     webuiActivitySummary(tools),
   ].join("，");
+  const categories = [...new Set(tools.map(toolCallIconCategory))];
+  const iconCategory = categories.length > 1 ? "combine" : categories[0] ?? "tool";
   const detailItems: ReactElement[] = [];
   if (activityItems) {
     for (let index = 0; index < activityItems.length; index += 1) {
@@ -272,6 +276,7 @@ export function WebuiActivityGroup({
       onToggle={(event) => setExpanded(event.currentTarget.open)}
     >
       <summary className="activity-group-header">
+        <span className="activity-group-icon" data-webui-activity-icon-category={iconCategory} aria-hidden="true"><WebuiToolIcon category={iconCategory} /></span>
         <span className="activity-group-summary">{summary}</span>
         <WebuiIconChevronDown className="activity-group-chevron" />
       </summary>
@@ -302,6 +307,7 @@ export function WebuiTurnProcess({
   forceExpanded = false,
   disabled = false,
   initiallyExpanded = false,
+  summaryPrefix,
 }: {
   readonly active: boolean;
   readonly startedAtMs?: number;
@@ -331,6 +337,7 @@ export function WebuiTurnProcess({
   readonly forceExpanded?: boolean;
   readonly disabled?: boolean;
   readonly initiallyExpanded?: boolean;
+  readonly summaryPrefix?: string;
 }): ReactElement {
   const [expanded, setExpanded] = useState(initiallyExpanded);
   const wasActive = useRef(active);
@@ -385,13 +392,14 @@ export function WebuiTurnProcess({
     tokenCount > 0
       ? `${Math.round(tokenCount / seconds)} token/s`
       : undefined;
-  const summary = durationLabel
+  const durationSummary = durationLabel
     ? active
       ? `已执行 ${durationLabel}`
       : `共执行 ${durationLabel}`
-    : active
-      ? "已执行 0 秒"
-      : "共执行 0 秒";
+      : active
+        ? "已执行 0 秒"
+        : "共执行 0 秒";
+  const summary = summaryPrefix ? `${summaryPrefix}，${durationSummary}` : durationSummary;
   return (
     <section className="pt-2" data-testid="turn-process-disclosure">
       <div className="flex min-w-0 flex-wrap items-center gap-x-2" data-testid="turn-process-summary">
