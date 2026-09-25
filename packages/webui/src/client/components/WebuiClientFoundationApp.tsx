@@ -35,7 +35,7 @@ import { Transcript } from "./Transcript.js";
 import { UserMenu } from "./UserMenu.js";
 import {
   WebuiWorkspacePanel,
-  WebuiWorkspaceOverview,
+  WebuiProgressOverviewPanel,
   WebuiWorkspacePanelControls,
 } from "./WorkspacePanels.js";
 import { initialWorkspacePanelState, reduceWorkspacePanelState } from "../projection/workspace-panel-state.js";
@@ -639,7 +639,8 @@ export function WebuiClientFoundationApp(
     ? teamModeChoices[selectedSessionId] ?? teamModeOff
     : teamModeOff;
   const [railCollapsed, setRailCollapsed] = useState(false);
-  const [workspacePanel, dispatchWorkspacePanel] = useReducer(reduceWorkspacePanelState, initialWorkspacePanelState, (state) => reduceWorkspacePanelState(state, { type: "open-tab", kind: "workspace" }));
+  const [workspacePanel, dispatchWorkspacePanel] = useReducer(reduceWorkspacePanelState, initialWorkspacePanelState);
+  const [progressPanelOpen, setProgressPanelOpen] = useState(Boolean(selectedSessionId));
   const [workspaceEnvironmentCollapsed, setWorkspaceEnvironmentCollapsed] = useState(false);
   const [workspaceProgressCollapsed, setWorkspaceProgressCollapsed] = useState(false);
   const [workspaceSubagentsCollapsed, setWorkspaceSubagentsCollapsed] = useState(false);
@@ -649,9 +650,10 @@ export function WebuiClientFoundationApp(
     setWorkspaceEnvironmentCollapsed(false);
     setWorkspaceProgressCollapsed(false);
     setWorkspaceSubagentsCollapsed(false);
+    setProgressPanelOpen(Boolean(selectedSessionId));
   }, [selectedSessionId]);
 
-  const workspaceContent = <WebuiWorkspaceOverview workspaceDir={selectedSession?.workspaceDir} isDefaultWorkspace={selectedSession?.isDefaultWorkspace} todos={progressTodos} subagents={progressSubagents} showProgress={!homeMode} showEmptyProgress={true} getWorkspaceEnvironment={transport?.getWorkspaceEnvironment} watchEvents={transport?.watchEvents} mutateWorkspaceGit={transport?.mutateWorkspaceGit} environmentCollapsed={workspaceEnvironmentCollapsed} progressCollapsed={workspaceProgressCollapsed} subagentsCollapsed={workspaceSubagentsCollapsed} onToggleEnvironment={() => setWorkspaceEnvironmentCollapsed((value) => !value)} onToggleProgress={() => setWorkspaceProgressCollapsed((value) => !value)} onToggleSubagents={() => setWorkspaceSubagentsCollapsed((value) => !value)} onMemberClick={handleWorkspaceSubagentClick} onOpenChanges={() => selectedSession?.workspaceDir && selectedSessionId ? dispatchWorkspacePanel({ type: "open-workspace-review", sessionId: selectedSessionId, workspaceDir: selectedSession.workspaceDir }) : undefined} onOpenTerminal={() => dispatchWorkspacePanel({ type: "open-tab", kind: "terminal", workspaceDir: selectedSession?.workspaceDir })} />;
+  const progressPanelContent = <WebuiProgressOverviewPanel workspaceDir={selectedSession?.workspaceDir} isDefaultWorkspace={selectedSession?.isDefaultWorkspace} todos={progressTodos} subagents={progressSubagents} showProgress={!homeMode} showEmptyProgress={true} getWorkspaceEnvironment={transport?.getWorkspaceEnvironment} watchEvents={transport?.watchEvents} mutateWorkspaceGit={transport?.mutateWorkspaceGit} environmentCollapsed={workspaceEnvironmentCollapsed} progressCollapsed={workspaceProgressCollapsed} subagentsCollapsed={workspaceSubagentsCollapsed} onToggleEnvironment={() => setWorkspaceEnvironmentCollapsed((value) => !value)} onToggleProgress={() => setWorkspaceProgressCollapsed((value) => !value)} onToggleSubagents={() => setWorkspaceSubagentsCollapsed((value) => !value)} onMemberClick={handleWorkspaceSubagentClick} onOpenChanges={() => selectedSession?.workspaceDir && selectedSessionId ? dispatchWorkspacePanel({ type: "open-workspace-review", sessionId: selectedSessionId, workspaceDir: selectedSession.workspaceDir }) : undefined} onOpenTerminal={() => dispatchWorkspacePanel({ type: "open-tab", kind: "terminal", workspaceDir: selectedSession?.workspaceDir })} />;
 
   return (
     <ArchonShell>
@@ -785,9 +787,9 @@ export function WebuiClientFoundationApp(
           {/* -------------------------------------------------------------- main */}
           <main
             data-webui-shell-region="surface"
-            className={`relative flex min-h-0 min-w-0 flex-1 flex-row ${!homeMode && workspacePanel.open ? "webui-session-surface-with-workspace" : ""}`}
+            className="relative flex min-h-0 min-w-0 flex-1 flex-row"
           >
-            {!homeMode && !workspacePanel.open ? <WebuiWorkspacePanelControls filePanelOpen={false} workspaceOpen={false} onOpenFiles={() => dispatchWorkspacePanel({ type: "open-tab", kind: "files", sessionId: selectedSessionId, workspaceDir: selectedSession?.workspaceDir })} onToggleWorkspace={() => dispatchWorkspacePanel({ type: "open-tab", kind: "workspace", sessionId: selectedSessionId, workspaceDir: selectedSession?.workspaceDir })} /> : null}
+            {!homeMode ? <WebuiWorkspacePanelControls filePanelOpen={workspacePanel.open} progressPanelOpen={progressPanelOpen} onOpenFiles={() => dispatchWorkspacePanel({ type: "open-primary-view", kind: "files", sessionId: selectedSessionId, workspaceDir: selectedSession?.workspaceDir })} onToggleProgressPanel={() => setProgressPanelOpen((open) => !open)} /> : null}
             <div className="relative flex h-full min-w-0 flex-1 flex-col">
               <div
                 className="pointer-events-none absolute inset-x-0 top-6 z-[60] flex justify-center"
@@ -797,7 +799,7 @@ export function WebuiClientFoundationApp(
                 className={
                   homeMode
                     ? "flex h-full w-full flex-col items-center relative overflow-y-auto pt-[240px] pb-spacing_40"
-                    : "flex h-full min-h-0 w-full flex-col items-center relative overflow-hidden pt-spacing_24"
+                    : `flex h-full min-h-0 w-full flex-col items-center relative overflow-hidden pt-spacing_24 ${progressPanelOpen ? "webui-session-has-progress-panel" : ""}`
                 }
                 data-webui-home-content={homeMode ? "true" : "false"}
                 data-webui-session-layout={!homeMode ? "true" : undefined}
@@ -933,7 +935,8 @@ export function WebuiClientFoundationApp(
                 </div>
               </div>
             </div>
-            {!homeMode && workspacePanel.open ? <WebuiWorkspacePanel state={workspacePanel} dispatch={dispatchWorkspacePanel} sessionId={selectedSessionId} workspaceDir={selectedSession?.workspaceDir} listWorkspaceFileTree={transport?.listWorkspaceFileTree} readWorkspaceFile={transport?.readWorkspaceFile} readCanvas={transport?.readCanvas} applyCanvas={transport?.applyCanvas} createTerminal={transport?.createTerminal} listTerminals={transport?.listTerminals} writeTerminal={transport?.writeTerminal} disposeTerminal={transport?.disposeTerminal} watchTerminal={transport?.watchTerminal} watchEvents={transport?.watchEvents} getWorkspaceReviewSummary={transport?.getWorkspaceReviewSummary} listWorkspaceReviewFileDiffs={transport?.listWorkspaceReviewFileDiffs} getWorkspaceReviewFileContent={transport?.getWorkspaceReviewFileContent} searchWorkspaceReviewDiffs={transport?.searchWorkspaceReviewDiffs} workspaceContent={workspaceContent} onClose={() => dispatchWorkspacePanel({ type: "close-panel" })} /> : null}
+            {!homeMode && progressPanelOpen ? <aside className="webui-progress-overview-panel" data-testid="progress-overview-panel" aria-label="环境信息与进度">{progressPanelContent}</aside> : null}
+            {!homeMode && workspacePanel.open ? <WebuiWorkspacePanel state={workspacePanel} dispatch={dispatchWorkspacePanel} sessionId={selectedSessionId} workspaceDir={selectedSession?.workspaceDir} listWorkspaceFileTree={transport?.listWorkspaceFileTree} readWorkspaceFile={transport?.readWorkspaceFile} readCanvas={transport?.readCanvas} applyCanvas={transport?.applyCanvas} createTerminal={transport?.createTerminal} listTerminals={transport?.listTerminals} writeTerminal={transport?.writeTerminal} disposeTerminal={transport?.disposeTerminal} watchTerminal={transport?.watchTerminal} getWorkspaceReviewSummary={transport?.getWorkspaceReviewSummary} listWorkspaceReviewFileDiffs={transport?.listWorkspaceReviewFileDiffs} getWorkspaceReviewFileContent={transport?.getWorkspaceReviewFileContent} searchWorkspaceReviewDiffs={transport?.searchWorkspaceReviewDiffs} onClose={() => dispatchWorkspacePanel({ type: "close-panel" })} /> : null}
           </main>
         </div>
       </div>

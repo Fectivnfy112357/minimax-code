@@ -271,6 +271,26 @@ export function WebuiIconGlobe({ className }: WebuiIconProps): ReactElement {
   );
 }
 
+/** workspace add-menu glyph — Desktop's review/search icon. */
+export function WebuiIconWorkspaceReview({ className }: WebuiIconProps): ReactElement {
+  return <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}><circle cx="8.5" cy="8.5" r="6.1" stroke="currentColor" strokeWidth="1.2" /><path d="m13 13 4.1 4.1M8.5 5.8v5.4M5.8 8.5h5.4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" /></svg>;
+}
+
+/** workspace add-menu glyph — Desktop's terminal prompt icon. */
+export function WebuiIconWorkspaceTerminal({ className }: WebuiIconProps): ReactElement {
+  return <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}><rect x="2.4" y="3.2" width="15.2" height="13.6" rx="2" stroke="currentColor" strokeWidth="1.2" /><path d="m5.5 7.2 2.6 2.3-2.6 2.3M9.8 12h4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+}
+
+/** workspace add-menu glyph — Desktop's connected canvas nodes. */
+export function WebuiIconWorkspaceCanvas({ className }: WebuiIconProps): ReactElement {
+  return <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}><rect x="2.3" y="2.5" width="4.2" height="4.2" rx=".7" stroke="currentColor" strokeWidth="1.1" /><rect x="13.5" y="2.5" width="4.2" height="4.2" rx=".7" stroke="currentColor" strokeWidth="1.1" /><rect x="7.9" y="13.3" width="4.2" height="4.2" rx=".7" stroke="currentColor" strokeWidth="1.1" /><path d="M6.5 4.6h7M4.4 6.8v3.2l5.6 3.3m5.6-6.5v3.2L10 13.3" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+}
+
+/** workspace panel maximize/restore glyph — Desktop's diagonal expand arrows. */
+export function WebuiIconWorkspaceExpand({ className }: WebuiIconProps): ReactElement {
+  return <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}><path d="M11.5 3.5h5v5M16.3 3.7l-5.1 5.1M8.5 16.5h-5v-5M3.7 16.3l5.1-5.1" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+}
+
 // Slash palette row leading glyphs.
 //
 // The WebUI keeps the desktop's slash-palette visual language (icon + bold title + dim

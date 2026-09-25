@@ -33,32 +33,42 @@ import {
   WebuiTurnProcess,
 } from "./TranscriptPrimitives.js";
 
+interface WebuiTranscriptActivityEntry {
+  readonly messageId: string;
+  readonly part: WebuiTranscriptActivityPart;
+}
+
+interface RenderedWebuiTranscriptActivityRow {
+  readonly messageId: string;
+  readonly element: ReactElement;
+}
+
 function renderActivityParts(
-  messageId: string,
-  parts: readonly WebuiTranscriptActivityPart[],
+  entries: readonly WebuiTranscriptActivityEntry[],
   streaming: boolean,
   authoritativeDiffAvailable: boolean,
   processExpanded: boolean,
   processingStartedAtMs?: number,
   onOpenFile?: (reference: WebuiMessageFileReference) => void,
   collapsedVisiblePart?: WebuiTranscriptActivityPart,
-): ReactElement[] {
-  const rows: ReactElement[] = [];
-  for (let index = 0; index < parts.length; index += 1) {
-    const part = parts[index];
-    if (!part) continue;
+): RenderedWebuiTranscriptActivityRow[] {
+  const rows: RenderedWebuiTranscriptActivityRow[] = [];
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index];
+    if (!entry) continue;
+    const { messageId, part } = entry;
     if (part.type === "text" && !processExpanded && part === collapsedVisiblePart) continue;
     if (part.type === "tool" || part.type === "thinking") {
       const activityItems: WebuiActivityGroupItem[] = [];
       let cursor = index;
-      while (cursor < parts.length) {
-        const next = parts[cursor];
+      while (cursor < entries.length) {
+        const next = entries[cursor]?.part;
         if (next?.type === "thinking") {
           const thoughtTexts = [next.text];
           let durationMs = next.durationMs;
           cursor += 1;
-          while (parts[cursor]?.type === "thinking") {
-            const thought = parts[cursor];
+          while (entries[cursor]?.part.type === "thinking") {
+            const thought = entries[cursor]?.part;
             if (thought?.type === "thinking") {
               thoughtTexts.push(thought.text);
               durationMs ??= thought.durationMs;
@@ -78,28 +88,28 @@ function renderActivityParts(
       const tools = activityItems.flatMap((item) => item.type === "tool" ? [item.tool] : []);
       const thoughts = activityItems.filter((item): item is Extract<WebuiActivityGroupItem, { type: "thinking" }> => item.type === "thinking");
       if (tools.length > 0 && thoughts.length > 0) {
-        rows.push(<WebuiActivityGroup key={`${messageId}-activity-${index}`} tools={tools} activityItems={activityItems} authoritativeDiffAvailable={authoritativeDiffAvailable} />);
+        rows.push({ messageId, element: <WebuiActivityGroup key={`${messageId}-activity-${index}`} tools={tools} activityItems={activityItems} authoritativeDiffAvailable={authoritativeDiffAvailable} /> });
       } else if (tools.length > 0) {
-        rows.push(<WebuiActivityGroup key={`${messageId}-tools-${index}`} tools={tools} authoritativeDiffAvailable={authoritativeDiffAvailable} />);
+        rows.push({ messageId, element: <WebuiActivityGroup key={`${messageId}-tools-${index}`} tools={tools} authoritativeDiffAvailable={authoritativeDiffAvailable} /> });
       } else {
-        thoughts.forEach((thought, thoughtIndex) => rows.push(<WebuiThinkingBlock key={`${messageId}-thinking-${index}-${thoughtIndex}`} text={thought.text} durationMs={thought.durationMs} streaming={streaming} processingStartedAtMs={processingStartedAtMs} summaryLabel="思考 1 次" showDetailHeading />));
+        thoughts.forEach((thought, thoughtIndex) => rows.push({ messageId, element: <WebuiThinkingBlock key={`${messageId}-thinking-${index}-${thoughtIndex}`} text={thought.text} durationMs={thought.durationMs} streaming={streaming} processingStartedAtMs={processingStartedAtMs} summaryLabel="思考 1 次" showDetailHeading /> }));
       }
       index = cursor - 1;
     } else if (part.type === "text") {
-      rows.push(<div className="webui-assistant-answer" key={`${messageId}-ordered-text-${index}`} data-webui-message-kind="assistant"><WebuiMarkdown source={part.text} onOpenFile={onOpenFile} /></div>);
+      rows.push({ messageId, element: <div className="webui-assistant-answer" key={`${messageId}-ordered-text-${index}`} data-webui-message-kind="assistant"><WebuiMarkdown source={part.text} onOpenFile={onOpenFile} /></div> });
     } else if (part.type === "cognitive" || part.type === "compaction") {
-      rows.push(<WebuiThinkingBlock key={`${messageId}-${part.type}-${index}`} text={part.text} streaming={streaming} processingStartedAtMs={processingStartedAtMs} summaryLabel={part.type === "compaction" ? "上下文整理" : "思考过程"} showDetailHeading={part.type !== "compaction"} />);
+      rows.push({ messageId, element: <WebuiThinkingBlock key={`${messageId}-${part.type}-${index}`} text={part.text} streaming={streaming} processingStartedAtMs={processingStartedAtMs} summaryLabel={part.type === "compaction" ? "上下文整理" : "思考过程"} showDetailHeading={part.type !== "compaction"} /> });
     } else if (part.type === "delegation") {
-      rows.push(<div className="webui-agent-delegation" key={`${messageId}-delegation-${index}`} data-webui-agent-activity="delegation" data-active={streaming && index === parts.length - 1 ? "true" : undefined}><span className="webui-agent-delegation-summary"><span className="webui-agent-delegation-avatar" aria-hidden="true">{String(part.message.fromAgent ?? "Agent").slice(0, 1).toUpperCase()}</span><span className="webui-agent-activity-title">{`${String(part.message.fromAgent ?? "Agent")} 发给 ${String(part.message.toAgent ?? "Agent")}`}</span></span>{typeof part.message.content === "string" ? <WebuiMarkdown source={part.message.content} onOpenFile={onOpenFile} /> : null}</div>);
+      rows.push({ messageId, element: <div className="webui-agent-delegation" key={`${messageId}-delegation-${index}`} data-webui-agent-activity="delegation" data-active={streaming && index === entries.length - 1 ? "true" : undefined}><span className="webui-agent-delegation-summary"><span className="webui-agent-delegation-avatar" aria-hidden="true">{String(part.message.fromAgent ?? "Agent").slice(0, 1).toUpperCase()}</span><span className="webui-agent-activity-title">{`${String(part.message.fromAgent ?? "Agent")} 发给 ${String(part.message.toAgent ?? "Agent")}`}</span></span>{typeof part.message.content === "string" ? <WebuiMarkdown source={part.message.content} onOpenFile={onOpenFile} /> : null}</div> });
     } else {
       const agents: Record<string, unknown>[] = [];
-      while (parts[index]?.type === "agent_joined") {
-        const joined = parts[index];
+      while (entries[index]?.part.type === "agent_joined") {
+        const joined = entries[index]?.part;
         if (joined?.type === "agent_joined") agents.push(joined.agent);
         index += 1;
       }
       index -= 1;
-      rows.push(<WebuiAgentJoinedGroup key={`${messageId}-joined-${index}`} agents={agents} />);
+      rows.push({ messageId, element: <WebuiAgentJoinedGroup key={`${messageId}-joined-${index}`} agents={agents} /> });
     }
   }
   return rows;
@@ -219,26 +229,26 @@ export function WebuiAssistantBody({
     ),
   );
   const primaryAnswerPart = processTextParts[processTextParts.length - 1];
-  // Desktop builds one activity disclosure for each run of activity between
-  // assistant replies. Historical messages can split that run across several
-  // messageIds, so flatten the per-message projection before grouping; text
-  // parts remain in sequence and still end the current activity group.
-  const orderedProcessParts: WebuiTranscriptActivityPart[] = segments.flatMap((segment) => {
-    if (segment.activityParts?.length) return [...segment.activityParts];
+  // Desktop builds one activity disclosure for each run between assistant
+  // replies. Keep each part's source message so rows can be returned to their
+  // original segment, but group over the flattened sequence so a tool round
+  // split across messageIds does not create a second disclosure.
+  const orderedProcessEntries: WebuiTranscriptActivityEntry[] = segments.flatMap((segment) => {
+    if (segment.activityParts?.length) return segment.activityParts.map((part) => ({ messageId: segment.messageId, part }));
     return [
       ...(segment.thinking?.trim()
-        ? [{ type: "thinking", text: segment.thinking, ...(segment.thinkingDurationMs !== undefined ? { durationMs: segment.thinkingDurationMs } : {}) } satisfies WebuiTranscriptActivityPart]
+        ? [{ messageId: segment.messageId, part: { type: "thinking", text: segment.thinking, ...(segment.thinkingDurationMs !== undefined ? { durationMs: segment.thinkingDurationMs } : {}) } satisfies WebuiTranscriptActivityPart }]
         : []),
-      ...(segment.tools ?? []).map((tool) => ({ type: "tool", tool }) satisfies WebuiTranscriptActivityPart),
+      ...(segment.tools ?? []).map((tool) => ({ messageId: segment.messageId, part: { type: "tool", tool } satisfies WebuiTranscriptActivityPart })),
     ];
   });
   const processSummaryParts = [
     ...(() => {
-      const count = orderedProcessParts.filter((part) => part.type === "thinking").length;
+      const count = orderedProcessEntries.filter((entry) => entry.part.type === "thinking").length;
       return count > 0 ? [`思考 ${count} 次`] : [];
     })(),
     ...(() => {
-      const toolsInProcess = orderedProcessParts.flatMap((part) => part.type === "tool" ? [part.tool] : []);
+      const toolsInProcess = orderedProcessEntries.flatMap((entry) => entry.part.type === "tool" ? [entry.part.tool] : []);
       return toolsInProcess.length > 0 ? [webuiActivitySummary(toolsInProcess)] : [];
     })(),
   ];
@@ -251,19 +261,24 @@ export function WebuiAssistantBody({
     typeof processingStartedAtMs === "number" ||
     typeof totalRequestDurationMs === "number" ||
     typeof wallClockDurationMs === "number";
-  const renderProcessContent = (processExpanded: boolean) => (
-    <div className="activity-group-content webui-turn-process-segments">
-      {segments.map((segment, index) => {
-        const segmentParts = segment.activityParts?.length
-          ? segment.activityParts
-          : [
-              ...(segment.thinking?.trim() ? [{ type: "thinking", text: segment.thinking, ...(segment.thinkingDurationMs !== undefined ? { durationMs: segment.thinkingDurationMs } : {}) } satisfies WebuiTranscriptActivityPart] : []),
-              ...(segment.tools ?? []).map((tool) => ({ type: "tool", tool }) satisfies WebuiTranscriptActivityPart),
-            ];
-        return <div key={`${segment.messageId}-${index}`} className="webui-turn-process-segment">{renderActivityParts(segment.messageId, segmentParts, streaming, Boolean(getTurnDiff), processExpanded, processingStartedAtMs, onOpenFile, primaryAnswerPart)}</div>;
-      })}
-    </div>
-  );
+  const renderProcessContent = (processExpanded: boolean) => {
+    const renderedRows = renderActivityParts(
+      orderedProcessEntries,
+      streaming,
+      Boolean(getTurnDiff),
+      processExpanded,
+      processingStartedAtMs,
+      onOpenFile,
+      primaryAnswerPart,
+    );
+    return (
+      <div className="activity-group-content webui-turn-process-segments">
+        {segments.map((segment, index) => <div key={`${segment.messageId}-${index}`} className="webui-turn-process-segment">
+          {renderedRows.filter((row) => row.messageId === segment.messageId).map((row) => row.element)}
+        </div>)}
+      </div>
+    );
+  };
   return (
     <div
       className="webui-assistant-body text-sm space-y-4"

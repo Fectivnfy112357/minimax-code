@@ -1,8 +1,7 @@
 import type { WebuiTurnDiffView } from "../../server/port.js";
 
 export type WorkspacePanelTab =
-  | { readonly id: string; readonly kind: "workspace"; readonly sessionId?: string; readonly workspaceDir?: string }
-  | { readonly id: string; readonly kind: "files"; readonly sessionId?: string; readonly workspaceDir?: string }
+  { readonly id: string; readonly kind: "files"; readonly sessionId?: string; readonly workspaceDir?: string }
   | { readonly id: string; readonly kind: "file-preview"; readonly sessionId: string; readonly workspaceDir: string; readonly path: string; readonly lineStart?: number; readonly lineEnd?: number }
   | { readonly id: string; readonly kind: "review"; readonly sessionId: string; readonly workspaceDir: string; readonly source: "workspace"; readonly selectedPath?: string; readonly reviewSnapshotId?: string }
   | { readonly id: string; readonly kind: "review"; readonly sessionId: string; readonly workspaceDir: string; readonly source: "turn"; readonly messageId: string; readonly assistantMessageId?: string; readonly turnId?: string; readonly changeSetId?: string; readonly files: WebuiTurnDiffView["fileChanges"]; readonly selectedPath?: string }
@@ -21,7 +20,8 @@ export type WorkspacePanelCommand =
   | { readonly type: "open-file"; readonly sessionId: string; readonly workspaceDir: string; readonly path: string; readonly lineStart?: number; readonly lineEnd?: number }
   | { readonly type: "open-workspace-review"; readonly sessionId: string; readonly workspaceDir: string; readonly selectedPath?: string }
   | { readonly type: "open-turn-review"; readonly sessionId: string; readonly workspaceDir: string; readonly messageId: string; readonly assistantMessageId?: string; readonly turnId?: string; readonly changeSetId?: string; readonly files: WebuiTurnDiffView["fileChanges"]; readonly selectedPath?: string }
-  | { readonly type: "open-tab"; readonly kind: "workspace" | "files" | "canvas" | "terminal"; readonly sessionId?: string; readonly workspaceDir?: string }
+  | { readonly type: "open-primary-view"; readonly kind: "files"; readonly sessionId?: string; readonly workspaceDir?: string }
+  | { readonly type: "open-tab"; readonly kind: "files" | "canvas" | "terminal"; readonly sessionId?: string; readonly workspaceDir?: string }
   | { readonly type: "select-tab"; readonly tabId: string }
   | { readonly type: "select-review-file"; readonly tabId: string; readonly path: string }
   | { readonly type: "set-review-snapshot"; readonly tabId: string; readonly reviewSnapshotId: string }
@@ -66,6 +66,12 @@ export function reduceWorkspacePanelState(state: WorkspacePanelState, command: W
     case "open-turn-review": {
       const id = tabId("review", command.sessionId, command.workspaceDir);
       return activate(state, { id, kind: "review", source: "turn", sessionId: command.sessionId, workspaceDir: command.workspaceDir, messageId: command.messageId, assistantMessageId: command.assistantMessageId, turnId: command.turnId, changeSetId: command.changeSetId, files: command.files ?? [], ...(command.selectedPath ? { selectedPath: command.selectedPath } : {}) });
+    }
+    case "open-primary-view": {
+      const id = tabId(command.kind, command.sessionId ?? "", command.workspaceDir ?? "");
+      const tab: WorkspacePanelTab = { id, kind: command.kind, ...(command.sessionId ? { sessionId: command.sessionId } : {}), ...(command.workspaceDir ? { workspaceDir: command.workspaceDir } : {}) };
+      const tabs = state.tabs.filter((candidate) => candidate.kind !== "files");
+      return { ...state, open: true, addMenuOpen: false, tabs: [...tabs, tab], activeTabId: id };
     }
     case "open-tab": {
       const id = tabId(command.kind, command.sessionId ?? "", command.workspaceDir ?? "");
