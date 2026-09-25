@@ -18,7 +18,18 @@ export const SETTINGS_ICON_PATHS = ICONS;
 export const GENERIC_SECTION_TEST_IDS = ["app-mode-section", "application-section", "link-open-destination-section", "file-section", "session-management-section", "agent-control-permission-section", "preference-settings", "about-section"] as const;
 export const GENERIC_RADIO_CONTRACT = { position: "absolute right-4 top-[22px]", accentToken: "icon_default_accent" } as const;
 export const GENERIC_FILE_ROW_ORDER = ["file-open-in-new-tab-switch", "file-line-wrap-switch"] as const;
-function Icon({ name, size = 18 }: { readonly name: string; readonly size?: number }): ReactElement { const voice = name === "voice"; const stroked = voice || name === "shortcuts" || name === "user" || name === "work"; return <svg aria-hidden="true" data-testid={voice ? "asr-mic-icon" : undefined} className="webui-settings-icon" width={size} height={size} viewBox={voice ? "0 0 18 18" : "0 0 20 20"} fill="none"><path d={ICONS[name] ?? ICONS.desktop} fill={stroked ? "none" : "currentColor"} stroke={stroked ? "currentColor" : "none"} strokeWidth={voice ? "1.08" : "1.2"} strokeLinecap="round" strokeLinejoin="round" /></svg>; }
+function Icon({ name, size = 18 }: { readonly name: string; readonly size?: number }): ReactElement {
+  const voice = name === "voice";
+  let shape: ReactNode;
+  if (name === "link") {
+    shape = <><circle cx="10" cy="10" r="8" /><path d="M2 10h16M10 2c-2 2.2-3 4.8-3 8s1 5.8 3 8m0-16c2 2.2 3 4.8 3 8s-1 5.8-3 8" /></>;
+  } else if (name === "worktree") {
+    shape = <><circle cx="10" cy="4" r="1.75" /><circle cx="4" cy="15" r="1.75" /><circle cx="10" cy="15" r="1.75" /><circle cx="16" cy="15" r="1.75" /><path d="M10 5.75V9M4 9h12M4 9v4.25M10 9v4.25M16 9v4.25" /></>;
+  } else {
+    shape = <path d={ICONS[name] ?? ICONS.desktop} fill="none" />;
+  }
+  return <svg aria-hidden="true" data-testid={voice ? "asr-mic-icon" : undefined} className="webui-settings-icon" width={size} height={size} viewBox={voice ? "0 0 18 18" : "0 0 20 20"} fill="none" stroke="currentColor" strokeWidth={voice ? "1.08" : "1.2"} strokeLinecap="round" strokeLinejoin="round">{shape}</svg>;
+}
 function stored(key: string, fallback: string): string { return typeof localStorage === "undefined" ? fallback : localStorage.getItem(key) ?? fallback; }
 function Switch({ checked, onChange, label, disabled = false, testId }: { readonly checked: boolean; readonly onChange?: (value: boolean) => void; readonly label: string; readonly disabled?: boolean; readonly testId?: string }): ReactElement { return <button type="button" data-testid={testId} role="switch" aria-checked={checked} aria-label={label} aria-disabled={disabled || undefined} disabled={disabled} className={`webui-ant-switch${checked ? " is-checked" : ""}`} onClick={() => onChange?.(!checked)}><span /></button>; }
 function Select({ value, onChange, disabled = false, wide = false, testId }: { readonly value: string; readonly onChange?: (value: string) => void; readonly disabled?: boolean; readonly wide?: boolean; readonly testId?: string }): ReactElement { return <label className={`webui-ant-select${wide ? " is-wide" : ""}`} data-testid={testId}><select value={value} disabled={disabled} onChange={(event) => onChange?.(event.target.value)}><option>{value}</option></select><svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M12 6L8 10L4 6" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" /></svg></label>; }
@@ -79,40 +90,53 @@ export function SettingsModal({ open, onClose, dataDir, version, sessionId, tran
   // The transport is optional. Each capability is optional too, so we bind
   // only when both are present; otherwise we surface `undefined` and let the
   // call sites do their existing null checks.
-  const listModels = transport?.listModels ? transport.listModels.bind(transport) : undefined;
-  const selectModel = transport?.selectModel ? transport.selectModel.bind(transport) : undefined;
-  const getUsageQuota = transport?.getUsageQuota ? transport.getUsageQuota.bind(transport) : undefined;
-  const getAccountStatus = transport?.getAccountStatus ? transport.getAccountStatus.bind(transport) : undefined;
-  const listUserModelProviders = transport?.listUserModelProviders ? transport.listUserModelProviders.bind(transport) : undefined;
-  const listArchivedSessions = transport?.listArchivedSessions ? transport.listArchivedSessions.bind(transport) : undefined;
-  const getMiniMaxApiKeyStatus = transport?.getMiniMaxApiKeyStatus ? transport.getMiniMaxApiKeyStatus.bind(transport) : undefined;
-  const signOut = transport?.signOut ? transport.signOut.bind(transport) : undefined;
-  const deleteSession = transport?.deleteSession ? transport.deleteSession.bind(transport) : undefined;
-  const createUserModelProvider = transport?.createUserModelProvider?.bind(transport);
-  const updateUserModelProvider = transport?.updateUserModelProvider?.bind(transport);
-  const deleteUserModelProvider = transport?.deleteUserModelProvider?.bind(transport);
-  const testUserModelProvider = transport?.testUserModelProvider?.bind(transport);
-  const testUserModel = transport?.testUserModel?.bind(transport);
-  const discoverUserModelsCandidate = transport?.discoverUserModelsCandidate?.bind(transport);
-  const saveUserModelProviderCandidate = transport?.saveUserModelProviderCandidate?.bind(transport);
-  const listProviderPresets = transport?.listProviderPresets?.bind(transport);
-  const upsertMiniMaxApiKey = transport?.upsertMiniMaxApiKey?.bind(transport);
-  const getCodexOAuthStatus = transport?.getCodexOAuthStatus?.bind(transport);
-  const getMiniMaxModelSource = transport?.getMiniMaxModelSource?.bind(transport);
-  const setMiniMaxModelSource = transport?.setMiniMaxModelSource?.bind(transport);
-  const testUserModelCandidate = transport?.testUserModelCandidate?.bind(transport);
-  const revealModelProviderApiKey = transport?.revealModelProviderApiKey?.bind(transport);
-  const startCodexOAuthLogin = transport?.startCodexOAuthLogin?.bind(transport);
-  const cancelCodexOAuthLogin = transport?.cancelCodexOAuthLogin?.bind(transport);
-  const refreshModels = transport?.refreshModels?.bind(transport);
-  const usageCapabilities: WebuiSettingsModalCapabilities = {
+  const boundCapabilities = useMemo(() => ({
+    listModels: transport?.listModels?.bind(transport),
+    selectModel: transport?.selectModel?.bind(transport),
+    getUsageQuota: transport?.getUsageQuota?.bind(transport),
+    getAccountStatus: transport?.getAccountStatus?.bind(transport),
+    listUserModelProviders: transport?.listUserModelProviders?.bind(transport),
+    listArchivedSessions: transport?.listArchivedSessions?.bind(transport),
+    getMiniMaxApiKeyStatus: transport?.getMiniMaxApiKeyStatus?.bind(transport),
+    signOut: transport?.signOut?.bind(transport),
+    deleteSession: transport?.deleteSession?.bind(transport),
+    createUserModelProvider: transport?.createUserModelProvider?.bind(transport),
+    updateUserModelProvider: transport?.updateUserModelProvider?.bind(transport),
+    deleteUserModelProvider: transport?.deleteUserModelProvider?.bind(transport),
+    testUserModelProvider: transport?.testUserModelProvider?.bind(transport),
+    testUserModel: transport?.testUserModel?.bind(transport),
+    discoverUserModelsCandidate: transport?.discoverUserModelsCandidate?.bind(transport),
+    saveUserModelProviderCandidate: transport?.saveUserModelProviderCandidate?.bind(transport),
+    listProviderPresets: transport?.listProviderPresets?.bind(transport),
+    upsertMiniMaxApiKey: transport?.upsertMiniMaxApiKey?.bind(transport),
+    getCodexOAuthStatus: transport?.getCodexOAuthStatus?.bind(transport),
+    getMiniMaxModelSource: transport?.getMiniMaxModelSource?.bind(transport),
+    setMiniMaxModelSource: transport?.setMiniMaxModelSource?.bind(transport),
+    testUserModelCandidate: transport?.testUserModelCandidate?.bind(transport),
+    revealModelProviderApiKey: transport?.revealModelProviderApiKey?.bind(transport),
+    startCodexOAuthLogin: transport?.startCodexOAuthLogin?.bind(transport),
+    cancelCodexOAuthLogin: transport?.cancelCodexOAuthLogin?.bind(transport),
+    refreshModels: transport?.refreshModels?.bind(transport),
+  }), [transport]);
+  const {
+    listModels, selectModel, getUsageQuota, getAccountStatus,
+    listUserModelProviders, listArchivedSessions, getMiniMaxApiKeyStatus,
+    signOut, deleteSession, createUserModelProvider, updateUserModelProvider,
+    deleteUserModelProvider, testUserModelProvider, testUserModel,
+    discoverUserModelsCandidate, saveUserModelProviderCandidate,
+    listProviderPresets, upsertMiniMaxApiKey, getCodexOAuthStatus,
+    getMiniMaxModelSource, setMiniMaxModelSource, testUserModelCandidate,
+    revealModelProviderApiKey, startCodexOAuthLogin, cancelCodexOAuthLogin,
+    refreshModels,
+  } = boundCapabilities;
+  const usageCapabilities: WebuiSettingsModalCapabilities = useMemo(() => ({
     getUsageQuota, getMiniMaxApiKeyStatus, listUserModelProviders, createUserModelProvider,
     updateUserModelProvider, deleteUserModelProvider, testUserModelProvider, testUserModel,
     discoverUserModelsCandidate, saveUserModelProviderCandidate, listProviderPresets,
     upsertMiniMaxApiKey, getCodexOAuthStatus, getMiniMaxModelSource, setMiniMaxModelSource,
     testUserModelCandidate, revealModelProviderApiKey, startCodexOAuthLogin,
     cancelCodexOAuthLogin, refreshModels,
-  };
+  }), [boundCapabilities]);
   const [active, setActive] = useState<SettingsTabKey>("desktop"); const [query, setQuery] = useState(""); const [theme, setTheme] = useState(() => stored("webui-theme", "light")); const [systemDark, setSystemDark] = useState(() => typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: dark)").matches); const [language, setLanguage] = useState(() => stored("mavis-locale", "en")); const [wrap, setWrap] = useState(() => stored("file_line_wrap", "true") === "true"); const [newTab, setNewTab] = useState(() => stored("file_open_in_new_tab", "false") === "true"); const [followUp, setFollowUp] = useState(() => stored("webui-follow-up-behavior", "queue")); const [contextWindow, setContextWindow] = useState(() => stored("webui-context-window-usage", "false") === "true"); const [models, setModels] = useState<readonly WebuiModelEntry[]>([]); const [account, setAccount] = useState<Record<string, unknown>>(); const [archived, setArchived] = useState<readonly WebuiSessionListItem[]>([]); const [signOutError, setSignOutError] = useState<string>(); const actualTheme = resolveThemePreference(theme, systemDark);
   useEffect(() => { if (typeof window === "undefined" || !window.matchMedia) return; const media = window.matchMedia("(prefers-color-scheme: dark)"); const listener = () => setSystemDark(media.matches); listener(); media.addEventListener?.("change", listener); return () => media.removeEventListener?.("change", listener); }, []);
   useEffect(() => { if (typeof document === "undefined") return; document.documentElement.classList.toggle("dark", actualTheme === "dark"); document.documentElement.classList.toggle("light", actualTheme !== "dark"); document.documentElement.lang = language.startsWith("zh") ? "zh-CN" : "en"; localStorage?.setItem("webui-theme", theme); localStorage?.setItem("mavis-locale", language); localStorage?.setItem("file_line_wrap", String(wrap)); localStorage?.setItem("file_open_in_new_tab", String(newTab)); localStorage?.setItem("webui-follow-up-behavior", followUp); localStorage?.setItem("webui-context-window-usage", String(contextWindow)); }, [actualTheme, contextWindow, followUp, language, newTab, theme, wrap]);

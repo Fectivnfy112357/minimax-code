@@ -49,6 +49,16 @@ import type {
   WebuiGoalEnabledResult,
 } from "../server/port.js";
 
+declare const document: {
+  readonly visibilityState: string;
+  addEventListener(type: "visibilitychange", listener: () => void): void;
+  removeEventListener(type: "visibilitychange", listener: () => void): void;
+};
+declare const window: {
+  addEventListener(type: "online", listener: () => void): void;
+  removeEventListener(type: "online", listener: () => void): void;
+};
+
 type WireFrame = {
   readonly kind: string;
   readonly requestId: string;
@@ -69,7 +79,11 @@ export interface WebuiTransportOptions {
   readonly websocketUrl: string;
   readonly token: string;
   readonly webSocket?: new (url: string) => WebuiSocket;
+  /** Deadline for unary operations that otherwise could remain pending on a half-open socket. */
+  readonly requestTimeoutMs?: number;
 }
+
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 
 export type WebuiClientRuntimeEvent = WebuiRuntimeEvent;
 export type WebuiClientEventWatcher = (
@@ -85,6 +99,7 @@ export function createWebuiTransport({
   websocketUrl: baseWebsocketUrl,
   token,
   webSocket = defaultWebSocket(),
+  requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
 }: WebuiTransportOptions): Required<WebuiTransport> {
   /* The `Required<WebuiTransport>` return type together with the
    * `satisfies Required<WebuiTransport>` clause on the literal below forces
@@ -102,12 +117,23 @@ export function createWebuiTransport({
       const ws = new webSocket(websocketUrl());
       const requestId = crypto.randomUUID();
       let settled = false;
+      let timeout: ReturnType<typeof setTimeout>;
       const fail = (error: Error) => {
         if (settled) return;
         settled = true;
+        clearTimeout(timeout);
         ws.close();
         reject(error);
       };
+      timeout = setTimeout(
+        () =>
+          fail(
+            new Error(
+              `WebUI request timed out after ${requestTimeoutMs}ms (${operation})`,
+            ),
+          ),
+        requestTimeoutMs,
+      );
       ws.addEventListener("open", () =>
         ws.send(
           JSON.stringify({
@@ -134,6 +160,7 @@ export function createWebuiTransport({
         }
         if (frame.kind !== "response") return;
         settled = true;
+        clearTimeout(timeout);
         ws.close();
         resolve(frame.body as T);
       });
@@ -215,6 +242,7 @@ export function createWebuiTransport({
     let stopped = false;
     let socket: WebuiSocket | undefined;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+    let hasConnected = false;
     const connect = () => {
       if (stopped) return;
       const ws = new webSocket(websocketUrl());
@@ -231,7 +259,8 @@ export function createWebuiTransport({
             body: {},
           }),
         );
-        onReconnect?.();
+        if (hasConnected) onReconnect?.();
+        hasConnected = true;
       });
       ws.addEventListener("message", (event) => {
         if (stopped) return;
@@ -247,15 +276,37 @@ export function createWebuiTransport({
           onEvent(body as WebuiClientRuntimeEvent);
       });
       ws.addEventListener("close", () => {
-        if (stopped) return;
+        if (stopped || socket !== ws) return;
+        socket = undefined;
         reconnectTimer = setTimeout(connect, 250);
       });
       ws.addEventListener("error", () => undefined);
     };
+    const reconnectWhenAvailable = () => {
+      if (
+        stopped ||
+        (typeof document !== "undefined" && document.visibilityState === "hidden")
+      )
+        return;
+      if (reconnectTimer !== undefined) clearTimeout(reconnectTimer);
+      reconnectTimer = undefined;
+      const previous = socket;
+      socket = undefined;
+      previous?.close();
+      connect();
+    };
+    if (typeof document !== "undefined")
+      document.addEventListener("visibilitychange", reconnectWhenAvailable);
+    if (typeof window !== "undefined")
+      window.addEventListener("online", reconnectWhenAvailable);
     connect();
     return () => {
       stopped = true;
       if (reconnectTimer !== undefined) clearTimeout(reconnectTimer);
+      if (typeof document !== "undefined")
+        document.removeEventListener("visibilitychange", reconnectWhenAvailable);
+      if (typeof window !== "undefined")
+        window.removeEventListener("online", reconnectWhenAvailable);
       socket?.close();
     };
   }

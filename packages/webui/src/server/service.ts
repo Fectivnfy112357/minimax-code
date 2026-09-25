@@ -42,6 +42,7 @@ import type { WebuiHarnessPort } from "./port.js";
 import { WebuiTerminalManager } from "./terminal.js";
 
 export const WEBUI_MAX_MESSAGE_BYTES = 256 * 1024;
+export const WEBUI_WEBSOCKET_HEARTBEAT_INTERVAL_MS = 15_000;
 
 /**
  * Truthy env-var spellings that turn the development mode on. Anything that
@@ -75,6 +76,8 @@ export interface WebuiServiceOptions {
   readonly tcpPort?: number;
   /** Maximum WebSocket message size in bytes. */
   readonly maxMessageBytes?: number;
+  /** Override the liveness sweep interval; tests use a short interval. */
+  readonly webSocketHeartbeatIntervalMs?: number;
   /** Optional credential override; tests supply one to assert its shape. */
   readonly credential?: WebuiCredential;
   /** Optional server factory; tests inject an HTTP server without listening. */
@@ -118,6 +121,7 @@ export class WebuiService {
   private readonly host: string;
   private readonly tcpPort: number;
   private readonly maxMessageBytes: number;
+  private readonly webSocketHeartbeatIntervalMs: number;
   private readonly credential: WebuiCredential;
   private readonly protocolVersion: number;
   private readonly dev: boolean;
@@ -128,6 +132,8 @@ export class WebuiService {
   private readonly terminalManager = new WebuiTerminalManager();
   private readonly connections = new Set<WebSocket>();
   private readonly connectionSignals = new Map<WebSocket, AbortController>();
+  private readonly connectionAlive = new WeakMap<WebSocket, boolean>();
+  private heartbeatTimer: ReturnType<typeof setInterval> | undefined;
   private accepting = true;
   private startedPromise: Promise<WebuiServiceInfo> | undefined;
   private bound: { info: WebuiServiceInfo } | undefined;
@@ -141,6 +147,8 @@ export class WebuiService {
       );
     this.tcpPort = options.tcpPort ?? 0;
     this.maxMessageBytes = options.maxMessageBytes ?? WEBUI_MAX_MESSAGE_BYTES;
+    this.webSocketHeartbeatIntervalMs =
+      options.webSocketHeartbeatIntervalMs ?? WEBUI_WEBSOCKET_HEARTBEAT_INTERVAL_MS;
     this.credential = options.credential ?? createWebuiCredential();
     this.protocolVersion = options.protocolVersion ?? WEBUI_PROTOCOL_VERSION;
     // The option is the source of truth for tests; the env var is the
@@ -380,6 +388,10 @@ export class WebuiService {
     this.terminalManager.disposeBySession();
     if (!this.accepting && !this.bound) return;
     this.accepting = false;
+    if (this.heartbeatTimer !== undefined) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = undefined;
+    }
     // Force-terminate every connection before the server closes; otherwise
     // `wsServer.close()` waits for the client to ack the close handshake
     // and can hang for the duration of the platform TCP timeout.
@@ -455,8 +467,27 @@ export class WebuiService {
       return;
     }
     this.connections.add(ws);
+    this.connectionAlive.set(ws, true);
+    if (this.heartbeatTimer === undefined) {
+      this.heartbeatTimer = setInterval(() => {
+        for (const connection of this.connections) {
+          if (this.connectionAlive.get(connection) === false) {
+            connection.terminate();
+            continue;
+          }
+          this.connectionAlive.set(connection, false);
+          try {
+            connection.ping();
+          } catch {
+            connection.terminate();
+          }
+        }
+      }, this.webSocketHeartbeatIntervalMs);
+      this.heartbeatTimer.unref?.();
+    }
     const connectionController = new AbortController();
     this.connectionSignals.set(ws, connectionController);
+    ws.on("pong", () => this.connectionAlive.set(ws, true));
     ws.on("close", () => {
       this.connections.delete(ws);
       connectionController.abort();

@@ -460,6 +460,37 @@ class ClosingSocket {
   }
 }
 
+class SilentOpenSocket {
+  private readonly listeners = new Map<
+    "open" | "message" | "error" | "close",
+    Array<(event: { data?: unknown }) => void>
+  >();
+
+  constructor(_url: string) {
+    queueMicrotask(() => this.emit("open", {}));
+  }
+
+  addEventListener(
+    type: "open" | "message" | "error" | "close",
+    listener: (event: { data?: unknown }) => void,
+  ): void {
+    const listeners = this.listeners.get(type) ?? [];
+    listeners.push(listener);
+    this.listeners.set(type, listeners);
+  }
+
+  send(_data: string): void {}
+
+  close(): void {}
+
+  private emit(
+    type: "open" | "message" | "error" | "close",
+    event: { data?: unknown },
+  ): void {
+    for (const listener of this.listeners.get(type) ?? []) listener(event);
+  }
+}
+
 // Build a WebSocket client and capture every observable lifecycle event
 // synchronously, so a test that observes a refusal can never lose the
 // close race against the error-and-close pair the `ws` library emits
@@ -988,6 +1019,93 @@ describe("WebUI service", () => {
         () => undefined,
       ),
     ).rejects.toThrow("WebUI connection closed before [DONE]");
+  });
+
+  it("rejects a unary request when an open WebSocket never returns a response", async () => {
+    const transport = createWebuiTransport({
+      websocketUrl: "ws://127.0.0.1:1",
+      token: "fixture-token",
+      requestTimeoutMs: 10,
+      webSocket: SilentOpenSocket,
+    });
+    await expect(transport.loadSessions()).rejects.toThrow(
+      "WebUI request timed out after 10ms (listSessions)",
+    );
+  });
+
+  it("reopens the event subscription when a hidden tab becomes visible", async () => {
+    const originalDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
+    const listeners = new Map<string, Array<() => void>>();
+    const documentStub = {
+      visibilityState: "hidden",
+      addEventListener: (type: string, listener: () => void) => {
+        listeners.set(type, [...(listeners.get(type) ?? []), listener]);
+      },
+      removeEventListener: (type: string, listener: () => void) => {
+        listeners.set(type, (listeners.get(type) ?? []).filter((entry) => entry !== listener));
+      },
+    } as unknown as {
+      visibilityState: string;
+      addEventListener: (type: string, listener: () => void) => void;
+      removeEventListener: (type: string, listener: () => void) => void;
+    };
+    Object.defineProperty(globalThis, "document", {
+      configurable: true,
+      value: documentStub,
+    });
+    let socketsOpened = 0;
+    let reconnects = 0;
+    try {
+      const transport = createWebuiTransport({
+        websocketUrl: "ws://127.0.0.1:1",
+        token: "fixture-token",
+        webSocket: class extends SilentOpenSocket {
+          constructor(url: string) {
+            super(url);
+            socketsOpened += 1;
+          }
+        },
+      });
+      const unsubscribe = transport.watchEvents(() => undefined, () => {
+        reconnects += 1;
+      });
+      await Promise.resolve();
+      expect(socketsOpened).toBe(1);
+      (documentStub as unknown as { visibilityState: string }).visibilityState = "visible";
+      for (const listener of listeners.get("visibilitychange") ?? []) listener();
+      await Promise.resolve();
+      expect(socketsOpened).toBe(2);
+      expect(reconnects).toBe(1);
+      unsubscribe();
+    } finally {
+      if (originalDocument) Object.defineProperty(globalThis, "document", originalDocument);
+      else delete (globalThis as { document?: unknown }).document;
+    }
+  });
+
+  it("terminates WebSocket connections that stop answering heartbeat pings", async () => {
+    service = new WebuiService({
+      port,
+      tcpPort: 0,
+      dev: true,
+      webSocketHeartbeatIntervalMs: 10,
+    });
+    const info = await service.start();
+    const ws = new WebSocket(
+      `${info.boundUrl}/?token=${encodeURIComponent(info.credential.token)}`,
+    );
+    ws.on("error", () => undefined);
+    const opened = once(ws, "open");
+    const closed = awaitClose(ws);
+    await opened;
+    // The ws client normally answers control pings automatically. Disable
+    // that response to model a browser whose long-lived connection is dead.
+    (
+      ws as unknown as {
+        _receiver?: { removeAllListeners?: (event: string) => void };
+      }
+    )._receiver?.removeAllListeners?.("ping");
+    await expect(closed).resolves.toMatchObject({ code: 1006, reason: "" });
   });
 
   it("turns an refused send result into a client-visible error", async () => {

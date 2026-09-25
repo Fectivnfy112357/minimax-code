@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState, type ReactElement } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { WebuiIconBell, WebuiIconBrand, WebuiIconCommandUsage } from "../icons.js";
 import {
   SigninClaimResult,
@@ -694,8 +694,10 @@ export function UserMenu({
   getSigninPanel,
   claimSignin,
 }: UserMenuProps): ReactElement {
-  const getUsageQuota = transport?.getUsageQuota ? transport.getUsageQuota.bind(transport) : undefined;
-  const getAccountStatus = transport?.getAccountStatus ? transport.getAccountStatus.bind(transport) : undefined;
+  const { getUsageQuota, getAccountStatus } = useMemo(() => ({
+    getUsageQuota: transport?.getUsageQuota?.bind(transport),
+    getAccountStatus: transport?.getAccountStatus?.bind(transport),
+  }), [transport]);
   const anchorRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);

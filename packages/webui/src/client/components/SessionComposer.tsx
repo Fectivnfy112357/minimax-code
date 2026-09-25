@@ -402,6 +402,11 @@ export function WebuiComposer({
         setQuestionnaire,
         setGoal,
       });
+    }, () => {
+      // A reconnect may have missed permission, questionnaire or queue events
+      // while the browser was suspended. Re-read the authoritative state once
+      // the replacement event stream is open.
+      void refreshPending().catch(() => undefined);
     });
     return () => {
       cancelled = true;
