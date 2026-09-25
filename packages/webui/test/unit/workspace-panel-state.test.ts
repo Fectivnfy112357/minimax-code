@@ -4,10 +4,67 @@ import { WebuiMarkdown } from "../../src/client/markdown.js";
 import { mergeWorkspaceFileChildren, WebuiFilePreview, webuiFileLanguage } from "../../src/client/components/WorkspacePanels.js";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { initialWorkspacePanelState, reduceWorkspacePanelState } from "../../src/client/projection/workspace-panel-state.js";
+import {
+  getWorkspacePanelSessionState,
+  initialWorkspacePanelSessionState,
+  initialWorkspacePanelState,
+  reduceWorkspacePanelSessionState,
+  reduceWorkspacePanelState,
+  setWorkspaceSessionProgressPanelOpen,
+} from "../../src/client/projection/workspace-panel-state.js";
 import { focusWebuiFileLine, webuiFileLineTargetId } from "../../src/client/projection/file-line-navigation.js";
 
 describe("right workspace panel navigation", () => {
+  it("keeps workspace and progress visibility isolated per session", () => {
+    let states = new Map();
+    states = reduceWorkspacePanelSessionState(states, "session-a", {
+      type: "open-primary-view",
+      kind: "files",
+      sessionId: "session-a",
+      workspaceDir: "/repo-a",
+    });
+
+    expect(getWorkspacePanelSessionState(states, "session-a")).toMatchObject({
+      workspacePanel: { open: true },
+      progressPanelOpen: false,
+    });
+    expect(getWorkspacePanelSessionState(states, "session-b")).toBe(initialWorkspacePanelSessionState);
+
+    states = reduceWorkspacePanelSessionState(states, "session-b", {
+      type: "open-primary-view",
+      kind: "files",
+      sessionId: "session-b",
+      workspaceDir: "/repo-b",
+    });
+    expect(getWorkspacePanelSessionState(states, "session-b")).toMatchObject({
+      workspacePanel: { open: true },
+      progressPanelOpen: false,
+    });
+    expect(getWorkspacePanelSessionState(states, "session-a").workspacePanel.tabs[0]).toMatchObject({
+      kind: "files",
+      workspaceDir: "/repo-a",
+    });
+  });
+
+  it("never opens progress over an open workspace and forgets session state on reload", () => {
+    let states = new Map();
+    states = reduceWorkspacePanelSessionState(states, "session-a", {
+      type: "open-primary-view",
+      kind: "files",
+      sessionId: "session-a",
+      workspaceDir: "/repo-a",
+    });
+    states = setWorkspaceSessionProgressPanelOpen(states, "session-a", true);
+    expect(getWorkspacePanelSessionState(states, "session-a")).toMatchObject({
+      workspacePanel: { open: true },
+      progressPanelOpen: false,
+    });
+
+    const afterReload = new Map();
+    expect(getWorkspacePanelSessionState(afterReload, "session-a")).toBe(initialWorkspacePanelSessionState);
+    expect(initialWorkspacePanelState.open).toBe(false);
+  });
+
   it("inserts lazily loaded directory entries under the matching workspace folder", () => {
     const roots = [
       { path: "src", name: "src", type: "directory" },

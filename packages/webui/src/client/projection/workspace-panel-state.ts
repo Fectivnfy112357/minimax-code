@@ -16,6 +16,54 @@ export interface WorkspacePanelState {
   readonly addMenuOpen: boolean;
 }
 
+export interface WorkspacePanelSessionState {
+  readonly workspacePanel: WorkspacePanelState;
+  readonly progressPanelOpen: boolean;
+}
+
+export type WorkspacePanelSessionStates = ReadonlyMap<string, WorkspacePanelSessionState>;
+
+export function getWorkspacePanelSessionState(
+  states: WorkspacePanelSessionStates,
+  sessionId: string,
+): WorkspacePanelSessionState {
+  return states.get(sessionId) ?? initialWorkspacePanelSessionState;
+}
+
+export function reduceWorkspacePanelSessionState(
+  states: WorkspacePanelSessionStates,
+  sessionId: string,
+  command: WorkspacePanelCommand,
+): WorkspacePanelSessionStates {
+  const current = getWorkspacePanelSessionState(states, sessionId);
+  const workspacePanel = reduceWorkspacePanelState(current.workspacePanel, command);
+  const progressPanelOpen = workspacePanel.open ? false : current.progressPanelOpen;
+  if (states.has(sessionId) && workspacePanel === current.workspacePanel && progressPanelOpen === current.progressPanelOpen) return states;
+  const next: WorkspacePanelSessionState = {
+    workspacePanel,
+    // The two right-side panels occupy the same surface. Keep this invariant
+    // in the state transition so session changes and batched React updates
+    // cannot briefly render both panels together.
+    progressPanelOpen,
+  };
+  const updated = new Map(states);
+  updated.set(sessionId, next);
+  return updated;
+}
+
+export function setWorkspaceSessionProgressPanelOpen(
+  states: WorkspacePanelSessionStates,
+  sessionId: string,
+  open: boolean,
+): WorkspacePanelSessionStates {
+  const current = getWorkspacePanelSessionState(states, sessionId);
+  const progressPanelOpen = open && !current.workspacePanel.open;
+  if (current.progressPanelOpen === progressPanelOpen && states.has(sessionId)) return states;
+  const updated = new Map(states);
+  updated.set(sessionId, { ...current, progressPanelOpen });
+  return updated;
+}
+
 export type WorkspacePanelCommand =
   | { readonly type: "open-file"; readonly sessionId: string; readonly workspaceDir: string; readonly path: string; readonly lineStart?: number; readonly lineEnd?: number }
   | { readonly type: "open-workspace-review"; readonly sessionId: string; readonly workspaceDir: string; readonly selectedPath?: string }
@@ -35,6 +83,11 @@ export const initialWorkspacePanelState: WorkspacePanelState = {
   expanded: false,
   tabs: [],
   addMenuOpen: false,
+};
+
+export const initialWorkspacePanelSessionState: WorkspacePanelSessionState = {
+  workspacePanel: initialWorkspacePanelState,
+  progressPanelOpen: true,
 };
 
 function tabId(kind: string, ...parts: string[]): string {

@@ -282,6 +282,11 @@ describe("W0 · structural declarations W5 must preserve", () => {
     expect(declaration(winning(".webui-workspace-file-tree-panel").body, "border-left")).toBe("1px solid var(--border_default)");
   });
 
+  it("indents expanded workspace file-tree children", () => {
+    const children = winning(".webui-file-tree-children");
+    expect(declaration(children.body, "padding-left")).toBe("var(--spacing_12)");
+  });
+
   it("keeps the markdown and code surfaces scrollable where they were", () => {
     expect(
       declaration(winning(".webui-markdown").body, "overflow-wrap"),

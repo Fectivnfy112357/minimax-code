@@ -15,7 +15,6 @@ import {
   useEffect,
   useMemo,
   useRef,
-  useReducer,
   useState,
   type ReactElement,
 } from "react";
@@ -38,7 +37,14 @@ import {
   WebuiProgressOverviewPanel,
   WebuiWorkspacePanelControls,
 } from "./WorkspacePanels.js";
-import { initialWorkspacePanelState, reduceWorkspacePanelState } from "../projection/workspace-panel-state.js";
+import {
+  getWorkspacePanelSessionState,
+  initialWorkspacePanelSessionState,
+  reduceWorkspacePanelSessionState,
+  setWorkspaceSessionProgressPanelOpen,
+  type WorkspacePanelCommand,
+  type WorkspacePanelSessionStates,
+} from "../projection/workspace-panel-state.js";
 import { ConversationUsageBanner } from "./ConversationUsageBanner.js";
 import { WebuiComposer } from "./SessionComposer.js";
 import { WebuiSessionTranscript } from "./SessionTranscript.js";
@@ -639,8 +645,24 @@ export function WebuiClientFoundationApp(
     ? teamModeChoices[selectedSessionId] ?? teamModeOff
     : teamModeOff;
   const [railCollapsed, setRailCollapsed] = useState(false);
-  const [workspacePanel, dispatchWorkspacePanel] = useReducer(reduceWorkspacePanelState, initialWorkspacePanelState);
-  const [progressPanelOpen, setProgressPanelOpen] = useState(Boolean(selectedSessionId));
+  const [workspacePanelStates, setWorkspacePanelStates] = useState<WorkspacePanelSessionStates>(() => new Map());
+  const sessionPanelState = selectedSessionId
+    ? getWorkspacePanelSessionState(workspacePanelStates, selectedSessionId)
+    : initialWorkspacePanelSessionState;
+  const workspacePanel = sessionPanelState.workspacePanel;
+  const progressPanelOpen = Boolean(selectedSessionId) && sessionPanelState.progressPanelOpen;
+  const dispatchWorkspacePanel = (command: WorkspacePanelCommand) => {
+    if (!selectedSessionId) return;
+    setWorkspacePanelStates((states) => reduceWorkspacePanelSessionState(states, selectedSessionId, command));
+  };
+  const setProgressPanelOpen = (update: boolean | ((open: boolean) => boolean)) => {
+    if (!selectedSessionId) return;
+    setWorkspacePanelStates((states) => {
+      const current = getWorkspacePanelSessionState(states, selectedSessionId);
+      const open = typeof update === "function" ? update(current.progressPanelOpen) : update;
+      return setWorkspaceSessionProgressPanelOpen(states, selectedSessionId, open);
+    });
+  };
   const [workspaceEnvironmentCollapsed, setWorkspaceEnvironmentCollapsed] = useState(false);
   const [workspaceProgressCollapsed, setWorkspaceProgressCollapsed] = useState(false);
   const [workspaceSubagentsCollapsed, setWorkspaceSubagentsCollapsed] = useState(false);
@@ -650,11 +672,7 @@ export function WebuiClientFoundationApp(
     setWorkspaceEnvironmentCollapsed(false);
     setWorkspaceProgressCollapsed(false);
     setWorkspaceSubagentsCollapsed(false);
-    setProgressPanelOpen(Boolean(selectedSessionId));
   }, [selectedSessionId]);
-  useEffect(() => {
-    if (workspacePanel.open) setProgressPanelOpen(false);
-  }, [workspacePanel.open]);
 
   const progressPanelContent = <WebuiProgressOverviewPanel workspaceDir={selectedSession?.workspaceDir} isDefaultWorkspace={selectedSession?.isDefaultWorkspace} todos={progressTodos} subagents={progressSubagents} showProgress={!homeMode} showEmptyProgress={true} getWorkspaceEnvironment={transport?.getWorkspaceEnvironment} watchEvents={transport?.watchEvents} mutateWorkspaceGit={transport?.mutateWorkspaceGit} environmentCollapsed={workspaceEnvironmentCollapsed} progressCollapsed={workspaceProgressCollapsed} subagentsCollapsed={workspaceSubagentsCollapsed} onToggleEnvironment={() => setWorkspaceEnvironmentCollapsed((value) => !value)} onToggleProgress={() => setWorkspaceProgressCollapsed((value) => !value)} onToggleSubagents={() => setWorkspaceSubagentsCollapsed((value) => !value)} onMemberClick={handleWorkspaceSubagentClick} onOpenChanges={() => selectedSession?.workspaceDir && selectedSessionId ? dispatchWorkspacePanel({ type: "open-workspace-review", sessionId: selectedSessionId, workspaceDir: selectedSession.workspaceDir }) : undefined} onOpenTerminal={() => dispatchWorkspacePanel({ type: "open-tab", kind: "terminal", workspaceDir: selectedSession?.workspaceDir })} />;
 
