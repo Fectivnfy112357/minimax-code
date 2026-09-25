@@ -651,10 +651,10 @@ export function WebuiClientFoundationApp(
     : initialWorkspacePanelSessionState;
   const workspacePanel = sessionPanelState.workspacePanel;
   const progressPanelOpen = Boolean(selectedSessionId) && sessionPanelState.progressPanelOpen;
-  const dispatchWorkspacePanel = (command: WorkspacePanelCommand) => {
+  const dispatchWorkspacePanel = useCallback((command: WorkspacePanelCommand) => {
     if (!selectedSessionId) return;
     setWorkspacePanelStates((states) => reduceWorkspacePanelSessionState(states, selectedSessionId, command));
-  };
+  }, [selectedSessionId]);
   const setProgressPanelOpen = (update: boolean | ((open: boolean) => boolean)) => {
     if (!selectedSessionId) return;
     setWorkspacePanelStates((states) => {

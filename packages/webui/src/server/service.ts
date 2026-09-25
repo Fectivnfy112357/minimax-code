@@ -553,6 +553,7 @@ function parseHttpUrl(rawUrl: string | undefined): URL | undefined {
 }
 
 function contentType(name: string): string {
+  if (name.endsWith(".svg")) return "image/svg+xml";
   if (name.endsWith(".png")) return "image/png";
   if (name.endsWith(".jpg") || name.endsWith(".jpeg")) return "image/jpeg";
   if (name.endsWith(".woff2")) return "font/woff2";

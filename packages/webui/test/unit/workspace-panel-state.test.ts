@@ -65,6 +65,29 @@ describe("right workspace panel navigation", () => {
     expect(initialWorkspacePanelState.open).toBe(false);
   });
 
+  it("does not create a new session state when the review snapshot is unchanged", () => {
+    let states = reduceWorkspacePanelSessionState(new Map(), "session-a", {
+      type: "open-workspace-review",
+      sessionId: "session-a",
+      workspaceDir: "/repo-a",
+    });
+    const reviewTabId = getWorkspacePanelSessionState(states, "session-a").workspacePanel.activeTabId!;
+    states = reduceWorkspacePanelSessionState(states, "session-a", {
+      type: "set-review-snapshot",
+      tabId: reviewTabId,
+      reviewSnapshotId: "snapshot-a",
+    });
+    const afterSettingSnapshot = states;
+
+    states = reduceWorkspacePanelSessionState(states, "session-a", {
+      type: "set-review-snapshot",
+      tabId: reviewTabId,
+      reviewSnapshotId: "snapshot-a",
+    });
+
+    expect(states).toBe(afterSettingSnapshot);
+  });
+
   it("inserts lazily loaded directory entries under the matching workspace folder", () => {
     const roots = [
       { path: "src", name: "src", type: "directory" },

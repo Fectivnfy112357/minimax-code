@@ -1462,6 +1462,7 @@
     "packages/local-runtime-v2/src/service/workspace/snapshot/snapshot-entry-cache.ts",
     "packages/local-runtime-v2/src/service/workspace/snapshot/snapshot-manager.ts",
     "packages/local-runtime-v2/src/service/workspace/snapshot/snapshot-support.ts",
+    "packages/local-runtime-v2/src/service/workspace/snapshot/watcher.test.ts",
     "packages/local-runtime-v2/src/service/workspace/snapshot/watcher.ts",
     "packages/local-runtime-v2/src/service/workspace/workspace-git.service.ts",
     "packages/local-runtime-v2/src/services.test.ts",

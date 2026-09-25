@@ -134,8 +134,11 @@ export function reduceWorkspacePanelState(state: WorkspacePanelState, command: W
       return state.tabs.some((tab) => tab.id === command.tabId) ? { ...state, open: true, activeTabId: command.tabId, addMenuOpen: false } : state;
     case "select-review-file":
       return updateWorkspacePanelTab(state, command.tabId, (tab) => tab.kind === "review" ? { ...tab, selectedPath: command.path } : tab);
-    case "set-review-snapshot":
+    case "set-review-snapshot": {
+      const current = state.tabs.find((tab) => tab.id === command.tabId);
+      if (current?.kind !== "review" || current.source !== "workspace" || current.reviewSnapshotId === command.reviewSnapshotId) return state;
       return updateWorkspacePanelTab(state, command.tabId, (tab) => tab.kind === "review" ? { ...tab, reviewSnapshotId: command.reviewSnapshotId } : tab);
+    }
     case "close-tab": {
       const index = state.tabs.findIndex((tab) => tab.id === command.tabId);
       if (index < 0) return state;
