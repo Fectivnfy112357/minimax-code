@@ -216,7 +216,7 @@ export function WebuiDiffCard({
               撤销
             </button>
           )}
-          <button type="button" className="webui-diff-review" data-webui-diff-review="true" data-testid="turn-diff-review" onClick={() => { if (view) onReview?.(view); setDiffState((current) => reduceWebuiDiffState(current, { type: "toggle-review" })); }}>
+          <button type="button" className="webui-diff-review" data-webui-diff-review="true" data-testid="turn-diff-review" onClick={() => { if (view) onReview?.(view); if (!onReview) setDiffState((current) => reduceWebuiDiffState(current, { type: "toggle-review" })); }}>
             {reviewing ? "关闭 Review" : "Review"}
           </button>
         </div>
@@ -238,7 +238,7 @@ export function WebuiDiffCard({
           {expanded ? "收起" : `展开其余 ${files.length - 3} 个`}
         </button>
       ) : null}
-      {reviewing ? (
+      {reviewing && !onReview ? (
         <div className="webui-diff-review-panel" data-webui-diff-review-panel="true">
           {files.map((file) => (
             <details key={`${file.file}-review`} open>

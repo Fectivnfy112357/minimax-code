@@ -11,6 +11,7 @@ import {
 } from "../../src/client/components/DiffCard.js";
 import { WebuiGoalBanner } from "../../src/client/components/GoalBanner.js";
 import { WebuiInteractionPanel } from "../../src/client/components/InteractionPanel.js";
+import { projectWebuiUnifiedDiffLines } from "../../src/client/components/WorkspacePanels.js";
 import {
   WebuiFeedbackActions,
   WebuiMessageActions,
@@ -164,6 +165,28 @@ describe("round-3 authoritative diff state machine", () => {
     }));
     expect(neutral).toContain('data-webui-diff-state="runtime-unsupported"');
     expect(neutral).not.toContain("已编辑");
+  });
+});
+
+describe("turn review unified diff projection", () => {
+  it("keeps hunk context and old/new line numbers for review rendering", () => {
+    expect(projectWebuiUnifiedDiffLines([
+      "diff --git a/src/example.ts b/src/example.ts",
+      "index 123..456 100644",
+      "--- a/src/example.ts",
+      "+++ b/src/example.ts",
+      "@@ -4,2 +4,3 @@",
+      " const ready = true;",
+      "-return false;",
+      "+return ready;",
+      "+console.log(ready);",
+    ].join("\n"))).toEqual([
+      { kind: "hunk", content: "@@ -4,2 +4,3 @@" },
+      { kind: "context", oldLine: 4, newLine: 4, content: "const ready = true;" },
+      { kind: "deletion", oldLine: 5, content: "return false;" },
+      { kind: "addition", newLine: 5, content: "return ready;" },
+      { kind: "addition", newLine: 6, content: "console.log(ready);" },
+    ]);
   });
 });
 

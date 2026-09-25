@@ -163,24 +163,13 @@ export function WebuiIconDiffSummary({ className }: WebuiIconProps): ReactElemen
 /** Desktop's file-type glyph projection used by diff rows. */
 export function WebuiIconDiffFile({ fileName, className }: WebuiIconProps & { readonly fileName?: string }): ReactElement {
   const extension = fileName?.split(/[./\\]/u).pop()?.toLowerCase();
-  if (extension === "tsx" || extension === "jsx") {
-    return (
-      <svg width="18" height="18" viewBox="0 0 32 32" fill="none" aria-hidden="true" className={className}>
-        <path fill="#00bcd4" d="M16 12c7.444 0 12 2.59 12 4s-4.556 4-12 4-12-2.59-12-4 4.556-4 12-4m0-2c-7.732 0-14 2.686-14 6s6.268 6 14 6 14-2.686 14-6-6.268-6-14-6" />
-        <path fill="#00bcd4" d="M16 14a2 2 0 1 0 2 2 2 2 0 0 0-2-2" />
-        <path fill="#00bcd4" d="M10.458 5.507c2.017 0 5.937 3.177 9.006 8.493 3.722 6.447 3.757 11.687 2.536 12.392a.9.9 0 0 1-.457.1c-2.017 0-5.938-3.176-9.007-8.492C8.814 11.553 8.779 6.313 10 5.608a.9.9 0 0 1 .458-.1m-.001-2A2.87 2.87 0 0 0 9 3.875C6.13 5.532 6.938 12.304 10.804 19c3.284 5.69 7.72 9.493 10.74 9.493A2.87 2.87 0 0 0 23 28.124c2.87-1.656 2.062-8.428-1.804-15.124-3.284-5.69-7.72-9.493-10.74-9.493Z" />
-        <path fill="#00bcd4" d="M21.543 5.507a.9.9 0 0 1 .457.1c1.221.706 1.186 5.946-2.536 12.393-3.07 5.316-6.99 8.493-9.007 8.493a.9.9 0 0 1-.457-.1C8.779 25.686 8.814 20.446 12.536 14c3.07-5.316 6.99-8.493 9.007-8.493m0-2c-3.02 0-7.455 3.804-10.74 9.493C6.939 19.696 6.13 26.468 9 28.124a2.87 2.87 0 0 0 1.457.369c3.02 0 7.455-3.804 10.74-9.493C25.061 12.304 25.87 5.532 23 3.876a2.87 2.87 0 0 0-1.457-.369Z" />
-      </svg>
-    );
-  }
-  if (extension === "css") {
-    return (
-      <svg width="18" height="18" viewBox="0 0 32 32" fill="none" aria-hidden="true" className={className}>
-        <path fill="#7e57c2" d="M20 18h-2v-2h-2v2c0 .193 1.254 1.033A3.345 3.345 0 0 1 20 22h2v2h2v-2c0-.388-.562-.851-1.254-1.034C20.356 20.34 20 18.84 20 18m-3.254 2.966C14.356 20.34 14 18.84 14 18h-2v-2h-2v8h2v-2h4v2h2v-2c0-.388-.562-.851-1.254-1.034" />
-        <path fill="#7e57c2" d="M24 4H4v20a4 4 0 0 0 4 4h16.16A3.84 3.84 0 0 0 28 24.16V8a4 4 0 0 0-4-4m2 14h-2v-2h-2v2c0 .193 1.254 1.033 1.254 1.033A3.345 3.345 0 0 1 26 22v2a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2 2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2 2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2 2 2 0 0 1 2-2h2a2 2 0 0 1 2 2 2 2 0 0 1 2-2h2a2 2 2 0 0 1 2 2Z" />
-      </svg>
-    );
-  }
+  const glyphs: Readonly<Record<string, readonly [string, string]>> = {
+    c: ["C", "is-code"], cjs: ["JS", "is-javascript"], css: ["CSS", "is-css"], go: ["Go", "is-go"], h: ["C", "is-code"], htm: ["5", "is-html"], html: ["5", "is-html"],
+    java: ["J", "is-java"], js: ["JS", "is-javascript"], jsx: ["JS", "is-javascript"], json: ["{}", "is-json"], md: ["M↓", "is-markdown"], mjs: ["JS", "is-javascript"], mts: ["TS", "is-typescript"],
+    py: ["Py", "is-python"], rs: ["Rs", "is-rust"], sh: ["$", "is-shell"], sql: ["DB", "is-sql"], ts: ["TS", "is-typescript"], tsx: ["TS", "is-typescript"], xml: ["<>", "is-xml"], yaml: ["Y", "is-yaml"], yml: ["Y", "is-yaml"],
+  };
+  const glyph = extension ? glyphs[extension] : undefined;
+  if (glyph) return <span aria-hidden="true" className={`webui-workspace-filetype-badge ${glyph[1]} ${className ?? ""}`}>{glyph[0]}</span>;
   return <WebuiIconFile className={className} />;
 }
 
