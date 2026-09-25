@@ -227,11 +227,13 @@ export function WebuiActivityGroup({
   authoritativeDiffAvailable = false,
   activityItems,
   initiallyExpanded = false,
+  showStreamingStatus = true,
 }: {
   readonly tools: readonly Record<string, unknown>[];
   readonly authoritativeDiffAvailable?: boolean;
   readonly activityItems?: readonly WebuiActivityGroupItem[];
   readonly initiallyExpanded?: boolean;
+  readonly showStreamingStatus?: boolean;
 }): ReactElement | null {
   const active = tools.some((tool) => {
     const status = toolCallStatus(tool);
@@ -255,7 +257,7 @@ export function WebuiActivityGroup({
       const item = activityItems[index];
       if (!item) continue;
       if (item.type === "thinking") {
-        detailItems.push(<WebuiThinkingBlock key={`thinking-${index}`} text={item.text} durationMs={item.durationMs} streaming={item.streaming} summaryLabel="思考过程" />);
+        detailItems.push(<WebuiThinkingBlock key={`thinking-${index}`} text={item.text} durationMs={item.durationMs} streaming={item.streaming} showStreamingStatus={showStreamingStatus} summaryLabel="思考过程" />);
         continue;
       }
       const groupedTools: Record<string, unknown>[] = [item.tool];
@@ -308,6 +310,7 @@ export function WebuiTurnProcess({
   disabled = false,
   initiallyExpanded = false,
   summaryPrefix,
+  showLiveActivity = false,
 }: {
   readonly active: boolean;
   readonly startedAtMs?: number;
@@ -338,6 +341,8 @@ export function WebuiTurnProcess({
   readonly disabled?: boolean;
   readonly initiallyExpanded?: boolean;
   readonly summaryPrefix?: string;
+  /** Render one live thinking indicator after the complete turn content. */
+  readonly showLiveActivity?: boolean;
 }): ReactElement {
   const [expanded, setExpanded] = useState(initiallyExpanded);
   const wasActive = useRef(active);
@@ -446,6 +451,15 @@ export function WebuiTurnProcess({
         </div>
       ) : null}
       {collapsedContent?.(contentExpanded)}
+      {active && showLiveActivity ? (
+        <div className="webui-thinking-live-status" data-webui-thinking-live-status="true">
+          <ActivityIndicator aria-hidden="true" />
+          <span>推理中...</span>
+          {typeof seconds === "number" && seconds >= 1 ? (
+            <span className="webui-thinking-elapsed">{seconds}s</span>
+          ) : null}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -457,6 +471,7 @@ export function WebuiThinkingBlock({
   processingStartedAtMs,
   summaryLabel,
   showDetailHeading = false,
+  showStreamingStatus = true,
 }: {
   readonly text: string;
   readonly durationMs?: number;
@@ -464,6 +479,7 @@ export function WebuiThinkingBlock({
   readonly processingStartedAtMs?: number;
   readonly summaryLabel?: string;
   readonly showDetailHeading?: boolean;
+  readonly showStreamingStatus?: boolean;
 }): ReactElement | null {
   const [, forceTick] = useState(0);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -471,10 +487,10 @@ export function WebuiThinkingBlock({
   const [contentOverflows, setContentOverflows] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (!streaming) return undefined;
+    if (!streaming || !showStreamingStatus) return undefined;
     const timer = setInterval(() => forceTick((value) => value + 1), 1000);
     return () => clearInterval(timer);
-  }, [streaming]);
+  }, [streaming, showStreamingStatus]);
   useEffect(() => {
     if (!streaming) setDetailOpen(false);
   }, [streaming]);
@@ -526,7 +542,7 @@ export function WebuiThinkingBlock({
           </button>
         ) : null}
       </div>
-      {streaming ? (
+      {streaming && showStreamingStatus ? (
         <div className="webui-thinking-live-status" data-webui-thinking-live-status="true">
           <ActivityIndicator aria-hidden="true" />
           <span>推理中...</span>

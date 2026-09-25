@@ -88,17 +88,17 @@ function renderActivityParts(
       const tools = activityItems.flatMap((item) => item.type === "tool" ? [item.tool] : []);
       const thoughts = activityItems.filter((item): item is Extract<WebuiActivityGroupItem, { type: "thinking" }> => item.type === "thinking");
       if (tools.length > 0 && thoughts.length > 0) {
-        rows.push({ messageId, element: <WebuiActivityGroup key={`${messageId}-activity-${index}`} tools={tools} activityItems={activityItems} authoritativeDiffAvailable={authoritativeDiffAvailable} /> });
+        rows.push({ messageId, element: <WebuiActivityGroup key={`${messageId}-activity-${index}`} tools={tools} activityItems={activityItems} authoritativeDiffAvailable={authoritativeDiffAvailable} showStreamingStatus={false} /> });
       } else if (tools.length > 0) {
         rows.push({ messageId, element: <WebuiActivityGroup key={`${messageId}-tools-${index}`} tools={tools} authoritativeDiffAvailable={authoritativeDiffAvailable} /> });
       } else {
-        thoughts.forEach((thought, thoughtIndex) => rows.push({ messageId, element: <WebuiThinkingBlock key={`${messageId}-thinking-${index}-${thoughtIndex}`} text={thought.text} durationMs={thought.durationMs} streaming={streaming} processingStartedAtMs={processingStartedAtMs} summaryLabel="思考 1 次" showDetailHeading /> }));
+        thoughts.forEach((thought, thoughtIndex) => rows.push({ messageId, element: <WebuiThinkingBlock key={`${messageId}-thinking-${index}-${thoughtIndex}`} text={thought.text} durationMs={thought.durationMs} streaming={streaming} processingStartedAtMs={processingStartedAtMs} summaryLabel="思考 1 次" showDetailHeading showStreamingStatus={false} /> }));
       }
       index = cursor - 1;
     } else if (part.type === "text") {
       rows.push({ messageId, element: <div className="webui-assistant-answer" key={`${messageId}-ordered-text-${index}`} data-webui-message-kind="assistant"><WebuiMarkdown source={part.text} onOpenFile={onOpenFile} /></div> });
     } else if (part.type === "cognitive" || part.type === "compaction") {
-      rows.push({ messageId, element: <WebuiThinkingBlock key={`${messageId}-${part.type}-${index}`} text={part.text} streaming={streaming} processingStartedAtMs={processingStartedAtMs} summaryLabel={part.type === "compaction" ? "上下文整理" : "思考过程"} showDetailHeading={part.type !== "compaction"} /> });
+      rows.push({ messageId, element: <WebuiThinkingBlock key={`${messageId}-${part.type}-${index}`} text={part.text} streaming={streaming} processingStartedAtMs={processingStartedAtMs} summaryLabel={part.type === "compaction" ? "上下文整理" : "思考过程"} showDetailHeading={part.type !== "compaction"} showStreamingStatus={false} /> });
     } else if (part.type === "delegation") {
       rows.push({ messageId, element: <div className="webui-agent-delegation" key={`${messageId}-delegation-${index}`} data-webui-agent-activity="delegation" data-active={streaming && index === entries.length - 1 ? "true" : undefined}><span className="webui-agent-delegation-summary"><span className="webui-agent-delegation-avatar" aria-hidden="true">{String(part.message.fromAgent ?? "Agent").slice(0, 1).toUpperCase()}</span><span className="webui-agent-activity-title">{`${String(part.message.fromAgent ?? "Agent")} 发给 ${String(part.message.toAgent ?? "Agent")}`}</span></span>{typeof part.message.content === "string" ? <WebuiMarkdown source={part.message.content} onOpenFile={onOpenFile} /> : null}</div> });
     } else {
@@ -302,6 +302,7 @@ export function WebuiAssistantBody({
           summaryPrefix={processSummaryParts.join("，")}
           forceExpanded={processForceExpanded}
           initiallyExpanded={processInitiallyExpanded}
+          showLiveActivity={streaming && Boolean(thinking?.trim())}
           children={renderProcessContent}
           collapsedContent={(expanded) => !expanded && primaryAnswerPart
             ? <div className="mt-2 webui-assistant-answer" data-webui-message-kind="assistant"><WebuiMarkdown source={primaryAnswerPart.text} onOpenFile={onOpenFile} /></div>

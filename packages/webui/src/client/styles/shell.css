@@ -259,6 +259,7 @@
   .webui-generic-section { display: flex; width: 100%; flex-direction: column; gap: var(--spacing_12); }
   .webui-generic-section > h3 { margin: 0; padding: 0 var(--spacing_16); color: var(--text_default_primary); font-size: var(--size_14); font-weight: var(--weight_medium); line-height: var(--line_height_20); }
   .webui-generic-card { display: flex; width: 100%; flex-direction: column; border-radius: var(--radius_16); background: var(--bg_grouped_tertiary); padding: var(--spacing_4); }
+  .webui-generic-section[data-testid="app-mode-section"] > .webui-generic-card { background: transparent; padding: 0; }
   .webui-generic-section.is-preference .webui-generic-card { border-radius: var(--radius_12); }
   .webui-generic-row { display: flex; width: 100%; min-height: 56px; align-items: center; justify-content: space-between; gap: 24px; overflow: hidden; border-radius: var(--radius_12); padding: var(--spacing_8) var(--spacing_8) var(--spacing_8) var(--spacing_12); }
   .webui-generic-row-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: var(--spacing_4); }
