@@ -207,14 +207,15 @@
   .webui-terminal-actions { display: flex; gap: var(--spacing_8); }
   .webui-settings-mask { position: fixed; inset: 0; z-index: 100; display: flex; background: var(--utility_scrim); }
   .webui-settings-modal { display: flex; width: 100vw; height: 100vh; overflow: hidden; background: var(--bg_default_primary); color: var(--text_default_primary); }
-  .webui-settings-sidebar { width: 260px; flex: 0 0 260px; overflow-y: auto; }
+  .webui-settings-sidebar { width: 260px; flex: 0 0 260px; overflow-y: hidden; }
   .webui-settings-back, .webui-settings-nav-item { display: flex; width: 100%; align-items: center; gap: var(--spacing_8); border: 0; background: transparent; color: var(--text_default_secondary); text-align: left; }
   .webui-settings-back { font-size: var(--size_14); }
   .webui-settings-back:hover, .webui-settings-nav-item:hover { color: var(--text_default_primary); }
   .webui-settings-search { display: flex; height: 36px; align-items: center; gap: var(--spacing_8); padding: 0 var(--spacing_8); border: 1px solid var(--border_default); border-radius: var(--radius_8); color: var(--text_default_tertiary); }
   .webui-settings-search input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: inherit; }
   .webui-settings-search button { border: 0; background: transparent; color: inherit; }
-  .webui-settings-group { margin-top: var(--spacing_24); }
+  .webui-settings-group { margin-top: 0; }
+  .webui-settings-nav > .webui-settings-group:first-child { margin-top: var(--spacing_24); }
   .webui-settings-group h3 { margin: 0 0 var(--spacing_6); color: var(--text_default_tertiary); font-weight: var(--weight_medium); }
   .webui-settings-nav-item { border-radius: var(--radius_8); transition: background-color 120ms ease, color 120ms ease; }
   .webui-settings-nav-item.is-active { background: var(--bg_interaction_tertiary_selected); color: var(--text_default_primary); }
@@ -302,7 +303,7 @@
   .webui-segmented { gap: 0; background: var(--gray_75); }
   .webui-segmented button { height: 28px; border: 0; border-radius: 6px; background: transparent; padding: 0 var(--spacing_12); color: var(--text_default_primary); font-size: var(--size_14); }
   .webui-segmented button.is-selected { background: #fff; }
-  .webui-settings-sidebar { padding: 46px var(--spacing_12) var(--spacing_20); border-right: 0; background: var(--bg_grouped_secondary); }
+  .webui-settings-sidebar { padding: 46px var(--spacing_12) var(--spacing_20); border-right: 0; background: var(--bg_default_scrim); }
   .webui-settings-back { height: 30px; margin-bottom: var(--spacing_20); border-radius: var(--radius_8); padding: 0 var(--spacing_8); line-height: var(--line_height_20); }
   .webui-settings-nav-item { min-height: 30px; padding: 0 10px; font-size: var(--size_14); line-height: var(--line_height_20); }
   .webui-settings-nav-item { color: var(--text_default_primary); }
@@ -316,6 +317,13 @@
   .mavis-settings-search-highlight { animation: webui-settings-search-highlight 1400ms ease both; }
   @keyframes webui-settings-search-highlight { 0% { background: var(--bg_interaction_tertiary_selected); } 100% { background: transparent; } }
   @keyframes webui-settings-content-in { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: translateX(0); } }
+  @media (max-height: 680px) {
+    .webui-settings-sidebar { padding-top: 16px; padding-bottom: var(--spacing_12); }
+    .webui-settings-back { margin-bottom: var(--spacing_16); }
+    .webui-settings-nav > .webui-settings-group:first-child { margin-top: 8px; }
+    .webui-settings-group h3 { padding-top: 12px; padding-bottom: 6px; }
+    .webui-settings-nav-item { height: 30px; min-height: 30px; }
+  }
   @media (prefers-reduced-motion: reduce) { .webui-settings-content { animation: none; } .webui-settings-toggle span { transition: none; } }
 
   .webui-provider-dialog-backdrop { position: fixed; inset: 0; z-index: 110; display: flex; align-items: center; justify-content: center; background: rgb(10 10 10 / 24%); padding: 24px; }
