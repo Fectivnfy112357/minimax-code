@@ -1,6 +1,23 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import hljs from "highlight.js/lib/core";
+import bash from "highlight.js/lib/languages/bash";
+import c from "highlight.js/lib/languages/c";
+import cpp from "highlight.js/lib/languages/cpp";
+import css from "highlight.js/lib/languages/css";
+import go from "highlight.js/lib/languages/go";
+import java from "highlight.js/lib/languages/java";
+import javascript from "highlight.js/lib/languages/javascript";
+import json from "highlight.js/lib/languages/json";
+import markdown from "highlight.js/lib/languages/markdown";
+import python from "highlight.js/lib/languages/python";
+import rust from "highlight.js/lib/languages/rust";
+import typescript from "highlight.js/lib/languages/typescript";
+import toml from "highlight.js/lib/languages/ini";
+import xml from "highlight.js/lib/languages/xml";
+import yaml from "highlight.js/lib/languages/yaml";
+import { WebuiMarkdown } from "../markdown.js";
 import type {
   WebuiCanvasDocument,
   WebuiWorkspaceEnvironment,
@@ -20,10 +37,79 @@ import {
   type WebuiWorkspaceSubagent,
   type WebuiWorkspaceTodo,
 } from "../projection/workspace-progress.js";
-import { WebuiIconCheck, WebuiIconChevronDown, WebuiIconChevronLeft, WebuiIconClose, WebuiIconFile, WebuiIconFolder, WebuiIconRunLocation, WebuiIconSidebarToggle, WebuiIconWorkspaceCanvas, WebuiIconWorkspaceExpand, WebuiIconWorkspaceReview, WebuiIconWorkspaceTerminal } from "../icons.js";
+import { WebuiIconCheck, WebuiIconChevronDown, WebuiIconChevronLeft, WebuiIconClose, WebuiIconFile, WebuiIconFolder, WebuiIconRunLocation, WebuiIconSearch, WebuiIconSidebarToggle, WebuiIconWorkspaceCanvas, WebuiIconWorkspaceExpand, WebuiIconWorkspaceReview, WebuiIconWorkspaceTerminal } from "../icons.js";
 
 export type WebuiTodo = WebuiWorkspaceTodo;
 const DESKTOP_COPY = { environment: "环境信息", progress: "进度", progressEmpty: "跟踪较长任务的进度", newTerminal: "新建终端", terminalLimit: "最多可以打开 5 个终端", terminalLabel: "终端", terminalExited: "已退出", terminalEmptyTitle: "还没有终端", terminalEmptyDescription: "可直接在右侧面板中启动当前工作区的 Shell。", canvasEmptyTitle: "把文件放到画布上", canvasEmptyDescription: "添加图片或其他工作区文件，然后自由排列和调整大小。", fileClose: "关闭", changes: "变更", commit: "提交或推送", openTerminal: "打开终端", unsupported: "WebUI 尚未接入此操作" } as const;
+
+const FILE_CODE_LANGUAGES = {
+  bash,
+  c,
+  cpp,
+  css,
+  go,
+  java,
+  javascript,
+  json,
+  markdown,
+  python,
+  rust,
+  typescript,
+  toml,
+  xml,
+  yaml,
+} as const;
+for (const [name, language] of Object.entries(FILE_CODE_LANGUAGES)) {
+  if (!hljs.getLanguage(name)) hljs.registerLanguage(name, language);
+}
+
+const FILE_LANGUAGE_BY_EXTENSION: Readonly<Record<string, string>> = {
+  c: "c", cjs: "javascript", cpp: "cpp", css: "css", go: "go", h: "c", htm: "xml", html: "xml", java: "java",
+  js: "javascript", json: "json", jsx: "javascript", md: "markdown", mjs: "javascript", mts: "typescript",
+  py: "python", rs: "rust", sh: "bash", svg: "xml", toml: "toml", ts: "typescript", tsx: "typescript", xml: "xml", yaml: "yaml", yml: "yaml",
+};
+
+export function webuiFileLanguage(path: string): string | undefined {
+  const extension = path.split(".").at(-1)?.toLowerCase();
+  const language = extension ? FILE_LANGUAGE_BY_EXTENSION[extension] : undefined;
+  return language && hljs.getLanguage(language) ? language : undefined;
+}
+
+function highlightFileLine(line: string, language: string | undefined): string | undefined {
+  if (!language || !hljs.getLanguage(language)) return undefined;
+  try {
+    return hljs.highlight(line, { language, ignoreIllegals: true }).value;
+  } catch {
+    return undefined;
+  }
+}
+
+function filterWorkspaceFiles(files: readonly WebuiWorkspaceFile[], query: string): WebuiWorkspaceFile[] {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) return [...files];
+  return files.flatMap((file) => {
+    const children = file.children ? filterWorkspaceFiles(file.children, normalizedQuery) : [];
+    if (file.name.toLowerCase().includes(normalizedQuery) || children.length > 0) {
+      return [{ ...file, ...(file.children ? { children } : {}) }];
+    }
+    return [];
+  });
+}
+
+export function mergeWorkspaceFileChildren(
+  files: readonly WebuiWorkspaceFile[],
+  directoryPath: string,
+  children: readonly WebuiWorkspaceFile[],
+): readonly WebuiWorkspaceFile[] {
+  return files.map((file) => {
+    if (file.path === directoryPath && file.type === "directory") {
+      return { ...file, children };
+    }
+    return file.children?.length
+      ? { ...file, children: mergeWorkspaceFileChildren(file.children, directoryPath, children) }
+      : file;
+  });
+}
 
 export function projectWebuiTodos(messages: readonly Record<string, unknown>[]): WebuiTodo[] {
   return projectWebuiWorkspaceHistory(
@@ -203,11 +289,40 @@ export function WebuiProgressOverviewPanel({ workspaceDir, isDefaultWorkspace = 
   </div>;
 }
 
-function FileTree({ files, onOpen }: { readonly files: readonly WebuiWorkspaceFile[]; readonly onOpen: (file: WebuiWorkspaceFile) => void }): ReactElement {
+function FileTree({ files, onOpen, expandedPaths, loadingPaths, directoryErrors, onToggle, selectedPath }: { readonly files: readonly WebuiWorkspaceFile[]; readonly onOpen: (file: WebuiWorkspaceFile) => void; readonly expandedPaths: ReadonlySet<string>; readonly loadingPaths: ReadonlySet<string>; readonly directoryErrors: Readonly<Record<string, string>>; readonly onToggle: (file: WebuiWorkspaceFile) => void; readonly selectedPath?: string }): ReactElement {
   return <div className="webui-file-tree">{files.map((file) => <div key={file.path}>
-    <button type="button" className="webui-file-tree-row" onClick={() => onOpen(file)}>{file.type === "directory" ? <WebuiIconChevronLeft className="inline size-3" /> : <WebuiIconFile className="inline size-3" />} {file.name}</button>
-    {file.children?.length ? <div className="pl-3"><FileTree files={file.children} onOpen={onOpen} /></div> : null}
+    <button type="button" className={`webui-file-tree-row ${file.path === selectedPath ? "is-selected" : ""}`} aria-current={file.path === selectedPath ? "true" : undefined} aria-expanded={file.type === "directory" ? expandedPaths.has(file.path) : undefined} aria-busy={file.type === "directory" && loadingPaths.has(file.path) ? "true" : undefined} onClick={() => file.type === "directory" ? onToggle(file) : onOpen(file)}>
+      {file.type === "directory" ? <WebuiIconChevronLeft className={`inline size-3 ${expandedPaths.has(file.path) ? "rotate-90" : ""}`} /> : <WebuiIconFile className="inline size-3" />} {file.name}
+    </button>
+    {file.type === "directory" && expandedPaths.has(file.path) ? <div className="webui-file-tree-children">
+      {loadingPaths.has(file.path) ? <p role="status">正在加载目录…</p>
+        : directoryErrors[file.path] ? <p role="alert">{directoryErrors[file.path]}</p>
+          : file.children?.length ? <FileTree files={file.children} onOpen={onOpen} expandedPaths={expandedPaths} loadingPaths={loadingPaths} directoryErrors={directoryErrors} onToggle={onToggle} selectedPath={selectedPath} />
+            : <p>此文件夹为空。</p>}
+    </div> : null}
   </div>)}</div>;
+}
+
+export function WebuiFilePreview({ tab, result, codeMode }: {
+  readonly tab: Extract<WorkspacePanelTab, { readonly kind: "file-preview" }>;
+  readonly result?: { readonly loading: boolean; readonly content?: WebuiWorkspaceFileContent; readonly error?: string };
+  readonly codeMode: boolean;
+}): ReactElement {
+  const previewMarkdown = /\.md$/iu.test(tab.path) && !codeMode;
+  const content = result?.content?.content ?? "";
+  const language = webuiFileLanguage(tab.path);
+  return <div className="webui-workspace-file-document" data-testid="workspace-file-preview" data-file-path={tab.path}>
+      {result?.loading ? <p role="status">正在加载文件…</p>
+        : result?.error ? <p role="alert">{result.error}</p>
+          : result?.content?.type === "binary" ? <p>无法在文本预览中显示二进制文件。</p>
+            : result?.content?.error ? <p role="alert">{result.content.error}</p>
+              : result?.content ? previewMarkdown ? <WebuiMarkdown source={content} /> : <pre className="webui-file-code"><code className={language ? `hljs language-${language}` : ""}>{content.split("\n").map((line, index) => {
+                const lineNumber = index + 1;
+                const highlighted = highlightFileLine(line, language);
+                return <span key={lineNumber} id={lineNumber === tab.lineStart ? webuiFileLineTargetId(tab.id, lineNumber) : undefined} tabIndex={lineNumber === tab.lineStart ? -1 : undefined} data-line={lineNumber} data-scroll-target-line={lineNumber === tab.lineStart ? "true" : undefined} className={`webui-file-code-line ${lineNumber >= (tab.lineStart ?? 0) && lineNumber <= (tab.lineEnd ?? tab.lineStart ?? 0) ? "webui-file-preview-line-active" : ""}`} data-line-number={lineNumber} {...(highlighted !== undefined ? { dangerouslySetInnerHTML: { __html: highlighted || " " } } : {})}>{highlighted === undefined ? line || " " : undefined}</span>;
+              })}</code></pre>
+                : <p>文件读取能力暂不可用。</p>}
+  </div>;
 }
 
 export function WebuiWorkspacePanel({ state, dispatch, sessionId, workspaceDir, listWorkspaceFileTree, readWorkspaceFile, readCanvas, applyCanvas, createTerminal, listTerminals, writeTerminal, disposeTerminal, watchTerminal, watchEvents, getWorkspaceReviewSummary, listWorkspaceReviewFileDiffs, getWorkspaceReviewFileContent, searchWorkspaceReviewDiffs, onClose }: {
@@ -233,8 +348,17 @@ export function WebuiWorkspacePanel({ state, dispatch, sessionId, workspaceDir, 
   const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId);
   const tab = activeTab?.kind ?? "files";
   const [files, setFiles] = useState<readonly WebuiWorkspaceFile[]>([]);
+  const [fileSearch, setFileSearch] = useState("");
+  const [fileTreeOpen, setFileTreeOpen] = useState(true);
+  const [expandedDirectories, setExpandedDirectories] = useState<ReadonlySet<string>>(() => new Set());
+  const [loadedDirectories, setLoadedDirectories] = useState<ReadonlySet<string>>(() => new Set());
+  const [loadingDirectories, setLoadingDirectories] = useState<ReadonlySet<string>>(() => new Set());
+  const [directoryErrors, setDirectoryErrors] = useState<Readonly<Record<string, string>>>({});
+  const [fileCodeMode, setFileCodeMode] = useState(false);
   const [fileTreeState, setFileTreeState] = useState<{ readonly workspaceDir?: string; readonly loading: boolean; readonly error?: string }>({ loading: false });
   const [fileResults, setFileResults] = useState<Record<string, { loading: boolean; content?: WebuiWorkspaceFileContent; error?: string }>>({});
+  const fileResultsRef = useRef(fileResults);
+  fileResultsRef.current = fileResults;
   const [reviewSummary, setReviewSummary] = useState<{ readonly tabId: string; readonly summary?: WebuiWorkspaceReviewSummary; readonly error?: string; readonly loading: boolean; readonly stale?: boolean }>();
   const [reviewDiff, setReviewDiff] = useState<{ readonly tabId: string; readonly snapshotId: string; readonly path: string; readonly loading: boolean; readonly diff?: string; readonly error?: string }>();
   const [reviewContent, setReviewContent] = useState<{ readonly tabId: string; readonly snapshotId: string; readonly path: string; readonly loading: boolean; readonly old?: WebuiWorkspaceReviewFileContent; readonly current?: WebuiWorkspaceReviewFileContent; readonly error?: string }>();
@@ -259,6 +383,20 @@ export function WebuiWorkspacePanel({ state, dispatch, sessionId, workspaceDir, 
   const terminalInstance = useRef<Terminal>();
   const terminalStop = useRef<(() => void) | undefined>();
   const activeWorkspace = activeTab && "workspaceDir" in activeTab ? activeTab.workspaceDir : workspaceDir;
+  const activeWorkspaceRef = useRef(activeWorkspace);
+  activeWorkspaceRef.current = activeWorkspace;
+  const hasFileWorkspace = tab === "files" || activeTab?.kind === "file-preview";
+  const visibleFiles = filterWorkspaceFiles(files, fileSearch);
+  useEffect(() => {
+    setFileSearch("");
+    setExpandedDirectories(new Set());
+    setLoadedDirectories(new Set());
+    setLoadingDirectories(new Set());
+    setDirectoryErrors({});
+  }, [activeWorkspace]);
+  useEffect(() => {
+    setFileCodeMode(activeTab?.kind === "file-preview" && activeTab.lineStart !== undefined);
+  }, [activeTab?.id]);
   useEffect(() => {
     if (!activeWorkspace || !listWorkspaceFileTree) { setFiles([]); setFileTreeState({ workspaceDir: activeWorkspace, loading: false, ...(!listWorkspaceFileTree ? { error: "文件浏览能力暂不可用。" } : {}) }); return undefined; }
     let cancelled = false;
@@ -266,9 +404,10 @@ export function WebuiWorkspacePanel({ state, dispatch, sessionId, workspaceDir, 
     setFileTreeState({ workspaceDir: activeWorkspace, loading: true });
     void listWorkspaceFileTree({ workspaceDir: activeWorkspace }).then((next) => { if (!cancelled) { setFiles(next); setFileTreeState({ workspaceDir: activeWorkspace, loading: false }); } }).catch((reason: unknown) => { if (!cancelled) { setFiles([]); setFileTreeState({ workspaceDir: activeWorkspace, loading: false, error: reason instanceof Error ? reason.message : String(reason) }); } });
     return () => { cancelled = true; };
-  }, [activeWorkspace, activeTab?.id, listWorkspaceFileTree]);
+  }, [activeWorkspace, listWorkspaceFileTree]);
   useEffect(() => {
     if (activeTab?.kind !== "file-preview" || !readWorkspaceFile) return undefined;
+    if (fileResultsRef.current[activeTab.id]?.content) return undefined;
     let cancelled = false;
     setFileResults((current) => ({ ...current, [activeTab.id]: { loading: true } }));
     void readWorkspaceFile({ workspaceDir: activeTab.workspaceDir, path: activeTab.path }).then((content) => {
@@ -381,6 +520,45 @@ export function WebuiWorkspacePanel({ state, dispatch, sessionId, workspaceDir, 
       refreshStaleReview(tabId, snapshotId);
     });
   };
+  const toggleWorkspaceDirectory = (directory: WebuiWorkspaceFile) => {
+    const path = directory.path;
+    if (expandedDirectories.has(path)) {
+      setExpandedDirectories((current) => {
+        const next = new Set(current);
+        next.delete(path);
+        return next;
+      });
+      return;
+    }
+    setExpandedDirectories((current) => new Set(current).add(path));
+    if (directory.children !== undefined || loadedDirectories.has(path) || loadingDirectories.has(path)) return;
+    if (!activeWorkspace || !listWorkspaceFileTree) {
+      setDirectoryErrors((current) => ({ ...current, [path]: "文件夹读取能力暂不可用。" }));
+      return;
+    }
+    const requestWorkspace = activeWorkspace;
+    setDirectoryErrors((current) => {
+      const next = { ...current };
+      delete next[path];
+      return next;
+    });
+    setLoadingDirectories((current) => new Set(current).add(path));
+    void listWorkspaceFileTree({ workspaceDir: requestWorkspace, path }).then((children) => {
+      if (activeWorkspaceRef.current !== requestWorkspace) return;
+      setFiles((current) => mergeWorkspaceFileChildren(current, path, children));
+      setLoadedDirectories((current) => new Set(current).add(path));
+    }).catch((reason: unknown) => {
+      if (activeWorkspaceRef.current !== requestWorkspace) return;
+      setDirectoryErrors((current) => ({ ...current, [path]: reason instanceof Error ? reason.message : String(reason) }));
+    }).finally(() => {
+      if (activeWorkspaceRef.current !== requestWorkspace) return;
+      setLoadingDirectories((current) => {
+        const next = new Set(current);
+        next.delete(path);
+        return next;
+      });
+    });
+  };
   const activeSessionId = activeTab && "sessionId" in activeTab ? activeTab.sessionId : sessionId;
   useEffect(() => {
     if (!activeSessionId || !readCanvas) { setCanvas(undefined); return undefined; }
@@ -437,8 +615,20 @@ export function WebuiWorkspacePanel({ state, dispatch, sessionId, workspaceDir, 
         <button type="button" className="webui-workspace-panel-close" aria-label="关闭面板" onClick={onClose}><WebuiIconClose className="size-[18px]" /></button>
       </div>
     </div>
-    {tab === "files" ? <div className="webui-workspace-content">{fileTreeState.workspaceDir !== activeWorkspace || fileTreeState.loading ? <p role="status">正在加载文件…</p> : fileTreeState.error ? <p role="alert">{fileTreeState.error}</p> : files.length ? <FileTree files={files} onOpen={(entry) => { const context = activeTab && "sessionId" in activeTab ? activeTab.sessionId : sessionId; if (activeWorkspace && context && entry.type !== "directory") dispatch({ type: "open-file", sessionId: context, workspaceDir: activeWorkspace, path: entry.path }); }} /> : <p>此工作区没有可显示的文件。</p>}</div> : null}
-    {tab === "file-preview" && activeTab?.kind === "file-preview" ? <div className="webui-workspace-content"><h3>{activeTab.path}</h3>{fileResults[activeTab.id]?.loading ? <p role="status">正在加载文件…</p> : fileResults[activeTab.id]?.error ? <p role="alert">{fileResults[activeTab.id]?.error}</p> : fileResults[activeTab.id]?.content?.type === "binary" ? <p>无法在文本预览中显示二进制文件。</p> : fileResults[activeTab.id]?.content ? fileResults[activeTab.id]?.content?.error ? <p role="alert">{fileResults[activeTab.id]?.content?.error}</p> : <pre>{fileResults[activeTab.id]?.content?.content?.split("\n").map((line, index) => <span key={index} id={index + 1 === activeTab.lineStart ? webuiFileLineTargetId(activeTab.id, index + 1) : undefined} tabIndex={index + 1 === activeTab.lineStart ? -1 : undefined} data-line={index + 1} data-scroll-target-line={index + 1 === activeTab.lineStart ? "true" : undefined} className={index + 1 >= (activeTab.lineStart ?? 0) && index + 1 <= (activeTab.lineEnd ?? activeTab.lineStart ?? 0) ? "webui-file-preview-line-active" : ""}>{line}{"\n"}</span>)}</pre> : <p>文件读取能力暂不可用。</p>}</div> : null}
+    {hasFileWorkspace ? <div className="webui-workspace-file-toolbar">
+      <div className="webui-workspace-file-breadcrumb" aria-label="文件路径">
+        {activeTab?.kind === "file-preview" ? activeTab.path.split("/").map((part, index) => <span key={`${part}-${index}`} className={index === activeTab.path.split("/").length - 1 ? "is-current" : ""}>{index ? <span aria-hidden="true">›</span> : null}{part}</span>) : <span className="is-current">{workspaceDir?.split(/[\\/]/u).filter(Boolean).at(-1) ?? "工作区"}</span>}
+      </div>
+      {activeTab?.kind === "file-preview" && /\.md$/iu.test(activeTab.path) ? <div className="webui-workspace-file-mode" role="group" aria-label="文件显示模式">
+        <button type="button" aria-pressed={!fileCodeMode} onClick={() => setFileCodeMode(false)}>预览</button>
+        <button type="button" aria-pressed={fileCodeMode} onClick={() => setFileCodeMode(true)}>代码</button>
+      </div> : null}
+      <button type="button" className="webui-workspace-tree-toggle" aria-label={fileTreeOpen ? "隐藏文件树" : "显示文件树"} aria-pressed={fileTreeOpen} onClick={() => setFileTreeOpen((open) => !open)}><WebuiIconSidebarToggle className="size-5" /></button>
+    </div> : null}
+    <div className="webui-workspace-panel-body">
+      <div className="webui-workspace-view">
+    {tab === "files" ? <div className="webui-workspace-files-empty" data-testid="workspace-files-empty"><WebuiIconFolder className="size-8" /><strong>查看文件</strong><p>从工作区目录树中选择文件</p></div> : null}
+    {tab === "file-preview" && activeTab?.kind === "file-preview" ? <WebuiFilePreview tab={activeTab} result={fileResults[activeTab.id]} codeMode={fileCodeMode} /> : null}
     {tab === "review" && activeTab?.kind === "review" && activeTab.source === "workspace" ? <div className="webui-workspace-content" data-testid="workspace-review"><h3>变更审查</h3>{reviewSummary?.tabId !== activeTab.id || reviewSummary.loading && !reviewSummary.summary ? <p role="status">正在收集变更…</p> : reviewSummary.error && !reviewSummary.summary ? <p role="alert">{reviewSummary.error}</p> : reviewSummary.summary?.files.length ? <><form onSubmit={(event) => { event.preventDefault(); runReviewSearch(); }}><input aria-label="搜索变更" value={reviewSearchQuery} onChange={(event) => setReviewSearchQuery(event.currentTarget.value)} /><button type="submit" disabled={!searchWorkspaceReviewDiffs || reviewSearch?.loading}>搜索</button></form>{reviewSummary.stale || reviewSummary.error ? <p role="status">变更列表可能已过期{reviewSummary.error ? `：${reviewSummary.error}` : "，正在刷新…"}</p> : null}{reviewSearch?.tabId === activeTab.id && reviewSearch.snapshotId === activeTab.reviewSnapshotId ? reviewSearch.loading ? <p role="status">正在搜索变更…</p> : reviewSearch.error ? <p role="alert">{reviewSearch.error}</p> : reviewSearch.result ? <ul data-testid="workspace-review-search-results">{reviewSearch.result.matchedFiles.map((match) => <li key={match.fileId}><button type="button" onClick={() => dispatch({ type: "select-review-file", tabId: activeTab.id, path: match.path })}>{match.path} <small>{match.matchCount}</small></button></li>)}</ul> : null : null}<ul>{reviewSummary.summary.files.map((file) => <li key={file.fileId}><button type="button" aria-current={selectedReviewPath === file.path ? "true" : undefined} onClick={() => dispatch({ type: "select-review-file", tabId: activeTab.id, path: file.path })}>{file.path} <small>+{file.additions} −{file.deletions}</small></button></li>)}</ul><section>{reviewDiff?.tabId !== activeTab.id || reviewDiff.snapshotId !== activeTab.reviewSnapshotId || reviewDiff.path !== selectedReviewPath || reviewDiff.loading ? <p role="status">正在加载差异…</p> : reviewDiff.error ? <p role="alert">{reviewDiff.error}</p> : reviewDiff.diff ? <pre>{reviewDiff.diff}</pre> : <p>此文件没有可预览的文本差异。</p>}{reviewContent?.tabId !== activeTab.id || reviewContent.snapshotId !== activeTab.reviewSnapshotId || reviewContent.path !== selectedReviewPath || reviewContent.loading ? <p role="status">正在加载文件内容…</p> : reviewContent.error ? <p role="alert">{reviewContent.error}</p> : <div data-testid="workspace-review-file-content"><section><h4>变更前</h4>{reviewContent.old?.type === "binary" ? <p>二进制文件</p> : <pre>{reviewContent.old?.content ?? ""}</pre>}</section><section><h4>变更后</h4>{reviewContent.current?.type === "binary" ? <p>二进制文件</p> : <pre>{reviewContent.current?.content ?? ""}</pre>}</section></div>}</section></> : !reviewSummary.summary?.files.length && !reviewSummary.loading ? <p>当前没有变更。</p> : null}</div> : null}
     {tab === "review" && activeTab?.kind === "review" && activeTab.source === "turn" ? <div className="webui-workspace-content" data-testid="turn-review-panel" data-session-id={activeTab.sessionId} data-message-id={activeTab.messageId} data-turn-id={activeTab.turnId} data-change-set-id={activeTab.changeSetId}><h3>本轮改动</h3>{turnReviewFiles.length ? <><ul>{turnReviewFiles.map((file) => <li key={file.file}><button type="button" aria-current={selectedReviewPath === file.file ? "true" : undefined} onClick={() => dispatch({ type: "select-review-file", tabId: activeTab.id, path: file.file })}>{file.file}</button></li>)}</ul>{turnReviewFiles.find((file) => file.file === selectedReviewPath)?.diff ? <pre>{turnReviewFiles.find((file) => file.file === selectedReviewPath)?.diff}</pre> : <p>当前运行时没有提供该文件的 patch 预览。</p>}</> : <p>本轮没有可审查的文件差异。</p>}</div> : null}
     {tab === "canvas" ? <div className="webui-canvas-content" onWheel={(event) => { event.preventDefault(); setZoom((value) => Math.max(.4, Math.min(2, value + (event.deltaY > 0 ? -.1 : .1)))); }}>
@@ -446,5 +636,13 @@ export function WebuiWorkspacePanel({ state, dispatch, sessionId, workspaceDir, 
       <span className="webui-canvas-zoom">{Math.round(zoom * 100)}%</span>
     </div> : null}
     {tab === "terminal" ? <div className="webui-terminal-empty">{terminals.length === 0 ? <><strong>{DESKTOP_COPY.terminalEmptyTitle}</strong><p>{DESKTOP_COPY.terminalEmptyDescription}</p></> : <><div className="webui-terminal-tabs">{terminals.map((terminal, index) => <button type="button" key={String(terminal.terminalId)} className={`file-tab group/tab-close h-8 w-40 min-w-20 ${String(terminal.terminalId) === (activeTerminalId ?? String(terminals[0]?.terminalId)) ? "bg-bg_interaction_tertiary_selected" : ""}`} onClick={() => setActiveTerminalId(String(terminal.terminalId))}><span>#{index + 1}</span>{terminal.status === "exited" ? DESKTOP_COPY.terminalExited : DESKTOP_COPY.terminalLabel}<span className="file-tab-close opacity-0 group-hover/tab-close:opacity-100"><WebuiIconClose className="size-[14px]" /></span></button>)}</div><div ref={terminalHost} className="webui-xterm-host" />{terminalError ? <p role="alert">{terminalError}</p> : null}<div className="webui-terminal-actions"><button type="button" onClick={() => { if (!activeWorkspace || !createTerminal) return; void createTerminal({ workspaceDir: activeWorkspace }).then((created) => { setActiveTerminalId(created.terminalId); return listTerminals?.().then(setTerminals); }).catch((error: unknown) => setTerminalError(error instanceof Error ? error.message : String(error))); }}>{DESKTOP_COPY.newTerminal}</button><button type="button" onClick={() => { const active = terminals.find((candidate) => String(candidate.terminalId) === (activeTerminalId ?? String(terminals[0]?.terminalId))); if (active && disposeTerminal) void disposeTerminal({ terminalId: String(active.terminalId) }).then(() => listTerminals?.().then(setTerminals)); }}>{DESKTOP_COPY.fileClose}</button></div></> }{terminals.length === 0 ? <button type="button" onClick={() => { if (!activeWorkspace || !createTerminal) return; void createTerminal({ workspaceDir: activeWorkspace }).then((created) => { setActiveTerminalId(created.terminalId); return listTerminals?.().then(setTerminals); }).catch((error: unknown) => setTerminalError(error instanceof Error ? error.message : String(error))); }}>{DESKTOP_COPY.newTerminal}</button> : null}</div> : null}
+      </div>
+      {hasFileWorkspace && fileTreeOpen ? <aside className="webui-workspace-file-tree-panel" aria-label="工作区文件树">
+        <label className="webui-workspace-file-search"><WebuiIconSearch className="size-4" /><input aria-label="搜索文件" placeholder="搜索" value={fileSearch} onChange={(event) => setFileSearch(event.currentTarget.value)} /></label>
+        <div className="webui-workspace-file-tree-scroll">
+          {fileTreeState.workspaceDir !== activeWorkspace || fileTreeState.loading ? <p role="status">正在加载文件…</p> : fileTreeState.error ? <p role="alert">{fileTreeState.error}</p> : files.length ? visibleFiles.length ? <FileTree files={visibleFiles} expandedPaths={expandedDirectories} loadingPaths={loadingDirectories} directoryErrors={directoryErrors} onToggle={toggleWorkspaceDirectory} selectedPath={activeTab?.kind === "file-preview" ? activeTab.path : undefined} onOpen={(entry) => { const context = activeTab && "sessionId" in activeTab ? activeTab.sessionId : sessionId; if (activeWorkspace && context && entry.type !== "directory") dispatch({ type: "open-file", sessionId: context, workspaceDir: activeWorkspace, path: entry.path }); }} /> : <p className="webui-workspace-tree-empty">没有匹配的文件。</p> : <p className="webui-workspace-tree-empty">此工作区没有可显示的文件。</p>}
+        </div>
+      </aside> : null}
+    </div>
   </aside>;
 }

@@ -19,8 +19,9 @@
  */
 
 @layer components {
-  .webui-workspace-panel { position: relative; z-index: 30; display: flex; width: 288px; flex: 0 0 288px; min-height: 0; flex-direction: column; overflow: hidden; border-left: 1px solid var(--border_default); background: var(--bg_default_primary); color: var(--text_default_primary); }
-  .webui-workspace-panel.is-expanded { width: min(720px, 60vw); flex-basis: min(720px, 60vw); }
+  .webui-workspace-panel { position: relative; display: flex; width: 50%; min-width: 0; min-height: 0; flex: 0 1 50%; flex-direction: column; overflow: hidden; border-left: 1px solid var(--border_default); background: var(--bg_default_primary); color: var(--text_default_primary); }
+  .webui-workspace-panel.is-expanded { position: fixed; inset: 0; }
+  .webui-workspace-panel.is-expanded .webui-workspace-file-tree-panel { width: min(360px, 34vw); flex-basis: min(360px, 34vw); }
   .webui-progress-overview-panel { position: absolute; top: 72px; right: 12px; z-index: 45; display: flex; width: min(344px, calc(100% - 24px)); max-height: calc(100% - 84px); flex-direction: column; overflow: auto; border: 0; background: transparent; padding: 0; }
   .webui-session-has-progress-panel { box-sizing: border-box; padding-right: 368px; }
   .webui-workspace-panel-header, .webui-workspace-panel-actions, .webui-workspace-tabs, .webui-workspace-tab { display: flex; align-items: center; }
@@ -38,6 +39,43 @@
   .webui-workspace-panel-actions { flex: 0 0 auto; gap: var(--spacing_4); padding-left: var(--spacing_4); }
   .webui-workspace-panel-actions button { width: 32px; height: 32px; flex: 0 0 32px; border-radius: 8px; color: var(--icon_default_secondary); }
   .webui-workspace-panel-close { color: var(--icon_default_secondary); }
+  .webui-workspace-panel-body { display: flex; min-width: 0; min-height: 0; flex: 1 1 auto; overflow: hidden; }
+  .webui-workspace-view { display: flex; min-width: 0; min-height: 0; flex: 1 1 auto; flex-direction: column; overflow: auto; }
+  .webui-workspace-file-toolbar { display: flex; min-height: 48px; flex: 0 0 48px; align-items: center; gap: var(--spacing_12); border-bottom: 1px solid var(--border_default); padding: 0 var(--spacing_16); }
+  .webui-workspace-file-breadcrumb { display: flex; min-width: 0; flex: 1 1 auto; align-items: center; gap: var(--spacing_8); overflow: hidden; color: var(--text_default_tertiary); font-size: var(--size_14); white-space: nowrap; }
+  .webui-workspace-file-breadcrumb > span { display: inline-flex; min-width: 0; align-items: center; gap: var(--spacing_8); overflow: hidden; text-overflow: ellipsis; }
+  .webui-workspace-file-breadcrumb .is-current { color: var(--text_default_primary); }
+  .webui-workspace-file-mode { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 2px; border-radius: 8px; background: var(--bg_default_secondary); padding: 2px; }
+  .webui-workspace-file-mode button { min-height: 28px; border: 0; border-radius: 6px; background: transparent; padding: 0 10px; color: var(--text_default_secondary); font-size: var(--size_12); }
+  .webui-workspace-file-mode button[aria-pressed="true"] { background: var(--bg_default_primary); color: var(--text_default_primary); box-shadow: 0 1px 3px rgb(0 0 0 / 12%); }
+  .webui-workspace-tree-toggle { display: inline-flex; width: 34px; height: 34px; flex: 0 0 34px; align-items: center; justify-content: center; border: 0; border-radius: 8px; background: transparent; color: var(--icon_default_secondary); }
+  .webui-workspace-tree-toggle:hover, .webui-workspace-tree-toggle[aria-pressed="true"] { background: var(--bg_interaction_tertiary_selected); color: var(--icon_default_primary); }
+  .webui-workspace-file-tree-panel { display: flex; width: clamp(232px, 24vw, 288px); flex: 0 0 clamp(232px, 24vw, 288px); min-height: 0; flex-direction: column; border-left: 1px solid var(--border_default); background: var(--bg_default_primary); }
+  .webui-workspace-file-search { display: flex; height: 40px; flex: 0 0 40px; align-items: center; gap: var(--spacing_8); margin: var(--spacing_8) var(--spacing_12); border: 1px solid var(--border_default); border-radius: 10px; padding: 0 var(--spacing_8); color: var(--icon_default_tertiary); }
+  .webui-workspace-file-search input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text_default_primary); font-size: var(--size_14); }
+  .webui-workspace-file-search input::placeholder { color: var(--text_default_tertiary); }
+  .webui-workspace-file-tree-scroll { min-height: 0; flex: 1 1 auto; overflow: auto; padding: 0 var(--spacing_12) var(--spacing_12); }
+  .webui-workspace-file-tree-scroll > [role="status"], .webui-workspace-file-tree-scroll > [role="alert"], .webui-workspace-tree-empty { padding: var(--spacing_8); color: var(--text_default_tertiary); font-size: var(--size_12); }
+  .webui-workspace-file-tree-children { padding-left: var(--spacing_12); }
+  .webui-workspace-file-tree-children > [role="status"], .webui-workspace-file-tree-children > [role="alert"], .webui-workspace-file-tree-children > p { margin: 0; padding: 2px var(--spacing_12) 6px; color: var(--text_default_tertiary); font-size: var(--size_12); }
+  .webui-workspace-files-empty { display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; align-items: center; justify-content: center; gap: var(--spacing_8); color: var(--text_default_tertiary); }
+  .webui-workspace-files-empty strong { color: var(--text_default_secondary); font-size: var(--size_16); font-weight: var(--weight_medium); }
+  .webui-workspace-files-empty p { margin: 0; font-size: var(--size_14); }
+  .webui-workspace-file-document { min-width: 0; min-height: 0; flex: 1 1 auto; overflow: auto; }
+  .webui-workspace-file-document > p { margin: var(--spacing_16); color: var(--text_default_tertiary); }
+  .webui-workspace-file-document > .webui-markdown { max-width: 960px; margin: 0 auto; padding: 32px clamp(24px, 7vw, 64px); }
+  .webui-file-code { min-width: max-content; min-height: 100%; margin: 0; overflow: auto; background: var(--bg_default_primary); padding: 20px 0; color: var(--text_default_primary); font-family: Hack, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; line-height: 1.65; tab-size: 2; white-space: pre; }
+  .webui-file-code code { display: block; min-width: 100%; }
+  .webui-file-code-line { position: relative; display: block; min-height: 1.65em; padding: 0 24px 0 68px; }
+  .webui-file-code-line::before { position: absolute; left: 0; width: 48px; padding-right: 12px; color: var(--text_default_tertiary); content: attr(data-line-number); text-align: right; user-select: none; }
+  .webui-file-code-line.webui-file-preview-line-active { background: var(--bg_interaction_tertiary_selected); }
+  .webui-file-code .hljs-comment, .webui-file-code .hljs-quote { color: var(--text_default_tertiary); font-style: italic; }
+  .webui-file-code .hljs-keyword, .webui-file-code .hljs-meta .hljs-keyword { color: var(--text_label_accent_default); }
+  .webui-file-code .hljs-string, .webui-file-code .hljs-doctag { color: var(--text_label_positive_secondary_default); }
+  .webui-file-code .hljs-number, .webui-file-code .hljs-literal { color: var(--text_label_warning_secondary_default); }
+  .webui-file-code .hljs-title, .webui-file-code .hljs-title.function_, .webui-file-code .hljs-function, .webui-file-code .hljs-section { color: var(--text_label_accent_default); }
+  .webui-file-code .hljs-type, .webui-file-code .hljs-built_in, .webui-file-code .hljs-title.class_ { color: var(--text_label_danger_secondary_default); }
+  .webui-file-code .hljs-attr, .webui-file-code .hljs-variable, .webui-file-code .hljs-property { color: var(--text_default_secondary); }
   .webui-workspace-add-menu { position: absolute; top: calc(100% + 4px); left: 0; z-index: 20; display: flex; min-width: 198px; flex-direction: column; gap: 2px; padding: 4px; border: 1px solid var(--border_default); border-radius: 14px; background: var(--bg_grouped_secondary_elevated); box-shadow: 0 8px 24px rgb(0 0 0 / 12%); color: var(--text_default_primary); }
   .webui-workspace-add-menu button { width: 100%; min-height: 34px; justify-content: flex-start; gap: var(--spacing_8); border-radius: 8px; padding: 0 10px; color: inherit; font-size: var(--size_14); text-align: left; white-space: nowrap; }
   .webui-workspace-add-menu button:hover { background: var(--bg_interaction_tertiary_hover); }
@@ -92,8 +130,9 @@
   .webui-workspace-panel-close { display: flex; width: 32px; height: 32px; flex: 0 0 32px; align-items: center; justify-content: center; border: 0; border-radius: var(--radius_8); background: transparent; color: var(--icon_default_tertiary); }
   .webui-workspace-panel-close:hover { background: var(--bg_interaction_tertiary_hover); color: var(--icon_default_primary); }
   .webui-workspace-content { min-height: 0; flex: 1; overflow: auto; padding: var(--spacing_8); }
-  .webui-file-tree-row { width: 100%; border: 0; background: transparent; padding: 4px; color: var(--text_default_secondary); text-align: left; font-size: var(--size_12); }
+  .webui-file-tree-row { display: flex; width: 100%; min-height: 32px; align-items: center; gap: var(--spacing_8); overflow: hidden; border: 0; border-radius: 6px; background: transparent; padding: 0 var(--spacing_4); color: var(--text_default_secondary); text-align: left; text-overflow: ellipsis; white-space: nowrap; font-size: var(--size_14); }
   .webui-file-tree-row:hover { background: var(--bg_interaction_tertiary_hover); color: var(--text_default_primary); }
+  .webui-file-tree-row.is-selected { background: var(--bg_interaction_tertiary_selected); color: var(--text_default_primary); }
   .webui-file-viewer { margin-top: var(--spacing_8); }
   .file-tab { display: flex; align-items: center; gap: var(--spacing_4); overflow: hidden; padding: 0 var(--spacing_8); font-size: var(--size_12); white-space: nowrap; }
   .file-tab button { margin-left: auto; border: 0; background: transparent; color: inherit; }

@@ -188,7 +188,7 @@ describe("W0 · structural declarations W5 must preserve", () => {
     expect(declaration(winning(".webui-rail").body, "width")).toBe("256px");
   });
 
-  it("keeps the session layout as two zones with one shared message viewport", () => {
+  it("reserves a non-overlapping right gutter while the progress panel floats", () => {
     expect(declarationsFor(".webui-session-layout")).toContain("min-height: 0");
     expect(declaration(winning(".webui-session-layout").body, "position")).toBe(
       "relative",
@@ -197,8 +197,8 @@ describe("W0 · structural declarations W5 must preserve", () => {
       "100%",
     );
     expect(
-      declaration(winning(".webui-session-surface-with-workspace").body, "padding-right"),
-    ).toBe("336px");
+      declaration(winning(".webui-session-has-progress-panel").body, "padding-right"),
+    ).toBe("368px");
 
     const viewport = winning(".webui-session-scroll-viewport");
     expect(declaration(viewport.body, "min-height")).toBe("0");
@@ -267,6 +267,19 @@ describe("W0 · structural declarations W5 must preserve", () => {
     expect(declaration(composerContent.body, "max-width")).toBe("768px");
     expect(declaration(composerContent.body, "margin-left")).toBe("auto");
     expect(declaration(composerContent.body, "margin-right")).toBe("auto");
+  });
+
+  it("keeps the workspace beside the session and preserves a right-side explorer", () => {
+    const panel = winning(".webui-workspace-panel");
+    expect(declaration(panel.body, "position")).toBe("relative");
+    expect(declaration(panel.body, "flex")).toBe("0 1 50%");
+    expect(declaration(panel.body, "width")).toBe("50%");
+    expect(declaration(panel.body, "min-width")).toBe("0");
+    const expanded = winning(".webui-workspace-panel.is-expanded");
+    expect(declaration(expanded.body, "position")).toBe("fixed");
+    expect(declaration(expanded.body, "inset")).toBe("0");
+    expect(declaration(winning(".webui-workspace-panel-body").body, "display")).toBe("flex");
+    expect(declaration(winning(".webui-workspace-file-tree-panel").body, "border-left")).toBe("1px solid var(--border_default)");
   });
 
   it("keeps the markdown and code surfaces scrollable where they were", () => {
@@ -339,12 +352,12 @@ describe("W0 · at-rules and animations W5/W6 must not remove", () => {
 });
 
 describe("W0 · stacking order", () => {
-  it("keeps the z-index ladder unchanged", () => {
+  it("keeps the overlay stacking values declared by the shell", () => {
     const values = [
       ...shellCss.matchAll(/z-index:\s*(-?[0-9]+)/gu),
     ].map((match) => Number(match[1]));
     expect([...new Set(values)].sort((left, right) => left - right)).toEqual([
-      20, 30, 40, 50, 70, 80, 100, 110, 111, 120, 121,
+      2, 4, 20, 45, 50, 70, 80, 100, 110, 111, 120, 121,
     ]);
   });
 });

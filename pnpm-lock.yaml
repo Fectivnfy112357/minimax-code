@@ -909,6 +909,9 @@ importers:
       '@xterm/xterm':
         specifier: 6.0.0
         version: 6.0.0
+      highlight.js:
+        specifier: 10.7.3
+        version: 10.7.3
       katex:
         specifier: 0.18.7
         version: 0.18.7

@@ -1,28 +1,83 @@
 import { describe, expect, it } from "vitest";
 import { parseWebuiMessageFileReference } from "../../src/client/projection/message-file-reference.js";
 import { WebuiMarkdown } from "../../src/client/markdown.js";
+import { mergeWorkspaceFileChildren, WebuiFilePreview, webuiFileLanguage } from "../../src/client/components/WorkspacePanels.js";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { initialWorkspacePanelState, reduceWorkspacePanelState } from "../../src/client/projection/workspace-panel-state.js";
 import { focusWebuiFileLine, webuiFileLineTargetId } from "../../src/client/projection/file-line-navigation.js";
 
 describe("right workspace panel navigation", () => {
+  it("inserts lazily loaded directory entries under the matching workspace folder", () => {
+    const roots = [
+      { path: "src", name: "src", type: "directory" },
+      { path: "README.md", name: "README.md", type: "file" },
+    ] as const;
+    const children = [
+      { path: "src/index.ts", name: "index.ts", type: "file" },
+      { path: "src/components", name: "components", type: "directory" },
+    ] as const;
+
+    expect(mergeWorkspaceFileChildren(roots, "src", children)).toEqual([
+      { ...roots[0], children },
+      roots[1],
+    ]);
+    expect(mergeWorkspaceFileChildren(roots, "missing", children)).toEqual(roots);
+  });
+
   it("keeps one active view while opening, switching and closing tabs", () => {
     let state = initialWorkspacePanelState;
     state = reduceWorkspacePanelState(state, { type: "open-tab", kind: "files", sessionId: "s1", workspaceDir: "/a" });
     const filesTab = state.activeTabId;
     state = reduceWorkspacePanelState(state, { type: "open-file", sessionId: "s1", workspaceDir: "/a", path: "src/index.ts", lineStart: 42 });
     const fileTab = state.activeTabId;
+    state = reduceWorkspacePanelState(state, { type: "open-file", sessionId: "s1", workspaceDir: "/a", path: "README.md" });
+    const secondFileTab = state.activeTabId;
     expect(state.open).toBe(true);
-    expect(state.tabs).toHaveLength(2);
+    expect(state.tabs).toHaveLength(3);
     expect(state.tabs.find((tab) => tab.id === fileTab)).toMatchObject({ kind: "file-preview", path: "src/index.ts", lineStart: 42 });
     state = reduceWorkspacePanelState(state, { type: "select-tab", tabId: filesTab! });
     expect(state.activeTabId).toBe(filesTab);
+    state = reduceWorkspacePanelState(state, { type: "select-tab", tabId: secondFileTab! });
+    expect(state.activeTabId).toBe(secondFileTab);
     state = reduceWorkspacePanelState(state, { type: "close-tab", tabId: filesTab! });
+    expect(state.activeTabId).toBe(secondFileTab);
+    state = reduceWorkspacePanelState(state, { type: "close-tab", tabId: secondFileTab! });
     expect(state.activeTabId).toBe(fileTab);
     state = reduceWorkspacePanelState(state, { type: "close-tab", tabId: fileTab! });
     expect(state.open).toBe(false);
     expect(state.tabs).toEqual([]);
+  });
+
+  it("keeps the add-menu file view and opened files in the same tab strip", () => {
+    let state = initialWorkspacePanelState;
+    state = reduceWorkspacePanelState(state, { type: "open-primary-view", kind: "files", sessionId: "s1", workspaceDir: "/repo" });
+    const filesTab = state.activeTabId;
+    state = reduceWorkspacePanelState(state, { type: "open-file", sessionId: "s1", workspaceDir: "/repo", path: "src/index.ts" });
+    const fileTab = state.activeTabId;
+    state = reduceWorkspacePanelState(state, { type: "open-tab", kind: "files", sessionId: "s1", workspaceDir: "/repo" });
+    expect(state.tabs.map((tab) => tab.id)).toEqual([filesTab, fileTab]);
+    expect(state.activeTabId).toBe(filesTab);
+    state = reduceWorkspacePanelState(state, { type: "select-tab", tabId: fileTab! });
+    expect(state.activeTabId).toBe(fileTab);
+  });
+
+  it("renders source files with syntax highlighting and preserves source text safely", () => {
+    const tab = { id: "file:src/index.ts", kind: "file-preview" as const, sessionId: "s1", workspaceDir: "/repo", path: "src/index.ts" };
+    const markup = renderToStaticMarkup(createElement(WebuiFilePreview, { tab, codeMode: true, result: { loading: false, content: { type: "text", content: "const value = '<script>';\nreturn value;" } } }));
+    expect(webuiFileLanguage(tab.path)).toBe("typescript");
+    expect(markup).toContain("hljs-keyword");
+    expect(markup).toContain("hljs-string");
+    expect(markup).toContain('data-line-number="1"');
+    expect(markup).not.toContain("<script>");
+  });
+
+  it("renders Markdown files as a document preview and keeps a source toggle", () => {
+    const tab = { id: "file:README.md", kind: "file-preview" as const, sessionId: "s1", workspaceDir: "/repo", path: "README.md" };
+    const preview = renderToStaticMarkup(createElement(WebuiFilePreview, { tab, codeMode: false, result: { loading: false, content: { type: "text", content: "# Project guide" } } }));
+    const source = renderToStaticMarkup(createElement(WebuiFilePreview, { tab, codeMode: true, result: { loading: false, content: { type: "text", content: "# Project guide" } } }));
+    expect(preview).toContain('data-webui-markdown="true"');
+    expect(source).toContain('class="webui-file-code"');
   });
 
   it("isolates identical relative files by session and workspace and rejects traversal", () => {

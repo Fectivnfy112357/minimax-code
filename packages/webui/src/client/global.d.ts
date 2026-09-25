@@ -20,3 +20,20 @@ interface HTMLInputElement {
 interface File {
   readonly path?: string;
 }
+
+declare module "highlight.js/lib/core" {
+  interface HighlightResult { value: string; }
+  interface HighlightOptions { language: string; ignoreIllegals?: boolean; }
+  interface HighlightJs {
+    highlight(code: string, options: HighlightOptions): HighlightResult;
+    getLanguage(name: string): unknown;
+    registerLanguage(name: string, language: (hljs: unknown) => unknown): void;
+  }
+  const hljs: HighlightJs;
+  export default hljs;
+}
+
+declare module "highlight.js/lib/languages/*" {
+  const language: (hljs: unknown) => unknown;
+  export default language;
+}

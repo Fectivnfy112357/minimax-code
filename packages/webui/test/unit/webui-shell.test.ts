@@ -82,7 +82,7 @@ import {
   reduceWebuiStreamFrame,
   type WebuiStreamState,
 } from "../../src/client/stream.js";
-import { projectWebuiTodos, WebuiProgressPanel, WebuiSubagentsPanel, WebuiWorkspaceOverview, WebuiWorkspacePanel, WebuiWorkspacePanelControls } from "../../src/client/components/WorkspacePanels.js";
+import { projectWebuiTodos, WebuiProgressOverviewPanel, WebuiProgressPanel, WebuiSubagentsPanel, WebuiWorkspacePanel, WebuiWorkspacePanelControls } from "../../src/client/components/WorkspacePanels.js";
 import { initialWorkspacePanelState, reduceWorkspacePanelState } from "../../src/client/projection/workspace-panel-state.js";
 
 import type {
@@ -152,8 +152,8 @@ describe("WebUI shell", () => {
 
   it("renders the environment/progress content inside the single right panel structure", () => {
     const environment: WebuiWorkspaceEnvironment = { isGitRepo: true, branch: "webui", changedFiles: 2, insertions: 4, deletions: 1, lineStatsStatus: "ready", canPush: true };
-    const overview = renderToStaticMarkup(createElement(WebuiWorkspaceOverview, { workspaceDir: "/tmp/project", workspaceEnvironment: environment, todos: [] }));
-    expect(overview).toContain('data-testid="workspace-section-group"');
+    const overview = renderToStaticMarkup(createElement(WebuiProgressOverviewPanel, { workspaceDir: "/tmp/project", workspaceEnvironment: environment, todos: [] }));
+    expect(overview).toContain('data-testid="progress-overview-card"');
     expect(overview).toContain("环境信息");
     expect(overview).toContain(">webui<");
     // 158a301 起行数拆成两个着色 span，"+4 -1" 不再是连续文本。
@@ -167,14 +167,14 @@ describe("WebUI shell", () => {
     expect(overview).toContain("跟踪较长任务的进度");
     expect(overview).not.toContain('data-webui-placeholder-chrome="environment-变更"');
 
-    const controls = renderToStaticMarkup(createElement(WebuiWorkspacePanelControls, { filePanelOpen: false, workspaceOpen: true, onOpenFiles: () => undefined, onToggleWorkspace: () => undefined }));
-    expect(controls).toContain('aria-label="打开文件"');
-    expect(controls).toContain('aria-label="工作区"');
+    const controls = renderToStaticMarkup(createElement(WebuiWorkspacePanelControls, { filePanelOpen: false, progressPanelOpen: true, onOpenFiles: () => undefined, onToggleProgressPanel: () => undefined }));
+    expect(controls).toContain('aria-label="工作区文件侧栏"');
+    expect(controls).toContain('aria-label="环境信息与进度"');
     expect(controls).not.toContain('aria-label="浏览器"');
   });
 
   it("does not render Desktop's environment section for a non-git session", () => {
-    const overview = renderToStaticMarkup(createElement(WebuiWorkspaceOverview, {
+    const overview = renderToStaticMarkup(createElement(WebuiProgressOverviewPanel, {
       workspaceDir: "/tmp/non-git-workspace",
       workspaceEnvironment: { isGitRepo: false, changedFiles: 0, insertions: 0, deletions: 0, lineStatsStatus: "skipped" },
       todos: [],
@@ -1042,7 +1042,7 @@ describe("WebUI shell — desktop anatomy", () => {
     const html = renderSessionShell();
 
     expect(html).toMatch(/data-webui-session-layout="true"/u);
-    expect(html).toMatch(/webui-session-surface-with-workspace/u);
+    expect(html).not.toMatch(/webui-session-surface-with-workspace/u);
     expect(html).toMatch(/webui-session-layout relative flex h-full min-h-0 w-full/u);
     expect(html).toMatch(/data-webui-session-transcript-scroll="true"/u);
     expect(html).toMatch(/data-webui-session-composer="true"/u);
