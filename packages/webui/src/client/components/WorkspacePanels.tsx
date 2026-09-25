@@ -37,7 +37,7 @@ import {
   type WebuiWorkspaceSubagent,
   type WebuiWorkspaceTodo,
 } from "../projection/workspace-progress.js";
-import { WebuiIconCheck, WebuiIconChevronDown, WebuiIconChevronLeft, WebuiIconClose, WebuiIconFile, WebuiIconFolder, WebuiIconRunLocation, WebuiIconSearch, WebuiIconSidebarToggle, WebuiIconWorkspaceCanvas, WebuiIconWorkspaceExpand, WebuiIconWorkspaceReview, WebuiIconWorkspaceTerminal } from "../icons.js";
+import { WebuiIconCheck, WebuiIconChevronDown, WebuiIconChevronLeft, WebuiIconClose, WebuiIconDiffFile, WebuiIconFile, WebuiIconFolder, WebuiIconRunLocation, WebuiIconSearch, WebuiIconSidebarToggle, WebuiIconWorkspaceCanvas, WebuiIconWorkspaceExpand, WebuiIconWorkspaceReview, WebuiIconWorkspaceTerminal } from "../icons.js";
 
 export type WebuiTodo = WebuiWorkspaceTodo;
 const DESKTOP_COPY = { environment: "环境信息", progress: "进度", progressEmpty: "跟踪较长任务的进度", newTerminal: "新建终端", terminalLimit: "最多可以打开 5 个终端", terminalLabel: "终端", terminalExited: "已退出", terminalEmptyTitle: "还没有终端", terminalEmptyDescription: "可直接在右侧面板中启动当前工作区的 Shell。", canvasEmptyTitle: "把文件放到画布上", canvasEmptyDescription: "添加图片或其他工作区文件，然后自由排列和调整大小。", fileClose: "关闭", changes: "变更", commit: "提交或推送", openTerminal: "打开终端", unsupported: "WebUI 尚未接入此操作" } as const;
@@ -347,6 +347,7 @@ export function WebuiWorkspacePanel({ state, dispatch, sessionId, workspaceDir, 
 }): ReactElement {
   const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId);
   const tab = activeTab?.kind ?? "files";
+  const tabListRef = useRef<HTMLDivElement>(null);
   const [files, setFiles] = useState<readonly WebuiWorkspaceFile[]>([]);
   const [fileSearch, setFileSearch] = useState("");
   const [fileTreeOpen, setFileTreeOpen] = useState(true);
@@ -396,6 +397,9 @@ export function WebuiWorkspacePanel({ state, dispatch, sessionId, workspaceDir, 
   }, [activeWorkspace]);
   useEffect(() => {
     setFileCodeMode(activeTab?.kind === "file-preview" && activeTab.lineStart !== undefined);
+  }, [activeTab?.id]);
+  useEffect(() => {
+    tabListRef.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [activeTab?.id]);
   useEffect(() => {
     if (!activeWorkspace || !listWorkspaceFileTree) { setFiles([]); setFileTreeState({ workspaceDir: activeWorkspace, loading: false, ...(!listWorkspaceFileTree ? { error: "文件浏览能力暂不可用。" } : {}) }); return undefined; }
@@ -591,12 +595,22 @@ export function WebuiWorkspacePanel({ state, dispatch, sessionId, workspaceDir, 
     return () => { input.dispose(); observer.disconnect(); terminalStop.current?.(); terminalStop.current = undefined; terminal.dispose(); terminalInstance.current = undefined; };
   }, [activeTerminalId, terminals, watchTerminal, writeTerminal]);
   const tabLabel = (item: WorkspacePanelTab): string => item.kind === "file-preview" ? item.path.split("/").at(-1) ?? item.path : item.kind === "review" && item.source === "turn" ? "Review" : ({ files: "查看文件", review: "变更", canvas: "画布", terminal: "终端" } as const)[item.kind];
+  const fileTabGlyph = (item: WorkspacePanelTab) => {
+    if (item.kind === "files") return <WebuiIconFile className="webui-workspace-tab-file-icon" />;
+    if (item.kind !== "file-preview") return null;
+    const extension = item.path.split(/[./\\]/u).at(-1)?.toLowerCase();
+    if (extension === "md" || extension === "mdx") return <span className="webui-workspace-filetype-badge is-markdown" aria-hidden="true">M↓</span>;
+    if (["js", "jsx", "mjs", "cjs"].includes(extension ?? "")) return <span className="webui-workspace-filetype-badge is-javascript" aria-hidden="true">JS</span>;
+    if (["ts", "tsx", "mts", "cts"].includes(extension ?? "")) return <span className="webui-workspace-filetype-badge is-typescript" aria-hidden="true">TS</span>;
+    if (extension === "json") return <span className="webui-workspace-filetype-badge is-json" aria-hidden="true">{ }</span>;
+    return <WebuiIconDiffFile fileName={item.path} className="webui-workspace-tab-file-icon" />;
+  };
   return <aside className={`webui-workspace-panel ${state.expanded ? "is-expanded" : ""}`} data-testid="workspace-panel" data-active-tab={tab}>
     <div className="webui-workspace-panel-header">
       <div className="webui-workspace-tabs" role="tablist" aria-label="工作区面板标签">
-        <div className="webui-workspace-tab-list">
+        <div className="webui-workspace-tab-list" ref={tabListRef}>
           {state.tabs.map((item) => <div key={item.id} className={`webui-workspace-tab ${state.activeTabId === item.id ? "is-active" : ""}`} role="presentation">
-            <button type="button" role="tab" aria-selected={state.activeTabId === item.id} onClick={() => dispatch({ type: "select-tab", tabId: item.id })}>{tabLabel(item)}</button>
+            <button type="button" role="tab" aria-selected={state.activeTabId === item.id} onClick={() => dispatch({ type: "select-tab", tabId: item.id })}>{fileTabGlyph(item)}<span className="webui-workspace-tab-label">{tabLabel(item)}</span></button>
             <button type="button" aria-label={`${tabLabel(item)} ${DESKTOP_COPY.fileClose}`} onClick={() => dispatch({ type: "close-tab", tabId: item.id })}><WebuiIconClose className="size-3" /></button>
           </div>)}
         </div>
@@ -623,6 +637,7 @@ export function WebuiWorkspacePanel({ state, dispatch, sessionId, workspaceDir, 
         <button type="button" aria-pressed={!fileCodeMode} onClick={() => setFileCodeMode(false)}>预览</button>
         <button type="button" aria-pressed={fileCodeMode} onClick={() => setFileCodeMode(true)}>代码</button>
       </div> : null}
+      {activeTab?.kind === "file-preview" ? <button type="button" className="webui-workspace-edit-action" aria-label="编辑文件（暂未支持）" title="编辑文件（暂未支持）" disabled><svg className="size-[18px]" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m12.7 3.3 4 4M3.5 16.5l3.1-.6L16 6.5a1.4 1.4 0 0 0-2-2l-9.4 9.4-.6 2.6Z" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" /></svg></button> : null}
       <button type="button" className="webui-workspace-tree-toggle" aria-label={fileTreeOpen ? "隐藏文件树" : "显示文件树"} aria-pressed={fileTreeOpen} onClick={() => setFileTreeOpen((open) => !open)}><WebuiIconSidebarToggle className="size-5" /></button>
     </div> : null}
     <div className="webui-workspace-panel-body">

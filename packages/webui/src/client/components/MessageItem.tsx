@@ -215,7 +215,7 @@ export function MessageItem({
                 <div className="webui-inline-editor-actions"><button type="button" onClick={() => setEditing(false)} disabled={mutationBusy}>取消</button><button type="button" onClick={submitEdit} disabled={mutationBusy || !editText.trim()}>发送</button></div>
               </div>
             ) : <div
-              className="webui-user-bubble bg-bg_grouped_tertiary rounded-[16px] px-3 py-2 max-w-[80%]"
+              className="webui-user-bubble rounded-[16px] px-3 py-2 max-w-[80%]"
               data-webui-user-bubble="true"
             >
               <div className="webui-user-text-clamp">
