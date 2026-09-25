@@ -88,6 +88,7 @@ export function WebuiDiffCard({
   getTurnDiff,
   revertTurnDiff,
   reapplyTurnDiff,
+  onReview,
 }: {
   readonly sessionId?: string;
   readonly assistantMessageId?: string;
@@ -95,6 +96,7 @@ export function WebuiDiffCard({
   readonly changeSetId?: string;
   readonly initialView?: WebuiTurnDiffView;
   readonly initialState?: Partial<WebuiDiffState>;
+  readonly onReview?: (view: WebuiTurnDiffView, selectedPath?: string) => void;
 } & WebuiDiffCardCapabilities): ReactElement | null {
   const [diffState, setDiffState] = useState<WebuiDiffState>(() => ({
     ...initialWebuiDiffState,
@@ -214,7 +216,7 @@ export function WebuiDiffCard({
               撤销
             </button>
           )}
-          <button type="button" className="webui-diff-review" data-webui-diff-review="true" data-testid="turn-diff-review" onClick={() => setDiffState((current) => reduceWebuiDiffState(current, { type: "toggle-review" }))}>
+          <button type="button" className="webui-diff-review" data-webui-diff-review="true" data-testid="turn-diff-review" onClick={() => { if (view) onReview?.(view); setDiffState((current) => reduceWebuiDiffState(current, { type: "toggle-review" })); }}>
             {reviewing ? "关闭 Review" : "Review"}
           </button>
         </div>
@@ -223,7 +225,7 @@ export function WebuiDiffCard({
         {shown.map((file) => (
           <li className="webui-diff-file" key={file.file} data-webui-diff-file="true" data-file-path={file.file}>
             <span className="webui-diff-file-icon" data-testid="turn-diff-file-icon"><WebuiIconDiffFile fileName={basenameOf(file.file)} /></span>
-            <span className="webui-diff-file-name" data-testid="turn-diff-file-name" title={file.file}>{basenameOf(file.file)}</span>
+            <button type="button" className="webui-diff-file-name" data-testid="turn-diff-file-name" title={file.file} onClick={() => { if (view) onReview?.(view, file.file); }}>{basenameOf(file.file)}</button>
             <span className="webui-diff-file-stats" data-webui-diff-file-stats="true">
               <span className="webui-diff-add">{`+${file.additions}`}</span>
               {file.deletions > 0 ? <span className="webui-diff-del">{`-${file.deletions}`}</span> : null}

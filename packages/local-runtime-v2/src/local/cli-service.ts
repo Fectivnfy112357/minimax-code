@@ -557,6 +557,30 @@ export class CliService {
     );
   }
 
+  getWorkspaceReviewSummary(workspaceDir: string) {
+    const git = this.requireCapability("workspace", "Workspace").git;
+    if (!git.getReviewSummary) throw new Error("Runtime does not expose Workspace review summaries.");
+    return git.getReviewSummary(workspaceDir, { type: "workspace" });
+  }
+
+  listWorkspaceReviewFileDiffs(input: { workspaceDir: string; reviewSnapshotId: string; fileIds?: string[] }) {
+    const git = this.requireCapability("workspace", "Workspace").git;
+    if (!git.listReviewFileDiffs) throw new Error("Runtime does not expose Workspace review file diffs.");
+    return git.listReviewFileDiffs(input.workspaceDir, { type: "workspace" }, { reviewSnapshotId: input.reviewSnapshotId, ...(input.fileIds ? { fileIds: input.fileIds } : {}) });
+  }
+
+  getWorkspaceReviewFileContent(input: { workspaceDir: string; reviewSnapshotId: string; fileId: string; side: "old" | "new" }) {
+    const git = this.requireCapability("workspace", "Workspace").git;
+    if (!git.getReviewFileContent) throw new Error("Runtime does not expose Workspace review file content.");
+    return git.getReviewFileContent(input.workspaceDir, { type: "workspace" }, { reviewSnapshotId: input.reviewSnapshotId, fileId: input.fileId, side: input.side });
+  }
+
+  searchWorkspaceReviewDiffs(input: { workspaceDir: string; reviewSnapshotId: string; query: string; includeUntrackedFiles: boolean; pageIndex?: number; pageSize?: number }) {
+    const git = this.requireCapability("workspace", "Workspace").git;
+    if (!git.searchReviewDiffs) throw new Error("Runtime does not expose Workspace review search.");
+    return git.searchReviewDiffs(input.workspaceDir, { type: "workspace" }, { reviewSnapshotId: input.reviewSnapshotId, query: input.query, includeUntrackedFiles: input.includeUntrackedFiles, ...(input.pageIndex !== undefined ? { pageIndex: input.pageIndex } : {}), ...(input.pageSize !== undefined ? { pageSize: input.pageSize } : {}) });
+  }
+
   async getWorkspaceGitEnvironment(workspaceDir: string) {
     const git = this.requireCapability("workspace", "Workspace").git;
     const [metadata, changes] = await Promise.all([

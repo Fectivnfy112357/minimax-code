@@ -1,5 +1,5 @@
 import { versionOperation, listSessionsOperation, listVisibleProjectsOperation, getSessionTreeOperation, createSessionOperation, getSessionOperation } from "./session.js";
-import { listWorkspaceFileTreeOperation, readWorkspaceFileOperation, getWorkspaceEnvironmentOperation, mutateWorkspaceGitOperation, readCanvasOperation, applyCanvasOperation, createTerminalOperation, listTerminalsOperation, writeTerminalOperation, resizeTerminalOperation, disposeTerminalOperation, watchTerminalOperation } from "./workspace.js";
+import { listWorkspaceFileTreeOperation, readWorkspaceFileOperation, getWorkspaceEnvironmentOperation, mutateWorkspaceGitOperation, getWorkspaceReviewSummaryOperation, listWorkspaceReviewFileDiffsOperation, getWorkspaceReviewFileContentOperation, searchWorkspaceReviewDiffsOperation, readCanvasOperation, applyCanvasOperation, createTerminalOperation, listTerminalsOperation, writeTerminalOperation, resizeTerminalOperation, disposeTerminalOperation, watchTerminalOperation } from "./workspace.js";
 import { getMessagesOperation, getSessionDiffOperation, getTurnDiffOperation, revertTurnDiffOperation, reapplyTurnDiffOperation, getSessionRewindPreviewOperation, rewindSessionOperation, editSessionMessageOperation } from "./messages.js";
 import { isGoalEnabledOperation, getGoalOperation, createGoalOperation, patchGoalOperation, clearGoalOperation } from "./goal.js";
 import { sendMessageOperation, enqueueMessageOperation, resumeSessionOperation } from "./interaction.js";
@@ -7,7 +7,7 @@ import { watchEventsOperation, listPendingPermissionsOperation, getPendingQuesti
 import { abortSessionOperation, listQueueMessagesOperation, deleteQueueItemOperation, listModelsOperation, listSkillsOperation, selectModelOperation, getSessionUsageOperation, getUsageQuotaOperation, getAccountStatusOperation } from "./queue.js";
 import { archiveSessionOperation, deleteSessionOperation, updateSessionOperation, getSessionForkOptionsOperation, forkSessionOperation, listUserModelProvidersOperation, createUserModelProviderOperation, updateUserModelProviderOperation, deleteUserModelProviderOperation, testUserModelProviderOperation, testUserModelOperation, discoverUserModelsCandidateOperation, saveUserModelProviderCandidateOperation, listProviderPresetsOperation, getMiniMaxApiKeyStatusOperation, upsertMiniMaxApiKeyOperation, getCodexOAuthStatusOperation, getMiniMaxModelSourceOperation, setMiniMaxModelSourceOperation, testUserModelCandidateOperation, revealModelProviderApiKeyOperation, startCodexOAuthLoginOperation, cancelCodexOAuthLoginOperation, refreshModelsOperation, runCommandOperation, getSigninPanelOperation, claimSigninOperation, signOutOperation } from "./provider.js";
 export { versionOperation, listSessionsOperation, listVisibleProjectsOperation, getSessionTreeOperation, createSessionOperation, getSessionOperation } from "./session.js";
-export { listWorkspaceFileTreeOperation, readWorkspaceFileOperation, getWorkspaceEnvironmentOperation, mutateWorkspaceGitOperation, readCanvasOperation, applyCanvasOperation, createTerminalOperation, listTerminalsOperation, writeTerminalOperation, resizeTerminalOperation, disposeTerminalOperation, watchTerminalOperation } from "./workspace.js";
+export { listWorkspaceFileTreeOperation, readWorkspaceFileOperation, getWorkspaceEnvironmentOperation, mutateWorkspaceGitOperation, getWorkspaceReviewSummaryOperation, listWorkspaceReviewFileDiffsOperation, getWorkspaceReviewFileContentOperation, searchWorkspaceReviewDiffsOperation, readCanvasOperation, applyCanvasOperation, createTerminalOperation, listTerminalsOperation, writeTerminalOperation, resizeTerminalOperation, disposeTerminalOperation, watchTerminalOperation } from "./workspace.js";
 export { getMessagesOperation, getSessionDiffOperation, getTurnDiffOperation, revertTurnDiffOperation, reapplyTurnDiffOperation, getSessionRewindPreviewOperation, rewindSessionOperation, editSessionMessageOperation } from "./messages.js";
 export { isGoalEnabledOperation, getGoalOperation, createGoalOperation, patchGoalOperation, clearGoalOperation } from "./goal.js";
 export { sendMessageOperation, enqueueMessageOperation, resumeSessionOperation } from "./interaction.js";
@@ -45,6 +45,10 @@ export function createOperationRegistry(
   registerOperation(registry, { operation: applyCanvasOperation, handle: handlers.applyCanvas });
   registerOperation(registry, { operation: getWorkspaceEnvironmentOperation, handle: handlers.getWorkspaceEnvironment });
   registerOperation(registry, { operation: mutateWorkspaceGitOperation, handle: handlers.mutateWorkspaceGit });
+  registerOperation(registry, { operation: getWorkspaceReviewSummaryOperation, handle: handlers.getWorkspaceReviewSummary });
+  registerOperation(registry, { operation: listWorkspaceReviewFileDiffsOperation, handle: handlers.listWorkspaceReviewFileDiffs });
+  registerOperation(registry, { operation: getWorkspaceReviewFileContentOperation, handle: handlers.getWorkspaceReviewFileContent });
+  registerOperation(registry, { operation: searchWorkspaceReviewDiffsOperation, handle: handlers.searchWorkspaceReviewDiffs });
   // The terminal adapter is a real second surface (the PTY bridge the WebUI
   // shares with the desktop); it's a separate runtime from the harness port
   // and only the WebuiService wires one in. When none is supplied, the six

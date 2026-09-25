@@ -39,6 +39,8 @@ type WebuiSessionTranscriptCapabilities = Pick<
 >;
 import type { WebuiTurnDiffView } from "../../server/port.js";
 import type { WebuiQuestionnaireResponseSummary } from "../projection/message-parts.js";
+import type { WebuiMessageFileReference } from "../projection/message-file-reference.js";
+import type { WorkspacePanelCommand } from "../projection/workspace-panel-state.js";
 import {
   groupWebuiTranscriptItems,
   projectWebuiQueryDurations,
@@ -183,10 +185,16 @@ export function WebuiSessionTranscript({
   getSessionRewindPreview,
   rewindSession,
   editSessionMessage,
+  workspaceDir,
+  onOpenFile,
+  onOpenTurnReview,
 }: {
   readonly sessionId: string;
   readonly loadMessages: WebuiClientMessageLoader;
   readonly initialMessages?: WebuiClientMessagePage;
+  readonly workspaceDir?: string;
+  readonly onOpenFile?: (input: { readonly sessionId: string; readonly workspaceDir: string; readonly reference: WebuiMessageFileReference }) => void;
+  readonly onOpenTurnReview?: (command: Extract<WorkspacePanelCommand, { type: "open-turn-review" }>) => void;
 } & WebuiSessionTranscriptCapabilities): ReactElement {
   const [page, setPage] = useState<WebuiClientMessagePage>(
     () => initialMessages ?? {},
@@ -441,6 +449,9 @@ export function WebuiSessionTranscript({
                 getSessionRewindPreview={getSessionRewindPreview}
                 rewindSession={rewindSession}
                 editSessionMessage={editSessionMessage}
+                workspaceDir={workspaceDir}
+                onOpenFile={onOpenFile}
+                onOpenTurnReview={onOpenTurnReview}
               />,
             );
           }
@@ -535,6 +546,9 @@ export function WebuiSessionTranscript({
               getSessionRewindPreview={getSessionRewindPreview}
               rewindSession={rewindSession}
               editSessionMessage={editSessionMessage}
+              workspaceDir={workspaceDir}
+              onOpenFile={onOpenFile}
+              onOpenTurnReview={onOpenTurnReview}
             />
           );
         })}

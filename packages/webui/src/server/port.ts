@@ -426,6 +426,34 @@ export interface WebuiWorkspaceGitMutationRequest {
   readonly message?: string;
 }
 
+export interface WebuiWorkspaceReviewFile {
+  readonly fileId: string; readonly path: string; readonly originalPath?: string;
+  readonly status: string; readonly type?: "text" | "binary";
+  readonly additions: number; readonly deletions: number;
+}
+export interface WebuiWorkspaceReviewSummary {
+  readonly repositoryId: string; readonly reviewSnapshotId: string;
+  readonly files: readonly WebuiWorkspaceReviewFile[];
+  readonly totals: { readonly files: number; readonly additions: number; readonly deletions: number };
+}
+export interface WebuiWorkspaceReviewFileDiff {
+  readonly fileId: string; readonly errorCode?: string; readonly error?: string;
+  readonly diff?: { readonly type: "text" | "binary"; readonly content: string; readonly diff?: string; readonly previewState?: string };
+}
+export interface WebuiWorkspaceReviewDiffs {
+  readonly reviewSnapshotId: string; readonly diffs: readonly WebuiWorkspaceReviewFileDiff[];
+}
+export interface WebuiWorkspaceReviewFileContent {
+  readonly fileId: string; readonly path: string; readonly side: "old" | "new";
+  readonly type: "text" | "binary"; readonly content?: string; readonly error?: string; readonly errorCode?: string;
+}
+export interface WebuiWorkspaceReviewSearchResult {
+  readonly reviewSnapshotId: string;
+  readonly matchedFiles: readonly { readonly fileId: string; readonly path: string; readonly matchCount: number }[];
+  readonly totalMatches: number; readonly totalMatchedFiles: number; readonly pageIndex: number; readonly pageSize: number;
+  readonly matchesBeforePage: number; readonly hasPreviousPage: boolean; readonly hasNextPage: boolean;
+}
+
 export interface WebuiCanvasDocument {
   readonly schemaVersion: number;
   readonly canvasId: string;
@@ -694,6 +722,10 @@ export interface WebuiHarnessPort {
   readWorkspaceFile(request: { readonly workspaceDir: string; readonly path: string }): Promise<WebuiWorkspaceFileContent>;
   getWorkspaceEnvironment(request: { readonly workspaceDir: string }): Promise<WebuiWorkspaceEnvironment>;
   mutateWorkspaceGit(request: WebuiWorkspaceGitMutationRequest): Promise<Record<string, unknown>>;
+  getWorkspaceReviewSummary(request: { readonly workspaceDir: string }): Promise<WebuiWorkspaceReviewSummary>;
+  listWorkspaceReviewFileDiffs(request: { readonly workspaceDir: string; readonly reviewSnapshotId: string; readonly fileIds: readonly string[] }): Promise<WebuiWorkspaceReviewDiffs>;
+  getWorkspaceReviewFileContent(request: { readonly workspaceDir: string; readonly reviewSnapshotId: string; readonly fileId: string; readonly side: "old" | "new" }): Promise<WebuiWorkspaceReviewFileContent>;
+  searchWorkspaceReviewDiffs(request: { readonly workspaceDir: string; readonly reviewSnapshotId: string; readonly query: string; readonly includeUntrackedFiles: boolean; readonly pageIndex?: number; readonly pageSize?: number }): Promise<WebuiWorkspaceReviewSearchResult>;
   readCanvas(request: { readonly sessionId: string }): Promise<WebuiCanvasDocument>;
   applyCanvas(request: { readonly sessionId: string; readonly operation: Record<string, unknown> }): Promise<{ readonly operationId: string; readonly document: WebuiCanvasDocument }>;
   sendMessage(

@@ -7,6 +7,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
+import { parseWebuiMessageFileReference } from "./projection/message-file-reference.js";
 
 marked.use({
   extensions: [
@@ -50,13 +51,18 @@ export function isSafeWebuiMarkdownHref(href: string): boolean {
   return !/^[a-z][a-z\d+.-]*:/iu.test(value);
 }
 
-function inline(tokens: readonly Token[] | undefined): ReactNode[] {
+function inline(tokens: readonly Token[] | undefined, onOpenFile?: (reference: NonNullable<ReturnType<typeof parseWebuiMessageFileReference>>) => void): ReactNode[] {
   return (tokens ?? []).map((token, index) => {
     const key = `${token.type}-${index}`;
     if (token.type === "strong")
-      return <strong key={key}>{inline(token.tokens)}</strong>;
-    if (token.type === "em") return <em key={key}>{inline(token.tokens)}</em>;
-    if (token.type === "codespan") return <code key={key}>{token.text}</code>;
+      return <strong key={key}>{inline(token.tokens, onOpenFile)}</strong>;
+    if (token.type === "em") return <em key={key}>{inline(token.tokens, onOpenFile)}</em>;
+    if (token.type === "codespan") {
+      const reference = onOpenFile ? parseWebuiMessageFileReference(token.text) : undefined;
+      return reference
+        ? <a key={key} href={token.text} data-webui-file-reference={reference.path} onClick={(event) => { event.preventDefault(); onOpenFile?.(reference); }}><code>{token.text}</code></a>
+        : <code key={key}>{token.text}</code>;
+    }
     if (token.type === "webuiMath") {
       const math = token as Token & { readonly text: string; readonly display: boolean };
       try {
@@ -71,21 +77,36 @@ function inline(tokens: readonly Token[] | undefined): ReactNode[] {
         return <code key={key}>{math.raw}</code>;
       }
     }
-    if (token.type === "link")
+    if (token.type === "link") {
+      const fileReference = onOpenFile ? parseWebuiMessageFileReference(token.href) : undefined;
       return isSafeWebuiMarkdownHref(token.href) ? (
-        <a key={key} href={token.href} rel="noreferrer">
+        <a key={key} href={token.href} rel="noreferrer" {...(fileReference ? { "data-webui-file-reference": fileReference.path, onClick: (event: React.MouseEvent<HTMLAnchorElement>) => { event.preventDefault(); onOpenFile?.(fileReference); } } : {})}>
           {inline(token.tokens)}
         </a>
       ) : (
-        <Fragment key={key}>{inline(token.tokens)}</Fragment>
+        <Fragment key={key}>{inline(token.tokens, onOpenFile)}</Fragment>
       );
+    }
     if (token.type === "br") return <br key={key} />;
-    if (token.type === "text")
-      return (
-        <Fragment key={key}>
-          {token.tokens ? inline(token.tokens) : token.text}
-        </Fragment>
-      );
+    if (token.type === "text") {
+      if (token.tokens) return <Fragment key={key}>{inline(token.tokens, onOpenFile)}</Fragment>;
+      if (!onOpenFile) return token.text;
+      const parts: ReactNode[] = [];
+      const expression = /(?<![\w/:])(?:\.\.?\/)?[\w@.+-]+(?:\/[\w@.+-]+)*\.[A-Za-z0-9_-]+(?::\d+(?:-\d+)?)?/gu;
+      let cursor = 0;
+      for (const match of token.text.matchAll(expression)) {
+        const start = match.index ?? 0;
+        const text = match[0];
+        const reference = parseWebuiMessageFileReference(text);
+        if (!reference || !(/\//u.test(reference.path) || /\.(?:[cm]?[jt]sx?|html|css|json|md|ya?ml|toml|rs|py|go|java|kt|sh)$/iu.test(reference.path))) continue;
+        if (start > cursor) parts.push(token.text.slice(cursor, start));
+        parts.push(<a key={`${key}-file-${start}`} href={text} data-webui-file-reference={reference.path} onClick={(event) => { event.preventDefault(); onOpenFile(reference); }}>{text}</a>);
+        cursor = start + text.length;
+      }
+      if (cursor === 0) return token.text;
+      if (cursor < token.text.length) parts.push(token.text.slice(cursor));
+      return <Fragment key={key}>{parts}</Fragment>;
+    }
     return (
       <Fragment key={key}>
         {"text" in token && typeof token.text === "string"
@@ -96,13 +117,13 @@ function inline(tokens: readonly Token[] | undefined): ReactNode[] {
   });
 }
 
-function blocks(tokens: readonly Token[] | undefined): ReactNode[] {
+function blocks(tokens: readonly Token[] | undefined, onOpenFile?: (reference: NonNullable<ReturnType<typeof parseWebuiMessageFileReference>>) => void): ReactNode[] {
   return (tokens ?? []).map((token, index) => {
     const key = `${token.type}-${index}`;
     if (token.type === "paragraph")
-      return <p key={key}>{inline(token.tokens)}</p>;
+      return <p key={key}>{inline(token.tokens, onOpenFile)}</p>;
     if (token.type === "heading")
-      return createElement(`h${token.depth}`, { key }, ...inline(token.tokens));
+      return createElement(`h${token.depth}`, { key }, ...inline(token.tokens, onOpenFile));
     if (token.type === "code" && token.lang?.toLowerCase() === "math") {
       try {
         return (
@@ -168,19 +189,19 @@ function blocks(tokens: readonly Token[] | undefined): ReactNode[] {
       );
     }
     if (token.type === "blockquote")
-      return <blockquote key={key}>{blocks(token.tokens)}</blockquote>;
+      return <blockquote key={key}>{blocks(token.tokens, onOpenFile)}</blockquote>;
     if (token.type === "list") {
       const items = token.items as Array<{ tokens: Token[] }>;
       return token.ordered ? (
         <ol key={key}>
           {items.map((item, i) => (
-            <li key={i}>{blocks(item.tokens)}</li>
+          <li key={i}>{blocks(item.tokens, onOpenFile)}</li>
           ))}
         </ol>
       ) : (
         <ul key={key}>
           {items.map((item, i) => (
-            <li key={i}>{blocks(item.tokens)}</li>
+          <li key={i}>{blocks(item.tokens, onOpenFile)}</li>
           ))}
         </ul>
       );
@@ -197,10 +218,9 @@ function blocks(tokens: readonly Token[] | undefined): ReactNode[] {
   });
 }
 
-export function WebuiMarkdown({
-  source,
-}: {
+export function WebuiMarkdown({ source, onOpenFile }: {
   readonly source: string;
+  readonly onOpenFile?: (reference: NonNullable<ReturnType<typeof parseWebuiMessageFileReference>>) => void;
 }): ReactElement {
   let tokens: Token[];
   try {
@@ -210,7 +230,7 @@ export function WebuiMarkdown({
   }
   return (
     <div data-webui-markdown="true" className="matrix-markdown webui-markdown">
-      {blocks(tokens)}
+      {blocks(tokens, onOpenFile)}
     </div>
   );
 }

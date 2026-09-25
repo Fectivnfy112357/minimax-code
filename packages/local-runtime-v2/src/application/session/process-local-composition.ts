@@ -1,6 +1,7 @@
 import type { V1ServiceCompatibility } from '../../compat/v1/runtime.js';
 import { createProcessLocalApplication } from '../index.js';
 import { createProcessLocalMiniAppApplication } from './process-local-miniapp-application.js';
+import type { WorkspaceGitService } from '../../service/workspace/index.js';
 
 type ProcessLocalApplicationOptions = Parameters<typeof createProcessLocalApplication>[0];
 type ProcessLocalMiniAppArgs = Parameters<typeof createProcessLocalMiniAppApplication>;
@@ -12,6 +13,7 @@ type ProcessLocalMiniAppArgs = Parameters<typeof createProcessLocalMiniAppApplic
 export function composeProcessLocalApplication(input: {
   readonly eventBus: ProcessLocalApplicationOptions['eventBus'];
   readonly usageCommits: ProcessLocalApplicationOptions['usageCommits'];
+  readonly workspaceReview: Pick<WorkspaceGitService, 'getReviewSummary' | 'listReviewFileDiffs' | 'getReviewFileContent' | 'searchReviewDiffs'>;
   readonly compatibility: Pick<V1ServiceCompatibility, 'skills' | 'peripherals'>;
   readonly listRuntimeSkills: ProcessLocalApplicationOptions['skills']['listRuntimeSkills'];
   readonly plugins: ProcessLocalApplicationOptions['plugins'];
@@ -32,7 +34,16 @@ export function composeProcessLocalApplication(input: {
     },
     plugins: input.plugins,
     miniApps: createProcessLocalMiniAppApplication(input.pluginControl, input.miniApp),
-    workspace: { ...input.compatibility.peripherals.workspace },
+    workspace: {
+      ...(input.compatibility.peripherals.workspace ?? {}),
+      git: {
+        ...(input.compatibility.peripherals.workspace?.git ?? {}),
+        getReviewSummary: input.workspaceReview.getReviewSummary.bind(input.workspaceReview),
+        listReviewFileDiffs: input.workspaceReview.listReviewFileDiffs.bind(input.workspaceReview),
+        getReviewFileContent: input.workspaceReview.getReviewFileContent.bind(input.workspaceReview),
+        searchReviewDiffs: input.workspaceReview.searchReviewDiffs.bind(input.workspaceReview),
+      },
+    },
     plan: { isEntryEnabled: input.planEntryEnabled },
     ...(input.sessionReports ? { sessionReports: input.sessionReports } : {}),
     instructions: input.instructions,

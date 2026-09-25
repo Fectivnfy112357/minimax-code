@@ -77,6 +77,7 @@ describe("Agent activity disclosure", () => {
     const html = renderToStaticMarkup(createElement(WebuiAssistantBody, {
       messageId: "interleaved",
       answers: ["before tool", "after tool"],
+      processInitiallyExpanded: true,
       processSegments: [{ messageId: "interleaved", activityParts: [
         { type: "text", text: "before tool" },
         { type: "tool", tool: { name: "read_file", status: "done", input: "README.md" } },
@@ -106,7 +107,7 @@ describe("Agent activity disclosure", () => {
     }));
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain("final answer");
-    expect(html).not.toContain('data-testid="activity-group"');
+    expect(html).toContain('data-testid="turn-process-detail" hidden=""');
     expect((html.match(/final answer/g) ?? []).length).toBe(1);
   });
 
@@ -114,6 +115,7 @@ describe("Agent activity disclosure", () => {
     const html = renderToStaticMarkup(createElement(WebuiAssistantBody, {
       messageId: "activity-view",
       answers: [],
+      processInitiallyExpanded: true,
       getTurnDiff: async () => ({ changes: [] }),
       revertTurnDiff: async () => ({ success: true }),
       reapplyTurnDiff: async () => ({ success: true }),
@@ -163,6 +165,7 @@ describe("Agent activity disclosure", () => {
     const html = renderToStaticMarkup(createElement(WebuiAssistantBody, {
       messageId: "thinking-and-files",
       answers: [],
+      processInitiallyExpanded: true,
       processSegments: [{
         messageId: "thinking-and-files",
         activityParts: activityItems,
@@ -194,6 +197,7 @@ describe("Agent activity disclosure", () => {
     const html = renderToStaticMarkup(createElement(WebuiAssistantBody, {
       messageId: "thinking-only",
       answers: [],
+      processInitiallyExpanded: true,
       processSegments: [{
         messageId: "thinking-only",
         activityParts: [{ type: "thinking", text: "Reasoning without tools" }],

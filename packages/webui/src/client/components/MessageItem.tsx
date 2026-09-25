@@ -17,6 +17,8 @@ import type {
   WebuiGetSessionRewindPreviewResult,
 } from "../../server/port.js";
 import type { WebuiTransport } from "../contracts.js";
+import type { WebuiMessageFileReference } from "../projection/message-file-reference.js";
+import type { WorkspacePanelCommand } from "../projection/workspace-panel-state.js";
 import type {
   WebuiHistoricalTurnView,
   WebuiLiveTurnView,
@@ -72,12 +74,18 @@ export function MessageItem({
   rewindSession,
   editSessionMessage,
   onMutationComplete,
+  workspaceDir,
+  onOpenFile,
+  onOpenTurnReview,
 }: {
   /** Narrowed leaf-renderer input (historical or live). */
   readonly view: WebuiTurnView;
   /** Group-level turn duration; computed by SessionTranscript's group collapse. */
   readonly wallClockDurationMs?: number;
   readonly onMutationComplete?: () => void;
+  readonly workspaceDir?: string;
+  readonly onOpenFile?: (input: { readonly sessionId: string; readonly workspaceDir: string; readonly reference: WebuiMessageFileReference }) => void;
+  readonly onOpenTurnReview?: (command: Extract<WorkspacePanelCommand, { type: "open-turn-review" }>) => void;
 } & WebuiMessageItemCapabilities): ReactElement {
   // Narrowing: historical view can read historical-only fields; live view
   // can read live-only fields. The union member types live in
@@ -246,9 +254,14 @@ export function MessageItem({
       <WebuiAssistantBody
         messageId={messageId}
         sessionId={sessionId}
-        assistantMessageId={assistantMessageId}
+        onOpenFile={(reference) => { if (sessionId && workspaceDir) onOpenFile?.({ sessionId, workspaceDir, reference }); }}
+        onOpenTurnReview={(review, selectedPath) => {
+          if (!sessionId || !workspaceDir) return;
+          onOpenTurnReview?.({ type: "open-turn-review", sessionId, workspaceDir, messageId, assistantMessageId: review.sourceMessageId ?? assistantMessageId ?? messageId, ...(turnId ? { turnId } : {}), ...(review.changeSetId ? { changeSetId: review.changeSetId } : {}), files: review.fileChanges, ...(selectedPath ? { selectedPath } : {}) });
+        }}
+        assistantMessageId={assistantMessageId ?? initialDiff?.sourceMessageId ?? messageId}
         turnId={turnId}
-        changeSetId={undefined}
+        changeSetId={initialDiff?.changeSetId}
         initialDiff={initialDiff}
         getTurnDiff={getTurnDiff}
         revertTurnDiff={revertTurnDiff}
