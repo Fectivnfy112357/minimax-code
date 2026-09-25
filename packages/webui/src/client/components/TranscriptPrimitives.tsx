@@ -493,14 +493,11 @@ export function WebuiThinkingBlock({
   return (
     <details className="webui-thinking-block" data-webui-thinking-block="true" open={streaming || detailOpen} onToggle={(event) => setDetailOpen(event.currentTarget.open)}>
       <summary className="webui-thinking-summary" data-webui-thinking="true">
-        {streaming ? (
-          <ActivityIndicator aria-hidden="true" />
-        ) : null}
         {summaryLabel === "思考过程" ? (
           <span className="webui-tool-icon webui-tool-icon--thinking" aria-hidden="true"><WebuiToolIcon category="thinking" /></span>
         ) : null}
         <span>{summaryLabel ?? (streaming ? "推理中..." : "已完成推理")}</span>
-        {typeof elapsed === "number" && elapsed >= 1 ? (
+        {!streaming && typeof elapsed === "number" && elapsed >= 1 ? (
           <span className="webui-thinking-elapsed">{elapsed}s</span>
         ) : null}
         <WebuiIconChevronDown className="webui-thinking-chevron" />
@@ -521,6 +518,15 @@ export function WebuiThinkingBlock({
           </button>
         ) : null}
       </div>
+      {streaming ? (
+        <div className="webui-thinking-live-status" data-webui-thinking-live-status="true">
+          <ActivityIndicator aria-hidden="true" />
+          <span>推理中...</span>
+          {typeof elapsed === "number" && elapsed >= 1 ? (
+            <span className="webui-thinking-elapsed">{elapsed}s</span>
+          ) : null}
+        </div>
+      ) : null}
     </details>
   );
 }

@@ -1371,6 +1371,15 @@
     font-size: 14px;
     line-height: 20px;
   }
+  .webui-thinking-live-status {
+    display: flex;
+    min-height: 28px;
+    align-items: center;
+    gap: var(--spacing_8);
+    color: var(--text_default_tertiary);
+    font-size: 14px;
+    line-height: 22px;
+  }
   .webui-thinking-detail-heading {
     display: flex;
     min-height: 20px;

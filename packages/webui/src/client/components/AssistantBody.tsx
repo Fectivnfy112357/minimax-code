@@ -79,7 +79,7 @@ function renderActivityParts(
       } else if (tools.length > 0) {
         rows.push(<WebuiActivityGroup key={`${messageId}-tools-${index}`} tools={tools} authoritativeDiffAvailable={authoritativeDiffAvailable} />);
       } else {
-        thoughts.forEach((thought, thoughtIndex) => rows.push(<WebuiThinkingBlock key={`${messageId}-thinking-${index}-${thoughtIndex}`} text={thought.text} streaming={streaming} processingStartedAtMs={processingStartedAtMs} summaryLabel={streaming ? "推理中..." : "思考 1 次"} showDetailHeading />));
+        thoughts.forEach((thought, thoughtIndex) => rows.push(<WebuiThinkingBlock key={`${messageId}-thinking-${index}-${thoughtIndex}`} text={thought.text} streaming={streaming} processingStartedAtMs={processingStartedAtMs} summaryLabel="思考 1 次" showDetailHeading />));
       }
       index = cursor - 1;
     } else if (part.type === "text") {
