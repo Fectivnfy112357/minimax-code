@@ -11,7 +11,7 @@ import {
 } from "../../src/client/components/DiffCard.js";
 import { WebuiGoalBanner } from "../../src/client/components/GoalBanner.js";
 import { WebuiInteractionPanel } from "../../src/client/components/InteractionPanel.js";
-import { projectWebuiUnifiedDiffLines } from "../../src/client/components/WorkspacePanels.js";
+import { chunkWebuiWorkspaceReviewFileIds, projectWebuiUnifiedDiffLines, WebuiDiffFileSection } from "../../src/client/components/WorkspacePanels.js";
 import {
   WebuiFeedbackActions,
   WebuiMessageActions,
@@ -186,6 +186,26 @@ describe("turn review unified diff projection", () => {
       { kind: "deletion", oldLine: 5, content: "return false;" },
       { kind: "addition", newLine: 5, content: "return ready;" },
       { kind: "addition", newLine: 6, content: "console.log(ready);" },
+    ]);
+  });
+
+  it("renders workspace review additions and deletions using the shared highlighted diff rows", () => {
+    const markup = renderToStaticMarkup(createElement(WebuiDiffFileSection, {
+      file: { file: "src/example.ts", additions: 1, deletions: 1, diff: "@@ -1 +1 @@\n-return false;\n+return true;" },
+      selected: true,
+    }));
+
+    expect(markup).toContain("webui-turn-review-line--deletion");
+    expect(markup).toContain("webui-turn-review-line--addition");
+    expect(markup).toContain('aria-current="true"');
+    expect(markup).toContain("hljs-keyword");
+  });
+
+  it("keeps workspace review diff requests within the runtime's five-file batch limit", () => {
+    expect(chunkWebuiWorkspaceReviewFileIds(["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k"])).toEqual([
+      ["a", "b", "c", "d", "e"],
+      ["f", "g", "h", "i", "j"],
+      ["k"],
     ]);
   });
 });

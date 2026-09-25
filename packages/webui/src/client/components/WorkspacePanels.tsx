@@ -26,7 +26,6 @@ import type {
   WebuiWorkspaceFileContent,
   WebuiWorkspaceGitMutationRequest,
   WebuiWorkspaceReviewDiffs,
-  WebuiWorkspaceReviewFileContent,
   WebuiWorkspaceReviewSearchResult,
   WebuiWorkspaceReviewSummary,
 } from "../../server/port.js";
@@ -92,6 +91,16 @@ export type WebuiUnifiedDiffLine = {
   readonly newLine?: number;
 };
 
+export const WEBUI_WORKSPACE_REVIEW_DIFF_BATCH_SIZE = 5;
+
+export function chunkWebuiWorkspaceReviewFileIds(fileIds: readonly string[]): string[][] {
+  const batches: string[][] = [];
+  for (let index = 0; index < fileIds.length; index += WEBUI_WORKSPACE_REVIEW_DIFF_BATCH_SIZE) {
+    batches.push(fileIds.slice(index, index + WEBUI_WORKSPACE_REVIEW_DIFF_BATCH_SIZE));
+  }
+  return batches;
+}
+
 export function projectWebuiUnifiedDiffLines(diff: string): WebuiUnifiedDiffLine[] {
   let oldLine: number | undefined;
   let newLine: number | undefined;
@@ -117,18 +126,18 @@ export function projectWebuiUnifiedDiffLines(diff: string): WebuiUnifiedDiffLine
   return lines;
 }
 
-function WebuiTurnDiffFile({ file, selected }: { readonly file: WebuiFileDiffInfoView; readonly selected: boolean }): ReactElement {
+export function WebuiDiffFileSection({ file, selected, loading = false, error, onSelect }: { readonly file: WebuiFileDiffInfoView; readonly selected: boolean; readonly loading?: boolean; readonly error?: string; readonly onSelect?: () => void }): ReactElement {
   const diff = typeof file.diff === "string" ? file.diff : "";
   const lines = projectWebuiUnifiedDiffLines(diff);
   const language = webuiFileLanguage(file.file);
   return <details className="webui-turn-review-file" open data-testid="turn-review-diff-file">
-    <summary className="webui-turn-review-file-heading" aria-current={selected ? "true" : undefined}>
+    <summary className="webui-turn-review-file-heading" aria-current={selected ? "true" : undefined} onClick={onSelect}>
       <span className="webui-diff-file-icon"><WebuiIconDiffFile fileName={file.file} /></span>
       <span className="webui-turn-review-file-path" title={file.file}>{file.file}</span>
       <span className="webui-diff-add">+{file.additions}</span>
       {file.deletions > 0 ? <span className="webui-diff-del">-{file.deletions}</span> : null}
     </summary>
-    {lines.length ? <pre className="webui-file-code webui-turn-review-code"><code className={language ? `hljs language-${language}` : ""}>{lines.map((line, index) => {
+    {loading ? <p className="webui-turn-review-unavailable" role="status">正在加载差异…</p> : error ? <p className="webui-turn-review-unavailable" role="alert">{error}</p> : lines.length ? <pre className="webui-file-code webui-turn-review-code"><code className={language ? `hljs language-${language}` : ""}>{lines.map((line, index) => {
       const highlighted = line.kind === "hunk" ? undefined : highlightFileLine(line.content, language);
       return <span className={`webui-turn-review-line webui-turn-review-line--${line.kind}`} key={`${index}-${line.kind}`}>
         {line.kind === "hunk" ? <span className="webui-turn-review-hunk">{line.content}</span> : <>
@@ -383,7 +392,7 @@ export function WebuiFilePreview({ tab, result, codeMode }: {
   </div>;
 }
 
-export function WebuiWorkspacePanel({ state, dispatch, sessionId, workspaceDir, listWorkspaceFileTree, readWorkspaceFile, readCanvas, applyCanvas, createTerminal, listTerminals, writeTerminal, disposeTerminal, watchTerminal, watchEvents, getWorkspaceReviewSummary, listWorkspaceReviewFileDiffs, getWorkspaceReviewFileContent, searchWorkspaceReviewDiffs, onClose }: {
+export function WebuiWorkspacePanel({ state, dispatch, sessionId, workspaceDir, listWorkspaceFileTree, readWorkspaceFile, readCanvas, applyCanvas, createTerminal, listTerminals, writeTerminal, disposeTerminal, watchTerminal, watchEvents, getWorkspaceReviewSummary, listWorkspaceReviewFileDiffs, searchWorkspaceReviewDiffs, onClose }: {
   readonly state: WorkspacePanelState;
   readonly dispatch: (command: WorkspacePanelCommand) => void;
   readonly sessionId?: string; readonly workspaceDir?: string;
@@ -399,7 +408,6 @@ export function WebuiWorkspacePanel({ state, dispatch, sessionId, workspaceDir, 
   readonly watchEvents?: WebuiClientEventWatcher;
   readonly getWorkspaceReviewSummary?: (request: { readonly workspaceDir: string }) => Promise<WebuiWorkspaceReviewSummary>;
   readonly listWorkspaceReviewFileDiffs?: (request: { readonly workspaceDir: string; readonly reviewSnapshotId: string; readonly fileIds: readonly string[] }) => Promise<WebuiWorkspaceReviewDiffs>;
-  readonly getWorkspaceReviewFileContent?: (request: { readonly workspaceDir: string; readonly reviewSnapshotId: string; readonly fileId: string; readonly side: "old" | "new" }) => Promise<WebuiWorkspaceReviewFileContent>;
   readonly searchWorkspaceReviewDiffs?: (request: { readonly workspaceDir: string; readonly reviewSnapshotId: string; readonly query: string; readonly includeUntrackedFiles: boolean; readonly pageIndex?: number; readonly pageSize?: number }) => Promise<WebuiWorkspaceReviewSearchResult>;
   readonly onClose?: () => void;
 }): ReactElement {
@@ -419,8 +427,7 @@ export function WebuiWorkspacePanel({ state, dispatch, sessionId, workspaceDir, 
   const fileResultsRef = useRef(fileResults);
   fileResultsRef.current = fileResults;
   const [reviewSummary, setReviewSummary] = useState<{ readonly tabId: string; readonly summary?: WebuiWorkspaceReviewSummary; readonly error?: string; readonly loading: boolean; readonly stale?: boolean }>();
-  const [reviewDiff, setReviewDiff] = useState<{ readonly tabId: string; readonly snapshotId: string; readonly path: string; readonly loading: boolean; readonly diff?: string; readonly error?: string }>();
-  const [reviewContent, setReviewContent] = useState<{ readonly tabId: string; readonly snapshotId: string; readonly path: string; readonly loading: boolean; readonly old?: WebuiWorkspaceReviewFileContent; readonly current?: WebuiWorkspaceReviewFileContent; readonly error?: string }>();
+  const [reviewDiffs, setReviewDiffs] = useState<{ readonly tabId: string; readonly snapshotId: string; readonly loading: boolean; readonly diffs: Readonly<Record<string, { readonly diff?: string; readonly error?: string; readonly binary?: boolean }>>; readonly error?: string }>();
   const [reviewSearchQuery, setReviewSearchQuery] = useState("");
   const [reviewSearch, setReviewSearch] = useState<{ readonly tabId: string; readonly snapshotId: string; readonly loading: boolean; readonly result?: WebuiWorkspaceReviewSearchResult; readonly error?: string }>();
   const [reviewRefreshToken, setReviewRefreshToken] = useState(0);
@@ -513,56 +520,51 @@ export function WebuiWorkspacePanel({ state, dispatch, sessionId, workspaceDir, 
   const selectedReviewPath = activeTab?.kind === "review" && activeTab.source === "workspace"
     ? workspaceReviewFiles.some((file) => file.path === workspaceReviewSelectedPath) ? workspaceReviewSelectedPath : workspaceReviewFiles[0]?.path
     : activeTab?.kind === "review" && activeTab.source === "turn" ? activeTab.selectedPath ?? turnReviewFiles[0]?.file : undefined;
-  const selectedReviewFile = activeTab?.kind === "review" && activeTab.source === "workspace" ? workspaceReviewFiles.find((file) => file.path === selectedReviewPath) : undefined;
   useEffect(() => {
     if (activeTab?.kind !== "review" || activeTab.source !== "workspace" || !selectedReviewPath || selectedReviewPath === activeTab.selectedPath) return;
     dispatch({ type: "select-review-file", tabId: activeTab.id, path: selectedReviewPath });
   }, [activeTab?.id, activeTab?.kind === "review" && activeTab.source === "workspace" ? activeTab.selectedPath : undefined, selectedReviewPath, dispatch]);
   useEffect(() => {
-    if (activeTab?.kind !== "review" || activeTab.source !== "workspace" || !selectedReviewFile || !activeTab.reviewSnapshotId) return undefined;
+    const summary = reviewSummary && reviewSummary.tabId === activeTab?.id ? reviewSummary.summary : undefined;
+    if (activeTab?.kind !== "review" || activeTab.source !== "workspace" || !summary || !activeTab.reviewSnapshotId || summary.reviewSnapshotId !== activeTab.reviewSnapshotId) return undefined;
     if (!listWorkspaceReviewFileDiffs) {
-      setReviewDiff({ tabId: activeTab.id, snapshotId: activeTab.reviewSnapshotId, path: selectedReviewFile.path, loading: false, error: "工作区文件差异能力暂不可用。" });
+      setReviewDiffs({ tabId: activeTab.id, snapshotId: activeTab.reviewSnapshotId, loading: false, diffs: {}, error: "工作区文件差异能力暂不可用。" });
       return undefined;
     }
     let cancelled = false;
-    setReviewDiff({ tabId: activeTab.id, snapshotId: activeTab.reviewSnapshotId!, path: selectedReviewFile.path, loading: true });
-    void listWorkspaceReviewFileDiffs({ workspaceDir: activeTab.workspaceDir, reviewSnapshotId: activeTab.reviewSnapshotId, fileIds: [selectedReviewFile.fileId] }).then((result) => {
-      if (cancelled) return;
-      if (result.reviewSnapshotId !== activeTab.reviewSnapshotId) {
-        setReviewDiff({ tabId: activeTab.id, snapshotId: activeTab.reviewSnapshotId!, path: selectedReviewFile.path, loading: false, error: "工作区变更已更新，正在刷新审查…" });
-        refreshStaleReview(activeTab.id, activeTab.reviewSnapshotId!);
-        return;
+    const tabId = activeTab.id;
+    const snapshotId = activeTab.reviewSnapshotId;
+    const workspaceDir = activeTab.workspaceDir;
+    setReviewDiffs({ tabId, snapshotId, loading: true, diffs: {} });
+    void (async () => {
+      const diffs: Record<string, { readonly diff?: string; readonly error?: string; readonly binary?: boolean }> = {};
+      try {
+        for (const fileIds of chunkWebuiWorkspaceReviewFileIds(summary.files.map((file) => file.fileId))) {
+          const result = await listWorkspaceReviewFileDiffs({ workspaceDir, reviewSnapshotId: snapshotId, fileIds });
+          if (cancelled) return;
+          if (result.reviewSnapshotId !== snapshotId) {
+            setReviewDiffs({ tabId, snapshotId, loading: false, diffs, error: "工作区变更已更新，正在刷新审查…" });
+            refreshStaleReview(tabId, snapshotId);
+            return;
+          }
+          for (const fileDiff of result.diffs) {
+            diffs[fileDiff.fileId] = {
+              ...(fileDiff.diff?.type === "text" ? { diff: fileDiff.diff.diff ?? fileDiff.diff.content } : fileDiff.diff?.type === "binary" ? { binary: true } : {}),
+              ...(fileDiff.error ?? fileDiff.errorCode ? { error: fileDiff.error ?? fileDiff.errorCode } : {}),
+            };
+          }
+          setReviewDiffs({ tabId, snapshotId, loading: true, diffs: { ...diffs } });
+        }
+        if (!cancelled) setReviewDiffs({ tabId, snapshotId, loading: false, diffs: { ...diffs } });
+      } catch (reason: unknown) {
+        if (!cancelled) {
+          setReviewDiffs({ tabId, snapshotId, loading: false, diffs: { ...diffs }, error: reason instanceof Error ? reason.message : String(reason) });
+          refreshStaleReview(tabId, snapshotId);
+        }
       }
-      const fileDiff = result.diffs.find((item) => item.fileId === selectedReviewFile.fileId);
-      setReviewDiff({ tabId: activeTab.id, snapshotId: activeTab.reviewSnapshotId!, path: selectedReviewFile.path, loading: false, diff: fileDiff?.diff?.diff ?? fileDiff?.diff?.content, error: fileDiff?.error ?? fileDiff?.errorCode });
-    }).catch((reason: unknown) => {
-      if (!cancelled) {
-        setReviewDiff({ tabId: activeTab.id, snapshotId: activeTab.reviewSnapshotId!, path: selectedReviewFile.path, loading: false, error: reason instanceof Error ? reason.message : String(reason) });
-        refreshStaleReview(activeTab.id, activeTab.reviewSnapshotId!);
-      }
-    });
+    })();
     return () => { cancelled = true; };
-  }, [activeTab?.id, activeTab?.kind === "review" && activeTab.source === "workspace" ? activeTab.reviewSnapshotId : undefined, activeTab?.kind === "review" && activeTab.source === "workspace" ? activeTab.workspaceDir : undefined, selectedReviewFile?.fileId, selectedReviewPath, listWorkspaceReviewFileDiffs]);
-  useEffect(() => {
-    if (activeTab?.kind !== "review" || activeTab.source !== "workspace" || !selectedReviewFile || !activeTab.reviewSnapshotId) return undefined;
-    if (!getWorkspaceReviewFileContent) {
-      setReviewContent({ tabId: activeTab.id, snapshotId: activeTab.reviewSnapshotId, path: selectedReviewFile.path, loading: false, error: "工作区文件内容能力暂不可用。" });
-      return undefined;
-    }
-    let cancelled = false;
-    setReviewContent({ tabId: activeTab.id, snapshotId: activeTab.reviewSnapshotId, path: selectedReviewFile.path, loading: true });
-    const readSide = (side: "old" | "new") => getWorkspaceReviewFileContent({ workspaceDir: activeTab.workspaceDir, reviewSnapshotId: activeTab.reviewSnapshotId!, fileId: selectedReviewFile.fileId, side });
-    void Promise.all([readSide("old"), readSide("new")]).then(([old, current]) => {
-      if (cancelled) return;
-      setReviewContent({ tabId: activeTab.id, snapshotId: activeTab.reviewSnapshotId!, path: selectedReviewFile.path, loading: false, old, current });
-    }).catch((reason: unknown) => {
-      if (!cancelled) {
-        setReviewContent({ tabId: activeTab.id, snapshotId: activeTab.reviewSnapshotId!, path: selectedReviewFile.path, loading: false, error: reason instanceof Error ? reason.message : String(reason) });
-        refreshStaleReview(activeTab.id, activeTab.reviewSnapshotId!);
-      }
-    });
-    return () => { cancelled = true; };
-  }, [activeTab?.id, activeTab?.kind === "review" && activeTab.source === "workspace" ? activeTab.reviewSnapshotId : undefined, activeTab?.kind === "review" && activeTab.source === "workspace" ? activeTab.workspaceDir : undefined, selectedReviewFile?.fileId, selectedReviewPath, getWorkspaceReviewFileContent]);
+  }, [activeTab?.id, activeTab?.kind === "review" && activeTab.source === "workspace" ? activeTab.reviewSnapshotId : undefined, activeTab?.kind === "review" && activeTab.source === "workspace" ? activeTab.workspaceDir : undefined, reviewSummary?.summary?.reviewSnapshotId, listWorkspaceReviewFileDiffs]);
   const runReviewSearch = () => {
     if (activeTab?.kind !== "review" || activeTab.source !== "workspace" || !activeTab.reviewSnapshotId || !searchWorkspaceReviewDiffs) return;
     const tabId = activeTab.id;
@@ -702,10 +704,25 @@ export function WebuiWorkspacePanel({ state, dispatch, sessionId, workspaceDir, 
       <div className="webui-workspace-view">
     {tab === "files" ? <div className="webui-workspace-files-empty" data-testid="workspace-files-empty"><WebuiIconFolder className="size-8" /><strong>查看文件</strong><p>从工作区目录树中选择文件</p></div> : null}
     {tab === "file-preview" && activeTab?.kind === "file-preview" ? <WebuiFilePreview tab={activeTab} result={fileResults[activeTab.id]} codeMode={fileCodeMode} /> : null}
-    {tab === "review" && activeTab?.kind === "review" && activeTab.source === "workspace" ? <div className="webui-workspace-content" data-testid="workspace-review"><h3>变更审查</h3>{reviewSummary?.tabId !== activeTab.id || reviewSummary.loading && !reviewSummary.summary ? <p role="status">正在收集变更…</p> : reviewSummary.error && !reviewSummary.summary ? <p role="alert">{reviewSummary.error}</p> : reviewSummary.summary?.files.length ? <><form onSubmit={(event) => { event.preventDefault(); runReviewSearch(); }}><input aria-label="搜索变更" value={reviewSearchQuery} onChange={(event) => setReviewSearchQuery(event.currentTarget.value)} /><button type="submit" disabled={!searchWorkspaceReviewDiffs || reviewSearch?.loading}>搜索</button></form>{reviewSummary.stale || reviewSummary.error ? <p role="status">变更列表可能已过期{reviewSummary.error ? `：${reviewSummary.error}` : "，正在刷新…"}</p> : null}{reviewSearch?.tabId === activeTab.id && reviewSearch.snapshotId === activeTab.reviewSnapshotId ? reviewSearch.loading ? <p role="status">正在搜索变更…</p> : reviewSearch.error ? <p role="alert">{reviewSearch.error}</p> : reviewSearch.result ? <ul data-testid="workspace-review-search-results">{reviewSearch.result.matchedFiles.map((match) => <li key={match.fileId}><button type="button" onClick={() => dispatch({ type: "select-review-file", tabId: activeTab.id, path: match.path })}>{match.path} <small>{match.matchCount}</small></button></li>)}</ul> : null : null}<ul>{reviewSummary.summary.files.map((file) => <li key={file.fileId}><button type="button" aria-current={selectedReviewPath === file.path ? "true" : undefined} onClick={() => dispatch({ type: "select-review-file", tabId: activeTab.id, path: file.path })}>{file.path} <small>+{file.additions} −{file.deletions}</small></button></li>)}</ul><section>{reviewDiff?.tabId !== activeTab.id || reviewDiff.snapshotId !== activeTab.reviewSnapshotId || reviewDiff.path !== selectedReviewPath || reviewDiff.loading ? <p role="status">正在加载差异…</p> : reviewDiff.error ? <p role="alert">{reviewDiff.error}</p> : reviewDiff.diff ? <pre>{reviewDiff.diff}</pre> : <p>此文件没有可预览的文本差异。</p>}{reviewContent?.tabId !== activeTab.id || reviewContent.snapshotId !== activeTab.reviewSnapshotId || reviewContent.path !== selectedReviewPath || reviewContent.loading ? <p role="status">正在加载文件内容…</p> : reviewContent.error ? <p role="alert">{reviewContent.error}</p> : <div data-testid="workspace-review-file-content"><section><h4>变更前</h4>{reviewContent.old?.type === "binary" ? <p>二进制文件</p> : <pre>{reviewContent.old?.content ?? ""}</pre>}</section><section><h4>变更后</h4>{reviewContent.current?.type === "binary" ? <p>二进制文件</p> : <pre>{reviewContent.current?.content ?? ""}</pre>}</section></div>}</section></> : !reviewSummary.summary?.files.length && !reviewSummary.loading ? <p>当前没有变更。</p> : null}</div> : null}
+    {tab === "review" && activeTab?.kind === "review" && activeTab.source === "workspace" ? <div className="webui-turn-review" data-testid="workspace-review">
+      {reviewSummary?.tabId !== activeTab.id || reviewSummary.loading && !reviewSummary.summary ? <p className="webui-turn-review-empty" role="status">正在收集变更…</p> : reviewSummary.error && !reviewSummary.summary ? <p className="webui-turn-review-empty" role="alert">{reviewSummary.error}</p> : reviewSummary.summary ? <>
+        <div className="webui-turn-review-summary"><span>{reviewSummary.summary.totals.files} 个文件</span><span className="webui-diff-header-stats"><span className="webui-diff-add">+{reviewSummary.summary.totals.additions}</span>{reviewSummary.summary.totals.deletions ? <span className="webui-diff-del">-{reviewSummary.summary.totals.deletions}</span> : null}</span></div>
+        {reviewSummary.stale || reviewSummary.error ? <p className="webui-workspace-review-status" role="status">变更列表可能已过期{reviewSummary.error ? `：${reviewSummary.error}` : "，正在刷新…"}</p> : null}
+        {reviewSummary.summary.files.length ? <>
+          <form className="webui-workspace-review-search" onSubmit={(event) => { event.preventDefault(); runReviewSearch(); }}><input aria-label="搜索变更" value={reviewSearchQuery} onChange={(event) => setReviewSearchQuery(event.currentTarget.value)} placeholder="搜索变更" /><button type="submit" disabled={!searchWorkspaceReviewDiffs || reviewSearch?.loading}>搜索</button></form>
+          {reviewSearch?.tabId === activeTab.id && reviewSearch.snapshotId === activeTab.reviewSnapshotId ? reviewSearch.loading ? <p className="webui-workspace-review-status" role="status">正在搜索变更…</p> : reviewSearch.error ? <p className="webui-workspace-review-status" role="alert">{reviewSearch.error}</p> : reviewSearch.result ? <ul className="webui-workspace-review-search-results" data-testid="workspace-review-search-results">{reviewSearch.result.matchedFiles.map((match) => <li key={match.fileId}><button type="button" onClick={() => dispatch({ type: "select-review-file", tabId: activeTab.id, path: match.path })}>{match.path} <small>{match.matchCount}</small></button></li>)}</ul> : null : null}
+          {reviewDiffs?.error && reviewDiffs.tabId === activeTab.id && reviewDiffs.snapshotId === activeTab.reviewSnapshotId ? <p className="webui-workspace-review-status" role="alert">{reviewDiffs.error}</p> : null}
+          <div className="webui-turn-review-files">{reviewSummary.summary.files.map((file) => {
+            const result = reviewDiffs?.tabId === activeTab.id && reviewDiffs.snapshotId === activeTab.reviewSnapshotId ? reviewDiffs.diffs[file.fileId] : undefined;
+            const loading = !result && (reviewDiffs?.tabId !== activeTab.id || reviewDiffs.snapshotId !== activeTab.reviewSnapshotId || reviewDiffs.loading);
+            return <WebuiDiffFileSection key={file.fileId} file={{ file: file.path, additions: file.additions, deletions: file.deletions, status: file.status, ...(result?.diff !== undefined ? { diff: result.diff } : {}) }} selected={selectedReviewPath === file.path} loading={loading} error={result?.binary ? "二进制文件无法显示文本差异。" : result?.error} onSelect={() => dispatch({ type: "select-review-file", tabId: activeTab.id, path: file.path })} />;
+          })}</div>
+        </> : <p className="webui-turn-review-empty">当前没有变更。</p>}
+      </> : null}
+    </div> : null}
     {tab === "review" && activeTab?.kind === "review" && activeTab.source === "turn" ? <div className="webui-turn-review" data-testid="turn-review-panel" data-session-id={activeTab.sessionId} data-message-id={activeTab.messageId} data-turn-id={activeTab.turnId} data-change-set-id={activeTab.changeSetId}>
       <div className="webui-turn-review-summary"><span>本轮改动</span><span className="webui-diff-header-stats"><span className="webui-diff-add">+{turnReviewFiles.reduce((sum, file) => sum + file.additions, 0)}</span>{turnReviewFiles.some((file) => file.deletions > 0) ? <span className="webui-diff-del">-{turnReviewFiles.reduce((sum, file) => sum + file.deletions, 0)}</span> : null}</span></div>
-      {turnReviewFiles.length ? <div className="webui-turn-review-files">{turnReviewFiles.map((file) => <WebuiTurnDiffFile key={file.file} file={file} selected={selectedReviewPath === file.file} />)}</div> : <p className="webui-turn-review-empty">本轮没有可审查的文件差异。</p>}
+      {turnReviewFiles.length ? <div className="webui-turn-review-files">{turnReviewFiles.map((file) => <WebuiDiffFileSection key={file.file} file={file} selected={selectedReviewPath === file.file} />)}</div> : <p className="webui-turn-review-empty">本轮没有可审查的文件差异。</p>}
     </div> : null}
     {tab === "canvas" ? <div className="webui-canvas-content" onWheel={(event) => { event.preventDefault(); setZoom((value) => Math.max(.4, Math.min(2, value + (event.deltaY > 0 ? -.1 : .1)))); }}>
       {!canvas?.nodes.length ? <><strong>{DESKTOP_COPY.canvasEmptyTitle}</strong><p>{DESKTOP_COPY.canvasEmptyDescription}</p></> : <div className="webui-canvas-stage" style={{ transform: `scale(${zoom})` }}>{canvas.nodes.map((node) => <div className="webui-canvas-node" key={String(node.id)}>{String((node.file as Record<string, unknown> | undefined)?.fileName ?? node.id)}</div>)}</div>}
@@ -716,7 +733,7 @@ export function WebuiWorkspacePanel({ state, dispatch, sessionId, workspaceDir, 
       {hasFileWorkspace && fileTreeOpen ? <aside className="webui-workspace-file-tree-panel" aria-label="工作区文件树">
         <label className="webui-workspace-file-search"><WebuiIconSearch className="size-4" /><input aria-label="搜索文件" placeholder="搜索" value={fileSearch} onChange={(event) => setFileSearch(event.currentTarget.value)} /></label>
         <div className="webui-workspace-file-tree-scroll">
-          {fileTreeState.workspaceDir !== activeWorkspace || fileTreeState.loading ? <p role="status">正在加载文件…</p> : fileTreeState.error ? <p role="alert">{fileTreeState.error}</p> : files.length ? visibleFiles.length ? <FileTree files={visibleFiles} expandedPaths={expandedDirectories} loadingPaths={loadingDirectories} directoryErrors={directoryErrors} onToggle={toggleWorkspaceDirectory} selectedPath={activeTab?.kind === "file-preview" ? activeTab.path : activeTab?.kind === "review" && activeTab.source === "turn" ? selectedReviewPath : undefined} onOpen={(entry) => { const context = activeTab && "sessionId" in activeTab ? activeTab.sessionId : sessionId; if (!activeWorkspace || !context || entry.type === "directory") return; if (activeTab?.kind === "review" && activeTab.source === "turn" && turnReviewFiles.some((file) => file.file === entry.path)) dispatch({ type: "select-review-file", tabId: activeTab.id, path: entry.path }); else dispatch({ type: "open-file", sessionId: context, workspaceDir: activeWorkspace, path: entry.path }); }} /> : <p className="webui-workspace-tree-empty">没有匹配的文件。</p> : <p className="webui-workspace-tree-empty">此工作区没有可显示的文件。</p>}
+          {fileTreeState.workspaceDir !== activeWorkspace || fileTreeState.loading ? <p role="status">正在加载文件…</p> : fileTreeState.error ? <p role="alert">{fileTreeState.error}</p> : files.length ? visibleFiles.length ? <FileTree files={visibleFiles} expandedPaths={expandedDirectories} loadingPaths={loadingDirectories} directoryErrors={directoryErrors} onToggle={toggleWorkspaceDirectory} selectedPath={activeTab?.kind === "file-preview" ? activeTab.path : activeTab?.kind === "review" ? selectedReviewPath : undefined} onOpen={(entry) => { const context = activeTab && "sessionId" in activeTab ? activeTab.sessionId : sessionId; if (!activeWorkspace || !context || entry.type === "directory") return; if (activeTab?.kind === "review" && activeTab.source === "turn" && turnReviewFiles.some((file) => file.file === entry.path) || activeTab?.kind === "review" && activeTab.source === "workspace" && workspaceReviewFiles.some((file) => file.path === entry.path)) dispatch({ type: "select-review-file", tabId: activeTab.id, path: entry.path }); else dispatch({ type: "open-file", sessionId: context, workspaceDir: activeWorkspace, path: entry.path }); }} /> : <p className="webui-workspace-tree-empty">没有匹配的文件。</p> : <p className="webui-workspace-tree-empty">此工作区没有可显示的文件。</p>}
         </div>
       </aside> : null}
     </div>

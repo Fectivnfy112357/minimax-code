@@ -483,6 +483,10 @@ const tailwindConfig = {
   // stylesheet even when a state-specific branch is not visible to Tailwind's
   // static class scan.
   safelist: [
+    // Review diff rows select these custom component classes from runtime
+    // state, so Tailwind cannot discover them from a static class string.
+    "webui-turn-review-line--addition",
+    "webui-turn-review-line--deletion",
     "bg-bg_default_primary",
     "bg-bg_default_secondary",
     "bg-bg_grouped_primary",

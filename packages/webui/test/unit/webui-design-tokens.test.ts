@@ -208,6 +208,11 @@ describe("WebUI compiled stylesheet", () => {
     }
   });
 
+  it("keeps the dynamically selected review diff row backgrounds in the compiled CSS", () => {
+    expect(compiled).toMatch(/\.webui-turn-review-line--addition\s*\{[^}]*background:\s*var\(--bg_status_positive\)/u);
+    expect(compiled).toMatch(/\.webui-turn-review-line--deletion\s*\{[^}]*background:\s*var\(--bg_status_error\)/u);
+  });
+
   it("closes every var(--name) reference against a definition in the same stylesheet", () => {
     // The previous assertion only checked that the compiled body matched a
     // hard-coded `var(--kebab-name)` string. That made the test pass against
