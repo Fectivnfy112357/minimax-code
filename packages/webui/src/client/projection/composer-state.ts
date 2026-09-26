@@ -20,6 +20,7 @@ import type {
   WebuiGoalCreateRequest,
   WebuiGoalPatchRequest,
 } from "../../server/port.js";
+import type { WebuiAttachmentInput } from "../../server/port.js";
 import { formatWebuiError } from "../value-readers.js";
 import { initialWebuiStreamState } from "../stream.js";
 import {
@@ -157,6 +158,8 @@ export function resolveWebuiSubmissionIntent(args: {
 export interface WebuiComposerSubmitArgs {
   readonly sessionId?: string;
   readonly draft: string;
+  readonly attachments?: readonly WebuiAttachmentInput[];
+  readonly onAttachmentsSubmitted?: () => void;
   readonly sending: boolean;
   readonly deps: WebuiStreamLoopDeps;
   readonly enqueueMessage?: WebuiClientMessageEnqueuer;
@@ -264,7 +267,8 @@ export async function submitWebuiComposerTurn(
   handlers: WebuiComposerSubmitHandlers,
 ): Promise<void> {
   const message = args.draft.trim();
-  if (!message || (!args.deps.sendMessage && !args.enqueueMessage)) return;
+  const attachments = args.attachments ?? [];
+  if ((!message && attachments.length === 0) || (!args.deps.sendMessage && !args.enqueueMessage)) return;
   let sessionId = args.sessionId;
   if (!sessionId) {
     // No workspace is fine: the harness falls back to the default workspace
@@ -301,8 +305,9 @@ export async function submitWebuiComposerTurn(
   if (args.sending) {
     if (!args.enqueueMessage) return;
     try {
-      await args.enqueueMessage({ id: sessionId, content: message });
+      await args.enqueueMessage({ id: sessionId, content: message, ...(attachments.length ? { attachments } : {}) });
       handlers.onDraftChange("");
+      args.onAttachmentsSubmitted?.();
       handlers.onQueued?.();
     } catch (error) {
       handlers.setStream((current) => ({
@@ -315,6 +320,7 @@ export async function submitWebuiComposerTurn(
   if (!args.deps.sendMessage) return;
   handlers.setSending(true);
   handlers.onDraftChange("");
+  args.onAttachmentsSubmitted?.();
   handlers.setStream((current) => ({
     ...initialWebuiStreamState,
     phase: "streaming",
@@ -323,7 +329,7 @@ export async function submitWebuiComposerTurn(
   try {
     await runWebuiStreamLoop(
       args.deps,
-      { sessionId, message },
+      { sessionId, message, ...(attachments.length ? { attachments } : {}) },
       buildWebuiStreamLoopSink(handlers.setStream),
     );
   } finally {

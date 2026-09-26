@@ -23,6 +23,7 @@ import {
   type V1RuntimeCompatibility,
 } from "./compat/v1/runtime.js";
 import { createV2AgentRuntimeManagementPort } from "./local/agent-runtime-port.js";
+import { createCliManagementApplication } from "./application/cli-management-application.js";
 import { DatabaseClient } from "./infra/db/client.js";
 import {
   initializeDatabase,
@@ -296,7 +297,15 @@ async function createLocalRuntimeHostV2Internal(
       bindAskUserSuppressionProbe(v1.apiHost, ownerRuntime.services.turnSystem);
     }
     const cliService = ownerRuntime
-      ? createCliService({ ...ownerRuntime.services, agentManagementPort: v1.apiHost.agentRuntimePort })
+      ? createCliService({
+          ...ownerRuntime.services,
+          management: createCliManagementApplication({
+            application: ownerRuntime.services.application,
+            canvas: ownerRuntime.services.canvas,
+            mcp: ownerRuntime.services.mcp,
+            agentManagementPort: v1.apiHost.agentRuntimePort,
+          }),
+        })
       : undefined;
 
     const close = createSharedClose({

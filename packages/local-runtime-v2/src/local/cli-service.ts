@@ -101,18 +101,13 @@ import type {
 } from "../application/conversation/conversation-application.js";
 import type { RuntimeApplications } from "../application/initialize.js";
 import type { LocalRuntimeApplication } from "../application/session/process-local-application-contract.js";
-import type { CanvasService } from "../service/canvas/contracts.js";
-import type { McpSettingsService } from "../service/mcp/contracts.js";
-import type { LocalAgentRuntimeManagementPort } from "@mavis/local-runtime";
-import { readWorkspaceFile } from "../service/workspace/operations/workspace-path.js";
+import type { CliManagementApplication } from "../application/cli-management-application.js";
 
 export interface CliServiceOptions {
   readonly applications: RuntimeApplications;
   readonly application: LocalRuntimeApplication;
   readonly conversation: ConversationApplication;
-  readonly canvas: CanvasService;
-  readonly mcp: McpSettingsService;
-  readonly agentManagementPort?: LocalAgentRuntimeManagementPort;
+  readonly management: CliManagementApplication;
 }
 
 export type CliSendMessageReq = ConversationSendMessageRequest;
@@ -715,15 +710,15 @@ export class CliService {
   }
 
   readWorkspaceFile(input: { workspaceDir: string; path: string }) {
-    return readWorkspaceFile(input.workspaceDir, input.path);
+    return this.options.management.readWorkspaceFile(input);
   }
 
   readCanvas(input: { sessionId: string }) {
-    return this.options.canvas.read(input);
+    return this.options.management.readCanvas(input);
   }
 
-  applyCanvas(input: Parameters<CanvasService["apply"]>[0]) {
-    return this.options.canvas.apply(input);
+  applyCanvas(input: Parameters<CliManagementApplication["applyCanvas"]>[0]) {
+    return this.options.management.applyCanvas(input);
   }
 
   getAccountStatus(
@@ -787,197 +782,10 @@ export class CliService {
     return this.options.application.plugins.uninstallPlugin(req);
   }
 
-  pluginManagement(request: {
-    action: string;
-    input?: Record<string, unknown>;
-  }): Promise<unknown> {
-    const input = request.input ?? {};
-    const required = (key: string): string => {
-      const value = input[key];
-      if (typeof value !== "string" || !value.trim())
-        throw new Error(`${key} is required`);
-      return value;
-    };
-    switch (request.action) {
-      case "listApps":
-        return (
-          this.options.application.miniApps?.list() ??
-          Promise.resolve({ miniApps: [] })
-        );
-      case "listMarketplacePlugins":
-        return this.listMarketplacePlugins(
-          input as Parameters<
-            LocalRuntimeApplication["plugins"]["listMarketplacePlugins"]
-          >[0],
-        );
-      case "listInstalledPlugins":
-        return this.listInstalledPlugins(
-          input as Parameters<
-            LocalRuntimeApplication["plugins"]["listInstalledPlugins"]
-          >[0],
-        );
-      case "previewGithubPlugin":
-        return this.options.application.plugins.previewGithubPlugin({
-          url: required("url"),
-        });
-      case "importGithubPlugin": {
-        const source = input.source;
-        if (!source || typeof source !== "object")
-          throw new Error("source is required");
-        const sourceRecord = source as Record<string, unknown>;
-        return this.options.application.plugins.importGithubPlugin({
-          source: {
-            repositoryUrl:
-              typeof sourceRecord.repositoryUrl === "string"
-                ? sourceRecord.repositoryUrl
-                : required("repositoryUrl"),
-            commitSha:
-              typeof sourceRecord.commitSha === "string"
-                ? sourceRecord.commitSha
-                : required("commitSha"),
-            ...(typeof sourceRecord.subPath === "string"
-              ? { subPath: sourceRecord.subPath }
-              : {}),
-          },
-        });
-      }
-      case "installPlugin":
-        return this.installPlugin({
-          pluginName: required("pluginName"),
-          source: typeof input.source === "number" ? input.source : undefined,
-        } as Parameters<
-          LocalRuntimeApplication["plugins"]["installPlugin"]
-        >[0]);
-      case "uninstallPlugin":
-        return this.uninstallPlugin({
-          pluginName: required("pluginName"),
-          source: typeof input.source === "number" ? input.source : undefined,
-        } as Parameters<
-          LocalRuntimeApplication["plugins"]["uninstallPlugin"]
-        >[0]);
-      case "enablePlugin":
-        return this.enablePlugin({
-          pluginName: required("pluginName"),
-          source: typeof input.source === "number" ? input.source : undefined,
-        } as Parameters<LocalRuntimeApplication["plugins"]["enablePlugin"]>[0]);
-      case "disablePlugin":
-        return this.disablePlugin({
-          pluginName: required("pluginName"),
-          source: typeof input.source === "number" ? input.source : undefined,
-        } as Parameters<
-          LocalRuntimeApplication["plugins"]["disablePlugin"]
-        >[0]);
-      case "listRuntimeSkills":
-        return this.listRuntimeSkills(
-          input as Parameters<
-            LocalRuntimeApplication["skills"]["listRuntimeSkills"]
-          >[0],
-        );
-      case "setSkillEnabled":
-        return this.options.application.skills.setSkillEnabled(
-          {
-            skillName: required("skillName"),
-            ...(typeof input.locationUri === "string"
-              ? { locationUri: input.locationUri }
-              : {}),
-          },
-          input.enabled === true,
-        );
-      case "deleteSkill":
-        return this.options.application.skills.deleteSkill({
-          skillName: required("skillName"),
-          ...(typeof input.locationUri === "string"
-            ? { locationUri: input.locationUri }
-            : {}),
-        });
-      case "listSkillHub":
-        return this.options.application.skills.listSkillHub(
-          input as Parameters<
-            LocalRuntimeApplication["skills"]["listSkillHub"]
-          >[0],
-        );
-      case "installSkill":
-        return this.options.application.skills.installSkill(
-          input as Parameters<
-            LocalRuntimeApplication["skills"]["installSkill"]
-          >[0],
-        );
-      case "createSkill":
-        return this.options.application.skills.createSkill({
-          name: required("name"),
-          description: required("description"),
-          content: required("content"),
-          ...(typeof input.agentName === "string"
-            ? { agentName: input.agentName }
-            : {}),
-        });
-      case "listMcpServers":
-        return this.options.mcp.list(
-          typeof input.keyword === "string" ? input.keyword : undefined,
-        );
-      case "getMcpServer":
-        return this.options.mcp.get(required("name"));
-      case "createMcpServer":
-        return this.options.mcp.create(
-          required("name"),
-          input.config as Parameters<McpSettingsService["create"]>[1],
-          input.enabled !== false,
-        );
-      case "updateMcpServer":
-        return this.options.mcp.update(
-          required("name"),
-          input.config as Parameters<McpSettingsService["update"]>[1],
-        );
-      case "deleteMcpServer":
-        return this.options.mcp.delete(required("name"));
-      case "setMcpServerEnabled":
-        return this.options.mcp.setEnabled(
-          required("name"),
-          input.enabled === true,
-        );
-      case "testMcpServer":
-        return this.options.mcp.test(required("name"));
-      case "listAgents":
-        return this.agentManagement().listAgents(
-          input as Parameters<LocalAgentRuntimeManagementPort["listAgents"]>[0],
-        );
-      case "getAgent":
-        return this.agentManagement().getAgent({ name: required("name") });
-      case "createAgent":
-        return this.agentManagement().createAgent(
-          input as Parameters<
-            LocalAgentRuntimeManagementPort["createAgent"]
-          >[0],
-        );
-      case "updateAgent":
-        return this.agentManagement().updateAgent({
-          name: required("name"),
-          ...(typeof input.displayName === "string"
-            ? { displayName: input.displayName }
-            : {}),
-          ...(typeof input.description === "string"
-            ? { description: input.description }
-            : {}),
-          ...(typeof input.persona === "string"
-            ? { persona: input.persona }
-            : {}),
-          ...(typeof input.systemPrompt === "string"
-            ? { systemPrompt: input.systemPrompt }
-            : {}),
-        });
-      case "deleteAgent":
-        return this.agentManagement().deleteAgent({ name: required("name") });
-      default:
-        throw new Error(
-          `Unsupported plugin management action: ${request.action}`,
-        );
-    }
-  }
-
-  private agentManagement(): LocalAgentRuntimeManagementPort {
-    if (!this.options.agentManagementPort)
-      throw new Error("Agent management is unavailable in this runtime");
-    return this.options.agentManagementPort;
+  pluginManagement(
+    request: Parameters<CliManagementApplication["pluginManagement"]>[0],
+  ) {
+    return this.options.management.pluginManagement(request);
   }
 
   getPermissionMode() {

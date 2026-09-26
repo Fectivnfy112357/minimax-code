@@ -75,6 +75,8 @@ export type WebuiOperationPort = Pick<
   | "selectModel"
   | "listSkills"
   | "pluginManagement"
+  | "getPermissionMode"
+  | "setPermissionMode"
   | "getSessionUsage"
   | "getUsageQuota"
   | "getSigninPanel"
@@ -178,6 +180,14 @@ export function createOperationHandlers(
     pluginManagement: async (_context, body) => {
       if (!port.pluginManagement) throw new Error("runtime host does not expose plugin management");
       return { body: await port.pluginManagement(body) };
+    },
+    getPermissionMode: async () => {
+      if (!port.getPermissionMode) throw new Error("runtime host does not expose permission mode reads");
+      return { body: await port.getPermissionMode() };
+    },
+    setPermissionMode: async (_context, body) => {
+      if (!port.setPermissionMode) throw new Error("runtime host does not expose permission mode updates");
+      return { body: await port.setPermissionMode(body) };
     },
     getSessionUsage: async (_context, body) => ({ body: await port.getSessionUsage(body) }),
     getUsageQuota: async (_context, body) => ({ body: await port.getUsageQuota(body) }),

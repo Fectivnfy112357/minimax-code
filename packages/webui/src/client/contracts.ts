@@ -60,6 +60,7 @@ import type {
   WebuiUpdateSessionResult,
   WebuiUsageQuotaResult,
   WebuiVersionInfo,
+  WebuiAttachmentInput,
   WebuiWorkspaceEnvironment,
   WebuiWorkspaceFile,
   WebuiWorkspaceFileContent,
@@ -232,7 +233,11 @@ export type WebuiClientSessionCreator = (
 ) => Promise<WebuiClientCreateSessionResult>;
 
 export type WebuiClientMessageSender = (
-  request: { readonly id: string; readonly content: string },
+  request: {
+    readonly id: string;
+    readonly content: string;
+    readonly attachments?: readonly WebuiAttachmentInput[];
+  },
   onFrame: (frame: WebuiStreamFrame) => void,
 ) => Promise<void>;
 
@@ -490,6 +495,8 @@ export interface WebuiTransport {
     }[];
   }>;
   readonly pluginManagement?: (request: import("../shared/plugin-management.js").WebuiPluginManagementRequest) => Promise<unknown>;
+  readonly getPermissionMode?: () => Promise<unknown>;
+  readonly setPermissionMode?: (request: { readonly mode: "default" | "auto" | "bypassPermissions" }) => Promise<unknown>;
   readonly selectModel?: (
     request: WebuiModelSelectionRequest,
   ) => Promise<{ readonly success?: boolean }>;

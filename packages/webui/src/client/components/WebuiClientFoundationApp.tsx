@@ -637,6 +637,15 @@ export function WebuiClientFoundationApp(
     },
     [],
   );
+  const handleSelectComposerSession = useCallback((sessionId: string) => {
+    setSelectedSessionId(sessionId);
+    if (typeof window !== "undefined")
+      window.history.replaceState(
+        null,
+        "",
+        `${window.location.pathname}${window.location.search}${sessionHash(sessionId)}`,
+      );
+  }, []);
   const childSessions = selectedSessionId
     ? page.sessions.filter(
         (session) => session.parentSessionId === selectedSessionId,
@@ -647,6 +656,11 @@ export function WebuiClientFoundationApp(
     : teamModeOff;
   const [railCollapsed, setRailCollapsed] = useState(false);
   const [pluginManagementOpen, setPluginManagementOpen] = useState(false);
+  const [pluginManagementArea, setPluginManagementArea] = useState<"plugins" | "skills">("plugins");
+  const openPluginManagement = useCallback((area: "plugins" | "skills") => {
+    setPluginManagementArea(area);
+    setPluginManagementOpen(true);
+  }, []);
   const [workspacePanelStates, setWorkspacePanelStates] = useState<WorkspacePanelSessionStates>(() => new Map());
   const sessionPanelState = selectedSessionId
     ? getWorkspacePanelSessionState(workspacePanelStates, selectedSessionId)
@@ -812,7 +826,7 @@ export function WebuiClientFoundationApp(
             data-webui-shell-region="surface"
             className="relative flex min-h-0 min-w-0 flex-1 flex-row"
           >
-            {pluginManagementOpen ? <PluginManagement transport={transport} onClose={() => setPluginManagementOpen(false)} /> : <>
+            {pluginManagementOpen ? <PluginManagement transport={transport} initialArea={pluginManagementArea} onClose={() => setPluginManagementOpen(false)} /> : <>
             {!homeMode && !workspacePanel.open ? <WebuiWorkspacePanelControls filePanelOpen={false} progressPanelOpen={progressPanelOpen} onOpenFiles={() => { setProgressPanelOpen(false); dispatchWorkspacePanel({ type: "open-primary-view", kind: "files", sessionId: selectedSessionId, workspaceDir: selectedSession?.workspaceDir }); }} onToggleProgressPanel={() => setProgressPanelOpen((open) => !open)} /> : null}
             <div className="relative flex h-full min-w-0 flex-1 flex-col">
               <div
@@ -918,11 +932,19 @@ export function WebuiClientFoundationApp(
                     deleteQueueItem={transport?.deleteQueueItem}
                     listModels={transport?.listModels}
                     listSkills={transport?.listSkills}
+                    listWorkspaceFileTree={transport?.listWorkspaceFileTree}
+                    pluginManagement={transport?.pluginManagement}
+                    getPermissionMode={transport?.getPermissionMode}
+                    setPermissionMode={transport?.setPermissionMode}
                     selectModel={transport?.selectModel}
                     getAccountStatus={transport?.getAccountStatus}
                     draft={draft}
                     onDraftChange={setDraft}
                     teamModeOff={composerTeamModeOff}
+                    sessions={page.sessions}
+                    workspaceDir={selectedSession?.workspaceDir ?? newTaskWorkspaceDir}
+                    onSelectSession={handleSelectComposerSession}
+                    onOpenPluginManagement={openPluginManagement}
                     onSessionCreated={handleSessionCreated}
                     />
                     </Composer>

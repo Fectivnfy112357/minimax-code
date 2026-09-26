@@ -220,6 +220,14 @@ export class WebuiService {
         if (!this.port.pluginManagement) throw new Error("runtime host does not expose plugin management");
         return this.port.pluginManagement(request);
       },
+      getPermissionMode: () => {
+        if (!this.port.getPermissionMode) throw new Error("runtime host does not expose permission mode reads");
+        return this.port.getPermissionMode();
+      },
+      setPermissionMode: (request) => {
+        if (!this.port.setPermissionMode) throw new Error("runtime host does not expose permission mode updates");
+        return this.port.setPermissionMode(request);
+      },
       getSessionUsage: (request) => this.port.getSessionUsage(request),
       getUsageQuota: (request) => this.port.getUsageQuota(request),
       getSigninPanel: () => this.port.getSigninPanel(),

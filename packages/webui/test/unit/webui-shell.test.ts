@@ -943,8 +943,9 @@ describe("WebUI shell — desktop anatomy", () => {
     // reads as broken — and it is not caught by any styling assertion, because the
     // markup and the stylesheet are both exactly what was asked for.
     //
-    // Everything the WebUI has no feature for is `disabled` or `aria-disabled`, so
-    // the only operable control left in the home shell is the one real action.
+    // Every rendered control is backed by an actual WebUI transport or local
+    // composer action. The attachment menu is now operable and opens the
+    // catalogue/file actions rather than a disabled placeholder.
     const html = renderShell();
     const controlTags: string[] = [];
     const re = /<(button|div|a|input|textarea|select)\b[^>]*>/gu;
@@ -959,7 +960,8 @@ describe("WebUI shell — desktop anatomy", () => {
         !/(?:^|\s)disabled(?:=|\s|>)/u.test(tag) &&
         !/aria-disabled="true"/u.test(tag),
     );
-    expect(operable).toHaveLength(5);
+    expect(operable).toHaveLength(6);
+    expect(html).toMatch(/data-testid="composer-add-menu"/u);
     expect(html).toMatch(/data-webui-sidebar-toggle="true"/u);
     expect(html).toMatch(/data-webui-nav-item="新建任务"/u);
   });

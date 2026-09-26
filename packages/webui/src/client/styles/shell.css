@@ -407,6 +407,256 @@
     box-shadow: 0 0 10px 0 var(--shadow_default);
   }
 
+  .webui-composer-menu,
+  .webui-composer-permission-menu,
+  .webui-composer-mention-menu {
+    position: absolute;
+    z-index: 80;
+    min-width: 220px;
+    max-width: min(360px, calc(100vw - 32px));
+    padding: 6px;
+    border: 1px solid var(--webui-color-border-default, #e6e6e6);
+    border-radius: 14px;
+    background: var(--webui-color-bg-primary, #fff);
+    box-shadow: 0 8px 28px rgb(0 0 0 / 12%);
+  }
+
+  .webui-composer-menu {
+    bottom: 56px;
+    left: 0;
+    max-height: min(420px, calc(100dvh - 112px));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .webui-composer-menu button,
+  .webui-composer-permission-menu button,
+  .webui-composer-mention-option {
+    display: flex;
+    width: 100%;
+    min-height: 38px;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    color: var(--webui-color-text-primary, #262626);
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .webui-composer-menu button:hover,
+  .webui-composer-permission-menu button:hover,
+  .webui-composer-mention-option:hover,
+  .webui-composer-mention-option[aria-selected="true"] {
+    background: var(--webui-color-bg-secondary, #f5f5f5);
+  }
+
+  .webui-composer-menu button > span:last-child {
+    margin-left: auto;
+    color: var(--webui-color-text-tertiary, #999);
+  }
+
+  .webui-composer-menu [role="separator"] {
+    height: 1px;
+    margin: 5px 4px;
+    background: var(--webui-color-border-light, #eee);
+  }
+
+  .webui-composer-menu-back {
+    font-weight: 600;
+  }
+
+  .webui-composer-menu-empty {
+    padding: 10px;
+    color: var(--webui-color-text-tertiary, #999);
+    font-size: 12px;
+  }
+
+  .webui-composer-hidden-file-input {
+    position: fixed;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+
+  .webui-composer-permission-wrap {
+    position: relative;
+  }
+
+  .webui-composer-permission-button {
+    display: inline-flex;
+    min-height: 32px;
+    align-items: center;
+    gap: 7px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--webui-color-bg-secondary, #f5f5f5);
+    color: var(--webui-color-text-secondary, #666);
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  .webui-composer-permission-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+
+  .webui-composer-permission-menu {
+    right: 0;
+    bottom: 40px;
+    min-width: 200px;
+  }
+
+  .webui-composer-permission-menu button[aria-checked="true"] {
+    background: var(--webui-color-bg-secondary, #f5f5f5);
+  }
+
+  .webui-composer-permission-check {
+    width: 16px;
+    margin-left: auto;
+    text-align: right;
+  }
+
+  .webui-composer-mention-menu {
+    right: auto;
+    bottom: calc(100% + 8px);
+    left: 0;
+    width: min(360px, calc(100vw - 32px));
+    max-height: 320px;
+    overflow-y: auto;
+  }
+
+  .webui-composer-mention-section {
+    padding: 8px 10px 4px;
+    color: var(--webui-color-text-tertiary, #999);
+    font-size: 11px;
+  }
+
+  .webui-composer-mention-option {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .webui-composer-mention-option small {
+    overflow: hidden;
+    max-width: 100%;
+    color: var(--webui-color-text-tertiary, #999);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .webui-composer-attachments {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    order: -1;
+    padding: 4px 4px 10px;
+  }
+
+  .webui-composer-attachment {
+    position: relative;
+    display: flex;
+    width: 116px;
+    min-height: 96px;
+    flex-direction: column;
+    gap: 5px;
+    overflow: hidden;
+    padding: 8px;
+    border-radius: 14px;
+    background: var(--webui-color-bg-secondary, #f5f5f5);
+    color: var(--webui-color-text-secondary, #666);
+    font-size: 12px;
+  }
+
+  .webui-composer-attachment.is-image {
+    padding: 0;
+  }
+
+  .webui-composer-attachment img {
+    width: 100%;
+    height: 76px;
+    object-fit: cover;
+  }
+
+  .webui-composer-attachment-type {
+    display: grid;
+    height: 46px;
+    place-items: center;
+    border-radius: 8px;
+    background: var(--webui-color-bg-primary, #fff);
+    color: var(--webui-color-text-accent, #6a78e8);
+  }
+
+  .webui-composer-attachment-name {
+    overflow: hidden;
+    padding: 0 8px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .webui-composer-attachment > button {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    display: grid;
+    width: 24px;
+    height: 24px;
+    place-items: center;
+    border: 0;
+    border-radius: 50%;
+    background: rgb(0 0 0 / 28%);
+    color: #fff;
+    font-size: 18px;
+    cursor: pointer;
+  }
+
+  .webui-composer-attachment-loading {
+    align-self: center;
+    color: var(--webui-color-text-tertiary, #999);
+    font-size: 12px;
+  }
+
+  .webui-composer-url-reference {
+    display: inline-flex;
+    max-width: min(420px, 100%);
+    min-height: 32px;
+    align-items: center;
+    gap: 6px;
+    padding: 0 6px 0 10px;
+    border-radius: 10px;
+    background: var(--webui-color-bg-secondary, #f5f5f5);
+    color: var(--webui-color-text-secondary, #666);
+  }
+
+  .webui-composer-url-reference input {
+    width: 300px;
+    max-width: min(300px, calc(100vw - 112px));
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+  }
+
+  .webui-composer-url-reference button {
+    display: grid;
+    width: 24px;
+    height: 24px;
+    flex: 0 0 auto;
+    place-items: center;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--webui-color-text-tertiary, #999);
+    cursor: pointer;
+  }
+
   /* Bottom fade for the rail's scroll region. */
   .webui-scroll-fade {
     background-image: linear-gradient(

@@ -394,6 +394,8 @@ export function createWebuiTransport({
     listModels: (body) => request("listModels", body ?? {}),
     listSkills: (body) => request("listSkills", body ?? {}),
     pluginManagement: (body) => request("pluginManagement", body),
+    getPermissionMode: () => request("getPermissionMode", {}),
+    setPermissionMode: (body) => request("setPermissionMode", body),
     selectModel: (body) => request("selectModel", body),
     getSessionUsage: (body) => request("getSessionUsage", body),
     getUsageQuota: (body) => request("getUsageQuota", body ?? {}),

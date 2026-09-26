@@ -234,6 +234,10 @@ export interface WebuiRuntimeCliService {
       readonly displayDescription?: string;
     }[];
   }>;
+  getPermissionMode(): Promise<unknown>;
+  setPermissionMode(request: {
+    readonly mode: "default" | "auto" | "bypassPermissions";
+  }): Promise<unknown>;
   selectModel(request: {
     readonly providerId: string;
     readonly modelId: string;
@@ -524,6 +528,12 @@ export function createHarnessPortFromHost(
     },
     async pluginManagement(request) {
       return requireCliService(host).pluginManagement(request);
+    },
+    async getPermissionMode() {
+      return requireCliService(host).getPermissionMode();
+    },
+    async setPermissionMode(request) {
+      return requireCliService(host).setPermissionMode(request);
     },
     async getSessionUsage(request) {
       return requireCliService(host).getSessionUsage(request);

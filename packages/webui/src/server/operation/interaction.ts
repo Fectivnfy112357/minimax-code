@@ -4,9 +4,40 @@ import type {
   WebuiEnqueueMessageRequest,
   WebuiResumeSessionRequest,
   WebuiSendMessageRequest,
+  WebuiAttachmentInput,
 } from "../port.js";
 import { validateSessionIdBody } from "./common.js";
 import { SEND_MESSAGE_OPERATION_NAME, ENQUEUE_MESSAGE_OPERATION_NAME, RESUME_SESSION_OPERATION_NAME } from "./names.js";
+
+const MAX_WEBUI_ATTACHMENT_COUNT = 10;
+const MAX_WEBUI_ATTACHMENT_BYTES = 70 * 1024 * 1024;
+const MAX_WEBUI_ATTACHMENT_WIRE_CHARS = 96 * 1024 * 1024;
+
+function isAttachmentBatch(value: unknown): value is WebuiAttachmentInput[] {
+  if (!Array.isArray(value) || value.length > MAX_WEBUI_ATTACHMENT_COUNT) return false;
+  let bytes = 0;
+  let wireCharacters = 0;
+  for (const item of value) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+    const row = item as Record<string, unknown>;
+    const meta = row.meta && typeof row.meta === "object" && !Array.isArray(row.meta)
+      ? row.meta as Record<string, unknown>
+      : undefined;
+    const local = row.local && typeof row.local === "object" && !Array.isArray(row.local)
+      ? row.local as Record<string, unknown>
+      : undefined;
+    if (!local || !["assetId", "filePath", "dataUrl"].some((key) => typeof local[key] === "string" && local[key])) return false;
+    if (local && ["assetId", "filePath", "dataUrl", "desktopPath"].some((key) => local[key] !== undefined && typeof local[key] !== "string")) return false;
+    if (typeof local.dataUrl === "string") wireCharacters += local.dataUrl.length;
+    if (meta && ["attachmentType", "fileName", "mimeType"].some((key) => meta[key] !== undefined && typeof meta[key] !== "string")) return false;
+    const size = meta?.sizeBytes;
+    if (size !== undefined && (typeof size !== "number" || !Number.isSafeInteger(size) || size < 0)) return false;
+    bytes += typeof size === "number" ? size : 0;
+    if (bytes > MAX_WEBUI_ATTACHMENT_BYTES) return false;
+    if (wireCharacters > MAX_WEBUI_ATTACHMENT_WIRE_CHARS) return false;
+  }
+  return true;
+}
 function validateSendMessageRequestBody(
   body: unknown,
 ): WebuiOperationValidation<WebuiSendMessageRequest> {
@@ -44,6 +75,8 @@ function validateSendMessageRequestBody(
       code: WebuiErrorCode.invalidBody,
       message: "clientIntent must be a string",
     };
+  if (candidate.attachments !== undefined && !isAttachmentBatch(candidate.attachments))
+    return { ok: false, code: WebuiErrorCode.invalidBody, message: "attachments must be an array" };
   return {
     ok: true,
     body: {
@@ -57,6 +90,9 @@ function validateSendMessageRequestBody(
       ...(candidate.clientIntent === undefined
         ? {}
         : { clientIntent: candidate.clientIntent as string }),
+      ...(candidate.attachments === undefined
+        ? {}
+        : { attachments: candidate.attachments }),
     },
   };
 }
@@ -79,7 +115,8 @@ function validateEnqueueMessageRequestBody(
   const id = typeof candidate.id === "string" ? candidate.id.trim() : "";
   const content =
     typeof candidate.content === "string" ? candidate.content.trim() : "";
-  if (!id || !content)
+  const attachments = candidate.attachments;
+  if (!id || (!content && (!Array.isArray(attachments) || attachments.length === 0)))
     return {
       ok: false,
       code: WebuiErrorCode.invalidBody,
@@ -96,6 +133,8 @@ function validateEnqueueMessageRequestBody(
       code: WebuiErrorCode.invalidBody,
       message: "model must be an object",
     };
+  if (attachments !== undefined && !isAttachmentBatch(attachments))
+    return { ok: false, code: WebuiErrorCode.invalidBody, message: "attachments must be an array" };
   for (const key of ["clientRequestId", "clientIntent"] as const) {
     if (candidate[key] !== undefined && typeof candidate[key] !== "string")
       return {
@@ -118,6 +157,9 @@ function validateEnqueueMessageRequestBody(
       ...(candidate.clientIntent === undefined
         ? {}
         : { clientIntent: candidate.clientIntent as string }),
+      ...(attachments === undefined
+        ? {}
+        : { attachments }),
     },
   };
 }

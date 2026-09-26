@@ -481,6 +481,7 @@ export interface WebuiSendMessageRequest {
   readonly content?: string;
   readonly turnId?: string;
   readonly clientIntent?: string;
+  readonly attachments?: readonly WebuiAttachmentInput[];
 }
 
 export interface WebuiEnqueueMessageRequest {
@@ -489,6 +490,22 @@ export interface WebuiEnqueueMessageRequest {
   readonly model?: Record<string, unknown>;
   readonly clientRequestId?: string;
   readonly clientIntent?: string;
+  readonly attachments?: readonly WebuiAttachmentInput[];
+}
+
+export interface WebuiAttachmentInput {
+  readonly meta?: {
+    readonly attachmentType?: string;
+    readonly fileName?: string;
+    readonly mimeType?: string;
+    readonly sizeBytes?: number;
+  };
+  readonly local?: {
+    readonly assetId?: string;
+    readonly filePath?: string;
+    readonly dataUrl?: string;
+    readonly desktopPath?: string;
+  };
 }
 
 export interface WebuiEnqueueMessageResult {
@@ -800,6 +817,8 @@ export interface WebuiHarnessPort {
     readonly agentName?: string;
   }): Promise<{ readonly skills: readonly WebuiSkillEntry[] }>;
   pluginManagement?(request: WebuiPluginManagementRequest): Promise<unknown>;
+  getPermissionMode?(): Promise<unknown>;
+  setPermissionMode?(request: { readonly mode: "default" | "auto" | "bypassPermissions" }): Promise<unknown>;
   selectModel(request: {
     readonly providerId: string;
     readonly modelId: string;

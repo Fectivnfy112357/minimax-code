@@ -5,6 +5,13 @@ import {
   type WebuiSubmissionIntent,
 } from "../../src/client/projection/composer-state.js";
 import type { SlashCommandEntry } from "../../src/client/slash-palette.js";
+import {
+  findWebuiMentionRange,
+  insertWebuiMention,
+  webuiAttachmentLimitError,
+} from "../../src/client/projection/composer-interactions.js";
+import { sendMessageOperation, enqueueMessageOperation } from "../../src/server/operation/operations.js";
+import { setPermissionModeOperation } from "../../src/server/operation/permission-mode.js";
 
 /**
  * Pure-function tests for the composer submission intent resolver.
@@ -386,5 +393,51 @@ describe("resolveWebuiSubmissionIntent — disabled command inputs do not fill t
     // the original behaviour where `"/goal "` and `"/goal"` both flip the
     // textarea into goal mode.
     expect(intent).toEqual({ kind: "activate-goal-mode" });
+  });
+});
+
+describe("Desktop composer interaction contracts", () => {
+  it("keeps the @ query range at the caret and preserves the surrounding draft", () => {
+    const value = "fix @plug tail";
+    const range = findWebuiMentionRange(value, 9);
+    expect(range).toEqual({ start: 4, end: 9, query: "plug" });
+    expect(insertWebuiMention(value, range!, "@plugin-name")).toEqual({
+      value: "fix @plugin-name  tail",
+      caret: 17,
+    });
+    expect(findWebuiMentionRange("email@host", 10)).toBeUndefined();
+  });
+
+  it("applies attachment count and WebSocket payload caps before reading files", () => {
+    expect(webuiAttachmentLimitError(
+      Array.from({ length: 10 }, () => ({ sizeBytes: 0 })),
+      [{ sizeBytes: 1 }],
+    )).toBe("最多添加 10 个文件");
+    expect(webuiAttachmentLimitError(
+      [{ sizeBytes: 70 * 1024 * 1024 }],
+      [{ sizeBytes: 1 }],
+    )).toBe("附件总大小不能超过 70 MB");
+    expect(webuiAttachmentLimitError([], [{ sizeBytes: 1 }])).toBeUndefined();
+  });
+
+  it("forwards local attachment records through send and queue validators", () => {
+    const attachment = {
+      meta: { attachmentType: "image", fileName: "shot.png", mimeType: "image/png", sizeBytes: 4 },
+      local: { dataUrl: "data:image/png;base64,YWJj" },
+    };
+    expect(sendMessageOperation.validate({ id: "session-1", attachments: [attachment] }).ok).toBe(true);
+    expect(enqueueMessageOperation.validate({ id: "session-1", content: "", attachments: [attachment] }).ok).toBe(true);
+    expect(sendMessageOperation.validate({ id: "session-1", attachments: [{ cloud: { url: "https://example.invalid" } }] }).ok).toBe(false);
+    expect(sendMessageOperation.validate({
+      id: "session-1",
+      attachments: [{ meta: { sizeBytes: 70 * 1024 * 1024 + 1 }, local: { dataUrl: "data:image/png;base64,YWJj" } }],
+    }).ok).toBe(false);
+  });
+
+  it("restricts the permission selector to the three Desktop modes", () => {
+    for (const mode of ["default", "auto", "bypassPermissions"]) {
+      expect(setPermissionModeOperation.validate({ mode }).ok).toBe(true);
+    }
+    expect(setPermissionModeOperation.validate({ mode: "off" }).ok).toBe(false);
   });
 });

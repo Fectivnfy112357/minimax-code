@@ -60,11 +60,13 @@ const rows = (value: unknown, key: string): Row[] => {
 export function PluginManagement({
   transport,
   onClose,
+  initialArea = "plugins",
 }: {
   readonly transport?: WebuiTransport;
   readonly onClose: () => void;
+  readonly initialArea?: Area;
 }): ReactElement {
-  const [area, setArea] = useState<Area>("plugins");
+  const [area, setArea] = useState<Area>(initialArea);
   const [view, setView] = useState<"market" | "personal">("market");
   const [managementOpen, setManagementOpen] = useState(false);
   const [createMenuOpen, setCreateMenuOpen] = useState(false);

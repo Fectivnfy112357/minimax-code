@@ -27,6 +27,7 @@ import {
   type WebuiStreamState,
 } from "./stream.js";
 import type { WebuiStreamFrame } from "../server/port.js";
+import type { WebuiAttachmentInput } from "../server/port.js";
 
 export interface WebuiStreamLoopDeps {
   readonly sendMessage?: WebuiClientMessageSender;
@@ -37,6 +38,7 @@ export interface WebuiStreamLoopDeps {
 export interface WebuiStreamLoopArgs {
   readonly sessionId: string;
   readonly message: string;
+  readonly attachments?: readonly WebuiAttachmentInput[];
 }
 
 export interface WebuiStreamLoopSink {
@@ -323,7 +325,11 @@ export async function runWebuiStreamLoop(
         }
         try {
           await sendMessage(
-            { id: sessionId, content: message },
+            {
+              id: sessionId,
+              content: message,
+              ...(args.attachments?.length ? { attachments: args.attachments } : {}),
+            },
             captureFrame,
           );
         } catch (error) {
