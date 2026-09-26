@@ -85,6 +85,7 @@ export interface WebuiRuntimeCliService {
     request: WebuiSessionListRequest,
     context?: Record<string, never>,
   ): Promise<WebuiSessionPage>;
+  pluginManagement(request: import("./port.js").WebuiPluginManagementRequest): Promise<unknown>;
   getSessionTree(
     request: WebuiSessionTreeRequest,
     context?: Record<string, never>,
@@ -520,6 +521,9 @@ export function createHarnessPortFromHost(
             skill.displayDescription ?? skill.description ?? "",
         })),
       };
+    },
+    async pluginManagement(request) {
+      return requireCliService(host).pluginManagement(request);
     },
     async getSessionUsage(request) {
       return requireCliService(host).getSessionUsage(request);

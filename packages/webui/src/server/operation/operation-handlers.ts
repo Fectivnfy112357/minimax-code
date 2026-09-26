@@ -74,6 +74,7 @@ export type WebuiOperationPort = Pick<
   | "listModels"
   | "selectModel"
   | "listSkills"
+  | "pluginManagement"
   | "getSessionUsage"
   | "getUsageQuota"
   | "getSigninPanel"
@@ -174,6 +175,10 @@ export function createOperationHandlers(
     listModels: async (_context, body) => ({ body: await port.listModels(body) }),
     selectModel: async (_context, body) => ({ body: await port.selectModel(body) }),
     listSkills: async (_context, body) => ({ body: await port.listSkills(body) }),
+    pluginManagement: async (_context, body) => {
+      if (!port.pluginManagement) throw new Error("runtime host does not expose plugin management");
+      return { body: await port.pluginManagement(body) };
+    },
     getSessionUsage: async (_context, body) => ({ body: await port.getSessionUsage(body) }),
     getUsageQuota: async (_context, body) => ({ body: await port.getUsageQuota(body) }),
     getSigninPanel: async () => ({ body: await port.getSigninPanel() }),

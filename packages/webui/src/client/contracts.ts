@@ -489,6 +489,7 @@ export interface WebuiTransport {
       readonly description?: string;
     }[];
   }>;
+  readonly pluginManagement?: (request: import("../shared/plugin-management.js").WebuiPluginManagementRequest) => Promise<unknown>;
   readonly selectModel?: (
     request: WebuiModelSelectionRequest,
   ) => Promise<{ readonly success?: boolean }>;
@@ -599,4 +600,4 @@ export type {
   WebuiStreamFrame,
   WebuiTerminalFrame,
   WebuiTurnDiffView,
-};
+  };

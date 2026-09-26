@@ -14,6 +14,10 @@ import type {
   ListInstalledPluginsResult as ListInstalledPluginsResp,
   ListMarketplacePluginsInput as ListMarketplacePluginsReq,
   ListMarketplacePluginsResult as ListMarketplacePluginsResp,
+  PreviewGithubPluginInput as PreviewGithubPluginReq,
+  PreviewGithubPluginResult as PreviewGithubPluginResp,
+  ImportGithubPluginInput as ImportGithubPluginReq,
+  ImportGithubPluginResult as ImportGithubPluginResp,
   ListRuntimeSkillsInput as ListRuntimeSkillsReq,
   ListRuntimeSkillsResult as ListRuntimeSkillsResp,
   MutatePluginInput as MutatePluginReq,
@@ -97,7 +101,16 @@ export interface LocalRuntimeApplication {
   readonly usage?: {
     watchCommits(signal?: AbortSignal): AsyncGenerator<string>;
   };
-  readonly skills: Pick<LocalSkillService, "listSkills"> & {
+  readonly skills: Pick<
+    LocalSkillService,
+    | "listSkills"
+    | "setSkillEnabled"
+    | "deleteSkill"
+    | "createSkill"
+    | "getSkill"
+    | "listSkillHub"
+    | "installSkill"
+  > & {
     listRuntimeSkills(
       req: ListRuntimeSkillsReq,
     ): Promise<ListRuntimeSkillsResp>;
@@ -110,6 +123,8 @@ export interface LocalRuntimeApplication {
     listInstalledPlugins(
       req: ListInstalledPluginsReq,
     ): Promise<ListInstalledPluginsResp>;
+    previewGithubPlugin(req: PreviewGithubPluginReq): Promise<PreviewGithubPluginResp>;
+    importGithubPlugin(req: ImportGithubPluginReq): Promise<ImportGithubPluginResp>;
     installPlugin(req: MutatePluginReq): Promise<MutatePluginResp>;
     uninstallPlugin(req: MutatePluginReq): Promise<MutatePluginResp>;
     enablePlugin(req: MutatePluginReq): Promise<MutatePluginResp>;

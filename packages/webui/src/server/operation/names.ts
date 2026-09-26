@@ -50,6 +50,7 @@ export const DELETE_QUEUE_ITEM_OPERATION_NAME = "deleteQueueItem" as const;
 export const LIST_MODELS_OPERATION_NAME = "listModels" as const;
 export const SELECT_MODEL_OPERATION_NAME = "selectModel" as const;
 export const LIST_SKILLS_OPERATION_NAME = "listSkills" as const;
+export const PLUGIN_MANAGEMENT_OPERATION_NAME = "pluginManagement" as const;
 export const GET_SESSION_USAGE_OPERATION_NAME = "getSessionUsage" as const;
 export const GET_USAGE_QUOTA_OPERATION_NAME = "getUsageQuota" as const;
 export const GET_SIGNIN_PANEL_OPERATION_NAME = "getSigninPanel" as const;

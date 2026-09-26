@@ -31,6 +31,12 @@ export function composeProcessLocalApplication(input: {
     skills: {
       listSkills: (request) => input.compatibility.skills.listSkills(request),
       listRuntimeSkills: (request) => input.listRuntimeSkills(request),
+      setSkillEnabled: (request, enabled) => input.compatibility.skills.setSkillEnabled(request, enabled),
+      deleteSkill: (request) => input.compatibility.skills.deleteSkill(request),
+      createSkill: (request) => input.compatibility.skills.createSkill(request),
+      getSkill: (request, options) => input.compatibility.skills.getSkill(request, options),
+      listSkillHub: (request) => input.compatibility.skills.listSkillHub(request),
+      installSkill: (request) => input.compatibility.skills.installSkill(request),
     },
     plugins: input.plugins,
     miniApps: createProcessLocalMiniAppApplication(input.pluginControl, input.miniApp),

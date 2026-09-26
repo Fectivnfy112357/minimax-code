@@ -119,7 +119,7 @@ function renderSessionShell(): string {
 }
 
 /** The four rail destinations the desktop ships that the WebUI has no feature for. */
-const INERT_NAV_LABELS = ["插件", "定时", "网站", "远程"];
+const INERT_NAV_LABELS = ["定时", "网站", "远程"];
 
 describe("WebUI shell", () => {
   it("projects desktop workspace state and exposes only the supported add-menu tabs", () => {
@@ -883,11 +883,11 @@ describe("WebUI shell — desktop anatomy", () => {
     }
   });
 
-  it("leaves the reproduced nav block inert rather than wired to nothing", () => {
+  it("wires plugin navigation and leaves unsupported destinations inert", () => {
     const html = renderShell();
 
-    // Exactly one marker per reproduced destination, and the control inside each
-    // row is disabled rather than wired to nothing.
+    // Only the unsupported destinations carry inert markers; the Plugin row
+    // opens its management surface.
     const markers =
       html.match(/data-webui-placeholder-chrome="rail-nav"/gu) ?? [];
     expect(markers).toHaveLength(INERT_NAV_LABELS.length);
@@ -899,6 +899,7 @@ describe("WebUI shell — desktop anatomy", () => {
         /disabled/u,
       );
     }
+    expect(html).toMatch(/data-webui-nav-item="插件"/u);
 
     // The current destination carries the state hook, so the selected row has
     // something to read.
@@ -958,7 +959,7 @@ describe("WebUI shell — desktop anatomy", () => {
         !/(?:^|\s)disabled(?:=|\s|>)/u.test(tag) &&
         !/aria-disabled="true"/u.test(tag),
     );
-    expect(operable).toHaveLength(4);
+    expect(operable).toHaveLength(5);
     expect(html).toMatch(/data-webui-sidebar-toggle="true"/u);
     expect(html).toMatch(/data-webui-nav-item="新建任务"/u);
   });

@@ -216,6 +216,10 @@ export class WebuiService {
       listModels: (request) => this.port.listModels(request),
       selectModel: (request) => this.port.selectModel(request),
       listSkills: (request) => this.port.listSkills(request),
+      pluginManagement: (request) => {
+        if (!this.port.pluginManagement) throw new Error("runtime host does not expose plugin management");
+        return this.port.pluginManagement(request);
+      },
       getSessionUsage: (request) => this.port.getSessionUsage(request),
       getUsageQuota: (request) => this.port.getUsageQuota(request),
       getSigninPanel: () => this.port.getSigninPanel(),

@@ -393,6 +393,7 @@ export function createWebuiTransport({
     deleteQueueItem: (body) => request("deleteQueueItem", body),
     listModels: (body) => request("listModels", body ?? {}),
     listSkills: (body) => request("listSkills", body ?? {}),
+    pluginManagement: (body) => request("pluginManagement", body),
     selectModel: (body) => request("selectModel", body),
     getSessionUsage: (body) => request("getSessionUsage", body),
     getUsageQuota: (body) => request("getUsageQuota", body ?? {}),

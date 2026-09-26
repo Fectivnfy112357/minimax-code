@@ -1,4 +1,10 @@
 import type { ClaimSigninData, SigninPanel } from "@mavis/shared/daily-signin";
+import type { WebuiPluginManagementRequest } from "../shared/plugin-management.js";
+
+export type {
+  WebuiPluginManagementAction,
+  WebuiPluginManagementRequest,
+} from "../shared/plugin-management.js";
 
 // Harness seam for the WebUI service.
 //
@@ -793,6 +799,7 @@ export interface WebuiHarnessPort {
   listSkills(request?: {
     readonly agentName?: string;
   }): Promise<{ readonly skills: readonly WebuiSkillEntry[] }>;
+  pluginManagement?(request: WebuiPluginManagementRequest): Promise<unknown>;
   selectModel(request: {
     readonly providerId: string;
     readonly modelId: string;

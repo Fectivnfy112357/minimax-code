@@ -75,6 +75,12 @@ export function createProcessLocalApplication(
     skills: {
       listSkills: (input) => options.skills.listSkills(input),
       listRuntimeSkills: (input) => options.skills.listRuntimeSkills(input),
+      setSkillEnabled: (input, enabled) => options.skills.setSkillEnabled(input, enabled),
+      deleteSkill: (input) => options.skills.deleteSkill(input),
+      createSkill: (input) => options.skills.createSkill(input),
+      getSkill: (input, readOptions) => options.skills.getSkill(input, readOptions),
+      listSkillHub: (input) => options.skills.listSkillHub(input),
+      installSkill: (input) => options.skills.installSkill(input),
     },
     plugins: options.plugins,
     ...(options.miniApps ? { miniApps: options.miniApps } : {}),

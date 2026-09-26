@@ -46,6 +46,7 @@ import {
   type WorkspacePanelSessionStates,
 } from "../projection/workspace-panel-state.js";
 import { ConversationUsageBanner } from "./ConversationUsageBanner.js";
+import { PluginManagement } from "./PluginManagement.js";
 import { WebuiComposer } from "./SessionComposer.js";
 import { WebuiSessionTranscript } from "./SessionTranscript.js";
 import {
@@ -645,6 +646,7 @@ export function WebuiClientFoundationApp(
     ? teamModeChoices[selectedSessionId] ?? teamModeOff
     : teamModeOff;
   const [railCollapsed, setRailCollapsed] = useState(false);
+  const [pluginManagementOpen, setPluginManagementOpen] = useState(false);
   const [workspacePanelStates, setWorkspacePanelStates] = useState<WorkspacePanelSessionStates>(() => new Map());
   const sessionPanelState = selectedSessionId
     ? getWorkspacePanelSessionState(workspacePanelStates, selectedSessionId)
@@ -742,7 +744,7 @@ export function WebuiClientFoundationApp(
                   <div className="relative min-h-0 flex-1">
                     <div className="webui-rail-scroll h-full overflow-x-hidden overflow-y-auto px-4">
                       <div className="space-y-px pb-2">
-                        <RailRow label="插件" icon={<WebuiIconPlugins />} inert />
+                        <RailRow label="插件" icon={<WebuiIconPlugins />} active={pluginManagementOpen} onSelect={() => setPluginManagementOpen(true)} />
                         <RailRow label="定时" icon={<WebuiIconSchedule />} inert />
                         <RailRow label="网站" icon={<WebuiIconSites />} inert />
                         <RailRow label="远程" icon={<WebuiIconRemote />} inert />
@@ -810,6 +812,7 @@ export function WebuiClientFoundationApp(
             data-webui-shell-region="surface"
             className="relative flex min-h-0 min-w-0 flex-1 flex-row"
           >
+            {pluginManagementOpen ? <PluginManagement transport={transport} onClose={() => setPluginManagementOpen(false)} /> : <>
             {!homeMode && !workspacePanel.open ? <WebuiWorkspacePanelControls filePanelOpen={false} progressPanelOpen={progressPanelOpen} onOpenFiles={() => { setProgressPanelOpen(false); dispatchWorkspacePanel({ type: "open-primary-view", kind: "files", sessionId: selectedSessionId, workspaceDir: selectedSession?.workspaceDir }); }} onToggleProgressPanel={() => setProgressPanelOpen((open) => !open)} /> : null}
             <div className="relative flex h-full min-w-0 flex-1 flex-col">
               <div
@@ -958,6 +961,7 @@ export function WebuiClientFoundationApp(
             </div>
             {!homeMode && progressPanelOpen ? <aside className="webui-progress-overview-panel" data-testid="progress-overview-panel" aria-label="环境信息与进度">{progressPanelContent}</aside> : null}
             {!homeMode && workspacePanel.open ? <WebuiWorkspacePanel state={workspacePanel} dispatch={dispatchWorkspacePanel} sessionId={selectedSessionId} workspaceDir={selectedSession?.workspaceDir} listWorkspaceFileTree={transport?.listWorkspaceFileTree} readWorkspaceFile={transport?.readWorkspaceFile} readCanvas={transport?.readCanvas} applyCanvas={transport?.applyCanvas} createTerminal={transport?.createTerminal} listTerminals={transport?.listTerminals} writeTerminal={transport?.writeTerminal} disposeTerminal={transport?.disposeTerminal} watchTerminal={transport?.watchTerminal} getWorkspaceReviewSummary={transport?.getWorkspaceReviewSummary} listWorkspaceReviewFileDiffs={transport?.listWorkspaceReviewFileDiffs} searchWorkspaceReviewDiffs={transport?.searchWorkspaceReviewDiffs} onClose={() => dispatchWorkspacePanel({ type: "close-panel" })} /> : null}
+            </>}
           </main>
         </div>
       </div>

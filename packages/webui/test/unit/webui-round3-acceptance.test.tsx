@@ -21,6 +21,7 @@ import {
   toggleWebuiFeedback,
 } from "../../src/client/components/MessageActions.js";
 import { MessageItem } from "../../src/client/components/MessageItem.js";
+import { PluginManagement } from "../../src/client/components/PluginManagement.js";
 import {
   buildWebuiEditRequest,
   buildWebuiForkRequest,
@@ -55,6 +56,7 @@ import {
 } from "../../src/server/operation/operations.js";
 import { type WebuiGoal, type WebuiQuestionnaireRequest, type WebuiTurnDiffView } from "../../src/server/port.js";
 import { WebuiErrorCode } from "../../src/server/envelope.js";
+import { pluginManagementOperation } from "../../src/server/operation/plugin-management.js";
 
 const files = [
   { file: "one.ts", additions: 2, deletions: 1 },
@@ -491,5 +493,52 @@ describe("round-3 stream state and transcript render units", () => {
     const state = reduceWebuiStreamFrame(initialWebuiStreamState, frame('{"type":"session.error","error":"upstream failed"}'));
     expect(state.phase).toBe("error");
     expect(state.refusal).toBe("upstream failed");
+  });
+});
+
+describe("plugin management WebUI operation", () => {
+  it("renders its entry surface and rejects actions outside the allowlist", () => {
+    const markup = renderToStaticMarkup(
+      createElement(PluginManagement, {
+        transport: { pluginManagement: async () => ({ plugins: [] }) },
+        onClose: () => undefined,
+      }),
+    );
+    expect(markup).toContain('data-testid="plugin-management"');
+    expect(markup).toContain("市场");
+    expect(markup).toContain("管理");
+    expect(
+      pluginManagementOperation.validate({
+        action: "listMarketplacePlugins",
+        input: { source: 1, limit: 20 },
+      }).ok,
+    ).toBe(true);
+    expect(
+      pluginManagementOperation.validate({ action: "runShell", input: {} }).ok,
+    ).toBe(false);
+    expect(
+      pluginManagementOperation.validate({
+        action: "createMcpServer",
+        input: [],
+      }).ok,
+    ).toBe(false);
+    expect(
+      pluginManagementOperation.validate({
+        action: "createMcpServer",
+        input: { name: "server", config: null },
+      }).ok,
+    ).toBe(false);
+    expect(
+      pluginManagementOperation.validate({
+        action: "listMarketplacePlugins",
+        input: { limit: "many" },
+      }).ok,
+    ).toBe(false);
+    expect(
+      pluginManagementOperation.validate({
+        action: "previewGithubPlugin",
+        input: { url: "" },
+      }).ok,
+    ).toBe(false);
   });
 });

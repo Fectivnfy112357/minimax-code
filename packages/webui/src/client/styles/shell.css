@@ -3303,4 +3303,598 @@
       transition: none;
     }
   }
+  .webui-plugin-management {
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    padding: 28px 24px 48px;
+    color: var(--text_default_primary);
+  }
+  .webui-plugin-management.is-marketplace {
+    padding: 16px 0 48px;
+  }
+  .webui-plugin-header,
+  .webui-plugin-header-tabs,
+  .webui-plugin-categories,
+  .webui-plugin-category-filter,
+  .webui-plugin-toolbar,
+  .webui-plugin-row,
+  .webui-plugin-actions {
+    display: flex;
+    align-items: center;
+  }
+  .webui-plugin-header {
+    position: relative;
+    min-height: 56px;
+    max-width: 960px;
+    margin: 0 auto 42px;
+    justify-content: space-between;
+  }
+  .webui-plugin-management.is-marketplace .webui-plugin-header {
+    max-width: none;
+    min-height: 32px;
+    margin: 0 0 52px;
+  }
+  .webui-plugin-management.is-marketplace .webui-plugin-header-tabs {
+    gap: 2px;
+    border-radius: 10px;
+    padding: 2px;
+  }
+  .webui-plugin-management.is-marketplace .webui-plugin-header-tabs button {
+    min-width: 52px;
+    height: 28px;
+    padding: 4px 10px;
+    font-size: 14px;
+  }
+  .webui-plugin-management.is-marketplace .webui-plugin-create-anchor {
+    gap: 8px;
+  }
+  .webui-plugin-management.is-marketplace .webui-plugin-create-anchor > button {
+    min-height: 30px;
+    padding: 0 12px;
+    font-size: 14px;
+  }
+  .webui-plugin-management.is-marketplace
+    .webui-plugin-create-anchor
+    > button:first-child {
+    width: 30px;
+    padding: 0;
+  }
+  .webui-plugin-management.is-marketplace .webui-plugin-header-title {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 16px;
+    font-weight: 500;
+  }
+  .webui-plugin-create-anchor {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .webui-plugin-create-anchor > button {
+    min-height: 34px;
+    border: 0;
+    border-radius: 8px;
+    background: var(--bg_grouped_secondary);
+    padding: 0 14px;
+    color: var(--text_default_primary);
+  }
+  .webui-plugin-create-anchor > .webui-plugin-create-trigger {
+    background: var(--text_default_primary);
+    color: var(--text_default_inverted);
+  }
+  .webui-plugin-create-menu {
+    position: absolute;
+    top: 42px;
+    right: 0;
+    z-index: 20;
+    display: flex;
+    min-width: 180px;
+    flex-direction: column;
+    border: 1px solid var(--border_default);
+    border-radius: 10px;
+    background: var(--bg_default_primary);
+    padding: 5px;
+    box-shadow: 0 8px 24px rgb(0 0 0 / 14%);
+  }
+  .webui-plugin-create-menu button {
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    padding: 9px 12px;
+    text-align: left;
+    color: var(--text_default_primary);
+  }
+  .webui-plugin-create-menu button:hover {
+    background: var(--bg_interaction_tertiary_hover);
+  }
+  .webui-plugin-header > button {
+    position: absolute;
+    left: 0;
+    top: 4px;
+    border: 0;
+    background: transparent;
+    color: var(--text_default_secondary);
+    font-size: 14px;
+  }
+  .webui-plugin-header > .webui-plugin-close {
+    left: auto;
+    right: 0;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    font-size: 22px;
+    line-height: 1;
+  }
+  .webui-plugin-header h1 {
+    margin: 0 auto;
+    font-size: 24px;
+    font-weight: 650;
+  }
+  .webui-plugin-header-tabs,
+  .webui-plugin-categories {
+    border-radius: 10px;
+    background: var(--bg_grouped_secondary);
+    padding: 4px;
+    gap: 4px;
+  }
+  .webui-plugin-header-tabs button,
+  .webui-plugin-categories button,
+  .webui-plugin-category-filter button {
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    padding: 8px 14px;
+    color: var(--text_default_secondary);
+    font-size: 14px;
+    white-space: nowrap;
+  }
+  .webui-plugin-header-tabs button[aria-pressed="true"],
+  .webui-plugin-categories button[aria-pressed="true"],
+  .webui-plugin-category-filter button[aria-pressed="true"] {
+    background: var(--bg_default_primary);
+    color: var(--text_default_primary);
+  }
+  .webui-plugin-categories {
+    max-width: 960px;
+    margin: 0 auto 24px;
+    background: transparent;
+  }
+  .webui-plugin-count {
+    margin-left: 6px;
+    color: var(--text_default_tertiary);
+  }
+  .webui-plugin-categories input {
+    width: min(200px, 24vw);
+    height: 40px;
+    margin-left: auto;
+    border: 1px solid var(--border_default);
+    border-radius: 10px;
+    background: var(--bg_default_primary);
+    padding: 0 14px;
+    color: var(--text_default_primary);
+    outline: none;
+  }
+  .webui-plugin-category-filter {
+    max-width: 960px;
+    overflow-x: auto;
+    margin: 0 auto 12px;
+    justify-content: center;
+    gap: 3px;
+  }
+  .webui-plugin-management.is-marketplace .webui-plugin-market-discovery {
+    max-width: 768px;
+    margin: 0 auto;
+  }
+  .webui-plugin-management.is-marketplace .webui-plugin-category-filter {
+    max-width: none;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .webui-plugin-management.is-marketplace .webui-plugin-category-filter button {
+    padding-top: 5px;
+    padding-bottom: 5px;
+  }
+  .webui-plugin-market-discovery > input {
+    box-sizing: border-box;
+    width: 100%;
+    height: 40px;
+    margin-bottom: 47px;
+    border: 1px solid var(--border_default);
+    border-radius: 10px;
+    background: var(--bg_default_primary);
+    padding: 0 14px;
+    color: var(--text_default_primary);
+    outline-color: var(--border_accent);
+  }
+  .webui-plugin-management.is-marketplace .webui-plugin-grid {
+    max-width: 768px;
+  }
+  .webui-plugin-market-heading {
+    max-width: 768px;
+    margin: -4px auto 14px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .webui-plugin-show-all {
+    display: block;
+    margin: 8px auto 34px;
+    border: 0;
+    background: transparent;
+    color: var(--text_default_secondary);
+    font-size: 13px;
+  }
+  .webui-plugin-market-skills {
+    max-width: 960px;
+    margin: 34px auto 0;
+  }
+  .webui-plugin-market-skill-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 16px;
+  }
+  .webui-plugin-market-skill-grid article {
+    min-width: 0;
+    position: relative;
+    min-height: 100px;
+    border: 1px solid var(--border_default);
+    border-radius: 12px;
+    padding: 12px;
+  }
+  .webui-plugin-market-skill-grid article > div {
+    display: grid;
+    width: 36px;
+    height: 36px;
+    place-items: center;
+    border-radius: 9px;
+    background: var(--bg_grouped_secondary);
+    color: var(--text_default_secondary);
+  }
+  .webui-plugin-market-skill-grid h3 {
+    overflow: hidden;
+    margin: 10px 0 3px;
+    font-size: 14px;
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .webui-plugin-market-skill-grid p {
+    overflow: hidden;
+    margin: 0;
+    color: var(--text_default_tertiary);
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .webui-plugin-market-skill-grid button {
+    position: absolute;
+    top: 14px;
+    right: 12px;
+    border: 1px solid var(--border_default);
+    border-radius: 8px;
+    background: var(--bg_default_primary);
+    padding: 5px 11px;
+    color: var(--text_default_primary);
+  }
+  .webui-plugin-personal-skills {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .webui-plugin-personal-skills article {
+    display: flex;
+    min-height: 58px;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border_default);
+    padding: 0 10px;
+  }
+  .webui-plugin-personal-skills button {
+    border: 1px solid var(--border_default);
+    border-radius: 8px;
+    background: var(--bg_default_primary);
+    padding: 7px 15px;
+    color: var(--text_default_primary);
+  }
+  .webui-plugin-management.is-marketplace .webui-plugin-grid .webui-plugin-row {
+    min-height: 58px;
+    gap: 16px;
+    padding: 8px 0;
+  }
+  .webui-plugin-management.is-marketplace
+    .webui-plugin-grid
+    .webui-plugin-icon {
+    width: 40px;
+    height: 40px;
+    flex-basis: 40px;
+    border-radius: 10px;
+    font-size: 22px;
+  }
+  .webui-plugin-icon img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+    object-fit: cover;
+  }
+  .webui-plugin-toolbar {
+    max-width: 960px;
+    justify-content: flex-end;
+    margin: 0 auto 12px;
+  }
+  .webui-plugin-toolbar button,
+  .webui-plugin-row > button,
+  .webui-plugin-actions > button:not([role="switch"]) {
+    border: 1px solid var(--border_default);
+    border-radius: 9px;
+    background: var(--bg_default_primary);
+    padding: 8px 16px;
+    color: var(--text_default_primary);
+  }
+  .webui-plugin-list {
+    max-width: 960px;
+    margin: 0 auto;
+  }
+  .webui-plugin-row {
+    min-height: 84px;
+    gap: 20px;
+    border-bottom: 1px solid var(--border_default);
+    padding: 12px 0;
+  }
+  .webui-plugin-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: 56px;
+  }
+  .webui-plugin-grid .webui-plugin-row {
+    min-width: 0;
+    border-bottom: 0;
+  }
+  .webui-plugin-icon {
+    display: grid;
+    width: 50px;
+    height: 50px;
+    flex: 0 0 50px;
+    place-items: center;
+    border: 1px solid var(--border_default);
+    border-radius: 12px;
+    font-size: 26px;
+    color: var(--text_default_secondary);
+  }
+  .webui-plugin-copy {
+    min-width: 0;
+    flex: 1;
+  }
+  .webui-plugin-copy h2 {
+    margin: 0 0 3px;
+    font-size: 16px;
+    font-weight: 500;
+  }
+  .webui-plugin-copy p {
+    overflow: hidden;
+    margin: 0;
+    color: var(--text_default_tertiary);
+    font-size: 14px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .webui-plugin-actions {
+    gap: 8px;
+  }
+  .webui-plugin-row [role="switch"] {
+    display: inline-flex;
+    width: 40px;
+    height: 22px;
+    align-items: center;
+    border: 0;
+    border-radius: 999px;
+    background: var(--bg_interaction_tertiary_default);
+    padding: 3px;
+  }
+  .webui-plugin-row [role="switch"][aria-checked="true"] {
+    background: #1687f8;
+  }
+  .webui-plugin-row [role="switch"] span {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: white;
+    transition: transform 0.15s ease;
+  }
+  .webui-plugin-row [role="switch"][aria-checked="true"] span {
+    transform: translateX(18px);
+  }
+  .webui-plugin-empty {
+    margin: 72px auto;
+    text-align: center;
+    color: var(--text_default_tertiary);
+  }
+  .webui-plugin-error {
+    max-width: 960px;
+    margin: 16px auto;
+    color: var(--text_label_danger_secondary_default);
+  }
+  .webui-agent-editor {
+    display: grid;
+    max-width: 960px;
+    min-height: 55vh;
+    grid-template-columns: 275px minmax(0, 1fr);
+    gap: 24px;
+    margin: 0 auto;
+  }
+  .webui-agent-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .webui-agent-list button {
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    padding: 10px 14px;
+    text-align: left;
+    color: var(--text_default_primary);
+  }
+  .webui-agent-list button[aria-pressed="true"] {
+    background: var(--bg_grouped_secondary);
+  }
+  .webui-agent-detail h2 {
+    margin: 0 0 14px;
+    font-size: 20px;
+    font-weight: 550;
+  }
+  .webui-agent-detail pre {
+    min-height: 260px;
+    overflow: auto;
+    border: 1px solid var(--border_default);
+    border-radius: 10px;
+    padding: 16px;
+    white-space: pre-wrap;
+    font: inherit;
+  }
+  .webui-plugin-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 120;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgb(10 10 10 / 82%);
+    padding: 24px;
+  }
+  .webui-plugin-dialog {
+    display: flex;
+    width: min(800px, calc(100vw - 32px));
+    max-height: min(690px, calc(100vh - 48px));
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: 20px;
+    background: var(--bg_default_primary);
+    box-shadow: 0 16px 48px rgb(0 0 0 / 24%);
+  }
+  .webui-plugin-dialog > header {
+    display: flex;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border_default);
+    padding: 24px 30px 16px;
+  }
+  .webui-plugin-dialog > header h2 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+  }
+  .webui-plugin-dialog > header p {
+    margin: 4px 0 0;
+    color: var(--text_default_tertiary);
+  }
+  .webui-plugin-dialog > header button {
+    align-self: flex-start;
+    border: 0;
+    background: transparent;
+    font-size: 24px;
+    color: var(--text_default_secondary);
+  }
+  .webui-plugin-form {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px 20px;
+    overflow: auto;
+    padding: 24px 30px;
+  }
+  .webui-plugin-form label {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 7px;
+    color: var(--text_default_secondary);
+    font-size: 13px;
+  }
+  .webui-plugin-form .wide {
+    grid-column: 1 / -1;
+  }
+  .webui-plugin-form input,
+  .webui-plugin-form select,
+  .webui-plugin-form textarea {
+    min-height: 44px;
+    border: 1px solid var(--border_default);
+    border-radius: 9px;
+    background: var(--bg_default_primary);
+    padding: 9px 12px;
+    color: var(--text_default_primary);
+    font: inherit;
+    outline-color: var(--border_accent);
+  }
+  .webui-plugin-form textarea {
+    min-height: 180px;
+    resize: vertical;
+  }
+  .webui-plugin-json {
+    box-sizing: border-box;
+    width: calc(100% - 60px);
+    min-height: 340px;
+    margin: 18px 30px;
+    border: 1px solid var(--border_default);
+    border-radius: 9px;
+    background: var(--bg_default_secondary);
+    padding: 12px;
+    color: var(--text_default_primary);
+    font:
+      13px/1.55 ui-monospace,
+      SFMono-Regular,
+      Menlo,
+      monospace;
+    resize: vertical;
+  }
+  .webui-plugin-dialog footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: auto;
+    border-top: 1px solid var(--border_default);
+    padding: 16px 30px 24px;
+  }
+  .webui-plugin-dialog footer button {
+    min-width: 94px;
+    border: 0;
+    border-radius: 9px;
+    background: var(--bg_grouped_secondary);
+    padding: 11px 18px;
+    color: var(--text_default_primary);
+  }
+  .webui-plugin-dialog footer button:last-child {
+    background: var(--bg_interaction_primary_default);
+    color: var(--text_default_inverted);
+  }
+  .webui-plugin-dialog footer button:disabled {
+    opacity: 0.48;
+  }
+  @media (max-width: 760px) {
+    .webui-plugin-management {
+      padding: 18px 14px;
+    }
+    .webui-plugin-header {
+      margin-bottom: 24px;
+    }
+    .webui-plugin-categories {
+      overflow-x: auto;
+    }
+    .webui-plugin-grid {
+      grid-template-columns: 1fr;
+    }
+    .webui-plugin-market-skill-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .webui-agent-editor {
+      grid-template-columns: 1fr;
+    }
+    .webui-plugin-form {
+      grid-template-columns: 1fr;
+      padding: 18px;
+    }
+    .webui-plugin-form .wide {
+      grid-column: auto;
+    }
+  }
 }

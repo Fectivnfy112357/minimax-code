@@ -296,7 +296,7 @@ async function createLocalRuntimeHostV2Internal(
       bindAskUserSuppressionProbe(v1.apiHost, ownerRuntime.services.turnSystem);
     }
     const cliService = ownerRuntime
-      ? createCliService(ownerRuntime.services)
+      ? createCliService({ ...ownerRuntime.services, agentManagementPort: v1.apiHost.agentRuntimePort })
       : undefined;
 
     const close = createSharedClose({

@@ -5,6 +5,7 @@ import { isGoalEnabledOperation, getGoalOperation, createGoalOperation, patchGoa
 import { sendMessageOperation, enqueueMessageOperation, resumeSessionOperation } from "./interaction.js";
 import { watchEventsOperation, listPendingPermissionsOperation, getPendingQuestionnaireOperation, replyPermissionOperation, replyQuestionnaireOperation, dismissQuestionnaireOperation } from "./questionnaire.js";
 import { abortSessionOperation, listQueueMessagesOperation, deleteQueueItemOperation, listModelsOperation, listSkillsOperation, selectModelOperation, getSessionUsageOperation, getUsageQuotaOperation, getAccountStatusOperation } from "./queue.js";
+import { pluginManagementOperation } from "./plugin-management.js";
 import { archiveSessionOperation, deleteSessionOperation, updateSessionOperation, getSessionForkOptionsOperation, forkSessionOperation, listUserModelProvidersOperation, createUserModelProviderOperation, updateUserModelProviderOperation, deleteUserModelProviderOperation, testUserModelProviderOperation, testUserModelOperation, discoverUserModelsCandidateOperation, saveUserModelProviderCandidateOperation, listProviderPresetsOperation, getMiniMaxApiKeyStatusOperation, upsertMiniMaxApiKeyOperation, getCodexOAuthStatusOperation, getMiniMaxModelSourceOperation, setMiniMaxModelSourceOperation, testUserModelCandidateOperation, revealModelProviderApiKeyOperation, startCodexOAuthLoginOperation, cancelCodexOAuthLoginOperation, refreshModelsOperation, runCommandOperation, getSigninPanelOperation, claimSigninOperation, signOutOperation } from "./provider.js";
 export { versionOperation, listSessionsOperation, listVisibleProjectsOperation, getSessionTreeOperation, createSessionOperation, getSessionOperation } from "./session.js";
 export { listWorkspaceFileTreeOperation, readWorkspaceFileOperation, getWorkspaceEnvironmentOperation, mutateWorkspaceGitOperation, getWorkspaceReviewSummaryOperation, listWorkspaceReviewFileDiffsOperation, getWorkspaceReviewFileContentOperation, searchWorkspaceReviewDiffsOperation, readCanvasOperation, applyCanvasOperation, createTerminalOperation, listTerminalsOperation, writeTerminalOperation, resizeTerminalOperation, disposeTerminalOperation, watchTerminalOperation } from "./workspace.js";
@@ -13,6 +14,7 @@ export { isGoalEnabledOperation, getGoalOperation, createGoalOperation, patchGoa
 export { sendMessageOperation, enqueueMessageOperation, resumeSessionOperation } from "./interaction.js";
 export { watchEventsOperation, listPendingPermissionsOperation, getPendingQuestionnaireOperation, replyPermissionOperation, replyQuestionnaireOperation, dismissQuestionnaireOperation } from "./questionnaire.js";
 export { abortSessionOperation, listQueueMessagesOperation, deleteQueueItemOperation, listModelsOperation, listSkillsOperation, selectModelOperation, getSessionUsageOperation, getUsageQuotaOperation, getAccountStatusOperation } from "./queue.js";
+export { pluginManagementOperation } from "./plugin-management.js";
 export { archiveSessionOperation, deleteSessionOperation, updateSessionOperation, getSessionForkOptionsOperation, forkSessionOperation, listUserModelProvidersOperation, createUserModelProviderOperation, updateUserModelProviderOperation, deleteUserModelProviderOperation, testUserModelProviderOperation, testUserModelOperation, discoverUserModelsCandidateOperation, saveUserModelProviderCandidateOperation, listProviderPresetsOperation, getMiniMaxApiKeyStatusOperation, upsertMiniMaxApiKeyOperation, getCodexOAuthStatusOperation, getMiniMaxModelSourceOperation, setMiniMaxModelSourceOperation, testUserModelCandidateOperation, revealModelProviderApiKeyOperation, startCodexOAuthLoginOperation, cancelCodexOAuthLoginOperation, refreshModelsOperation, runCommandOperation, getSigninPanelOperation, claimSigninOperation, signOutOperation } from "./provider.js";
 import { createOperationHandlers, type WebuiOperationPort } from "./operation-handlers.js";
 import type {
@@ -101,6 +103,7 @@ export function createOperationRegistry(
   registerOperation(registry, { operation: listModelsOperation, handle: handlers.listModels });
   registerOperation(registry, { operation: selectModelOperation, handle: handlers.selectModel });
   registerOperation(registry, { operation: listSkillsOperation, handle: handlers.listSkills });
+  registerOperation(registry, { operation: pluginManagementOperation, handle: handlers.pluginManagement });
   registerOperation(registry, { operation: getSessionUsageOperation, handle: handlers.getSessionUsage });
   registerOperation(registry, { operation: getUsageQuotaOperation, handle: handlers.getUsageQuota });
   registerOperation(registry, { operation: getSigninPanelOperation, handle: handlers.getSigninPanel });
