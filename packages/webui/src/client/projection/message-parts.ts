@@ -15,6 +15,7 @@ export interface WebuiMessageForParts {
   readonly thinkingContent?: string;
   readonly thinkingDurationMs?: number;
   readonly toolCalls?: readonly Record<string, unknown>[];
+  readonly attachments?: readonly unknown[];
   /** Desktop's ordered activity parts when the runtime includes them. */
   readonly parts?: readonly Record<string, unknown>[];
   readonly communicationInfosJson?: unknown;
@@ -36,6 +37,14 @@ export interface WebuiDelegationPart {
   readonly toAgent?: string;
   readonly content?: string;
   readonly [key: string]: unknown;
+}
+
+export interface WebuiDeliveredAsset {
+  readonly src: string;
+  readonly name: string;
+  readonly mediaType?: string;
+  readonly caption?: string;
+  readonly deleted?: boolean;
 }
 
 export type WebuiMessagePart =
@@ -68,7 +77,8 @@ export type WebuiMessagePart =
       readonly id: string;
       readonly type: "questionnaire_response";
       readonly summary: WebuiQuestionnaireResponseSummary;
-    };
+    }
+  | { readonly id: string; readonly type: "asset_list"; readonly assets: readonly WebuiDeliveredAsset[] };
 
 export interface WebuiTurnMessageGroup {
   readonly key: string;
@@ -220,6 +230,59 @@ function isTodoUpdatedEventMessage(message: WebuiMessageForParts): boolean {
   }
 }
 
+function decodeXmlAttribute(value: string): string {
+  return value.replace(/&quot;/giu, '"').replace(/&apos;/giu, "'").replace(/&lt;/giu, "<").replace(/&gt;/giu, ">").replace(/&amp;/giu, "&");
+}
+
+function projectDeliveredAssets(content: string, messageId: string): { content: string; parts: WebuiMessagePart[] } {
+  const parts: WebuiMessagePart[] = [];
+  const containers = /<(deliver-assets|deliver_assets|image-gallery)\b[^>]*>([\s\S]*?)<\/\1\s*>/giu;
+  let cleaned = content;
+  let match: RegExpExecArray | null;
+  while ((match = containers.exec(content)) !== null) {
+    const inner = match[2] ?? "";
+    const assets: WebuiDeliveredAsset[] = [];
+    for (const mediaMatch of inner.matchAll(/<media\b([^>]*?)\/?\s*>/giu)) {
+      const attributes = mediaMatch[1] ?? "";
+      const values: Record<string, string> = {};
+      for (const attribute of attributes.matchAll(/([\w-]+)\s*=\s*(["'])(.*?)\2/gu)) {
+        if (attribute[1] && attribute[3] !== undefined) values[attribute[1].toLowerCase()] = decodeXmlAttribute(attribute[3]);
+      }
+      const src = values.src?.trim();
+      if (!src) continue;
+      const name = values.name?.trim() || values.caption?.trim() || src.split(/[\\/]/u).at(-1) || src;
+      assets.push({ src, name, ...(values.type ? { mediaType: values.type } : {}), ...(values.caption ? { caption: values.caption } : {}), ...(values.deleted === "true" ? { deleted: true } : {}) });
+    }
+    if (assets.length) parts.push({ id: `delivered-assets-${messageId}-${parts.length}`, type: "asset_list", assets });
+    cleaned = cleaned.replace(match[0], "");
+  }
+  return { content: cleaned, parts };
+}
+
+const DESKTOP_INTERNAL_MESSAGE_BLOCK = /<(agent-message|agent-context|system-reminder|peer-memory-path|engine-message|inbound-context|archon_internal_context|locale-context|runtime-data-context|permission-ask|permission-response|questionnaire-ask|deliver-assets|deliver_assets|image-gallery)\b[^>]*>[\s\S]*?<\/\1\s*>/giu;
+
+function stripDesktopInternalMessageBlocks(content: string): string {
+  return content
+    .replace(DESKTOP_INTERNAL_MESSAGE_BLOCK, "")
+    // Desktop normalizes <path> to <asset-path> and unwraps <filepath> before
+    // passing the remaining text through Markdown. Keep the path text so the
+    // WebUI file-reference renderer can turn workspace paths into links.
+    .replace(/<(?:asset-path|path|filepath)\b[^>]*>([\s\S]*?)<\/(?:asset-path|path|filepath)\s*>/giu, "$1")
+    .replace(/<video-generation-options\b[^>]*>[\s\S]*?<\/video-generation-options\s*>/giu, "")
+    .replace(/<\/?(user-provided-context|mavis-chat-context|html-selection-context)\b[^>]*>/giu, "")
+    .trim();
+}
+
+function projectMavisThinking(content: string, messageId: string): { content: string; parts: WebuiMessagePart[] } {
+  const parts: WebuiMessagePart[] = [];
+  const cleaned = content.replace(/<mavis-thinking\b[^>]*>([\s\S]*?)<\/mavis-thinking\s*>/giu, (_match, body: string) => {
+    const text = body.trim();
+    if (text) parts.push({ id: `mavis-thinking-${messageId}-${parts.length}`, type: "thinking", content: text });
+    return "";
+  });
+  return { content: cleaned, parts };
+}
+
 /** Build parts in the exact Desktop order: thinking, text, then tool calls. */
 export function projectMessageParts(
   message: WebuiMessageForParts,
@@ -228,6 +291,8 @@ export function projectMessageParts(
   // consumes it separately; mirroring Desktop means omitting it from the
   // conversational transcript while retaining actual `todowrite` calls.
   if (isTodoUpdatedEventMessage(message)) return [];
+  const assetProjection = projectDeliveredAssets(message.msgContent ?? "", message.msgId);
+  const thinkingProjection = projectMavisThinking(assetProjection.content, message.msgId);
   if (Array.isArray(message.parts) && message.parts.length > 0) {
     const ordered: WebuiMessagePart[] = [];
     for (const [index, raw] of message.parts.entries()) {
@@ -239,7 +304,22 @@ export function projectMessageParts(
         ordered.push(type === "thinking"
           ? { id, type: "thinking", content, ...(kind ? { kind } : {}) }
           : { id, type: type === "compaction" ? "compaction" : "cognitive", content, ...(kind ? { kind } : {}) });
-      } else if (type === "text" && content.trim()) ordered.push({ id, type: "text", content });
+      } else if (type === "text" && content.trim()) {
+        // Persisted/Desktop messages may already have an ordered parts array,
+        // while still carrying renderer-only XML inside a text part. Apply
+        // the same special-message projection as the legacy msgContent path.
+        const assetProjection = projectDeliveredAssets(content, `${message.msgId}-${id}`);
+        const thinkingProjection = projectMavisThinking(assetProjection.content, `${message.msgId}-${id}`);
+        const strippedContent = stripQuestionnaireResponse(
+          stripDesktopInternalMessageBlocks(thinkingProjection.content),
+        );
+        ordered.push(...thinkingProjection.parts);
+        if (strippedContent.content.trim())
+          ordered.push({ id, type: "text", content: strippedContent.content });
+        if (strippedContent.questionnaire)
+          ordered.push({ id: `${id}-questionnaire`, type: "questionnaire_response", summary: strippedContent.questionnaire });
+        ordered.push(...assetProjection.parts);
+      }
       else if (type === "tool_call") {
         const call = record(raw.tool_call) ?? record(raw.toolCall);
         if (call) ordered.push({ id, type: "tool_call", toolCall: call });
@@ -258,7 +338,7 @@ export function projectMessageParts(
         }
       }
     }
-    return ordered;
+    return [...ordered, ...projectSyntheticParts(message)];
   }
   const parts: WebuiMessagePart[] = [];
   if (message.thinkingContent?.trim()) {
@@ -271,7 +351,8 @@ export function projectMessageParts(
         : {}),
     });
   }
-  const strippedContent = stripQuestionnaireResponse(message.msgContent ?? "");
+  parts.push(...thinkingProjection.parts);
+  const strippedContent = stripQuestionnaireResponse(stripDesktopInternalMessageBlocks(thinkingProjection.content));
   if (strippedContent.content.trim()) {
     parts.push({
       id: "text",
@@ -286,6 +367,7 @@ export function projectMessageParts(
       summary: strippedContent.questionnaire,
     });
   }
+  if (assetProjection.parts.length) parts.push(...assetProjection.parts);
   for (const [index, toolCall] of (message.toolCalls ?? []).entries()) {
     const toolId =
       typeof toolCall.id === "string" && toolCall.id.trim()
@@ -293,6 +375,11 @@ export function projectMessageParts(
         : `tool-${index}`;
     parts.push({ id: toolId, type: "tool_call", toolCall });
   }
+  // Desktop message type 3 is a file/attachment-only row. Give the ordinary
+  // attachment renderer a text-shaped anchor even when the record has no
+  // caption; this keeps the attachment visible instead of dropping the row.
+  if (parts.length === 0 && (message.attachments?.length ?? 0) > 0)
+    parts.push({ id: `attachments-${message.msgId}`, type: "text", content: "" });
   return [...parts, ...projectSyntheticParts(message)];
 }
 

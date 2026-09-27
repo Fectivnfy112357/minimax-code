@@ -1,18 +1,18 @@
 /**
  * Transcript shape catalog + turn-view adapters.
  *
- * SessionTranscript has two adapter paths:
+ * SessionTranscript combines two data sources into one message timeline:
  *
  *   1. **Historical** — `loadMessages({ id })` → `WebuiClientMessagePage`
  *      (`contracts.ts`). The server returns fully-materialised records; each
  *      record carries every field the runtime has ever written for the
  *      message (timestamp, usage, fileChanges, forkOrigin, etc.).
  *
- *   2. **Live** — `stream.messages` (`stream.ts`). Each frame appends or
- *      replaces a partial record; the renderer holds the latest snapshot
- *      until the turn lands and the historical adapter takes over.
+ *   2. **Live** — `stream.messages` (`stream.ts`). Each frame upserts the
+ *      same server message identity in the combined timeline, so it updates
+ *      in place while the history snapshot supplies older and persisted data.
  *
- * Both paths reduce to the same leaf-renderer shape (`MessageItem`), but
+ * Both sources reduce to the same leaf-renderer shape (`MessageItem`), but
  * the field sets they carry differ: the live path has no `usage` /
  * `fileChanges` / `forkOrigin` until the corresponding frames arrive, and
  * the historical path has no `streaming` flag — the live path is what marks
@@ -98,7 +98,7 @@ export const WEBUI_HISTORICAL_FIELD_TABLE: readonly WebuiHistoricalFieldRow[] =
 
 export const WEBUI_LIVE_FIELD_TABLE: readonly WebuiLiveFieldRow[] = [
   { field: "id", projectedTo: "messageId / streamMessageId", projection: "verbatim", notes: "Server-assigned message id; same id reappears on the historical record after the turn lands." },
-  { field: "answer", projectedTo: "userText / answers[*] (live)", projection: "verbatim", notes: "In-flight text the composer renders inside the right-aligned bubble." },
+  { field: "answer", projectedTo: "userText / answers[*] (live)", projection: "verbatim", notes: "In-flight text updated in the unified transcript's right-aligned user bubble or assistant body." },
   { field: "thinking", projectedTo: "thinking (live)", projection: "verbatim", notes: "In-flight thinking; replaced by the historical record on land." },
   { field: "timestamp", projectedTo: "timestamp (live)", projection: "verbatim", notes: "Optional in-flight timestamp." },
   { field: "isGoal", projectedTo: "isGoal", projection: "verbatim", notes: "Right-aligned goal banner flag." },
@@ -430,6 +430,7 @@ export function projectLiveTurnView(
         if (part.type === "tool_call") return [{ type: "tool", tool: part.toolCall }];
         if (part.type === "delegation") return [{ type: "delegation", message: part.message }];
         if (part.type === "agent_joined") return [{ type: "agent_joined", agent: part.agent as Record<string, unknown> }];
+        if (part.type === "asset_list") return [{ type: "asset_list", assets: part.assets.map((asset) => ({ ...asset })) }];
         return [];
       });
       return {

@@ -240,9 +240,6 @@ export function WebuiActivityGroup({
     return status === "pending" || status === "running";
   });
   const [expanded, setExpanded] = useState(initiallyExpanded);
-  useEffect(() => {
-    if (!active) setExpanded(false);
-  }, [active]);
   if (tools.length === 0) return null;
   const thinkingCount = activityItems?.filter((item) => item.type === "thinking").length ?? 0;
   const summary = [
@@ -472,6 +469,7 @@ export function WebuiThinkingBlock({
   summaryLabel,
   showDetailHeading = false,
   showStreamingStatus = true,
+  initiallyExpanded = false,
 }: {
   readonly text: string;
   readonly durationMs?: number;
@@ -480,9 +478,10 @@ export function WebuiThinkingBlock({
   readonly summaryLabel?: string;
   readonly showDetailHeading?: boolean;
   readonly showStreamingStatus?: boolean;
+  readonly initiallyExpanded?: boolean;
 }): ReactElement | null {
   const [, forceTick] = useState(0);
-  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(initiallyExpanded);
   const [contentExpanded, setContentExpanded] = useState(false);
   const [contentOverflows, setContentOverflows] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -491,9 +490,6 @@ export function WebuiThinkingBlock({
     const timer = setInterval(() => forceTick((value) => value + 1), 1000);
     return () => clearInterval(timer);
   }, [streaming, showStreamingStatus]);
-  useEffect(() => {
-    if (!streaming) setDetailOpen(false);
-  }, [streaming]);
   useEffect(() => {
     const content = contentRef.current;
     if (!detailOpen || !content) return undefined;

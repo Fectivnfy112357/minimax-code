@@ -89,6 +89,7 @@
   .webui-workspace-file-document { min-width: 0; min-height: 0; flex: 1 1 auto; overflow: auto; }
   .webui-workspace-file-document > p { margin: var(--spacing_16); color: var(--text_default_tertiary); }
   .webui-workspace-file-document > .webui-markdown { max-width: 960px; margin: 0 auto; padding: 32px clamp(24px, 7vw, 64px); }
+  .webui-workspace-image-preview { display: block; max-width: 100%; max-height: calc(100vh - 180px); margin: 24px auto; object-fit: contain; }
   .webui-file-code { min-width: max-content; min-height: 100%; margin: 0; overflow: auto; background: var(--bg_default_primary); padding: 20px 0; color: var(--text_default_primary); font-family: Hack, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; line-height: 1.65; tab-size: 2; white-space: pre; }
   .webui-file-code code { display: block; min-width: 100%; }
   .webui-file-code-line { position: relative; display: block; min-height: 1.65em; padding: 0 24px 0 68px; }
@@ -1464,6 +1465,7 @@
 
   /* Every message, either role. `mb-4` is the desktop's inter-message gap. */
   .webui-message {
+    width: 100%;
     margin-bottom: var(--spacing_16);
   }
 
@@ -1495,6 +1497,7 @@
     overflow-y: auto;
     overflow-x: hidden;
     overscroll-behavior: contain;
+    align-items: stretch;
   }
   .webui-session-layout .webui-session-transcript-scroll {
     order: 1;
@@ -1514,6 +1517,7 @@
     max-width: 768px;
     margin-right: auto;
     margin-left: auto;
+    align-items: stretch;
   }
   .webui-session-layout
     .webui-session-transcript-scroll[data-webui-transcript-empty="true"]
@@ -1531,39 +1535,10 @@
     margin: 0;
     text-align: center;
   }
-  /* The composer owns the live stream in React, but its wrapper must not make
-   * that stream a bottom-zone flex item. `display: contents` keeps the
-   * ownership boundary while letting the live column and the absolute
-   * composer overlay participate directly in the session skeleton. */
+  /* The composer stays in the bottom zone while the transcript owns the
+   * complete message list, including the active turn. */
   .webui-session-layout .webui-session-composer {
     display: contents;
-  }
-
-  /* The live turn and historical transcript are siblings in the same scroll
-     viewport. Keeping this column non-scrolling is important: a second
-     overflow container cannot see the composer's bottom inset and lets the
-     active reply disappear behind the overlay during a later turn. */
-  .webui-session-layout .webui-stream-column {
-    order: 2;
-    min-height: 0;
-    flex: 0 0 auto;
-    width: 100%;
-    max-width: 768px;
-    margin-right: auto;
-    margin-left: auto;
-    box-sizing: border-box;
-    padding: 0 var(--spacing_16);
-  }
-
-  /* On the first live turn there is no history to place above the stream. The
-   * transcript component remains mounted for its normal hand-off lifecycle,
-   * but must not consume half of the reading column while it is empty. */
-  .webui-session-layout
-    .webui-session-transcript-scroll[data-webui-transcript-empty-live="true"] {
-    flex: 0 0 0;
-    height: 0;
-    padding: 0;
-    overflow: hidden;
   }
 
   /* Desktop composer overlays the bottom of the session reading column. Its
@@ -1968,6 +1943,13 @@
     overflow-wrap: anywhere;
     word-break: break-word;
   }
+  .webui-message-file-link { display: inline-flex; align-items: baseline; gap: 5px; color: var(--text_default_accent); text-decoration: none; }
+  .webui-message-file-link:hover { text-decoration: underline; }
+  .webui-delivered-assets { display: flex; flex-direction: column; gap: var(--spacing_8); margin: var(--spacing_8) 0; padding-left: var(--spacing_24); list-style: disc; }
+  .webui-delivered-asset { color: var(--text_default_secondary); }
+  .webui-delivered-asset-icon { margin-right: 5px; }
+  .webui-delivered-asset-caption { color: var(--text_default_secondary); }
+  .webui-delivered-asset-deleted { margin-left: var(--spacing_8); color: var(--text_default_tertiary); font-size: 12px; }
   .webui-markdown > * {
     min-width: 0;
     margin-block-start: 0;

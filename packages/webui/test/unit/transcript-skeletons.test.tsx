@@ -10,6 +10,7 @@ import {
 } from "../../src/client/components/TranscriptSkeletons.js";
 import { WebuiActivityGroup, WebuiThinkingBlock, WebuiTurnProcess } from "../../src/client/components/TranscriptPrimitives.js";
 import { WebuiAssistantBody } from "../../src/client/components/AssistantBody.js";
+import { WebuiMarkdown } from "../../src/client/markdown.js";
 
 function countByClass(html: string, className: string): number {
   const re = new RegExp(`class="[^"]*\\b${className}\\b`, "g");
@@ -207,6 +208,18 @@ describe("Agent activity disclosure", () => {
     expect(html).not.toContain("已完成推理");
     expect(html).toContain("Reasoning without tools");
     expect(html).not.toContain('data-testid="activity-group"');
+    expect(html).toContain('class="webui-thinking-block" data-webui-thinking-block="true" open=""');
+  });
+
+  it("renders workspace paths in list items as linked file references", () => {
+    const html = renderToStaticMarkup(createElement(WebuiMarkdown, {
+      source: "- `src/components/Map View.tsx`",
+      workspaceDir: "/workspace",
+      onOpenFile: () => undefined,
+    }));
+    expect(html).toContain('class="webui-message-file-link"');
+    expect(html).toContain('data-webui-file-reference="src/components/Map View.tsx"');
+    expect(html).toContain("Map View.tsx");
   });
 
   it("shows an absolute read-file path as its basename without a row chevron", () => {

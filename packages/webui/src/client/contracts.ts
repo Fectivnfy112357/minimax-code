@@ -299,7 +299,7 @@ export type WebuiTranscriptItem =
       readonly kind: "activity";
       readonly messageId: string;
       readonly turnId?: string;
-      readonly activityType: "cognitive" | "compaction" | "delegation" | "agent_joined";
+      readonly activityType: "cognitive" | "compaction" | "delegation" | "agent_joined" | "asset_list";
       readonly text?: string;
       readonly detail?: Record<string, unknown>;
       readonly timestamp?: number;
@@ -321,7 +321,8 @@ export type WebuiTranscriptActivityPart =
   | { readonly type: "compaction"; readonly text: string }
   | { readonly type: "tool"; readonly tool: Record<string, unknown> }
   | { readonly type: "delegation"; readonly message: Record<string, unknown> }
-  | { readonly type: "agent_joined"; readonly agent: Record<string, unknown> };
+  | { readonly type: "agent_joined"; readonly agent: Record<string, unknown> }
+  | { readonly type: "asset_list"; readonly assets: readonly Record<string, unknown>[] };
 
 export interface WebuiDiffState {
   readonly view?: WebuiTurnDiffView;

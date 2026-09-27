@@ -8,7 +8,7 @@
 
 import { useState, type ReactElement } from "react";
 import { WebuiMarkdown } from "../markdown.js";
-import type { WebuiMessageFileReference } from "../projection/message-file-reference.js";
+import { parseWebuiMessageFileReference, type WebuiMessageFileReference } from "../projection/message-file-reference.js";
 import { webuiActivitySummary } from "../projection/tool-projection.js";
 import { MessageAttachments, type MessageAttachment } from "./MessageAttachments.js";
 import type { WebuiTurnDiffView } from "../../server/port.js";
@@ -50,7 +50,9 @@ function renderActivityParts(
   processExpanded: boolean,
   processingStartedAtMs?: number,
   onOpenFile?: (reference: WebuiMessageFileReference) => void,
+  workspaceDir?: string,
   collapsedVisiblePart?: WebuiTranscriptActivityPart,
+  collapseNestedThinking = false,
 ): RenderedWebuiTranscriptActivityRow[] {
   const rows: RenderedWebuiTranscriptActivityRow[] = [];
   for (let index = 0; index < entries.length; index += 1) {
@@ -88,20 +90,20 @@ function renderActivityParts(
       const tools = activityItems.flatMap((item) => item.type === "tool" ? [item.tool] : []);
       const thoughts = activityItems.filter((item): item is Extract<WebuiActivityGroupItem, { type: "thinking" }> => item.type === "thinking");
       if (tools.length > 0 && thoughts.length > 0) {
-        rows.push({ messageId, element: <WebuiActivityGroup key={`${messageId}-activity-${index}`} tools={tools} activityItems={activityItems} authoritativeDiffAvailable={authoritativeDiffAvailable} showStreamingStatus={false} /> });
+        rows.push({ messageId, element: <WebuiActivityGroup key={`${messageId}-activity-${index}`} tools={tools} activityItems={activityItems} authoritativeDiffAvailable={authoritativeDiffAvailable} showStreamingStatus={false} initiallyExpanded /> });
       } else if (tools.length > 0) {
         rows.push({ messageId, element: <WebuiActivityGroup key={`${messageId}-tools-${index}`} tools={tools} authoritativeDiffAvailable={authoritativeDiffAvailable} /> });
       } else {
-        thoughts.forEach((thought, thoughtIndex) => rows.push({ messageId, element: <WebuiThinkingBlock key={`${messageId}-thinking-${index}-${thoughtIndex}`} text={thought.text} durationMs={thought.durationMs} streaming={streaming} processingStartedAtMs={processingStartedAtMs} summaryLabel="思考 1 次" showDetailHeading showStreamingStatus={false} /> }));
+        thoughts.forEach((thought, thoughtIndex) => rows.push({ messageId, element: <WebuiThinkingBlock key={`${messageId}-thinking-${index}-${thoughtIndex}`} text={thought.text} durationMs={thought.durationMs} streaming={streaming} processingStartedAtMs={processingStartedAtMs} summaryLabel="思考 1 次" showDetailHeading showStreamingStatus={false} initiallyExpanded={!collapseNestedThinking} /> }));
       }
       index = cursor - 1;
     } else if (part.type === "text") {
-      rows.push({ messageId, element: <div className="webui-assistant-answer" key={`${messageId}-ordered-text-${index}`} data-webui-message-kind="assistant"><WebuiMarkdown source={part.text} onOpenFile={onOpenFile} /></div> });
+      rows.push({ messageId, element: <div className="webui-assistant-answer" key={`${messageId}-ordered-text-${index}`} data-webui-message-kind="assistant"><WebuiMarkdown source={part.text} onOpenFile={onOpenFile} workspaceDir={workspaceDir} /></div> });
     } else if (part.type === "cognitive" || part.type === "compaction") {
-      rows.push({ messageId, element: <WebuiThinkingBlock key={`${messageId}-${part.type}-${index}`} text={part.text} streaming={streaming} processingStartedAtMs={processingStartedAtMs} summaryLabel={part.type === "compaction" ? "上下文整理" : "思考过程"} showDetailHeading={part.type !== "compaction"} showStreamingStatus={false} /> });
+      rows.push({ messageId, element: <WebuiThinkingBlock key={`${messageId}-${part.type}-${index}`} text={part.text} streaming={streaming} processingStartedAtMs={processingStartedAtMs} summaryLabel={part.type === "compaction" ? "上下文整理" : "思考过程"} showDetailHeading={part.type !== "compaction"} showStreamingStatus={false} initiallyExpanded={part.type === "cognitive"} /> });
     } else if (part.type === "delegation") {
-      rows.push({ messageId, element: <div className="webui-agent-delegation" key={`${messageId}-delegation-${index}`} data-webui-agent-activity="delegation" data-active={streaming && index === entries.length - 1 ? "true" : undefined}><span className="webui-agent-delegation-summary"><span className="webui-agent-delegation-avatar" aria-hidden="true">{String(part.message.fromAgent ?? "Agent").slice(0, 1).toUpperCase()}</span><span className="webui-agent-activity-title">{`${String(part.message.fromAgent ?? "Agent")} 发给 ${String(part.message.toAgent ?? "Agent")}`}</span></span>{typeof part.message.content === "string" ? <WebuiMarkdown source={part.message.content} onOpenFile={onOpenFile} /> : null}</div> });
-    } else {
+      rows.push({ messageId, element: <div className="webui-agent-delegation" key={`${messageId}-delegation-${index}`} data-webui-agent-activity="delegation" data-active={streaming && index === entries.length - 1 ? "true" : undefined}><span className="webui-agent-delegation-summary"><span className="webui-agent-delegation-avatar" aria-hidden="true">{String(part.message.fromAgent ?? "Agent").slice(0, 1).toUpperCase()}</span><span className="webui-agent-activity-title">{`${String(part.message.fromAgent ?? "Agent")} 发给 ${String(part.message.toAgent ?? "Agent")}`}</span></span>{typeof part.message.content === "string" ? <WebuiMarkdown source={part.message.content} onOpenFile={onOpenFile} workspaceDir={workspaceDir} /> : null}</div> });
+    } else if (part.type === "agent_joined") {
       const agents: Record<string, unknown>[] = [];
       while (entries[index]?.part.type === "agent_joined") {
         const joined = entries[index]?.part;
@@ -110,9 +112,29 @@ function renderActivityParts(
       }
       index -= 1;
       rows.push({ messageId, element: <WebuiAgentJoinedGroup key={`${messageId}-joined-${index}`} agents={agents} /> });
+    } else {
+      rows.push({ messageId, element: <WebuiDeliveredAssets key={`${messageId}-assets-${index}`} assets={part.assets} workspaceDir={workspaceDir} onOpenFile={onOpenFile} /> });
     }
   }
   return rows;
+}
+
+function WebuiDeliveredAssets({ assets, workspaceDir, onOpenFile }: {
+  readonly assets: readonly Record<string, unknown>[];
+  readonly workspaceDir?: string;
+  readonly onOpenFile?: (reference: WebuiMessageFileReference) => void;
+}): ReactElement | null {
+  if (assets.length === 0) return null;
+  return <ul className="webui-delivered-assets" data-testid="delivered-assets-list">{assets.map((asset, index) => {
+    const src = typeof asset.src === "string" ? asset.src : "";
+    const name = String(asset.name ?? src.split(/[\\/]/u).at(-1) ?? "文件");
+    const caption = typeof asset.caption === "string" && asset.caption !== name ? asset.caption : undefined;
+    const reference = src ? parseWebuiMessageFileReference(src, workspaceDir) : undefined;
+    const extension = name.split(".").at(-1)?.toLowerCase();
+    const icon = ["svg", "png", "jpg", "jpeg", "gif", "webp", "avif"].includes(extension ?? "") ? "🖼️" : extension === "py" ? "🐍" : "📄";
+    const label = <><span className="webui-delivered-asset-icon" aria-hidden="true">{icon}</span><span>{name}</span></>;
+    return <li key={`${src}-${index}`} className="webui-delivered-asset" data-deleted={asset.deleted === true ? "true" : undefined}>{reference && onOpenFile ? <a className="webui-message-file-link" href={reference.path} title={reference.path} data-webui-file-reference={reference.path} onClick={(event) => { event.preventDefault(); onOpenFile(reference); }}>{label}</a> : <span>{label}</span>}{caption ? <span className="webui-delivered-asset-caption"> — {caption}</span> : null}{asset.deleted === true ? <span className="webui-delivered-asset-deleted">已删除</span> : null}</li>;
+  })}</ul>;
 }
 
 function WebuiAgentJoinedGroup({
@@ -120,7 +142,7 @@ function WebuiAgentJoinedGroup({
 }: {
   readonly agents: readonly Record<string, unknown>[];
 }): ReactElement | null {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   if (agents.length === 0) return null;
   return (
     <section className="webui-agent-joined-group" data-webui-agent-activity="agent-joined-group">
@@ -134,26 +156,24 @@ function WebuiAgentJoinedGroup({
         <span>分配任务</span>
         <span className={`webui-agent-joined-chevron${expanded ? "" : " is-collapsed"}`} aria-hidden="true">⌄</span>
       </button>
-      {expanded ? (
-        <div className="webui-agent-joined-list" data-testid="agent-task-list">
-          {agents.map((agent, index) => {
-            const name = String(agent.agentName ?? agent.name ?? "Agent");
-            const title = String(agent.title ?? name);
-            return (
-              <div
-                className="webui-agent-joined-row"
-                key={String(agent.sessionId ?? `${name}-${index}`)}
-                data-testid="agent-task-row"
-                data-webui-agent-task-session={typeof agent.sessionId === "string" ? agent.sessionId : undefined}
-              >
-                <span className="webui-agent-joined-avatar" aria-hidden="true">{name.slice(0, 1).toUpperCase()}</span>
-                <span className="webui-agent-joined-name">@{name}</span>
-                <span className="webui-agent-joined-title">{title}</span>
-              </div>
-            );
-          })}
-        </div>
-      ) : null}
+      <div className="webui-agent-joined-list" data-testid="agent-task-list" hidden={!expanded}>
+        {agents.map((agent, index) => {
+          const name = String(agent.agentName ?? agent.name ?? "Agent");
+          const title = String(agent.title ?? name);
+          return (
+            <div
+              className="webui-agent-joined-row"
+              key={String(agent.sessionId ?? `${name}-${index}`)}
+              data-testid="agent-task-row"
+              data-webui-agent-task-session={typeof agent.sessionId === "string" ? agent.sessionId : undefined}
+            >
+              <span className="webui-agent-joined-avatar" aria-hidden="true">{name.slice(0, 1).toUpperCase()}</span>
+              <span className="webui-agent-joined-name">@{name}</span>
+              <span className="webui-agent-joined-title">{title}</span>
+            </div>
+          );
+        })}
+      </div>
     </section>
   );
 }
@@ -161,6 +181,7 @@ function WebuiAgentJoinedGroup({
 export function WebuiAssistantBody({
   messageId,
   sessionId,
+  workspaceDir,
   assistantMessageId,
   turnId,
   changeSetId,
@@ -186,6 +207,7 @@ export function WebuiAssistantBody({
 }: {
   readonly messageId: string;
   readonly sessionId?: string;
+  readonly workspaceDir?: string;
   readonly onOpenFile?: (reference: WebuiMessageFileReference) => void;
   readonly onOpenTurnReview?: (view: WebuiTurnDiffView, selectedPath?: string) => void;
   readonly assistantMessageId?: string;
@@ -257,6 +279,11 @@ export function WebuiAssistantBody({
     tools?.length ||
     processSegments?.some((segment) => segment.activityParts?.length),
   );
+  const activityEntryCount = orderedProcessEntries.filter((entry) => entry.part.type !== "text").length;
+  const hasMergedActivity = activityEntryCount > 1;
+  const expandProcessByDefault = processInitiallyExpanded ?? (
+    hasMergedActivity || orderedProcessEntries.filter((entry) => entry.part.type === "thinking").length === 1
+  );
   const hasProcessDuration =
     typeof processingStartedAtMs === "number" ||
     typeof totalRequestDurationMs === "number" ||
@@ -269,7 +296,9 @@ export function WebuiAssistantBody({
       processExpanded,
       processingStartedAtMs,
       onOpenFile,
+      workspaceDir,
       primaryAnswerPart,
+      hasMergedActivity,
     );
     return (
       <div className="activity-group-content webui-turn-process-segments">
@@ -301,17 +330,17 @@ export function WebuiAssistantBody({
           hasExpandableContent={hasExpandableProcessContent}
           summaryPrefix={processSummaryParts.join("，")}
           forceExpanded={processForceExpanded}
-          initiallyExpanded={processInitiallyExpanded}
+          initiallyExpanded={expandProcessByDefault}
           showLiveActivity={streaming && Boolean(thinking?.trim())}
           children={renderProcessContent}
           collapsedContent={(expanded) => !expanded && primaryAnswerPart
-            ? <div className="mt-2 webui-assistant-answer" data-webui-message-kind="assistant"><WebuiMarkdown source={primaryAnswerPart.text} onOpenFile={onOpenFile} /></div>
+            ? <div className="mt-2 webui-assistant-answer" data-webui-message-kind="assistant"><WebuiMarkdown source={primaryAnswerPart.text} onOpenFile={onOpenFile} workspaceDir={workspaceDir} /></div>
             : null}
         />
       ) : null}
       {primaryAnswerPart && !hasExpandableProcessContent ? (
         <div className="webui-assistant-answer" data-webui-message-kind="assistant">
-          <WebuiMarkdown source={primaryAnswerPart.text} onOpenFile={onOpenFile} />
+          <WebuiMarkdown source={primaryAnswerPart.text} onOpenFile={onOpenFile} workspaceDir={workspaceDir} />
         </div>
       ) : processTextParts.length > 0 ? null : answers.map((answer, index) => (
         <div
@@ -319,7 +348,7 @@ export function WebuiAssistantBody({
           className="webui-assistant-answer"
           data-webui-message-kind="assistant"
         >
-          <WebuiMarkdown source={answer} onOpenFile={onOpenFile} />
+          <WebuiMarkdown source={answer} onOpenFile={onOpenFile} workspaceDir={workspaceDir} />
         </div>
       ))}
       {/* Desktop places the diff card after the assistant body so the

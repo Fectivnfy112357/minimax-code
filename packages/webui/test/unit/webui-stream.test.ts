@@ -11,10 +11,17 @@ import {
   initialWebuiStreamState,
   reduceWebuiStreamFrame,
   recogniseWebuiStreamPayload,
+  webuiSessionStatusType,
 } from "../../src/client/stream.js";
 import { __webuiProbeReduce } from "../../src/client/stream-instrumentation.js";
 
 const frame = (dataJson: string) => ({ dataJson });
+
+describe("session stream recovery status", () => {
+  it("recognizes the numeric SessionStatusInfoView started status", () => {
+    expect(webuiSessionStatusType({ statusType: 1 })).toBe("started");
+  });
+});
 
 describe("WebUI mixed stream reducer", () => {
   it("retains Desktop ordered activity parts from the live wire envelope", () => {

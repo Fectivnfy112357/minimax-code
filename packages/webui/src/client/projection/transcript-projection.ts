@@ -19,8 +19,10 @@ import type {
   WebuiTranscriptActivityPart,
   WebuiTranscriptProcessSegment,
   WebuiClientMessage,
+  WebuiClientMessagePage,
   WebuiQueryCollapseView,
 } from "../contracts.js";
+import type { WebuiStreamMessage } from "../stream.js";
 import { readUsageNumber } from "./message-projection.js";
 
 /** A render block: one user bubble, or one assistant turn. The transcript
@@ -43,6 +45,75 @@ export interface WebuiMessageQueryDuration {
   readonly queryKey: string;
   readonly durationMs: number;
   readonly forceExpanded?: boolean;
+}
+
+/** The current live turn begins at the newest user record in the stream. */
+export function projectWebuiCurrentLiveTurnMessages(
+  streamMessages: readonly WebuiStreamMessage[],
+): readonly WebuiStreamMessage[] {
+  let latestUserIndex = -1;
+  for (let index = streamMessages.length - 1; index >= 0; index -= 1) {
+    if (streamMessages[index]?.role === "user") {
+      latestUserIndex = index;
+      break;
+    }
+  }
+  return latestUserIndex < 0
+    ? streamMessages
+    : streamMessages.slice(latestUserIndex);
+}
+
+/**
+ * Build one transcript timeline from the durable snapshot and its live
+ * message updates. Stream updates address the same server message identity as
+ * history, so they update that record in place; this is the transcript's
+ * normal upsert path, not a second rendered list with a duplicate filter.
+ */
+export function projectWebuiTranscriptMessages(
+  page: WebuiClientMessagePage,
+  streamMessages: readonly WebuiStreamMessage[],
+  preferStreamUpdates = true,
+): readonly WebuiClientMessage[] {
+  const messages = [...(page.messages ?? [])];
+  const indexById = new Map(messages.map((message, index) => [message.msgId, index]));
+  for (const stream of streamMessages) {
+    const index = indexById.get(stream.id);
+    const previous = index === undefined ? undefined : messages[index];
+    if (previous && !preferStreamUpdates) continue;
+    const next: WebuiClientMessage = {
+      ...(previous ?? { msgId: stream.id }),
+      msgId: stream.id,
+      ...(stream.role || previous?.role ? { role: stream.role ?? previous?.role } : {}),
+      ...(stream.answer || previous?.msgContent !== undefined
+        ? { msgContent: stream.answer || previous?.msgContent }
+        : {}),
+      ...(stream.thinking || previous?.thinkingContent !== undefined
+        ? { thinkingContent: stream.thinking || previous?.thinkingContent }
+        : {}),
+      ...(stream.timestamp !== undefined || previous?.timestamp !== undefined
+        ? { timestamp: stream.timestamp ?? previous?.timestamp }
+        : {}),
+      ...(stream.toolCalls || previous?.toolCalls
+        ? { toolCalls: stream.toolCalls ?? previous?.toolCalls }
+        : {}),
+      ...(stream.parts || previous?.parts
+        ? { parts: stream.parts ?? previous?.parts }
+        : {}),
+      ...(stream.usage || previous?.usage
+        ? { usage: stream.usage ?? previous?.usage }
+        : {}),
+      ...(stream.isGoal || previous?.kind === "goal" || previous?.source === "thread-goal"
+        ? { kind: "goal" }
+        : {}),
+    };
+    if (index === undefined) {
+      indexById.set(stream.id, messages.length);
+      messages.push(next);
+    } else {
+      messages[index] = next;
+    }
+  }
+  return messages;
 }
 
 /** Map persisted query timing to the messages that belong to that query. */
@@ -91,8 +162,10 @@ export function projectWebuiProcessSegments(
       const activity = item as Extract<WebuiTranscriptItem, { activityType: string }>;
       if (activity.activityType === "delegation") parts = [{ type: "delegation", message: activity.detail ?? {} }];
       else if (activity.activityType === "agent_joined") parts = [{ type: "agent_joined", agent: activity.detail ?? {} }];
+      else if (activity.activityType === "asset_list") parts = [{ type: "asset_list", assets: Array.isArray(activity.detail?.assets) ? activity.detail.assets.flatMap((asset) => asset && typeof asset === "object" && !Array.isArray(asset) ? [asset as Record<string, unknown>] : []) : [] }];
       else if (activity.activityType === "cognitive") parts = [{ type: "cognitive", text: activity.text ?? "" }];
-      else parts = [{ type: "compaction", text: activity.text ?? "" }];
+      else if (activity.activityType === "compaction") parts = [{ type: "compaction", text: activity.text ?? "" }];
+      else parts = [];
     }
     const next: WebuiTranscriptProcessSegment = item.kind === "thinking"
       ? {

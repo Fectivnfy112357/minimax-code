@@ -254,6 +254,7 @@ export function MessageItem({
       <WebuiAssistantBody
         messageId={messageId}
         sessionId={sessionId}
+        workspaceDir={workspaceDir}
         onOpenFile={(reference) => { if (sessionId && workspaceDir) onOpenFile?.({ sessionId, workspaceDir, reference }); }}
         onOpenTurnReview={(review, selectedPath) => {
           if (!sessionId || !workspaceDir) return;

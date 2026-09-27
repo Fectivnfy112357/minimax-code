@@ -399,6 +399,8 @@ export interface WebuiWorkspaceFile {
 export interface WebuiWorkspaceFileContent {
   readonly type: "text" | "binary";
   readonly content: string;
+  readonly mimeType?: string;
+  readonly previewDataUrl?: string;
   readonly error?: string;
 }
 

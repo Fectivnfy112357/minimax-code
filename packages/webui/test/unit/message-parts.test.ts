@@ -277,4 +277,36 @@ describe("Desktop message parts projection", () => {
       expect(questionnairePart.summary.answers[0]?.labels).toEqual(["opt-yes", "opt-no"]);
     }
   });
+
+  it("projects Desktop path tags as linkable path text and hides video option metadata", () => {
+    const content = [
+      "已生成文件：<path>src/components/Map View.tsx</path>",
+      "<video-generation-options><duration>5</duration><ratio>16:9</ratio></video-generation-options>",
+    ].join("\n");
+    const parts = projectMessageParts({ msgId: "path-message", msgContent: content });
+    expect(parts).toEqual([
+      { id: "text", type: "text", content: "已生成文件：src/components/Map View.tsx" },
+    ]);
+  });
+
+  it("runs Desktop special-message projection inside explicit text parts", () => {
+    const parts = projectMessageParts({
+      msgId: "explicit-special",
+      parts: [{
+        id: "body",
+        type: "text",
+        content: [
+          "已生成文件：<asset-path>src/result.svg</asset-path>",
+          "<system-reminder>internal payload</system-reminder>",
+          "<mavis-thinking>检查文件输出</mavis-thinking>",
+        ].join("\n"),
+      }],
+    });
+    expect(parts).toEqual([
+      { id: "mavis-thinking-explicit-special-body-0", type: "thinking", content: "检查文件输出" },
+      { id: "body", type: "text", content: "已生成文件：src/result.svg" },
+    ]);
+    expect(JSON.stringify(parts)).not.toContain("internal payload");
+    expect(JSON.stringify(parts)).not.toContain("<asset-path>");
+  });
 });

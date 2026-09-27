@@ -896,6 +896,7 @@ export function WebuiClientFoundationApp(
                     <Composer>
                     <WebuiComposer
                     sessionId={selectedSessionId}
+                    sessionStatus={selectedSession?.status}
                     sessionLayout={!homeMode}
                     agentName={selectedAgentName}
                     createSession={transport?.createSession}

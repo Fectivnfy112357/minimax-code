@@ -276,6 +276,8 @@ export function projectWebuiMessage(
       item = { kind: "activity", activityType: "delegation", detail: part.message, ...(typeof part.message.content === "string" ? { text: part.message.content } : {}), messageId: normalized.msgId, ...turn };
     } else if (part.type === "agent_joined") {
       item = { kind: "activity", activityType: "agent_joined", detail: part.agent as Record<string, unknown>, messageId: normalized.msgId, ...turn };
+    } else if (part.type === "asset_list") {
+      item = { kind: "activity", activityType: "asset_list", detail: { assets: part.assets }, messageId: normalized.msgId, ...turn };
     } else if (part.type === "questionnaire_response") {
       item = {
         kind: "questionnaire_response",

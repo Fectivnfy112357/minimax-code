@@ -1,5 +1,5 @@
 // SessionComposer — the message composer: slash palette, model picker,
-// permission/questionnaire panels, goal banner, stream column, and submit
+// permission/questionnaire panels, goal banner, and submit
 // pipeline.
 //
 // W3 tier 4 lift: this component was moved verbatim out of `app.tsx`. The
@@ -34,6 +34,8 @@ import {
   type WebuiTransport,
   type WebuiClientSession,
 } from "../contracts.js";
+import { projectWebuiMessageToStreamMessage } from "../projection/message-projection.js";
+import { reduceWebuiStreamFrame, webuiSessionStatusType } from "../stream.js";
 
 /** Capability subset the session composer consumes. Single source of truth
  *  lives in `WebuiTransport`; this alias keeps the prop block free of
@@ -67,8 +69,6 @@ import type {
 } from "../../server/port.js";
 import { WebuiGoalBanner } from "./GoalBanner.js";
 import { WebuiInteractionPanel } from "./InteractionPanel.js";
-import { WebuiQuestionnaireResponse } from "./SessionTranscript.js";
-import { MessageItem } from "./MessageItem.js";
 import {
   WebuiModelPicker,
   type WebuiModelPickerDraft,
@@ -81,16 +81,9 @@ import {
 } from "../icons.js";
 import { OutputError } from "./OutputError.js";
 import {
-  ActivityIndicator,
-  MessageAfterQueryStreamingPlaceholder,
-  MessagePassiveLoadingPlaceholder,
-} from "./ActivityIndicator.js";
-import {
   applyWebuiEffectCommands,
   reduceWebuiEffect,
 } from "../projection/effect-reducer.js";
-import { readUsageNumber } from "../projection/message-projection.js";
-import { stripQuestionnaireResponse } from "../projection/message-parts.js";
 import {
   buildWebuiComposerHandlers,
   submitWebuiGoal,
@@ -98,10 +91,6 @@ import {
   resolveWebuiSubmissionIntent,
   isTurnLive,
 } from "../projection/composer-state.js";
-import {
-  projectLiveTurnView,
-  projectLiveUserView,
-} from "../projection/transcript-shape.js";
 import { evaluateOutsideClose } from "../projection/outside-close.js";
 import {
   buildWebuiModelSelectionRequest,
@@ -136,7 +125,6 @@ const WEBUI_SLASH_FALLBACK_SECTIONED: SlashCommandEntry[] = await (async () => {
 
 // Desktop keeps the viewport pinned through the short hand-off window where
 // the live turn is replaced by the refreshed historical transcript.
-const WEBUI_STREAM_FINISH_SETTLE_MS = 2_000;
 
 interface ComposerAttachment {
   readonly id: string;
@@ -304,6 +292,7 @@ function pickWorkspaceDirectory(): Promise<string | undefined> {
 
 export function WebuiComposer({
   sessionId,
+  sessionStatus,
   sessionLayout = false,
   agentName,
   createSession,
@@ -357,6 +346,7 @@ export function WebuiComposer({
   onOpenPluginManagement,
 }: {
   readonly sessionId?: string;
+  readonly sessionStatus?: unknown;
   readonly sessionLayout?: boolean;
   readonly agentName: string;
   readonly createSession?: WebuiClientSessionCreator;
@@ -447,12 +437,82 @@ export function WebuiComposer({
   const pendingMentionCaretRef = useRef<number>();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const composerRegionRef = useRef<HTMLDivElement | null>(null);
-  const streamColumnRef = useRef<HTMLDivElement | null>(null);
-  const autoFollowSessionRef = useRef(true);
-  const manualScrollIntentRef = useRef(false);
-  const previousStreamSessionRef = useRef<string | undefined>(sessionId);
-  const previousStreamContentRef = useRef(false);
+  const restorationKeyRef = useRef<string>();
   const fieldId = useId();
+
+  useEffect(() => {
+    if (!sessionId) {
+      // New Task/home breaks the selected-session sequence too. Clear the
+      // Clear the per-selection restoration guard so returning to the same
+      // still-running conversation can resume its stream again.
+      restorationKeyRef.current = undefined;
+      return undefined;
+    }
+    if (!resumeSession) return undefined;
+    const statusType = webuiSessionStatusType(sessionStatus);
+    const restoreKey = `${sessionId}:${statusType}`;
+    if (restorationKeyRef.current === restoreKey) return undefined;
+    restorationKeyRef.current = restoreKey;
+    if (statusType !== "started" && !isTurnLive(stream.phase)) return undefined;
+    let cancelled = false;
+    const restore = async () => {
+      try {
+        const page = await loadMessages?.({ id: sessionId });
+        if (cancelled) return;
+        const history = page?.messages ?? [];
+        let latestUserIndex = -1;
+        for (let index = history.length - 1; index >= 0; index -= 1) {
+          const message = history[index];
+          if (message?.role === "user" || message?.msgId.startsWith("msg-user-")) {
+            latestUserIndex = index;
+            break;
+          }
+        }
+        const latestTurn = history.slice(latestUserIndex >= 0 ? latestUserIndex : Math.max(0, history.length - 1));
+        const existing = runtimeState.stream;
+        const anchoredMessages = existing.messages.length > 0
+          ? existing.messages
+          : latestTurn.map(projectWebuiMessageToStreamMessage);
+        const lastHistoryMessage = history.at(-1);
+        const startedAt = latestTurn.find((message) => message.role === "user")?.timestamp;
+        setStream((current) => ({
+          ...current,
+          phase: "streaming",
+          messages: anchoredMessages,
+          ...(current.processingStartedAtMs !== undefined
+            ? {}
+            : { processingStartedAtMs: typeof startedAt === "number" ? startedAt : Date.now() }),
+          resumeRequired: false,
+          refusal: undefined,
+        }));
+        await resumeSession(
+          {
+            id: sessionId,
+            ...(existing.cursor
+              ? { afterCursor: existing.cursor }
+              : lastHistoryMessage
+                ? { afterMsgId: lastHistoryMessage.msgId }
+                : {}),
+          },
+          (frame) => {
+            if (!cancelled) setStream((current) => reduceWebuiStreamFrame(current, frame));
+          },
+        );
+        if (!cancelled) setStream((current) => current.phase === "streaming" || current.phase === "reconnecting" ? { ...current, phase: "done" } : current);
+      } catch (error) {
+        if (!cancelled) setStream((current) => ({
+          ...current,
+          phase: "error",
+          refusal: error instanceof Error ? error.message : String(error),
+        }));
+      }
+    };
+    void restore();
+    return () => { cancelled = true; };
+  // Stream state changes are consumed by the frame callback, not a reason to
+  // restart restoration. This effect runs once for a selected session/status.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, sessionStatus, resumeSession, loadMessages]);
 
   useEffect(() => {
     if (!sessionId) {
@@ -1118,18 +1178,12 @@ export function WebuiComposer({
   // The first send creates the target session silently, using the selected project.
   const canCompose = Boolean(sendMessage);
   const canQueue = Boolean(enqueueMessage && sessionId);
-  // One live column while the turn runs; `done` hands the view back to the
-  // transcript (single renderer per turn — no left/right split of one turn).
+  // Turn phase remains part of session runtime state; the transcript owns all
+  // visible messages for both the live and settled phases.
   // `isTurnLive` is the single source of truth for the three-value phase
   // predicate; `session-runtime-store.ts` carries `sending` as a separate
   // submit-lifecycle boolean the reducer deliberately does NOT merge with
   // `phase` — `submitWebuiComposerTurn` relies on the two staying distinct.
-  const turnLive = isTurnLive(stream.phase);
-  const showStreamContent =
-    turnLive ||
-    stream.phase === "refused" ||
-    stream.phase === "error" ||
-    stream.transcriptIncomplete;
   useLayoutEffect(() => {
     if (!sessionLayout) return undefined;
     const region = composerRegionRef.current;
@@ -1160,107 +1214,6 @@ export function WebuiComposer({
       layout.style.removeProperty("--webui-composer-bottom-padding");
     };
   }, [sessionLayout]);
-  useLayoutEffect(() => {
-    if (!sessionLayout || !showStreamContent) return undefined;
-    const streamColumn = streamColumnRef.current;
-    if (!streamColumn) return undefined;
-    const viewport = streamColumn?.closest<HTMLElement>(
-      '[data-webui-session-scroll="true"]',
-    );
-    if (!viewport) return undefined;
-    const followBottom = () => {
-      if (!autoFollowSessionRef.current) return;
-      viewport.scrollTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
-    };
-    const handleScroll = () => {
-      const distance =
-        viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop;
-      if (distance <= 150) {
-        autoFollowSessionRef.current = true;
-        manualScrollIntentRef.current = false;
-      } else if (manualScrollIntentRef.current) {
-        autoFollowSessionRef.current = false;
-      }
-    };
-    const handleWheel = () => {
-      manualScrollIntentRef.current = true;
-    };
-    viewport.addEventListener("scroll", handleScroll, { passive: true });
-    viewport.addEventListener("wheel", handleWheel, { passive: true });
-    followBottom();
-    const bottomPadding = viewport.querySelector<HTMLElement>(
-      '[data-webui-session-bottom-padding="true"]',
-    );
-    const observer =
-      typeof ResizeObserver === "undefined"
-        ? undefined
-        : new ResizeObserver(followBottom);
-    observer?.observe(streamColumn);
-    if (bottomPadding) observer?.observe(bottomPadding);
-    return () => {
-      observer?.disconnect();
-      viewport.removeEventListener("scroll", handleScroll);
-      viewport.removeEventListener("wheel", handleWheel);
-    };
-  }, [sessionLayout, showStreamContent]);
-  useLayoutEffect(() => {
-    const previousSessionId = previousStreamSessionRef.current;
-    const wasShowingStream = previousStreamContentRef.current;
-    previousStreamSessionRef.current = sessionId;
-    previousStreamContentRef.current = showStreamContent;
-    if (
-      !sessionLayout ||
-      showStreamContent ||
-      !wasShowingStream ||
-      previousSessionId !== sessionId
-    )
-      return undefined;
-
-    const region = composerRegionRef.current;
-    const viewport = region?.closest<HTMLElement>(
-      '[data-webui-session-scroll="true"]',
-    );
-    if (!viewport || manualScrollIntentRef.current) return undefined;
-    const transcript = viewport.querySelector<HTMLElement>(
-      '[data-webui-session-transcript-scroll="true"]',
-    );
-    const bottomPadding = viewport.querySelector<HTMLElement>(
-      '[data-webui-session-bottom-padding="true"]',
-    );
-    let frame = 0;
-    let timer = 0;
-    const followBottom = () => {
-      if (!autoFollowSessionRef.current) return;
-      viewport.scrollTop = Math.max(
-        0,
-        viewport.scrollHeight - viewport.clientHeight,
-      );
-    };
-    const scheduleFollow = () => {
-      if (frame !== 0) cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
-        frame = 0;
-        followBottom();
-      });
-    };
-    const observer =
-      typeof ResizeObserver === "undefined"
-        ? undefined
-        : new ResizeObserver(scheduleFollow);
-    if (transcript) observer?.observe(transcript);
-    if (bottomPadding) observer?.observe(bottomPadding);
-    scheduleFollow();
-    timer = window.setTimeout(() => {
-      observer?.disconnect();
-      if (frame !== 0) cancelAnimationFrame(frame);
-      frame = 0;
-    }, WEBUI_STREAM_FINISH_SETTLE_MS);
-    return () => {
-      observer?.disconnect();
-      window.clearTimeout(timer);
-      if (frame !== 0) cancelAnimationFrame(frame);
-    };
-  }, [sessionId, sessionLayout, showStreamContent]);
   const messageDraft = [draft.trim(), ...urlReferences.map((reference) => reference.url.trim()).filter(Boolean)].filter(Boolean).join("\n");
   const sendable = (canCompose || canQueue) && (Boolean(messageDraft) || attachments.length > 0);
   // The submit handler is a single call into
@@ -1391,8 +1344,6 @@ export function WebuiComposer({
     // A newly submitted turn is a Desktop-style request to follow the latest
     // frontier. The scroll listener can still release this lock immediately
     // if the user wheels back into history while the turn is running.
-    autoFollowSessionRef.current = true;
-    manualScrollIntentRef.current = false;
     await submitWebuiComposerTurn(
       {
         sessionId,
@@ -1477,159 +1428,13 @@ export function WebuiComposer({
           ))}
         </section>
       ) : null}
-      {showStreamContent ? (
-        <div
-          ref={streamColumnRef}
-          className="webui-stream-column"
-          data-webui-stream-column="true"
-        >
-          {stream.messages
-            .filter((message) => message.role === "user")
-            .flatMap((message) => {
-              const stripped = stripQuestionnaireResponse(message.answer);
-              const items: ReactElement[] = [];
-              if (stripped.questionnaire) {
-                items.push(
-                  <WebuiQuestionnaireResponse
-                    key={`${message.id}-questionnaire`}
-                    messageId={message.id}
-                    summary={stripped.questionnaire}
-                    timestamp={message.timestamp}
-                  />,
-                );
-              }
-              items.push(
-                <MessageItem
-                  key={message.id}
-                  view={projectLiveUserView([message]) ?? {
-                    source: "live",
-                    messageId: message.id,
-                    role: "user",
-                    userText: stripped.content,
-                    streamMessageId: message.id,
-                    ...(message.timestamp !== undefined
-                      ? { timestamp: message.timestamp }
-                      : {}),
-                    ...(message.isGoal ? { isGoal: true } : {}),
-                  }}
-                />,
-              );
-              return items;
-            })}
-          {stream.phase === "reconnecting" ? (
-            <MessagePassiveLoadingPlaceholder label="重连中…" />
-          ) : null}
-          {(() => {
-            const assistant = stream.messages.filter(
-              (message) => message.role !== "user",
-            );
-            // Pending user just landed but the assistant has not yet sent a
-            // frame: the desktop shows the post-query placeholder so the live
-            // column has a single owner between the user bubble and the
-            // first assistant body. Skip it once an assistant frame is in.
-            if (assistant.length === 0) {
-              if (
-                stream.messages.some((message) => message.role === "user") &&
-                stream.phase === "waiting"
-              ) {
-                return (
-                  <>
-                    <MessageAfterQueryStreamingPlaceholder />
-                    <ActivityIndicator showLabel labelOverride="思考中…" />
-                  </>
-                );
-              }
-              // Stream is in flight but no thinking yet — pulse the rose
-              // loader so the live column reads as active.
-              if (stream.phase === "streaming" || stream.phase === "waiting") {
-                return <ActivityIndicator showLabel labelOverride="思考中…" />;
-              }
-              return null;
-            }
-            const thinking = assistant
-              .map((message) => message.thinking)
-              .filter((value) => value.trim())
-              .join("\n\n");
-            const tools = assistant.flatMap(
-              (message) => message.toolCalls ?? [],
-            );
-            const answers = assistant
-              .map((message) => message.answer)
-              .filter((value) => value.trim());
-            // Aggregate the runtime-measured `usage` across every assistant
-            // frame the live column has seen so the Desktop-style "共执行 N
-            // 分 M 秒 · {rate} token/s" row renders with real numbers.
-            const totalRequestDurationMs = assistant.reduce((sum, message) => {
-              const usage = message.usage;
-              const value = readUsageNumber(usage, "requestDurationMs", "request_duration_ms");
-              return typeof value === "number" && Number.isFinite(value)
-                ? sum + value
-                : sum;
-            }, 0);
-            const totalOutputTokens = assistant.reduce((sum, message) => {
-              const usage = message.usage;
-              const value = readUsageNumber(usage, "outputTokens", "output_tokens");
-              return typeof value === "number" && Number.isFinite(value)
-                ? sum + value
-                : sum;
-            }, 0);
-            // One turn, one block: the server splits a reply across several
-            // `msg_id`s (one per tool round) and each carries its own
-            // thinking — desktop shows a single disclosure for the whole
-            // turn, so merge here instead of rendering N live bodies.
-            return (
-              <>
-                <MessageItem
-                  view={projectLiveTurnView(stream.messages, {
-                      sessionId,
-                      streaming: stream.phase === "streaming",
-                      processingStartedAtMs: stream.processingStartedAtMs,
-                    }) ?? {
-                      source: "live",
-                      messageId: "stream-live",
-                      role: "assistant",
-                      ...(sessionId ? { sessionId } : {}),
-                      assistantMessageId: assistant[assistant.length - 1]?.id,
-                      streamMessageId: "merged",
-                      messageRootId: "merged",
-                      streaming: stream.phase === "streaming",
-                      ...(stream.processingStartedAtMs !== undefined
-                        ? { processingStartedAtMs: stream.processingStartedAtMs }
-                        : {}),
-                      ...(thinking ? { thinking } : {}),
-                      ...(tools.length > 0 ? { tools } : {}),
-                      ...(answers.length > 0 ? { answers } : {}),
-                      ...(totalRequestDurationMs > 0
-                        ? { totalRequestDurationMs }
-                        : {}),
-                      ...(totalOutputTokens > 0 ? { totalOutputTokens } : {}),
-                    }}
-                  getTurnDiff={getTurnDiff}
-                  revertTurnDiff={revertTurnDiff}
-                  reapplyTurnDiff={reapplyTurnDiff}
-                />
-                {(stream.phase === "streaming" || stream.phase === "waiting") && !thinking.trim() ? (
-                  <ActivityIndicator showLabel labelOverride="思考中…" />
-                ) : null}
-              </>
-            );
-          })()}
-          {stream.refusal ? (
-            <OutputError
-              variant="output_error"
-              text={stream.refusal}
-              errorAt={Date.now()}
-              {...(abortSession ? { onRetry: () => void abortSession({ id: sessionId ?? "" }) } : {})}
-            />
-          ) : null}
-          {stream.transcriptIncomplete ? (
-            <OutputError
-              variant="output_error"
-              text="上一轮回复未完整送达，请重新发送以继续。"
-              errorAt={Date.now()}
-            />
-          ) : null}
-        </div>
+      {stream.refusal ? (
+        <OutputError
+          variant="output_error"
+          text={stream.refusal}
+          errorAt={Date.now()}
+          {...(abortSession ? { onRetry: () => void abortSession({ id: sessionId ?? "" }) } : {})}
+        />
       ) : null}
       {commandOutput ? (
         <pre

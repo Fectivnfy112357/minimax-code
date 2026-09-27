@@ -81,6 +81,21 @@ export const initialWebuiStreamState: WebuiStreamState = {
   transcriptIncomplete: false,
 };
 
+/**
+ * Session lists carry `SessionStatusInfoView.statusType` as a numeric enum
+ * (`Started` is 1), while early WebUI adapters supplied a status string.
+ * Normalize both shapes so refresh recovery can recognize active sessions.
+ */
+export function webuiSessionStatusType(value: unknown): string {
+  const status = record(value);
+  const raw = status?.statusType ?? status?.type ?? value;
+  if (raw === 1 || raw === "1") return "started";
+  if (raw === 0 || raw === "0") return "idle";
+  if (raw === 2 || raw === "2") return "error";
+  if (raw === 3 || raw === "3") return "aborted";
+  return typeof raw === "string" ? raw.trim().toLowerCase() : "";
+}
+
 function record(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
