@@ -204,13 +204,20 @@ describe("W0 · structural declarations W5 must preserve", () => {
     expect(declaration(viewport.body, "min-height")).toBe("0");
     expect(declaration(viewport.body, "flex")).toBe("1 1 auto");
     expect(declaration(viewport.body, "overflow-y")).toBe("auto");
+    const sessionViewport = winning(
+      ".webui-session-layout .webui-session-scroll-viewport",
+    );
+    expect(declaration(sessionViewport.body, "min-width")).toBe("0");
+    expect(declaration(sessionViewport.body, "align-items")).toBe("stretch");
 
     const scroll = declarationsFor(
       ".webui-session-layout .webui-session-transcript-scroll",
     );
     expect(scroll).toContain("order: 1");
     expect(scroll).toContain("min-height: 0");
+    expect(scroll).toContain("min-width: 0");
     expect(scroll).toContain("flex: 0 0 auto");
+    expect(scroll).toContain("align-self: stretch");
     expect(scroll).toContain("overflow: visible");
 
     const emptyTranscript = winning(
@@ -235,17 +242,21 @@ describe("W0 · structural declarations W5 must preserve", () => {
     expect(declaration(messageList.body, "max-width")).toBe("768px");
     expect(declaration(messageList.body, "margin-left")).toBe("auto");
     expect(declaration(messageList.body, "margin-right")).toBe("auto");
+    expect(declaration(messageList.body, "min-width")).toBe("0");
+
+    const liveStatus = winning(
+      ".webui-session-layout .message-list > .webui-session-stream-status",
+    );
+    expect(declaration(liveStatus.body, "width")).toBe("100%");
+    expect(declaration(liveStatus.body, "min-width")).toBe("0");
+    expect(declaration(liveStatus.body, "align-self")).toBe("stretch");
+
+    const message = winning(".webui-session-layout .webui-message");
+    expect(declaration(message.body, "min-width")).toBe("0");
+    expect(declaration(message.body, "max-width")).toBe("100%");
 
     const composer = winning(".webui-session-layout .webui-session-composer");
     expect(declaration(composer.body, "display")).toBe("contents");
-
-    const liveColumn = winning(".webui-session-layout .webui-stream-column");
-    expect(declaration(liveColumn.body, "order")).toBe("2");
-    expect(declaration(liveColumn.body, "flex")).toBe("0 0 auto");
-    expect(declaration(liveColumn.body, "max-width")).toBe("768px");
-    expect(declaration(liveColumn.body, "margin-left")).toBe("auto");
-    expect(declaration(liveColumn.body, "margin-right")).toBe("auto");
-    expect(declaration(liveColumn.body, "overflow-y")).toBeUndefined();
 
     const bottomPadding = winning(
       ".webui-session-layout .webui-session-bottom-padding",
@@ -253,13 +264,6 @@ describe("W0 · structural declarations W5 must preserve", () => {
     expect(declaration(bottomPadding.body, "height")).toBe(
       "var(--webui-composer-bottom-padding, 168px)",
     );
-
-    const emptyLiveTranscript = winning(
-      '.webui-session-layout .webui-session-transcript-scroll[data-webui-transcript-empty-live="true"]',
-    );
-    expect(declaration(emptyLiveTranscript.body, "flex")).toBe("0 0 0");
-    expect(declaration(emptyLiveTranscript.body, "height")).toBe("0");
-    expect(declaration(emptyLiveTranscript.body, "overflow")).toBe("hidden");
 
     const composerContent = winning(
       ".webui-session-layout .webui-session-composer-overlay > *",

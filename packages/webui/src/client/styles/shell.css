@@ -1488,10 +1488,12 @@
   .webui-session-layout {
     position: relative;
     min-height: 0;
+    min-width: 0;
     width: 100%;
   }
   .webui-session-scroll-viewport {
     min-height: 0;
+    min-width: 0;
     flex: 1 1 auto;
     width: 100%;
     overflow-y: auto;
@@ -1499,11 +1501,18 @@
     overscroll-behavior: contain;
     align-items: stretch;
   }
+  .webui-session-layout .webui-session-scroll-viewport {
+    min-width: 0;
+    align-items: stretch;
+  }
   .webui-session-layout .webui-session-transcript-scroll {
     order: 1;
     min-height: 0;
+    min-width: 0;
     flex: 0 0 auto;
     width: 100%;
+    align-self: stretch;
+    box-sizing: border-box;
     padding-right: var(--spacing_16);
     padding-left: var(--spacing_16);
     overflow: visible;
@@ -1514,6 +1523,7 @@
   }
   .webui-session-layout .message-list {
     width: 100%;
+    min-width: 0;
     max-width: 768px;
     margin-right: auto;
     margin-left: auto;
@@ -1525,6 +1535,15 @@
     flex: 1 1 auto;
     align-items: center;
     justify-content: center;
+  }
+  .webui-session-layout .message-list > .webui-session-stream-status {
+    width: 100%;
+    min-width: 0;
+    align-self: stretch;
+  }
+  .webui-session-layout .webui-message {
+    min-width: 0;
+    max-width: 100%;
   }
   .webui-transcript-empty-state {
     display: flex;
@@ -1602,7 +1621,7 @@
     line-height: 24px;
     letter-spacing: 0;
     white-space: pre-wrap;
-    overflow-wrap: break-word;
+    overflow-wrap: anywhere;
     color: var(--text_default_primary);
   }
   .webui-user-goal-label {

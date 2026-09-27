@@ -8,9 +8,9 @@
 // existing consumers (`webui-shell.test.ts`, importers via `app.tsx`)
 // keep their current import path during the W3 wave.
 
-import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { ChatSkeleton } from "./TranscriptSkeletons.js";
-import { MessageViewportStreamingLoader } from "./ActivityIndicator.js";
+import { ActivityIndicator, MessageAfterQueryStreamingPlaceholder, MessagePassiveLoadingPlaceholder } from "./ActivityIndicator.js";
 import { TurnNavigator, type TurnSummary } from "./TurnNavigator.js";
 import { MessageItem } from "./MessageItem.js";
 import { formatWebuiMessageTimestamp, type WebuiMessageActionCapabilities } from "./MessageActions.js";
@@ -43,12 +43,14 @@ import type { WebuiMessageFileReference } from "../projection/message-file-refer
 import type { WorkspacePanelCommand } from "../projection/workspace-panel-state.js";
 import {
   groupWebuiTranscriptItems,
+  projectWebuiTranscriptMessages,
   projectWebuiQueryDurations,
   projectWebuiProcessSegments,
 } from "../projection/transcript-projection.js";
 import { projectWebuiMessage } from "../projection/message-projection.js";
 import {
   projectHistoricalTurnView,
+  projectLiveTurnView,
   type WebuiTurnView,
 } from "../projection/transcript-shape.js";
 
@@ -204,14 +206,16 @@ export function WebuiSessionTranscript({
   const transcriptRef = useRef<HTMLElement | null>(null);
   const { stream } = useSessionRuntimeState(sessionId).state;
   const streamPhase = stream.phase;
-  // One live column per turn: while the turn runs the composer renders it
-  // (including the in-flight user bubble), so skip loads; reload when the
-  // turn lands so the transcript takes over with the full history.
+  const autoFollowRef = useRef(true);
+  const manualScrollIntentRef = useRef(false);
+  // History and stream frames feed one transcript projection. The live
+  // records update the same message identities in this list while history
+  // supplies the persisted fields and older messages.
   const turnLive = isTurnLive(streamPhase);
+  const previousTurnLiveRef = useRef(turnLive);
   useEffect(() => {
-    if (turnLive) return undefined;
     let cancelled = false;
-    setLoading(true);
+    if (initialMessages === undefined) setLoading(true);
     setError(undefined);
     void loadMessages({ id: sessionId })
       .then((nextPage) => {
@@ -227,13 +231,26 @@ export function WebuiSessionTranscript({
     return () => {
       cancelled = true;
     };
-  }, [loadMessages, sessionId, streamPhase, turnLive]);
-  // During a live turn the server snapshot may already contain this turn's
-  // user line (first-load race) — hide it here so the composer's pending
-  // bubble is the only renderer while the turn runs.
+  }, [loadMessages, sessionId]);
+  useEffect(() => {
+    const wasLive = previousTurnLiveRef.current;
+    previousTurnLiveRef.current = turnLive;
+    if (!wasLive || turnLive) return undefined;
+    let cancelled = false;
+    void loadMessages({ id: sessionId })
+      .then((nextPage) => { if (!cancelled) setPage(nextPage); })
+      .catch((reason: unknown) => {
+        if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
+      });
+    return () => { cancelled = true; };
+  }, [loadMessages, sessionId, turnLive]);
+  const messages = useMemo(
+    () => projectWebuiTranscriptMessages(page, stream.messages, streamPhase !== "done"),
+    [page, stream.messages, streamPhase],
+  );
   const items = useMemo(
-    () => (page.messages ?? []).flatMap(projectWebuiMessage),
-    [page.messages],
+    () => messages.flatMap(projectWebuiMessage),
+    [messages],
   );
   // Per-message leaf-renderer input view. Both adapters in
   // `projection/transcript-shape.ts` produce this shape; the historical
@@ -245,12 +262,12 @@ export function WebuiSessionTranscript({
   const turnViewsByMessageId = useMemo(
     () =>
       new Map<string, WebuiTurnView>(
-        (page.messages ?? []).map((message) => [
+        messages.map((message) => [
           message.msgId,
           projectHistoricalTurnView(message, sessionId),
         ]),
       ),
-    [page.messages, sessionId],
+    [messages, sessionId],
   );
   // Group by message so one turn renders as one block, the way the desktop
   // does: a process disclosure carrying the thinking and the tool steps, then
@@ -263,6 +280,66 @@ export function WebuiSessionTranscript({
     () => groupWebuiTranscriptItems(items, queryDurationByMessageId),
     [items, queryDurationByMessageId],
   );
+  const liveMessageIds = useMemo(
+    () => new Set(stream.messages.map((message) => message.id)),
+    [stream.messages],
+  );
+  const liveAssistantMessages = useMemo(
+    () => stream.messages.filter((message) => message.role !== "user"),
+    [stream.messages],
+  );
+  const liveAssistantView = useMemo(
+    () => projectLiveTurnView(stream.messages, {
+      sessionId,
+      streaming: streamPhase === "streaming",
+      processingStartedAtMs: stream.processingStartedAtMs,
+    }),
+    [sessionId, stream.messages, stream.processingStartedAtMs, streamPhase],
+  );
+  useLayoutEffect(() => {
+    if (!turnLive) return undefined;
+    const transcript = transcriptRef.current;
+    const viewport = transcript?.closest<HTMLElement>(
+      '[data-webui-session-scroll="true"]',
+    );
+    if (!transcript || !viewport) return undefined;
+    if (!previousTurnLiveRef.current) {
+      autoFollowRef.current = true;
+      manualScrollIntentRef.current = false;
+    }
+    const followBottom = () => {
+      if (autoFollowRef.current)
+        viewport.scrollTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
+    };
+    const onScroll = () => {
+      const distance = viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop;
+      if (distance <= 150) {
+        autoFollowRef.current = true;
+        manualScrollIntentRef.current = false;
+      } else if (manualScrollIntentRef.current) {
+        autoFollowRef.current = false;
+      }
+    };
+    const onWheel = () => { manualScrollIntentRef.current = true; };
+    viewport.addEventListener("scroll", onScroll, { passive: true });
+    viewport.addEventListener("wheel", onWheel, { passive: true });
+    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(followBottom);
+    observer?.observe(transcript);
+    followBottom();
+    return () => {
+      observer?.disconnect();
+      viewport.removeEventListener("scroll", onScroll);
+      viewport.removeEventListener("wheel", onWheel);
+    };
+  }, [sessionId, turnLive]);
+  useLayoutEffect(() => {
+    if (!turnLive) return;
+    const viewport = transcriptRef.current?.closest<HTMLElement>(
+      '[data-webui-session-scroll="true"]',
+    );
+    if (viewport && autoFollowRef.current)
+      viewport.scrollTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
+  }, [items, turnLive]);
   const showEmptyState = !turnLive && !error && !loading && items.length === 0;
   // The right-rail navigator's tick list mirrors the assistant turns visible
   // on the page. A user turn isn't a tick — only the assistant block that
@@ -336,9 +413,6 @@ export function WebuiSessionTranscript({
       ref={transcriptRef}
       aria-label="Transcript"
       data-webui-transcript={sessionId}
-      data-webui-transcript-empty-live={
-        turnLive && groups.length === 0 ? "true" : undefined
-      }
       data-webui-transcript-empty={showEmptyState ? "true" : undefined}
       className="message-container-viewport scrollbar-hide webui-session-transcript-scroll relative flex w-full flex-col"
       data-webui-session-transcript-scroll="true"
@@ -503,40 +577,48 @@ export function WebuiSessionTranscript({
             projectedAssistantView?.source === "historical"
               ? projectedAssistantView
               : undefined;
+          const liveAssistantGroup = turnLive && group.items.some(
+            (item) => liveMessageIds.has(item.messageId),
+          );
+          const assistantView = liveAssistantGroup && liveAssistantView
+            ? {
+                ...liveAssistantView,
+                messageId: group.messageId,
+                ...(group.turnId ? { turnId: group.turnId } : {}),
+              }
+            : {
+                ...(historicalAssistantView ?? {
+                  source: "historical" as const,
+                  messageId: group.messageId,
+                  role: "assistant" as const,
+                  sessionId,
+                }),
+                source: "historical" as const,
+                messageId: group.messageId,
+                role: "assistant" as const,
+                sessionId,
+                ...(group.turnId ? { turnId: group.turnId } : {}),
+                ...(group.forceExpanded ? { processForceExpanded: true } : {}),
+                userText: undefined,
+                thinking: thinkingItems.length > 0
+                  ? thinkingItems.map((item) => item.text).join("\n\n")
+                  : undefined,
+                thinkingDurationMs: thinkingItems[0]?.durationMs,
+                tools: tools.length > 0 ? tools : undefined,
+                answers: answers.map((item) => item.text),
+                timestamp: undefined,
+                isGoal: undefined,
+                totalRequestDurationMs: group.totalRequestDurationMs,
+                totalOutputTokens: group.totalOutputTokens,
+                actions,
+                initialDiff,
+                attachments: answers[0]?.attachments,
+                processSegments: projectWebuiProcessSegments(group.items),
+              };
           return (
             <MessageItem
               key={group.messageId}
-              view={
-                {
-                  ...(historicalAssistantView ?? {
-                    source: "historical",
-                    messageId: group.messageId,
-                    role: "assistant",
-                    sessionId,
-                  }),
-                  source: "historical",
-                  messageId: group.messageId,
-                  role: "assistant",
-                  sessionId,
-                  ...(group.turnId ? { turnId: group.turnId } : {}),
-                  ...(group.forceExpanded ? { processForceExpanded: true } : {}),
-                  userText: undefined,
-                  thinking: thinkingItems.length > 0
-                    ? thinkingItems.map((item) => item.text).join("\n\n")
-                    : undefined,
-                  thinkingDurationMs: thinkingItems[0]?.durationMs,
-                  tools: tools.length > 0 ? tools : undefined,
-                  answers: answers.map((item) => item.text),
-                  timestamp: undefined,
-                  isGoal: undefined,
-                  totalRequestDurationMs: group.totalRequestDurationMs,
-                  totalOutputTokens: group.totalOutputTokens,
-                  actions,
-                  initialDiff,
-                  attachments: answers[0]?.attachments,
-                  processSegments: projectWebuiProcessSegments(group.items),
-                }
-              }
+              view={assistantView}
               wallClockDurationMs={group.wallClockDurationMs}
               getTurnDiff={getTurnDiff}
               revertTurnDiff={revertTurnDiff}
@@ -552,8 +634,30 @@ export function WebuiSessionTranscript({
             />
           );
         })}
-        {streamPhase === "streaming" ? (
-          <MessageViewportStreamingLoader testId="webui-transcript-viewport-loader" />
+        {streamPhase === "reconnecting" ? (
+          <MessagePassiveLoadingPlaceholder label="重连中…" />
+        ) : null}
+        {turnLive && !liveAssistantMessages.length &&
+        (streamPhase === "streaming" || streamPhase === "waiting") ? (
+          stream.messages.some((message) => message.role === "user") && streamPhase === "waiting" ? (
+            <>
+              <MessageAfterQueryStreamingPlaceholder />
+              <div className="webui-session-stream-status" data-webui-live-thinking="true">
+                <ActivityIndicator showLabel labelOverride="思考中…" />
+              </div>
+            </>
+          ) : (
+            <div className="webui-session-stream-status" data-webui-live-thinking="true">
+              <ActivityIndicator showLabel labelOverride="思考中…" />
+            </div>
+          )
+        ) : null}
+        {turnLive && liveAssistantView &&
+        (streamPhase === "streaming" || streamPhase === "waiting") &&
+        !liveAssistantView.thinking?.trim() ? (
+          <div className="webui-session-stream-status" data-webui-live-thinking="true">
+            <ActivityIndicator showLabel labelOverride="思考中…" />
+          </div>
         ) : null}
       </div>
       <TurnNavigator turns={turns} />

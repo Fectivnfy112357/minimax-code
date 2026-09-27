@@ -217,12 +217,15 @@ describe("WebUI transcript widget wiring", () => {
     expect(html).not.toContain("No messages in this session.");
   });
 
-  it("marks an empty transcript so the first live turn keeps the main column", () => {
+  it("renders the first live turn once in the shared transcript with its loader", () => {
     const html = sessionShell({
       streamingPhase: "streaming",
       streamUserText: "你好",
     });
-    expect(html).toContain('data-webui-transcript-empty-live="true"');
+    expect(html).toContain('data-webui-session-transcript-scroll="true"');
+    expect(html.match(/data-webui-message-role="user"/gu)).toHaveLength(1);
+    expect(html.match(/data-testid="streaming-rose-loader"/gu)).toHaveLength(1);
+    expect(html).not.toContain('data-webui-transcript-empty-live="true"');
   });
 
   it("keeps the transcript expanded when a later turn is streaming", () => {

@@ -47,22 +47,6 @@ export interface WebuiMessageQueryDuration {
   readonly forceExpanded?: boolean;
 }
 
-/** The current live turn begins at the newest user record in the stream. */
-export function projectWebuiCurrentLiveTurnMessages(
-  streamMessages: readonly WebuiStreamMessage[],
-): readonly WebuiStreamMessage[] {
-  let latestUserIndex = -1;
-  for (let index = streamMessages.length - 1; index >= 0; index -= 1) {
-    if (streamMessages[index]?.role === "user") {
-      latestUserIndex = index;
-      break;
-    }
-  }
-  return latestUserIndex < 0
-    ? streamMessages
-    : streamMessages.slice(latestUserIndex);
-}
-
 /**
  * Build one transcript timeline from the durable snapshot and its live
  * message updates. Stream updates address the same server message identity as
@@ -76,7 +60,12 @@ export function projectWebuiTranscriptMessages(
 ): readonly WebuiClientMessage[] {
   const messages = [...(page.messages ?? [])];
   const indexById = new Map(messages.map((message, index) => [message.msgId, index]));
-  for (const stream of streamMessages) {
+  const refreshIndexes = (from: number) => {
+    for (let index = from; index < messages.length; index += 1)
+      indexById.set(messages[index]!.msgId, index);
+  };
+  for (let streamIndex = 0; streamIndex < streamMessages.length; streamIndex += 1) {
+    const stream = streamMessages[streamIndex]!;
     const index = indexById.get(stream.id);
     const previous = index === undefined ? undefined : messages[index];
     if (previous && !preferStreamUpdates) continue;
@@ -107,8 +96,30 @@ export function projectWebuiTranscriptMessages(
         : {}),
     };
     if (index === undefined) {
-      indexById.set(stream.id, messages.length);
-      messages.push(next);
+      // History can already contain a queued user message that was accepted
+      // after an in-flight assistant message. Insert the stream-only record
+      // beside its nearest later stream identity so the ordered stream acts as
+      // the sequence of anchors across the two sources.
+      let insertAt: number | undefined;
+      for (let nextStream = streamIndex + 1; nextStream < streamMessages.length; nextStream += 1) {
+        const nextIndex = indexById.get(streamMessages[nextStream]!.id);
+        if (nextIndex !== undefined) {
+          insertAt = nextIndex;
+          break;
+        }
+      }
+      if (insertAt === undefined) {
+        for (let previousStream = streamIndex - 1; previousStream >= 0; previousStream -= 1) {
+          const previousIndex = indexById.get(streamMessages[previousStream]!.id);
+          if (previousIndex !== undefined) {
+            insertAt = previousIndex + 1;
+            break;
+          }
+        }
+      }
+      const insertionIndex = insertAt ?? messages.length;
+      messages.splice(insertionIndex, 0, next);
+      refreshIndexes(insertionIndex);
     } else {
       messages[index] = next;
     }

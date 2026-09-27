@@ -6,9 +6,8 @@
 //   1. `migrateSessionRuntimeState` deliberately does NOT notify listeners
 //      (`session-runtime-store.ts:68-81`): the only subscriber is the view
 //      that is about to switch keys, and the target key has no subscriber yet.
-//   2. Writes follow the key that is currently on screen (`sessionKeyRef`,
-//      `session-runtime-store.ts:89-113`), not the key a setter was captured
-//      with.
+//   2. A turn writer remains pinned to its owning session. It moves only when
+//      the first home-screen turn creates the session that owns its stream.
 //
 // Contract 1 is NOT observable from this file: listeners are registered inside
 // the `useSessionRuntimeState` hook, which needs a mounted React tree, and W0
@@ -23,6 +22,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import {
   HOME_SESSION_RUNTIME_KEY as HOME_KEY,
+  createSessionRuntimeWriter,
   migrateSessionRuntimeState,
   readSessionRuntimeState,
   updateSessionRuntimeState,
@@ -118,5 +118,34 @@ describe("W0 · session runtime store transition sequence", () => {
     }));
 
     expect(readSessionRuntimeState("w0-other-session")).toEqual(initialState());
+  });
+
+  it("keeps an in-flight turn on its owner when another session is selected", () => {
+    const writer = createSessionRuntimeWriter(SESSION_KEY);
+    updateSessionRuntimeState("w0-other-session", (current) => ({
+      ...current,
+      stream: { ...current.stream, phase: "streaming" },
+    }));
+
+    writer.setStream((current) => ({ ...current, phase: "done" }));
+    writer.setSending(false);
+
+    expect(readSessionRuntimeState(SESSION_KEY)).toMatchObject({
+      stream: { phase: "done" },
+      sending: false,
+    });
+    expect(readSessionRuntimeState("w0-other-session").stream.phase).toBe("streaming");
+  });
+
+  it("moves a home-screen writer only when its new session is created", () => {
+    const writer = createSessionRuntimeWriter(HOME_KEY);
+    writer.setStream((current) => ({ ...current, phase: "streaming" }));
+    migrateSessionRuntimeState(HOME_KEY, SESSION_KEY);
+    writer.moveTo(SESSION_KEY);
+
+    writer.setStream((current) => ({ ...current, phase: "done" }));
+
+    expect(readSessionRuntimeState(HOME_KEY).stream.phase).toBe("idle");
+    expect(readSessionRuntimeState(SESSION_KEY).stream.phase).toBe("done");
   });
 });

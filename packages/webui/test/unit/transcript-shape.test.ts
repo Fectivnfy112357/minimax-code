@@ -12,6 +12,7 @@ import type { WebuiStreamMessage } from "../../src/client/stream.js";
 import { projectWebuiMessage } from "../../src/client/projection/message-projection.js";
 import {
   groupWebuiTranscriptItems,
+  projectWebuiTranscriptMessages,
   projectWebuiQueryDurations,
   projectWebuiProcessSegments,
 } from "../../src/client/projection/transcript-projection.js";
@@ -134,6 +135,45 @@ describe("WEBUI_HISTORICAL_FIELD_TABLE — every populated field on the historic
       expect(tableFields.has(String(field))).toBe(true);
     });
   }
+});
+
+describe("live transcript timeline merge", () => {
+  it("inserts a streamed assistant turn before a later queued user already present in history", () => {
+    const messages = projectWebuiTranscriptMessages(
+      {
+        messages: [
+          { msgId: "user-1", role: "user", msgContent: "first" },
+          { msgId: "user-2", role: "user", msgContent: "second" },
+        ],
+      },
+      [
+        { id: "user-1", role: "user", answer: "first", thinking: "" },
+        { id: "assistant-1", answer: "replying to first", thinking: "thinking" },
+        { id: "user-2", role: "user", answer: "second", thinking: "" },
+      ],
+    );
+
+    expect(messages.map((message) => message.msgId)).toEqual([
+      "user-1",
+      "assistant-1",
+      "user-2",
+    ]);
+    expect(messages.map((message) => message.msgContent)).toEqual([
+      "first",
+      "replying to first",
+      "second",
+    ]);
+  });
+
+  it("updates matching history identities in place without adding a second row", () => {
+    const messages = projectWebuiTranscriptMessages(
+      { messages: [{ msgId: "user-1", role: "user", msgContent: "old" }] },
+      [{ id: "user-1", role: "user", answer: "live", thinking: "" }],
+    );
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.msgContent).toBe("live");
+  });
 });
 
 describe("WEBUI_LIVE_FIELD_TABLE — every populated field on the live fixtures must appear", () => {

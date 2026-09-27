@@ -4,7 +4,7 @@
 // function is byte-identical to what used to live there; the lift is a
 // move-only refactor. **Do not** re-shape the Map, the listener set, the
 // guard order in `updateSessionRuntimeState`, the no-notify call inside
-// `migrateSessionRuntimeState`, or the `sessionKeyRef` semantics inside
+// `migrateSessionRuntimeState`, or view subscription semantics inside
 // `useSessionRuntimeState`. Each of those is load-bearing for the
 // `WebuiClientFoundationApp` home → first-session flow (see the
 // comments inline) and changing any of them is a behaviour change.
@@ -16,7 +16,7 @@
 // Set are the canonical path: there is exactly one instance, declared
 // here, and every consumer reads / writes through the helpers above.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { initialWebuiStreamState } from "./stream.js";
 import type { WebuiComposerSubmitHandlers } from "./projection/composer-state.js";
 import type { WebuiStreamState } from "./stream.js";
@@ -56,6 +56,36 @@ export function updateSessionRuntimeState(
 }
 
 /**
+ * A writer belongs to one turn, not whichever session is currently selected.
+ * The only time its key changes is when a first message creates the session
+ * that owns a stream which began on the home screen.
+ */
+export function createSessionRuntimeWriter(initialSessionKey: string): {
+  readonly setStream: (
+    update: (current: WebuiStreamState) => WebuiStreamState,
+  ) => void;
+  readonly setSending: (sending: boolean) => void;
+  readonly moveTo: (sessionKey: string) => void;
+} {
+  let sessionKey = initialSessionKey;
+  return {
+    setStream: (update) =>
+      updateSessionRuntimeState(sessionKey, (current) => ({
+        ...current,
+        stream: update(current.stream),
+      })),
+    setSending: (sending) =>
+      updateSessionRuntimeState(sessionKey, (current) => ({
+        ...current,
+        sending,
+      })),
+    moveTo: (nextSessionKey) => {
+      sessionKey = nextSessionKey;
+    },
+  };
+}
+
+/**
  * Carry a session's live runtime state (stream + sending) to a new key and
  * clear the source. The first turn starts streaming before the session
  * exists — it writes to the home key — and `onSessionCreated` switches the
@@ -81,21 +111,25 @@ export function useSessionRuntimeState(sessionId: string | undefined): {
   readonly setSending: (sending: boolean) => void;
 } {
   const sessionKey = sessionId ?? HOME_SESSION_RUNTIME_KEY;
-  const [state, setState] = useState(() => readSessionRuntimeState(sessionKey));
-  // Writes follow the key that is currently on screen: the submit path
-  // captures these setters before the first-session switch, so the in-flight
-  // stream and the finish-time `setSending(false)` must land on the key the
-  // state was migrated to, not on the abandoned home key.
-  const sessionKeyRef = useRef(sessionKey);
+  const [snapshot, setSnapshot] = useState(() => ({
+    sessionKey,
+    state: readSessionRuntimeState(sessionKey),
+  }));
+  // A render after a session switch must never paint the previously selected
+  // session's live stream for one frame while the subscription effect catches
+  // up. The effect below then subscribes this view to the selected key.
+  const state = snapshot.sessionKey === sessionKey
+    ? snapshot.state
+    : readSessionRuntimeState(sessionKey);
   useEffect(() => {
-    sessionKeyRef.current = sessionKey;
-    setState(readSessionRuntimeState(sessionKey));
+    setSnapshot({ sessionKey, state: readSessionRuntimeState(sessionKey) });
     let listeners = sessionRuntimeListeners.get(sessionKey);
     if (!listeners) {
       listeners = new Set();
       sessionRuntimeListeners.set(sessionKey, listeners);
     }
-    const listener = (next: WebuiSessionRuntimeState) => setState(next);
+    const listener = (next: WebuiSessionRuntimeState) =>
+      setSnapshot({ sessionKey, state: next });
     listeners.add(listener);
     return () => {
       listeners?.delete(listener);
@@ -105,12 +139,12 @@ export function useSessionRuntimeState(sessionId: string | undefined): {
   return {
     state,
     setStream: (update) =>
-      updateSessionRuntimeState(sessionKeyRef.current, (current) => ({
+      updateSessionRuntimeState(sessionKey, (current) => ({
         ...current,
         stream: update(current.stream),
       })),
     setSending: (sending) =>
-      updateSessionRuntimeState(sessionKeyRef.current, (current) => ({
+      updateSessionRuntimeState(sessionKey, (current) => ({
         ...current,
         sending,
       })),
