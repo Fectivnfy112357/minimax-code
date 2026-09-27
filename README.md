@@ -145,7 +145,7 @@ Inside the TUI, use `/sessions` to find previous sessions and `/help` to see all
 | Reference a workspace file or directory | `@` |
 | Toggle Plan Mode | `Shift+Tab` |
 | Switch permission modes | `Alt+M` |
-| Close a panel or interrupt a running task | `Esc` |
+| Close a panel or interrupt a running task; interrupting before the model replies returns the message to the composer | `Esc` |
 
 ## Uninstall
 
@@ -221,11 +221,11 @@ The [small, reproducible project](examples/clamp) is the same task used in the d
 
 ## Build from source
 
-To develop MCode or run this source checkout, you need Git, **Node.js 22.19+ (22.x), 24.2+ (24.x), 25, or 26**, and **pnpm 9.12.0**.
-
+To develop MCode or run this source checkout, you need Git, **Node.js 22.19+ (22.x), 24.2+ (24.x), 25, or 26**, and **pnpm 9.12.0**. On Windows, keep the checkout on a local NTFS volume and outside cloud-synced folders; the preflight command below checks the volume before pnpm creates workspace links.
 ```bash
 git clone https://github.com/MiniMax-AI/minimax-code.git
 cd minimax-code
+node scripts/check-windows-source-location.mjs
 pnpm install --frozen-lockfile
 pnpm build
 pnpm mcode
@@ -260,6 +260,18 @@ For now, code and documentation pull requests are accepted only from repository 
 [Download for macOS or Windows](https://agent.minimax.io/download) · [Report a problem or ask a question](https://github.com/MiniMax-AI/minimax-code/issues/new/choose)
 
 This repository also hosts issue reporting for the MiniMax Code desktop app. The published source covers the terminal TUI, headless CLI, and ACP; it does not include the desktop application's source. Select the affected product when filing an issue. For a desktop bug, include the app version, operating system, and a log upload ID if available from **Settings → General → Upload logs**. For a CLI bug, include `mcode --version`, your interface, and a minimal reproduction. Remove credentials and private project content from reports.
+
+## Feedback and contact
+
+| Channel | Use it for |
+| --- | --- |
+| [GitHub Issues](https://github.com/MiniMax-AI/minimax-code/issues/new/choose) | Public bug reports, feature requests, and questions about the CLI or desktop app. |
+| [MiniMaxCode@minimax.io](mailto:MiniMaxCode@minimax.io) | General feedback and support inquiries. |
+| [security.mcode@minimax.io](mailto:security.mcode@minimax.io) | Private vulnerability reports. Send reproduction details and redacted evidence here; see [Security](SECURITY.md). |
+| [Discord](https://minimax.io/discord) | Community discussion and feedback. |
+| [Feishu feedback group QR code](https://cdn.hailuoai.com/hailuo-video-web/public_assets/minimax_code_feishu_group_url.png) | Chinese-language community feedback. Scan with Feishu, or find the QR code in the Chinese desktop app under the user menu → **Contact us → Feishu**. |
+
+Follow [MiniMax on X](https://x.com/MiniMaxAgent) for updates. Keep vulnerability details, credentials, and private project content out of public issues and community chats.
 
 ## License
 

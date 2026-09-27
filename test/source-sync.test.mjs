@@ -18,8 +18,70 @@ import { cliBuildVersion, cliExternalModules, cliReleaseTargets, versionFromTag 
 import { releaseManifest } from '../scripts/package-cli-release.mjs';
 import { validateReleaseReports } from '../scripts/publish-cli-release.mjs';
 import { compareVersions, releaseCli } from '../scripts/release-cli.mjs';
-import { compareRuns, validateRun, validateRequest, validateToolOutput, median, selectScenarios } from '../scripts/perf/report.mjs';
+import { compareRuns, exitCodeForStatus, renderReport, spread, validateRun, validateRequest, validateToolOutput, median, selectScenarios } from '../scripts/perf/report.mjs';
 import { copyMcodeToolsArtifact, downloadMcodeToolsArtifact, MCODE_TOOLS_ARTIFACT } from '../scripts/lib/mcode-tools-artifact.mjs';
+import { checkWindowsSourceLocation, runWindowsSourceLocationCheck } from '../scripts/check-windows-source-location.mjs';
+
+test('Windows source preflight accepts localized fsutil labels', () => {
+  const result = checkWindowsSourceLocation({
+    platform: 'win32',
+    cwd: 'C:\\repo',
+    execFile: (_command, args) => args[1] === 'drivetype'
+      ? 'Laufwerkstyp: DRIVE_FIXED\n'
+      : 'Dateisystemname: NTFS\n',
+  });
+  assert.deepEqual(result, { ok: true, skipped: false });
+});
+
+test('Windows source preflight requires a local NTFS checkout', () => {
+  const calls = [];
+  const execFile = (command, args) => {
+    calls.push([command, args]);
+    if (args[1] === 'drivetype') return 'Drive type is : DRIVE_FIXED\n';
+    return 'File System Name             : NTFS\n';
+  };
+  assert.deepEqual(
+    checkWindowsSourceLocation({ platform: 'win32', cwd: 'C:\\repo', execFile }),
+    { ok: true, skipped: false },
+  );
+  assert.deepEqual(calls.map(([command, args]) => [command, args[1], args[2]]), [
+    ['fsutil', 'drivetype', 'C:'],
+    ['fsutil', 'volumeinfo', 'C:'],
+  ]);
+});
+
+test('Windows source preflight rejects unsupported volumes clearly', () => {
+  const run = (driveType, volumeInfo, cwd = 'C:\\repo', allowNonFixed = false) => checkWindowsSourceLocation({
+    platform: 'win32', cwd, allowNonFixed,
+    execFile: (_command, args) => args[1] === 'drivetype' ? driveType : volumeInfo,
+  });
+  assert.match(run('Drive type is : DRIVE_REMOTE\n', 'File System Name : NTFS\n').reason, /not a local fixed drive/);
+  assert.deepEqual(
+    run('Drive type is : DRIVE_REMOTE\n', 'File System Name : NTFS\n', 'C:\\repo', true),
+    { ok: true, skipped: false },
+  );
+  assert.match(run('Drive type is : DRIVE_FIXED\n', 'File System Name : NTFS\n', '\\\\server\\share\\repo').reason, /not a local drive-letter path/);
+});
+
+test('Windows source preflight is a no-op on non-Windows platforms', () => {
+  assert.deepEqual(
+    checkWindowsSourceLocation({ platform: 'linux', execFile: () => assert.fail('must not run fsutil') }),
+    { ok: true, skipped: true },
+  );
+});
+
+test('Windows source preflight propagates a failed check to the CLI', () => {
+  const messages = [];
+  const result = runWindowsSourceLocationCheck({
+    platform: 'win32',
+    cwd: 'C:\\repo',
+    execFile: () => { throw new Error('fsutil unavailable'); },
+    report: (message) => messages.push(message),
+  });
+  assert.equal(result.ok, false);
+  assert.equal(messages.length, 1);
+  assert.match(messages[0], /fsutil unavailable/);
+});
 
 test('artifact download recovers from TLS reset and interrupted response bodies', async () => {
   const reset = new TypeError('fetch failed', { cause: Object.assign(new Error('connection reset'), { code: 'ECONNRESET' }) });
@@ -160,17 +222,91 @@ test('performance request audit rejects truncated wire history and empty tool re
   assert.doesNotThrow(() => validateToolOutput(realpathSync(process.cwd()) + '\n', 'pwd', process.cwd()));
 });
 
-test('performance comparison rejects incomplete, invalid and unstable samples', () => {
-  const config = { repetitions: 3, maxSpread: 0.3, thresholds: { cpuSeconds: { relative: 0.2, absolute: 0.5 } } };
-  const runs = values => values.map(cpuSeconds => ({ cpuSeconds }));
+const perfConfig = { repetitions: 3, confirmPairs: 2, maxSpread: 0.3, thresholds: { cpuSeconds: { relative: 0.2, absolute: 0.5 } } };
+const perfRuns = values => values.map(cpuSeconds => ({ cpuSeconds }));
+
+test('performance comparison settles clean first pairs and rejects incomplete or invalid samples', () => {
   assert.equal(median([3, 1, 2]), 2);
-  assert.equal(compareRuns(runs([10, 10, 10]), runs([10, 10, 10]), config)[0].status, 'PASS');
-  assert.equal(compareRuns(runs([10, 10, 10]), runs([13, 13, 13]), config)[0].status, 'REGRESSION');
-  assert.equal(compareRuns(runs([1, 1, 1]), runs([1.4, 1.4, 1.4]), config)[0].status, 'PASS');
-  assert.equal(compareRuns(runs([10, 10, 10]), runs([10, 10, 20]), config)[0].status, 'INCONCLUSIVE');
-  assert.throws(() => compareRuns(runs([10, 10]), runs([10, 10, 10]), config));
-  assert.throws(() => compareRuns(runs([10, NaN, 10]), runs([10, 10, 10]), config));
-  assert.throws(() => compareRuns(runs([0, 0, 0]), runs([10, 10, 10]), config));
+  assert.equal(compareRuns(perfRuns([10, 10, 10]), perfRuns([10, 10, 10]), perfConfig)[0].status, 'PASS');
+  assert.equal(compareRuns(perfRuns([1, 1, 1]), perfRuns([1.4, 1.4, 1.4]), perfConfig)[0].status, 'PASS');
+  // Over budget or noisy on either side: escalate to confirmation pairs instead of a verdict.
+  assert.equal(compareRuns(perfRuns([10, 10, 10]), perfRuns([13, 13, 13]), perfConfig)[0].status, 'NEEDS_CONFIRMATION');
+  assert.equal(compareRuns(perfRuns([10, 10, 10]), perfRuns([10, 10, 14]), perfConfig)[0].status, 'NEEDS_CONFIRMATION');
+  assert.equal(compareRuns(perfRuns([10, 10, 14]), perfRuns([10, 10, 10]), perfConfig)[0].status, 'NEEDS_CONFIRMATION');
+  // Without confirmation pairs configured, the first pairs are final and never escalate.
+  const single = { ...perfConfig, confirmPairs: 0 };
+  assert.equal(compareRuns(perfRuns([10, 10, 10]), perfRuns([13, 13, 13]), single)[0].status, 'REGRESSION');
+  assert.equal(compareRuns(perfRuns([10, 10, 10]), perfRuns([10, 10, 14]), single)[0].status, 'INCONCLUSIVE');
+  assert.throws(() => compareRuns(perfRuns([10, 10]), perfRuns([10, 10, 10]), perfConfig));
+  assert.throws(() => compareRuns(perfRuns([10, 10, 10, 10]), perfRuns([10, 10, 10, 10]), perfConfig));
+  assert.throws(() => compareRuns(perfRuns([10, NaN, 10]), perfRuns([10, 10, 10]), perfConfig));
+  assert.throws(() => compareRuns(perfRuns([0, 0, 0]), perfRuns([10, 10, 10]), perfConfig));
+});
+
+test('performance confirmation pairs fail confirmed regressions and absorb single outliers', () => {
+  const five = (before, after) => compareRuns(perfRuns(before), perfRuns(after), perfConfig)[0];
+  // Consistently worse beyond budget: confirmed regression.
+  assert.equal(five([10, 10, 10, 10, 10], [13, 13, 13, 13, 13]).status, 'REGRESSION');
+  // One corrupted pair cannot veto a confirmed regression.
+  assert.equal(five([10, 10, 10, 10, 20], [13, 13, 13, 13, 13]).status, 'REGRESSION');
+  // Unanimous paired evidence outranks side dispersion.
+  assert.equal(five([10, 10, 10, 10, 10], [13, 13, 18, 13, 20]).status, 'REGRESSION');
+  // One slow candidate sample no longer blocks a faster candidate.
+  const outlier = five([10, 10, 10, 10, 10], [9.5, 9.6, 9.7, 9.6, 13.5]);
+  assert.deepEqual([outlier.status, outlier.pairs, outlier.overBudgetPairs, outlier.trimmedSamples], ['PASS', 5, 1, 1]);
+  assert.ok(outlier.headSpread <= 0.3);
+  // Persistent noise stays inconclusive: neither a block nor a pass.
+  assert.equal(five([10, 10, 10, 10, 10], [9, 9.5, 10, 14, 15]).status, 'INCONCLUSIVE');
+  // An over-budget median that pairs do not reproduce is inconclusive, not a regression.
+  assert.equal(five([10, 14, 10, 14, 10], [13, 13, 13, 13, 13]).status, 'INCONCLUSIVE');
+  // Separate medians must not turn one over-budget paired delta into a regression.
+  const shifted = five([10, 10, 10, 20, 20], [10.1, 10.1, 20.1, 20.1, 20.1]);
+  assert.deepEqual([shifted.status, shifted.overBudgetPairs], ['INCONCLUSIVE', 1]);
+  assert.equal(spread([10, 10, 14]), 0.4);
+  assert.equal(spread([10, 10, 14], 1), 0);
+  assert.throws(() => spread([10, 10], 1));
+});
+
+test('performance exit codes fail regressions and errors but not inconclusive noise', () => {
+  assert.equal(exitCodeForStatus('PASS'), 0);
+  assert.equal(exitCodeForStatus('REGRESSION'), 1);
+  assert.equal(exitCodeForStatus('ERROR'), 1);
+  assert.equal(exitCodeForStatus('INCONCLUSIVE'), 2);
+  assert.throws(() => exitCodeForStatus('NEEDS_CONFIRMATION'));
+});
+
+test('performance workflow warns on basic inconclusive runs but fails full inconclusive runs', () => {
+  const workflow = parseYaml(readFileSync(new URL('../.github/workflows/performance.yml', import.meta.url), 'utf8'));
+  const compare = workflow.jobs.performance.steps.find(s => s.name === 'Compare on this runner');
+  assert.match(compare.run, /\|\| status=\$\?/);
+  assert.match(compare.run, /if \[ "\$status" -eq 2 \]/);
+  assert.match(compare.run, /if \[ "\$PERF_SUITE" = "full" \]/);
+  assert.match(compare.run, /::error title=Full performance check inconclusive::/);
+  assert.match(compare.run, /exit 2/);
+  assert.match(compare.run, /::warning title=Performance check inconclusive::/);
+  assert.match(compare.run, /exit 0/);
+  assert.match(compare.run, /exit "\$status"/);
+  const config = JSON.parse(readFileSync(new URL('../scripts/perf/config.json', import.meta.url), 'utf8'));
+  assert.equal(config.confirmPairs, 2);
+});
+
+test('performance report states suite-specific inconclusive behavior', () => {
+  const row = { metric: 'durationMs', baseline: 17820, candidate: 17530, change: -0.016,
+    pairs: 5, overBudgetPairs: 1, trimmedSamples: 1, baseSpread: 0.05, headSpread: 0.34, status: 'INCONCLUSIVE' };
+  const report = { status: 'INCONCLUSIVE', baseRevision: 'base-sha', headRevision: 'head-sha',
+    benchmarkRepository: 'https://example.invalid/bench', benchmarkRevision: 'bench-sha',
+    nodeVersion: 'v22.0.0', bunVersion: '1.0.0',
+    host: { cpuModel: 'test', cpus: 3, totalMemBytes: 2 ** 33, platform: 'darwin', osRelease: '24.0.0', arch: 'arm64' },
+    config: { repetitions: 3, confirmPairs: 2 }, suite: 'basic', selectedScenarios: ['upstream-100'],
+    results: [{ id: 'upstream-100', comparison: [row] }] };
+  const markdown = renderReport(report);
+  assert.match(markdown, /Status: \*\*INCONCLUSIVE\*\* — runner too noisy to conclude; non-blocking for the basic suite/);
+  assert.match(markdown, /\| 1\/5 \| INCONCLUSIVE \|/);
+  assert.match(markdown, /basic-suite result as a non-blocking warning/);
+  assert.match(markdown, /confirmation pairs when unsettled/);
+  const full = renderReport({ ...report, suite: 'full' });
+  assert.match(full, /Status: \*\*INCONCLUSIVE\*\* — runner too noisy to conclude; blocking for the full suite/);
+  assert.match(full, /full-suite result fails the check/);
 });
 
 test('performance measurements require complete successful tool execution', () => {
@@ -607,15 +743,18 @@ test('CI aggregate rejects failed, cancelled, missing and unexpectedly skipped c
     assert.notEqual(run({ ...full, DOCS_ONLY: scope }), 0);
 });
 
-test('ordinary CI pauses Windows without invoking release-only matrices', () => {
+test('ordinary CI runs a focused Windows contract while compatibility remains macOS/Linux', () => {
   const readWorkflow = name => parseYaml(readFileSync(new URL(`../.github/workflows/${name}.yml`, import.meta.url), 'utf8'));
   const ci = readWorkflow('ci');
   assert.ok(Object.hasOwn(ci.on, 'pull_request'));
   assert.deepEqual(ci.on.push.branches, ['main']);
   assert.deepEqual(Object.keys(ci.jobs).sort(), ['changes', 'docs', 'verification', 'verify']);
-  assert.deepEqual(ci.jobs.verify.strategy.matrix.os, ['ubuntu-latest', 'macos-latest']);
+  assert.deepEqual(ci.jobs.verify.strategy.matrix.os, ['ubuntu-latest', 'macos-latest', 'windows-latest']);
   assert.deepEqual(ci.jobs.verify.strategy.matrix.node, ['24']);
-  assert.deepEqual(ci.jobs.verify.strategy.matrix.include, [{ os: 'ubuntu-latest', node: '24', profile: 'full' }]);
+  assert.deepEqual(ci.jobs.verify.strategy.matrix.include, [
+    { os: 'ubuntu-latest', node: '24', profile: 'full' },
+    { os: 'windows-latest', node: '24', profile: 'windows' },
+  ]);
   assert.equal(ci.jobs.verify.needs, 'changes');
   assert.equal(ci.jobs.verify.if, "needs.changes.outputs.docs_only == 'false'");
   assert.equal(ci.jobs.docs.if, "needs.changes.outputs.docs_only == 'true'");
@@ -625,12 +764,11 @@ test('ordinary CI pauses Windows without invoking release-only matrices', () => 
   const compatibility = readWorkflow('compatibility');
   assert.deepEqual(Object.keys(compatibility.on).sort(), ['schedule', 'workflow_dispatch']);
   assert.deepEqual(compatibility.jobs.compatibility.strategy.matrix.node, ['22.19.0', '24.2.0', '25', '26']);
-  assert.deepEqual(compatibility.jobs.compatibility.strategy.matrix.os, ci.jobs.verify.strategy.matrix.os);
+  assert.deepEqual(compatibility.jobs.compatibility.strategy.matrix.os, ['ubuntu-latest', 'macos-latest']);
   const audit = readWorkflow('security');
   assert.ok(Object.hasOwn(audit.on, 'pull_request'));
   assert.ok(audit.jobs['source-history-artifact'].steps.some(step => step.run?.includes('gitleaks dir dist')));
 });
-
 test('manual source candidates pin every checkout and receipt to the selected revision', () => {
   const workflow = parseYaml(readFileSync(new URL('../.github/workflows/source-candidate.yml', import.meta.url), 'utf8'));
   assert.deepEqual(Object.keys(workflow.on).sort(), ['workflow_call', 'workflow_dispatch']);
@@ -757,6 +895,48 @@ test('candidate rejects mismatched receipts and requires successful same-revisio
   assert.notEqual(run('finalize', '--reports', reports).status, 0);
 });
 
+
+test('Windows contract profile fails closed off Windows', () => {
+  const result = spawnSync(process.execPath, ['scripts/verify.mjs', '--profile', 'windows', '--list'], {
+    cwd: path.resolve('.'),
+    encoding: 'utf8',
+  });
+  if (process.platform === 'win32') {
+    assert.equal(result.status, 0, result.stderr);
+  } else {
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /requires a Windows host/);
+  }
+});
+
+test('Windows contract profile selects focused gates', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'windows-profile-'));
+  try {
+    const fixture = path.join(root, 'verify.mjs');
+    copyFileSync(new URL('../scripts/verify.mjs', import.meta.url), fixture);
+    const preload = path.join(root, 'platform.cjs');
+    writeFileSync(preload, "Object.defineProperty(process, 'platform', { value: 'win32' });\n");
+    const result = spawnSync(process.execPath, ['--require', preload, fixture, '--profile', 'windows', '--list'], {
+      cwd: root,
+      encoding: 'utf8',
+      env: { ...process.env },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(result.stdout.trim().split('\n'), [
+      'check:source',
+      'check:tsconfig',
+      'export source preview',
+      'test:release-tools',
+      'lint:tui',
+      'build',
+      'check:standalone',
+      'test:artifact',
+      'test:windows',
+    ]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test('source inventory rejects unregistered, missing and duplicate first-party test gates', () => {
   const existing = 'packages/example/src/existing.test.ts';
@@ -935,5 +1115,42 @@ test('source imports preserve vendored Office schema bytes through Git staging',
   for (const autocrlf of ['true', 'false']) {
     git('-c', `core.autocrlf=${autocrlf}`, 'add', '--', '.gitattributes', schema);
     assert.deepEqual(git('show', `:${schema}`), bytes);
+  }
+});
+
+test('TUI lint rejects semantic regressions in source and tests while preserving engine exceptions', async () => {
+  const { ESLint } = await import('eslint');
+  const root = fileURLToPath(new URL('../', import.meta.url));
+  const eslint = new ESLint({ cwd: root });
+  const rulesFor = async (source, filePath) => {
+    const [result] = await eslint.lintText(source, { filePath });
+    assert.equal(result.fatalErrorCount, 0, JSON.stringify(result.messages));
+    return result.messages.filter(message => message.severity === 2).map(message => message.ruleId);
+  };
+  const shadow = 'const value = 1; export function sample(value: number) { return value; }\n';
+  for (const file of ['packages/tui/src/lint-probe.ts', 'packages/tui/test/unit/lint-probe.test.ts']) {
+    assert.ok((await rulesFor(shadow, file)).includes('@typescript-eslint/no-shadow'), file);
+    assert.ok((await rulesFor('export const compare = (value: number) => value == 1;\n', file)).includes('eqeqeq'), file);
+  }
+  assert.ok((await rulesFor('export const compare = (value) => value == 1;\n', 'packages/tui/test/lint-probe.mjs')).includes('eqeqeq'));
+  assert.ok(!(await rulesFor(shadow, 'packages/tui/src/tui/engine/lint-probe.ts')).includes('@typescript-eslint/no-shadow'));
+  assert.ok((await rulesFor(shadow, 'packages/tui/src/tui/engine/public.ts')).includes('@typescript-eslint/no-shadow'));
+  assert.ok((await rulesFor('export const compare = (value: number) => value == 1;\n', 'packages/tui/src/tui/engine/lint-probe.ts')).includes('eqeqeq'));
+  const [formatting] = await eslint.lintText('export const label = "synthetic";\n', { filePath: 'packages/tui/src/lint-probe.ts' });
+  assert.ok(formatting.messages.some(message => message.ruleId === 'prettier/prettier' && message.severity === 1));
+  assert.equal(await eslint.isPathIgnored('packages/tui/test/unit/lint-probe.test.ts'), false);
+  assert.equal(await eslint.isPathIgnored('packages/tui/test/pi-084-upstream/lint-probe.test.ts'), true);
+  assert.equal(await eslint.isPathIgnored('third_party/pi-mono/packages/tui/src/lint-probe.ts'), true);
+});
+
+test('TUI lint failure stops full and platform verification before compilation or build', t => {
+  const fixture = verificationFixture(t);
+  for (const profile of ['full', 'platform', 'archive']) {
+    const result = fixture.run(['--profile', profile], { VERIFY_FIXTURE_FAIL: 'lint:tui' });
+    assert.equal(result.status, 1, result.stderr);
+    const report = fixture.report();
+    assert.equal(report.gates.find(gate => gate.name === 'lint:tui').status, 'FAIL');
+    assert.equal(report.gates.find(gate => gate.name === 'lint:tui').exitCode, 17);
+    assert.equal(report.gates.find(gate => gate.name === 'build').status, 'NOT_RUN');
   }
 });

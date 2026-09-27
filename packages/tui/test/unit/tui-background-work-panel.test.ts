@@ -342,7 +342,12 @@ describe('Tasks in the regular terminal viewport', () => {
       const terminal = new VirtualTerminal(80, 16);
       const tui = new TuiMainScreen(terminal);
       const chatLines = Array.from({ length: 40 }, (_, index) => `chat-line-${index}`);
-      tui.addChild({ render: () => [...chatLines, 'COMPOSER', 'STATUS'], invalidate() {} });
+      tui.addChild({
+        render: () => [...chatLines, 'COMPOSER', 'STATUS'],
+        // This fixture settles background content while the transient footer stays fixed.
+        getViewportLayoutKey: () => 'composer:1,status:1',
+        invalidate() {},
+      });
       const tasks = Array.from({ length: 30 }, (_, index) => ({
         ...backgroundTasks()[0]!,
         taskId: `task-${index}`,
@@ -362,8 +367,13 @@ describe('Tasks in the regular terminal viewport', () => {
         chatLines.splice(-shrinkRows);
         tui.renderNow();
         await terminal.flush();
+        // Visible shrink preserves native history with temporary screen space.
+        // The 15-row case also removes historical text and still reconstructs.
+        const afterShrink = shrinkRows === 15
+          ? [...chatLines, 'COMPOSER', 'STATUS'].slice(-terminal.rows)
+          : [...Array<string>(shrinkRows).fill(''), ...chatLines.slice(26), 'COMPOSER', 'STATUS'];
         expect(terminal.getViewport()).toEqual(
-          [...chatLines, 'COMPOSER', 'STATUS'].slice(-terminal.rows),
+          afterShrink,
         );
         const presenter = new TuiOverlayRegularFeaturePresenter(terminal, tui, () =>
           tui.requestRender(),

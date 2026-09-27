@@ -655,7 +655,7 @@ function renderCell(
             toolSummary,
             width,
             visibleWidth(`${marker} ${title}`),
-            !backgroundBash,
+            backgroundBash ? 'background' : (evidence.summaryKind ?? 'command'),
           )}`
         : chalk.hex(colors.muted)(
             definition?.summaryStyle === 'dot' ? ` · ${toolSummary}` : ` (${toolSummary})`,
@@ -821,9 +821,16 @@ function renderUserIntent(content: string, width: number): string[] {
 function renderUserMessage(cell: TranscriptCell, width: number): string[] {
   const attachments = renderUserAttachments(cell, width);
   const body = cell.content.trim() ? renderUserIntent(cell.content, width) : [];
-  return attachments.length > 0 && body.length > 0
-    ? [...attachments, ' ', ...body]
-    : [...attachments, ...body];
+  const rows =
+    attachments.length > 0 && body.length > 0
+      ? [...attachments, ' ', ...body]
+      : [...attachments, ...body];
+  // A cancelled user row (prompt restored to the composer on abort) stays in
+  // the history with a muted marker, matching the cancelled-todo precedent.
+  if (cell.status === 'cancelled') {
+    return [chalk.hex(colors.muted)('× Cancelled'), ...rows];
+  }
+  return rows;
 }
 
 function renderPendingSteerMessage(cell: TranscriptCell, width: number): string[] {
@@ -959,16 +966,15 @@ function styleShellSummary(
   summary: string,
   width: number,
   usedWidth: number,
-  highlightCommand: boolean,
+  kind: 'description' | 'command' | 'background',
 ): string {
   const fitted = fitShellSummary(summary, width, usedWidth);
-  if (!highlightCommand) return chalk.hex(colors.muted)(fitted);
+  if (kind === 'background') return chalk.hex(colors.muted)(fitted);
+  const styleSubject = kind === 'command' ? highlightTuiShellCommand : chalk.hex(colors.text);
 
   const index = shellOutputSummaryIndex(fitted);
-  if (index <= 0) return highlightTuiShellCommand(fitted);
-  return `${highlightTuiShellCommand(fitted.slice(0, index))}${chalk.hex(colors.muted)(
-    fitted.slice(index),
-  )}`;
+  if (index <= 0) return styleSubject(fitted);
+  return `${styleSubject(fitted.slice(0, index))}${chalk.hex(colors.muted)(fitted.slice(index))}`;
 }
 
 function shellOutputSummaryIndex(summary: string): number {

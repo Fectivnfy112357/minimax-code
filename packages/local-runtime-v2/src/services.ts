@@ -143,6 +143,7 @@ import {
 } from "./service/miniapp/index.js";
 import {
   createLocalModelSystemConfigPort,
+  ModelFavoritesPreference,
   resolveLocalRuntimeModelKey,
   type ModelSystemOwner,
 } from "./service/model-system/index.js";
@@ -531,6 +532,7 @@ export async function createRuntimeServices(
       providers: modelSystem.providers,
       listProviderPresets: modelSystem.listProviderPresets,
       oauth: modelSystem.oauth,
+      favorites: new ModelFavoritesPreference(options.db),
     },
   });
   if (owners.cron)

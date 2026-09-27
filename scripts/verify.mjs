@@ -25,8 +25,10 @@ const { values } = parseArgs({
   },
 });
 const profile = values.profile;
-if (!["full", "platform", "docs", "archive", "package"].includes(profile))
+if (!["full", "platform", "windows", "docs", "archive", "package"].includes(profile))
   throw new Error(`Unknown verification profile: ${profile}`);
+if (profile === "windows" && process.platform !== "win32")
+  throw new Error("Windows verification profile requires a Windows host");
 if (profile === 'package' && !['darwin', 'linux'].includes(process.platform))
   throw new Error('Package verification currently supports Linux and macOS only.');
 // Listing must not leave a temporary export directory behind.
@@ -36,26 +38,29 @@ const temporary = values.list
 const preview = path.join(temporary ?? tmpdir(), "minimax-code-source.tar.gz");
 
 const steps = [
-  { name: "check:source", script: "check:source", docs: true },
-  { name: "check:tsconfig", script: "check:tsconfig", docs: true },
+  { name: "check:source", script: "check:source", docs: true, windows: true },
+  { name: "check:tsconfig", script: "check:tsconfig", docs: true, windows: true },
   {
     name: "export source preview",
     docs: true,
+    windows: true,
     requiresGit: true,
     command: ["scripts/export-source-preview.mjs", "--out", preview],
   },
-  { name: "test:release-tools", script: "test:release-tools", docs: true },
+  { name: "test:release-tools", script: "test:release-tools", docs: true, windows: true },
+  { name: "lint:tui", script: "lint:tui", windows: true },
   // Compiler inputs are identical across the matrix. One Linux job runs this;
   // all platforms still build and validate native artifacts on their own platform.
   { name: "typecheck", script: "typecheck", fullOnly: true },
-  { name: "build", script: "build" },
-  { name: "check:standalone", script: "check:standalone" },
+  { name: "build", script: "build", windows: true },
+  { name: "check:standalone", script: "check:standalone", windows: true },
   { name: "typecheck:webui", script: "typecheck:webui" },
   { name: "build:webui", script: "build:webui" },
   { name: "check:webui-boundary", script: "check:webui-boundary" },
   { name: "test:webui", script: "test:webui" },
-  { name: "test:artifact", script: "test:artifact" },
+  { name: "test:artifact", script: "test:artifact", windows: true },
   { name: "test:capabilities", script: "test:capabilities" },
+  { name: "test:windows", script: "test:windows", platforms: ["win32"], windows: true },
   { name: "test:status-contract", script: "test:status-contract" },
   { name: "test:smoke", script: "test:smoke" },
   { name: "test:byok", script: "test:byok" },
@@ -78,6 +83,7 @@ const steps = [
 function skipReason(step) {
   if (profile === 'package' && !step.packageOnly) return 'validating an npm release archive';
   if (profile !== 'package' && step.packageOnly) return 'requires an npm release archive';
+  if (profile === "windows" && !step.windows) return "not part of Windows contract";
   if (profile === "docs" && !step.docs) return "documentation-only change";
   if (profile === "archive" && step.requiresGit)
     return "validating an already exported archive";

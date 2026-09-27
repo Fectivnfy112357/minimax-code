@@ -273,6 +273,12 @@ export interface LocalRuntimeApplication {
       contextLimit?: number;
       sessionId?: string;
     }): Promise<boolean>;
+    /** Adds or removes a model favorite; absent when the host has no preference store. */
+    setFavorite?(input: {
+      providerId: string;
+      modelId: string;
+      favorite: boolean;
+    }): Promise<boolean>;
   };
   readonly modelProviders?: {
     listProviderPresets(): Promise<readonly ByokProviderPresetView[]>;
@@ -300,11 +306,10 @@ export interface LocalRuntimeApplication {
       models?: readonly ProcessLocalModelInput[];
       saveAndUse?: boolean;
     }): Promise<unknown>;
-    discoverCandidate(input: {
-      providerId: string;
-      expectedRevision: string;
-      baseUrl: string;
-    }): Promise<readonly { modelId: string; displayName?: string }[]>;
+    discoverCandidate(input: { baseUrl: string } & (
+      | { providerId: string; expectedRevision: string }
+      | { name: string; apiKey: string; apiFormat: string }
+    )): Promise<readonly { modelId: string; displayName?: string }[]>;
     saveCandidate(input: {
       candidate: {
         providerId?: string;
