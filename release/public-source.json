@@ -2381,6 +2381,7 @@
     "packages/local-runtime/src/model-provider/minimax-api.ts",
     "packages/local-runtime/src/model-provider/model-cache.ts",
     "packages/local-runtime/src/model-provider/model-selection.ts",
+    "packages/local-runtime/src/model-provider/official-model-config-sync.ts",
     "packages/local-runtime/src/model-provider/provider-request.ts",
     "packages/local-runtime/src/model-provider/thinking.ts",
     "packages/local-runtime/src/observability/adapters.ts",
