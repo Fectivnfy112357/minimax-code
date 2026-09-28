@@ -2308,6 +2308,9 @@
     color: var(--text_default_primary);
     text-decoration: none;
   }
+  .webui-markdown a.webui-message-file-link {
+    color: var(--text_default_accent);
+  }
   .webui-markdown a:hover {
     color: var(--text_default_accent);
     text-decoration: underline;

@@ -178,6 +178,20 @@ export function mergeWorkspaceFileChildren(
   });
 }
 
+function findWorkspaceFile(files: readonly WebuiWorkspaceFile[], path: string): WebuiWorkspaceFile | undefined {
+  for (const file of files) {
+    if (file.path === path) return file;
+    const nested = file.children ? findWorkspaceFile(file.children, path) : undefined;
+    if (nested) return nested;
+  }
+  return undefined;
+}
+
+function getWorkspaceFileParentPaths(path: string): string[] {
+  const segments = path.replace(/\\/gu, "/").split("/").filter(Boolean);
+  return segments.slice(0, -1).map((_, index) => segments.slice(0, index + 1).join("/"));
+}
+
 export function projectWebuiTodos(messages: readonly Record<string, unknown>[]): WebuiTodo[] {
   return projectWebuiWorkspaceHistory(
     messages as never,
@@ -387,8 +401,8 @@ export function WebuiFilePreview({ tab, result, codeMode }: {
       {result?.loading ? <p role="status">正在加载文件…</p>
         : result?.error ? <p role="alert">{result.error}</p>
           : result?.content?.previewDataUrl ? <img className="webui-workspace-image-preview" src={result.content.previewDataUrl} alt={tab.path.split("/").at(-1) ?? tab.path} data-testid="workspace-image-preview" />
-            : result?.content?.type === "binary" ? <p>无法在文本预览中显示二进制文件。</p>
             : result?.content?.error ? <p role="alert">{result.content.error}</p>
+            : result?.content?.type === "binary" ? <p>无法在文本预览中显示二进制文件。</p>
               : result?.content ? previewMarkdown ? <WebuiMarkdown source={content} /> : <pre className="webui-file-code"><code className={language ? `hljs language-${language}` : ""}>{content.split("\n").map((line, index) => {
                 const lineNumber = index + 1;
                 const highlighted = highlightFileLine(line, language);
@@ -420,12 +434,20 @@ export function WebuiWorkspacePanel({ state, dispatch, sessionId, workspaceDir, 
   const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId);
   const tab = activeTab?.kind ?? "files";
   const tabListRef = useRef<HTMLDivElement>(null);
+  const fileTreeScrollRef = useRef<HTMLDivElement>(null);
+  const autoNavigationRequests = useRef(new Set<string>());
   const [files, setFiles] = useState<readonly WebuiWorkspaceFile[]>([]);
+  const filesRef = useRef(files);
+  filesRef.current = files;
   const [fileSearch, setFileSearch] = useState("");
   const [fileTreeOpen, setFileTreeOpen] = useState(true);
   const [expandedDirectories, setExpandedDirectories] = useState<ReadonlySet<string>>(() => new Set());
   const [loadedDirectories, setLoadedDirectories] = useState<ReadonlySet<string>>(() => new Set());
   const [loadingDirectories, setLoadingDirectories] = useState<ReadonlySet<string>>(() => new Set());
+  const loadedDirectoriesRef = useRef(loadedDirectories);
+  loadedDirectoriesRef.current = loadedDirectories;
+  const loadingDirectoriesRef = useRef(loadingDirectories);
+  loadingDirectoriesRef.current = loadingDirectories;
   const [directoryErrors, setDirectoryErrors] = useState<Readonly<Record<string, string>>>({});
   const [fileCodeMode, setFileCodeMode] = useState(false);
   const [fileTreeState, setFileTreeState] = useState<{ readonly workspaceDir?: string; readonly loading: boolean; readonly error?: string }>({ loading: false });
@@ -457,6 +479,8 @@ export function WebuiWorkspacePanel({ state, dispatch, sessionId, workspaceDir, 
   const activeWorkspace = activeTab && "workspaceDir" in activeTab ? activeTab.workspaceDir : workspaceDir;
   const activeWorkspaceRef = useRef(activeWorkspace);
   activeWorkspaceRef.current = activeWorkspace;
+  const activeFileResult = activeTab?.kind === "file-preview" ? fileResults[activeTab.id]?.content : undefined;
+  const selectedFilePath = activeTab?.kind === "file-preview" ? activeFileResult?.resolvedPath ?? activeTab.path : undefined;
   const hasFileWorkspace = tab === "files" || activeTab?.kind === "file-preview" || activeTab?.kind === "review";
   const visibleFiles = filterWorkspaceFiles(files, fileSearch);
   useEffect(() => {
@@ -629,6 +653,69 @@ export function WebuiWorkspacePanel({ state, dispatch, sessionId, workspaceDir, 
       });
     });
   };
+  useEffect(() => {
+    if (activeTab?.kind !== "file-preview" || !selectedFilePath || !activeWorkspace || !listWorkspaceFileTree || fileTreeState.workspaceDir !== activeWorkspace || fileTreeState.loading) return;
+    let cancelled = false;
+    const isCurrentFile = () => {
+      const currentTab = currentPanelState.current.tabs.find((candidate) => candidate.id === currentPanelState.current.activeTabId);
+      return activeWorkspaceRef.current === activeWorkspace
+        && currentTab?.kind === "file-preview"
+        && currentTab.id === activeTab.id
+        && (fileResultsRef.current[currentTab.id]?.content?.resolvedPath ?? currentTab.path) === selectedFilePath;
+    };
+    const navigateToFile = async () => {
+      setFileSearch("");
+      let tree = filesRef.current;
+      const parentPaths = getWorkspaceFileParentPaths(selectedFilePath);
+      for (const [index, path] of parentPaths.entries()) {
+        if (cancelled || !isCurrentFile()) return;
+        const directory = findWorkspaceFile(tree, path);
+        if (directory?.type !== "directory") return;
+        setExpandedDirectories((current) => current.has(path) ? current : new Set(current).add(path));
+        const expectedChildPath = parentPaths[index + 1] ?? selectedFilePath;
+        const expectedChildExists = Boolean(findWorkspaceFile(directory.children ?? [], expectedChildPath));
+        const refreshMissingPath = directory.children !== undefined && !expectedChildExists;
+        if (!refreshMissingPath && (directory.children !== undefined || loadedDirectoriesRef.current.has(path))) continue;
+        const requestKey = `${activeWorkspace}\0${path}`;
+        if (loadingDirectoriesRef.current.has(path) || autoNavigationRequests.current.has(requestKey)) return;
+        autoNavigationRequests.current.add(requestKey);
+        setLoadingDirectories((current) => new Set(current).add(path));
+        setDirectoryErrors((current) => {
+          const next = { ...current };
+          delete next[path];
+          return next;
+        });
+        try {
+          const children = await listWorkspaceFileTree({ workspaceDir: activeWorkspace, path });
+          if (cancelled || !isCurrentFile()) return;
+          tree = mergeWorkspaceFileChildren(tree, path, children);
+          setFiles((current) => mergeWorkspaceFileChildren(current, path, children));
+          setLoadedDirectories((current) => new Set(current).add(path));
+          if (!findWorkspaceFile(children, expectedChildPath)) {
+            setDirectoryErrors((current) => ({ ...current, [path]: `无法在工作区文件树中定位 ${selectedFilePath}。` }));
+            return;
+          }
+        } catch (reason) {
+          if (!cancelled && isCurrentFile()) setDirectoryErrors((current) => ({ ...current, [path]: reason instanceof Error ? reason.message : String(reason) }));
+          return;
+        } finally {
+          autoNavigationRequests.current.delete(requestKey);
+          if (activeWorkspaceRef.current === activeWorkspace) {
+            setLoadingDirectories((current) => {
+              const next = new Set(current);
+              next.delete(path);
+              return next;
+            });
+          }
+        }
+      }
+    };
+    void navigateToFile();
+    return () => { cancelled = true; };
+  }, [activeTab?.id, activeTab?.kind === "file-preview" ? activeTab.path : undefined, selectedFilePath, activeWorkspace, fileTreeState.workspaceDir, fileTreeState.loading, listWorkspaceFileTree]);
+  useEffect(() => {
+    fileTreeScrollRef.current?.querySelector<HTMLElement>('[aria-current="true"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [selectedFilePath, selectedReviewPath, expandedDirectories, visibleFiles]);
   const activeSessionId = activeTab && "sessionId" in activeTab ? activeTab.sessionId : sessionId;
   useEffect(() => {
     if (!activeSessionId || !readCanvas) { setCanvas(undefined); return undefined; }
@@ -738,8 +825,8 @@ export function WebuiWorkspacePanel({ state, dispatch, sessionId, workspaceDir, 
       </div>
       {hasFileWorkspace && fileTreeOpen ? <aside className="webui-workspace-file-tree-panel" aria-label="工作区文件树">
         <label className="webui-workspace-file-search"><WebuiIconSearch className="size-4" /><input aria-label="搜索文件" placeholder="搜索" value={fileSearch} onChange={(event) => setFileSearch(event.currentTarget.value)} /></label>
-        <div className="webui-workspace-file-tree-scroll">
-          {fileTreeState.workspaceDir !== activeWorkspace || fileTreeState.loading ? <p role="status">正在加载文件…</p> : fileTreeState.error ? <p role="alert">{fileTreeState.error}</p> : files.length ? visibleFiles.length ? <FileTree files={visibleFiles} expandedPaths={expandedDirectories} loadingPaths={loadingDirectories} directoryErrors={directoryErrors} onToggle={toggleWorkspaceDirectory} selectedPath={activeTab?.kind === "file-preview" ? activeTab.path : activeTab?.kind === "review" ? selectedReviewPath : undefined} onOpen={(entry) => { const context = activeTab && "sessionId" in activeTab ? activeTab.sessionId : sessionId; if (!activeWorkspace || !context || entry.type === "directory") return; if (activeTab?.kind === "review" && activeTab.source === "turn" && turnReviewFiles.some((file) => file.file === entry.path) || activeTab?.kind === "review" && activeTab.source === "workspace" && workspaceReviewFiles.some((file) => file.path === entry.path)) dispatch({ type: "select-review-file", tabId: activeTab.id, path: entry.path }); else dispatch({ type: "open-file", sessionId: context, workspaceDir: activeWorkspace, path: entry.path }); }} /> : <p className="webui-workspace-tree-empty">没有匹配的文件。</p> : <p className="webui-workspace-tree-empty">此工作区没有可显示的文件。</p>}
+        <div className="webui-workspace-file-tree-scroll" ref={fileTreeScrollRef}>
+          {fileTreeState.workspaceDir !== activeWorkspace || fileTreeState.loading ? <p role="status">正在加载文件…</p> : fileTreeState.error ? <p role="alert">{fileTreeState.error}</p> : files.length ? visibleFiles.length ? <FileTree files={visibleFiles} expandedPaths={expandedDirectories} loadingPaths={loadingDirectories} directoryErrors={directoryErrors} onToggle={toggleWorkspaceDirectory} selectedPath={activeTab?.kind === "file-preview" ? selectedFilePath : activeTab?.kind === "review" ? selectedReviewPath : undefined} onOpen={(entry) => { const context = activeTab && "sessionId" in activeTab ? activeTab.sessionId : sessionId; if (!activeWorkspace || !context || entry.type === "directory") return; if (activeTab?.kind === "review" && activeTab.source === "turn" && turnReviewFiles.some((file) => file.file === entry.path) || activeTab?.kind === "review" && activeTab.source === "workspace" && workspaceReviewFiles.some((file) => file.path === entry.path)) dispatch({ type: "select-review-file", tabId: activeTab.id, path: entry.path }); else dispatch({ type: "open-file", sessionId: context, workspaceDir: activeWorkspace, path: entry.path }); }} /> : <p className="webui-workspace-tree-empty">没有匹配的文件。</p> : <p className="webui-workspace-tree-empty">此工作区没有可显示的文件。</p>}
         </div>
       </aside> : null}
     </div>

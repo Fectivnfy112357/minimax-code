@@ -11,6 +11,7 @@
 // whole harness layer to type-check; the runtime assembly passes the host
 // directly at process start.
 
+import { posix as pathPosix } from "node:path";
 import { WEBUI_PROTOCOL_VERSION } from "./envelope.js";
 import type {
   WebuiHarnessPort,
@@ -160,6 +161,7 @@ export interface WebuiRuntimeCliService {
   clearGoal(sessionId: string): Promise<boolean>;
   listWorkspaceFileTree?(request: { readonly workspaceDir: string; readonly path?: string }): Promise<readonly WebuiWorkspaceFile[]>;
   readWorkspaceFile?(request: { readonly workspaceDir: string; readonly path: string }): Promise<WebuiWorkspaceFileContent>;
+  searchWorkspaceFiles?(input: { readonly workspaceDir: string; readonly query: string; readonly limit: number }): Promise<readonly string[]>;
   getWorkspaceGitEnvironment?(workspaceDir: string): Promise<{ readonly metadata: Record<string, unknown>; readonly changes: Record<string, unknown> }>;
   mutateWorkspaceGit?(request: WebuiWorkspaceGitMutationRequest): Promise<Record<string, unknown>>;
   getWorkspaceReviewSummary?(workspaceDir: string): Promise<WebuiWorkspaceReviewSummary>;
@@ -413,7 +415,44 @@ export function createHarnessPortFromHost(
       return requireCliService(host).listWorkspaceFileTree!(request) as Promise<readonly WebuiWorkspaceFile[]>;
     },
     async readWorkspaceFile(request) {
-      return requireCliService(host).readWorkspaceFile!(request) as Promise<WebuiWorkspaceFileContent>;
+      const cliService = requireCliService(host);
+      const result = await cliService.readWorkspaceFile!(request) as WebuiWorkspaceFileContent;
+      if (
+        result.type !== "binary" ||
+        result.error !== "Path traversal denied" ||
+        request.path.includes("/") ||
+        request.path.includes("\\") ||
+        !cliService.searchWorkspaceFiles
+      ) return result;
+
+      // Assistant replies sometimes link only a basename (for example,
+      // `SessionComposer.tsx`) even when the file lives in a nested package.
+      // Resolve only an exact, unique basename; never guess among duplicates.
+      try {
+        const matches = await cliService.searchWorkspaceFiles({
+          workspaceDir: request.workspaceDir,
+          query: request.path,
+          limit: 100,
+        });
+        const exactMatches = matches.filter((candidate) => pathPosix.basename(candidate.replace(/\\/gu, "/")) === request.path);
+        const [exactMatch] = exactMatches;
+        if (exactMatches.length === 1 && exactMatch) {
+          const resolved = await cliService.readWorkspaceFile!({
+            ...request,
+            path: exactMatch,
+          }) as WebuiWorkspaceFileContent;
+          return { ...resolved, resolvedPath: exactMatch };
+        }
+        return {
+          type: "text",
+          content: "",
+          error: exactMatches.length > 1
+            ? `工作区中有多个名为 ${request.path} 的文件，请使用完整相对路径。`
+            : `工作区中没有找到 ${request.path}。`,
+        };
+      } catch {
+        return result;
+      }
     },
     async getWorkspaceEnvironment(request) {
       const cliService = requireCliService(host);
