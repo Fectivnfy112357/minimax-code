@@ -240,6 +240,7 @@ export type WebuiClientMessageSender = (
   request: {
     readonly id: string;
     readonly content: string;
+    readonly clientIntent?: string;
     readonly attachments?: readonly WebuiAttachmentInput[];
   },
   onFrame: (frame: WebuiStreamFrame) => void,

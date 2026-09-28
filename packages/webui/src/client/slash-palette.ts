@@ -109,9 +109,10 @@ export interface SlashCommandEntry {
  * default section reads: new → compact → goal → plan → fork → deploy-website
  * → memory, then the skills section.
  *
- * Capability gating today is the static `supported` flag. When the harness
- * port grows new behaviours (goal mode, fork, deploy, memory), flip the
- * matching `supported` and the row goes live without UI changes.
+ * Capability gating today is the static `supported` flag. Goal is backed by
+ * the goal operations, and plan entry is backed by the send-message
+ * `plan-entry` intent; commands without a WebUI path remain inert until their
+ * transport is wired.
  */
 export const WEBUI_BUILTIN_COMMANDS: readonly SlashCommandEntry[] = [
   {
@@ -150,7 +151,7 @@ export const WEBUI_BUILTIN_COMMANDS: readonly SlashCommandEntry[] = [
     source_type: -1,
     composerMode: "plan",
     icon: WebuiIconCommandPlan,
-    supported: false,
+    supported: true,
   },
   {
     name: "fork",

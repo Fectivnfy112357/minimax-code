@@ -567,6 +567,7 @@ export function WebuiComposer({
   const [goal, setGoal] = useState<WebuiGoal>();
   const [goalEnabled, setGoalEnabled] = useState(true);
   const [goalMode, setGoalMode] = useState(false);
+  const [planMode, setPlanMode] = useState(false);
   const [goalSubmitting, setGoalSubmitting] = useState(false);
   const [interactionError, setInteractionError] = useState<string>();
   const [queueItems, setQueueItems] = useState<readonly WebuiQueueItem[]>([]);
@@ -1343,12 +1344,24 @@ export function WebuiComposer({
   const activateGoalMode = () => {
     if (!goalEnabled || !createGoal) return;
     setGoalMode(true);
+    setPlanMode(false);
     onDraftChange("");
     textareaRef.current?.focus();
   };
   const cancelGoalMode = () => {
     setGoalMode(false);
     if (!goal) onDraftChange("");
+    textareaRef.current?.focus();
+  };
+  const activatePlanMode = () => {
+    setPlanMode(true);
+    setGoalMode(false);
+    onDraftChange("");
+    textareaRef.current?.focus();
+  };
+  const cancelPlanMode = () => {
+    setPlanMode(false);
+    onDraftChange("");
     textareaRef.current?.focus();
   };
   const handleDraftChange = (next: string) => {
@@ -1361,6 +1374,10 @@ export function WebuiComposer({
   const chooseCommand = (command: string) => {
     if (command === "goal") {
       activateGoalMode();
+      return;
+    }
+    if (command === "plan") {
+      activatePlanMode();
       return;
     }
     onDraftChange(`/${command} `);
@@ -1472,11 +1489,16 @@ export function WebuiComposer({
         ? { commandInvocationInput: commandInvocation[2] }
         : {}),
       goalMode,
+      planMode,
     });
     const resolvedIntent = intent ?? (attachments.length > 0 ? { kind: "submit-turn" as const } : undefined);
     if (!resolvedIntent) return;
     if (resolvedIntent.kind === "activate-goal-mode") {
       activateGoalMode();
+      return;
+    }
+    if (resolvedIntent.kind === "activate-plan-mode") {
+      activatePlanMode();
       return;
     }
     if (resolvedIntent.kind === "submit-goal") {
@@ -1546,6 +1568,10 @@ export function WebuiComposer({
       return;
     }
     // intent.kind === "submit-turn"
+    if (resolvedIntent.clientIntent === "plan-entry") {
+      setGoalMode(false);
+      setPlanMode(true);
+    }
     // A newly submitted turn is a Desktop-style request to follow the latest
     // frontier. The scroll listener can still release this lock immediately
     // if the user wheels back into history while the turn is running.
@@ -1568,6 +1594,12 @@ export function WebuiComposer({
       {
         sessionId,
         draft,
+        ...(resolvedIntent.message ? { message: resolvedIntent.message } : {}),
+        ...(resolvedIntent.clientIntent
+          ? { clientIntent: resolvedIntent.clientIntent }
+          : planMode
+            ? { clientIntent: "plan-entry" }
+            : {}),
         attachments: attachmentWire,
         onAttachmentsSubmitted: () => { setAttachments([]); setUrlReferences([]); },
         sending,
@@ -1763,9 +1795,10 @@ export function WebuiComposer({
                     }
                     if (event.key === "Escape" && composerMenu) { event.preventDefault(); setComposerMenu(undefined); return; }
                     if (event.key === "Escape" && permissionMenuOpen) { event.preventDefault(); setPermissionMenuOpen(false); return; }
-                    if (event.key === "Escape" && goalMode) {
+                    if (event.key === "Escape" && (goalMode || planMode)) {
                       event.preventDefault();
-                      cancelGoalMode();
+                      if (goalMode) cancelGoalMode();
+                      else cancelPlanMode();
                       return;
                     }
                     if (event.key === "Escape" && commandMatch) {
@@ -1821,7 +1854,7 @@ export function WebuiComposer({
                     }
                   }}
                   disabled={!canCompose && !canQueue}
-                  placeholder={goalMode ? "描述你想完成的目标" : "输入消息…（输入 / 唤起命令）"}
+                  placeholder={goalMode ? "描述你想完成的目标" : planMode ? "描述需要规划的任务..." : "输入消息…（输入 / 唤起命令）"}
                   className="webui-textarea webui-composer-input text-text_default_primary"
                   data-webui-composer-input="true"
                 />
@@ -2023,18 +2056,32 @@ export function WebuiComposer({
                     })}
                   </div> : null}
                 </div>
-                {goalEnabled && createGoal ? (
+                {goalEnabled && createGoal && goalMode ? (
                   <button
                     type="button"
                     className={`webui-goal-mode-button${goalMode ? " is-active" : ""}`}
                     aria-pressed={goalMode}
-                    aria-label={goalMode ? "取消目标模式" : "目标"}
+                    aria-label="取消目标模式"
                     data-testid="composer-goal-mode"
                     disabled={goalSubmitting || Boolean(questionnaire || permissions.length > 0)}
-                    onClick={() => (goalMode ? cancelGoalMode() : activateGoalMode())}
+                    onClick={cancelGoalMode}
                   >
                     <WebuiIconCommandGoal />
                     <span>目标</span>
+                  </button>
+                ) : null}
+                {planMode ? (
+                  <button
+                    type="button"
+                    className="webui-goal-mode-button is-active"
+                    aria-pressed="true"
+                    aria-label="退出计划模式"
+                    data-testid="composer-plan-mode"
+                    disabled={Boolean(questionnaire || permissions.length > 0)}
+                    onClick={cancelPlanMode}
+                  >
+                    <WebuiIconCommandPlan />
+                    <span>计划</span>
                   </button>
                 ) : null}
                 <div className="ml-auto flex items-center gap-1">

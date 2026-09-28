@@ -38,6 +38,7 @@ export interface WebuiStreamLoopDeps {
 export interface WebuiStreamLoopArgs {
   readonly sessionId: string;
   readonly message: string;
+  readonly clientIntent?: string;
   readonly attachments?: readonly WebuiAttachmentInput[];
 }
 
@@ -328,6 +329,7 @@ export async function runWebuiStreamLoop(
             {
               id: sessionId,
               content: message,
+              ...(args.clientIntent ? { clientIntent: args.clientIntent } : {}),
               ...(args.attachments?.length ? { attachments: args.attachments } : {}),
             },
             captureFrame,

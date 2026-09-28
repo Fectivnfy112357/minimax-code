@@ -126,6 +126,7 @@ export function isTurnLive(
  */
 export type WebuiSubmissionIntent =
   | { readonly kind: "activate-goal-mode" }
+  | { readonly kind: "activate-plan-mode" }
   | { readonly kind: "submit-goal"; readonly objective: string }
   | {
       readonly kind: "run-command";
@@ -135,7 +136,11 @@ export type WebuiSubmissionIntent =
       };
       readonly input?: string;
     }
-  | { readonly kind: "submit-turn" };
+  | {
+      readonly kind: "submit-turn";
+      readonly message?: string;
+      readonly clientIntent?: string;
+    };
 
 export function resolveWebuiSubmissionIntent(args: {
   readonly draft: string;
@@ -143,6 +148,7 @@ export function resolveWebuiSubmissionIntent(args: {
   readonly commandInvocationName?: string;
   readonly commandInvocationInput?: string;
   readonly goalMode: boolean;
+  readonly planMode?: boolean;
 }): WebuiSubmissionIntent | undefined {
   const trimmedDraft = args.draft.trim();
   const command = args.commandMatch;
@@ -154,6 +160,20 @@ export function resolveWebuiSubmissionIntent(args: {
   if (command?.name === "goal" && !args.goalMode && !directGoalObjective) {
     return { kind: "activate-goal-mode" };
   }
+  const directPlanPrompt =
+    command?.name === "plan"
+      ? args.commandInvocationInput?.trim()
+      : undefined;
+  if (command?.name === "plan" && !args.planMode && !directPlanPrompt) {
+    return { kind: "activate-plan-mode" };
+  }
+  if (directPlanPrompt) {
+    return {
+      kind: "submit-turn",
+      message: directPlanPrompt,
+      clientIntent: "plan-entry",
+    };
+  }
   // Path 2 — goal submission. Either an explicit `/goal <objective>` form,
   // or an active goal-mode composer carrying a draft.
   if (
@@ -162,6 +182,9 @@ export function resolveWebuiSubmissionIntent(args: {
   ) {
     const objective = directGoalObjective ?? trimmedDraft;
     return { kind: "submit-goal", objective };
+  }
+  if (args.planMode && trimmedDraft) {
+    return { kind: "submit-turn", clientIntent: "plan-entry" };
   }
   // Path 3 — slash command backed by `runCommand`. The classification
   // gates the run-command intent: only `runnable` entries reach the host;
@@ -242,6 +265,8 @@ export function resolveWebuiComposerEnterAction(args: {
 export interface WebuiComposerSubmitArgs {
   readonly sessionId?: string;
   readonly draft: string;
+  readonly message?: string;
+  readonly clientIntent?: string;
   readonly attachments?: readonly WebuiAttachmentInput[];
   readonly onAttachmentsSubmitted?: () => void;
   readonly sending: boolean;
@@ -348,7 +373,7 @@ export async function submitWebuiComposerTurn(
   args: WebuiComposerSubmitArgs,
   handlers: WebuiComposerSubmitHandlers,
 ): Promise<void> {
-  const message = args.draft.trim();
+  const message = (args.message ?? args.draft).trim();
   const attachments = args.attachments ?? [];
   if ((!message && attachments.length === 0) || (!args.deps.sendMessage && !args.enqueueMessage)) return;
   let sessionId = args.sessionId;
@@ -387,7 +412,7 @@ export async function submitWebuiComposerTurn(
   if (args.sending) {
     if (!args.enqueueMessage) return;
     try {
-      await args.enqueueMessage({ id: sessionId, content: message, ...(attachments.length ? { attachments } : {}) });
+      await args.enqueueMessage({ id: sessionId, content: message, ...(args.clientIntent ? { clientIntent: args.clientIntent } : {}), ...(attachments.length ? { attachments } : {}) });
       handlers.onDraftChange("");
       args.onAttachmentsSubmitted?.();
       handlers.onQueued?.();
@@ -411,7 +436,7 @@ export async function submitWebuiComposerTurn(
   try {
     await runWebuiStreamLoop(
       args.deps,
-      { sessionId, message, ...(attachments.length ? { attachments } : {}) },
+      { sessionId, message, ...(args.clientIntent ? { clientIntent: args.clientIntent } : {}), ...(attachments.length ? { attachments } : {}) },
       buildWebuiStreamLoopSink(handlers.setStream),
     );
   } finally {
