@@ -448,7 +448,12 @@ export function PluginManagement({
       className={`webui-plugin-management ${managementOpen ? "is-managing" : "is-marketplace"}`}
       data-testid="plugin-management"
     >
+      {/* Two elements because the bar is pinned: the header is the sticky,
+       * full-bleed, opaque surface, and the row inside it keeps the width the
+       * content is laid out against. `webui-plugin-header-inner` is what the
+       * absolutely positioned close button anchors to. */}
       <header className="webui-plugin-header">
+        <div className="webui-plugin-header-inner">
         {managementOpen ? (
           <>
             <button
@@ -551,6 +556,7 @@ export function PluginManagement({
         >
           ×
         </button>
+        </div>
       </header>
       {managementOpen ? (
         <nav className="webui-plugin-categories" aria-label="插件管理分类">

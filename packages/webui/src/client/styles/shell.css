@@ -3704,13 +3704,14 @@
     width: 100%;
     height: 100%;
     overflow: auto;
-    padding: 28px 24px 48px;
+    /* The top padding moved onto the sticky header below. Left here it would
+     * open an unpainted band above the pinned bar for rows to scroll through. */
+    padding: 0 24px 48px;
     color: var(--text_default_primary);
   }
   .webui-plugin-management.is-marketplace {
-    padding: 16px 0 48px;
+    padding: 0 0 48px;
   }
-  .webui-plugin-header,
   .webui-plugin-header-tabs,
   .webui-plugin-categories,
   .webui-plugin-category-filter,
@@ -3720,28 +3721,36 @@
     display: flex;
     align-items: center;
   }
+  /* Pinned full-bleed bar. A sticky element has to carry its own opaque
+   * background and span the scroll container, so the constrained row lives on
+   * `webui-plugin-header-inner` instead of on the header itself. The vertical
+   * rhythm is unchanged — the space below the row just belongs to the bar now,
+   * which is what keeps it opaque while rows scroll up behind it. */
   .webui-plugin-header {
+    position: sticky;
+    top: 0;
+    /* The declared "pinned header above its own panel's content" rung — the
+     * same one `.webui-workspace-panel-header` uses. Dropdowns inside the bar
+     * sit on 20, so they still clear it. */
+    z-index: 2;
+    background: var(--bg_grouped_secondary);
+    padding: 28px 0 42px;
+  }
+  .webui-plugin-header-inner {
     position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     min-height: 56px;
     max-width: 960px;
-    margin: 0 auto 42px;
-    justify-content: space-between;
+    margin: 0 auto;
   }
   .webui-plugin-management.is-marketplace .webui-plugin-header {
+    padding: 16px 0 52px;
+  }
+  .webui-plugin-management.is-marketplace .webui-plugin-header-inner {
     max-width: none;
     min-height: 32px;
-    margin: 0 0 52px;
-  }
-  .webui-plugin-management.is-marketplace .webui-plugin-header-tabs {
-    gap: 2px;
-    border-radius: 10px;
-    padding: 2px;
-  }
-  .webui-plugin-management.is-marketplace .webui-plugin-header-tabs button {
-    min-width: 52px;
-    height: 28px;
-    padding: 4px 10px;
-    font-size: 14px;
   }
   .webui-plugin-management.is-marketplace .webui-plugin-create-anchor {
     gap: 8px;
@@ -3807,7 +3816,9 @@
   .webui-plugin-create-menu button:hover {
     background: var(--bg_interaction_tertiary_hover);
   }
-  .webui-plugin-header > button {
+  /* Anchored to `webui-plugin-header-inner`, which is the positioned row — the
+   * header itself is now the sticky full-bleed bar. */
+  .webui-plugin-header-inner > button {
     position: absolute;
     left: 0;
     top: 4px;
@@ -3816,7 +3827,7 @@
     color: var(--text_default_secondary);
     font-size: 14px;
   }
-  .webui-plugin-header > .webui-plugin-close {
+  .webui-plugin-header-inner > .webui-plugin-close {
     left: auto;
     right: 0;
     width: 28px;
@@ -3833,7 +3844,11 @@
   .webui-plugin-header-tabs,
   .webui-plugin-categories {
     border-radius: 10px;
-    background: var(--bg_grouped_secondary);
+    /* One step below the surface the control sits on. It was
+     * `--bg_grouped_secondary`, which is the marketplace's own background in
+     * this shell — a white track on a white page, so the segments had no
+     * container to read against. */
+    background: var(--bg_grouped_tertiary);
     padding: 4px;
     gap: 4px;
   }
@@ -3853,6 +3868,12 @@
   .webui-plugin-category-filter button[aria-pressed="true"] {
     background: var(--bg_default_primary);
     color: var(--text_default_primary);
+  }
+  /* The selected segment reads as a card lifted off the track. Only the header
+   * control: `.webui-plugin-categories` sits on a transparent track, where a
+   * shadow has nothing to fall on. */
+  .webui-plugin-header-tabs button[aria-pressed="true"] {
+    box-shadow: var(--shadow_default);
   }
   .webui-plugin-categories {
     max-width: 960px;
@@ -4269,10 +4290,12 @@
   }
   @media (max-width: 760px) {
     .webui-plugin-management {
-      padding: 18px 14px;
+      /* No top padding here either: the sticky header owns it, and a
+       * padding-top would show rows through the gap above the pinned bar. */
+      padding: 0 14px 18px;
     }
     .webui-plugin-header {
-      margin-bottom: 24px;
+      padding: 16px 0 24px;
     }
     .webui-plugin-categories {
       overflow-x: auto;

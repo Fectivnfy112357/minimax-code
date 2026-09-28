@@ -45,6 +45,14 @@ import {
   type WorkspacePanelCommand,
   type WorkspacePanelSessionStates,
 } from "../projection/workspace-panel-state.js";
+import {
+  initialWebuiShellSurface,
+  isPluginManagementSurface,
+  reduceWebuiShellSurface,
+  webuiPluginManagementArea,
+  type WebuiPluginManagementArea,
+  type WebuiShellSurfaceCommand,
+} from "../projection/shell-surface.js";
 import { ConversationUsageBanner } from "./ConversationUsageBanner.js";
 import { PluginManagement } from "./PluginManagement.js";
 import { WebuiComposer } from "./SessionComposer.js";
@@ -230,8 +238,25 @@ export function WebuiClientFoundationApp(
     });
     return () => { cancelled = true; };
   }, [loadProjects]);
+  // Which surface the main column renders. Plugin management replaces the
+  // conversation rather than floating above it, so the rail stays the only way
+  // back out of it — every conversation navigation has to return here.
+  const [shellSurface, setShellSurface] = useState(initialWebuiShellSurface);
+  const dispatchShellSurface = useCallback((command: WebuiShellSurfaceCommand) => {
+    setShellSurface((current) => reduceWebuiShellSurface(current, command));
+  }, []);
   const [selectedSessionId, setSelectedSessionId] =
     useSelectedSessionId(locationHash);
+  // Rail session links are plain `#session=<id>` anchors, so the navigation runs
+  // through the hash subscription inside `useSelectedSessionId` rather than
+  // through the setter this shell holds. Watching the resolved id is the one
+  // place both paths pass through, which is what makes the rail click actually
+  // leave the marketplace instead of changing the selection behind it. The
+  // reducer returns the same object when the conversation is already showing,
+  // so this costs no re-render on the way in.
+  useEffect(() => {
+    dispatchShellSurface({ type: "show-conversation" });
+  }, [dispatchShellSurface, selectedSessionId]);
   const [draft, setDraft] = useState("");
   const [teamModeOff, setTeamModeOff] = useState(readTeamModeOff);
   const [teamModeChoices, setTeamModeChoices] =
@@ -616,6 +641,11 @@ export function WebuiClientFoundationApp(
     setNewTaskWorkspaceDir(undefined);
     setWorkspaceMenuOpen(false);
     setDraft("");
+    // 「新建任务」 is the one navigation that does not change the selected
+    // session when the shell is already on the home surface, so the effect that
+    // watches the session id cannot see it. Close the marketplace here too, or
+    // the row looks dead exactly as it did before.
+    dispatchShellSurface({ type: "show-conversation" });
     setSelectedSessionId(undefined);
     if (typeof window !== "undefined") {
       window.history.replaceState(
@@ -655,12 +685,14 @@ export function WebuiClientFoundationApp(
     ? teamModeChoices[selectedSessionId] ?? teamModeOff
     : teamModeOff;
   const [railCollapsed, setRailCollapsed] = useState(false);
-  const [pluginManagementOpen, setPluginManagementOpen] = useState(false);
-  const [pluginManagementArea, setPluginManagementArea] = useState<"plugins" | "skills">("plugins");
-  const openPluginManagement = useCallback((area: "plugins" | "skills") => {
-    setPluginManagementArea(area);
-    setPluginManagementOpen(true);
-  }, []);
+  const pluginManagementArea = webuiPluginManagementArea(shellSurface);
+  const pluginManagementOpen = isPluginManagementSurface(shellSurface);
+  const openPluginManagement = useCallback((area: WebuiPluginManagementArea) => {
+    dispatchShellSurface({ type: "open-plugin-management", area });
+  }, [dispatchShellSurface]);
+  const closePluginManagement = useCallback(() => {
+    dispatchShellSurface({ type: "close-plugin-management" });
+  }, [dispatchShellSurface]);
   const [workspacePanelStates, setWorkspacePanelStates] = useState<WorkspacePanelSessionStates>(() => new Map());
   const sessionPanelState = selectedSessionId
     ? getWorkspacePanelSessionState(workspacePanelStates, selectedSessionId)
@@ -758,7 +790,7 @@ export function WebuiClientFoundationApp(
                   <div className="relative min-h-0 flex-1">
                     <div className="webui-rail-scroll h-full overflow-x-hidden overflow-y-auto px-4">
                       <div className="space-y-px pb-2">
-                        <RailRow label="插件" icon={<WebuiIconPlugins />} active={pluginManagementOpen} onSelect={() => setPluginManagementOpen(true)} />
+                        <RailRow label="插件" icon={<WebuiIconPlugins />} active={pluginManagementOpen} onSelect={() => openPluginManagement("plugins")} />
                         <RailRow label="定时" icon={<WebuiIconSchedule />} inert />
                         <RailRow label="网站" icon={<WebuiIconSites />} inert />
                         <RailRow label="远程" icon={<WebuiIconRemote />} inert />
@@ -826,7 +858,7 @@ export function WebuiClientFoundationApp(
             data-webui-shell-region="surface"
             className="relative flex min-h-0 min-w-0 flex-1 flex-row"
           >
-            {pluginManagementOpen ? <PluginManagement transport={transport} initialArea={pluginManagementArea} onClose={() => setPluginManagementOpen(false)} /> : <>
+            {pluginManagementArea ? <PluginManagement transport={transport} initialArea={pluginManagementArea} onClose={closePluginManagement} /> : <>
             {!homeMode && !workspacePanel.open ? <WebuiWorkspacePanelControls filePanelOpen={false} progressPanelOpen={progressPanelOpen} onOpenFiles={() => { setProgressPanelOpen(false); dispatchWorkspacePanel({ type: "open-primary-view", kind: "files", sessionId: selectedSessionId, workspaceDir: selectedSession?.workspaceDir }); }} onToggleProgressPanel={() => setProgressPanelOpen((open) => !open)} /> : null}
             <div className="relative flex h-full min-w-0 flex-1 flex-col">
               <div
