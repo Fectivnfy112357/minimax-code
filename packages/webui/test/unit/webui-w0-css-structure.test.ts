@@ -18,6 +18,7 @@
 
 import { describe, it, expect, beforeAll } from "vitest";
 import { readFileSync } from "node:fs";
+import { SKELETON_CONTENT_MAX_WIDTH_PX } from "../../src/client/components/TranscriptSkeletons.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -250,6 +251,30 @@ describe("W0 · structural declarations W5 must preserve", () => {
     expect(declaration(messageList.body, "margin-left")).toBe("auto");
     expect(declaration(messageList.body, "margin-right")).toBe("auto");
     expect(declaration(messageList.body, "min-width")).toBe("0");
+  });
+
+  it("keeps the loading skeletons on the message list's measure", () => {
+    // The skeletons are the stand-in for the message list while history loads.
+    // When `.message-list` was narrowed to 736px the skeletons were left at
+    // 768px, so the transcript visibly jumped sideways as content landed — and
+    // nothing failed, because the two numbers lived in different files.
+    const messageListWidth = declaration(
+      winning(".webui-session-layout .message-list").body,
+      "max-width",
+    );
+    expect(messageListWidth).toBe(`${SKELETON_CONTENT_MAX_WIDTH_PX}px`);
+
+    // And the skeletons must actually use that constant, not a literal that
+    // can drift again.
+    const skeletons = readFileSync(
+      new URL(
+        "../../src/client/components/TranscriptSkeletons.tsx",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    expect(skeletons).toContain("SKELETON_CONTENT_MAX_WIDTH_PX}px");
+    expect(skeletons).not.toMatch(/max-w-\[\d+px\]/u);
 
     const liveStatus = winning(
       ".webui-session-layout .message-list > .webui-session-stream-status",

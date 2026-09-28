@@ -7,6 +7,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   ChatSkeleton,
   GreetingSkeleton,
+  SKELETON_CONTENT_MAX_WIDTH_PX,
 } from "../../src/client/components/TranscriptSkeletons.js";
 import { WebuiActivityGroup, WebuiThinkingBlock, WebuiTurnProcess } from "../../src/client/components/TranscriptPrimitives.js";
 import { WebuiAssistantBody } from "../../src/client/components/AssistantBody.js";
@@ -21,7 +22,11 @@ describe("TranscriptSkeletons", () => {
   it("ChatSkeleton emits the desktop testid and the centred column", () => {
     const html = renderToStaticMarkup(createElement(ChatSkeleton));
     expect(html).toContain('data-testid="chat-skeleton"');
-    expect(html).toContain("max-w-[768px] mx-auto");
+    // The column width comes from the shared constant rather than a literal,
+    // so it can be asserted against `.message-list`'s max-width elsewhere and
+    // cannot drift back to a hard-coded value.
+    expect(html).toContain(`max-width:${SKELETON_CONTENT_MAX_WIDTH_PX}px`);
+    expect(html).toContain("mx-auto");
     expect(html).toContain("animate-shimmer");
   });
 
@@ -37,7 +42,11 @@ describe("TranscriptSkeletons", () => {
   it("GreetingSkeleton uses the rounded-40 avatar instead of the user bubble", () => {
     const html = renderToStaticMarkup(createElement(GreetingSkeleton));
     expect(html).toContain('data-testid="greeting-skeleton"');
-    expect(html).toContain("max-w-[768px] mx-auto");
+    // The column width comes from the shared constant rather than a literal,
+    // so it can be asserted against `.message-list`'s max-width elsewhere and
+    // cannot drift back to a hard-coded value.
+    expect(html).toContain(`max-width:${SKELETON_CONTENT_MAX_WIDTH_PX}px`);
+    expect(html).toContain("mx-auto");
     // The avatar uses `border-radius:9999px` (full circle). React serialises
     // numeric pixels with units.
     expect(html).toContain("border-radius:9999px");

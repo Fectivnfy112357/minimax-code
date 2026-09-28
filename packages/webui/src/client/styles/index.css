@@ -50,11 +50,23 @@
  * the plugin marketplace as a search narrows it, the transcript as a turn
  * finishes or a session is cleared, a `pre` code view as you move between a
  * short file and a long one — then re-lays-out horizontally, and centred
- * content moves by half the bar's width. Reserving the gutter unconditionally
- * makes the content box identical in both states, so nothing moves. The
- * layout effect is inert on `html`/`body`: the shell mounts at `h-screen`, so
- * the document itself never scrolls. The four sideways-only scrollers opt back
- * out in `shell.css`, where a vertical gutter would be dead space.
+ * content moves by half the bar's width. Reserving the gutter makes the
+ * content box identical in both states, so nothing moves.
+ *
+ * The reservation is scoped to the container elements listed below instead of
+ * staying on `*`. `scrollbar-gutter` is meant for scroll containers, but an
+ * `overflow: hidden` box is one too — and that includes every inline `<svg>`
+ * root, which the UA stylesheet gives `overflow: hidden`. The bar here is
+ * classic, so on a box narrower than the bar the gutter is *wider* than the
+ * content box and collapses it to zero. That is how the 14px check mark inside
+ * the 22px day dot of the daily check-in row disappeared: the ring still drew,
+ * the check had nowhere left to paint. CSS cannot select on a computed
+ * property, so the policy is expressed over the element types this shell
+ * actually scrolls in. `:where()` keeps specificity at zero, so components
+ * still win. The layout effect is inert on `html`/`body`: the shell mounts at
+ * `h-screen`, so the document itself never scrolls. The four sideways-only
+ * scrollers opt back out in `shell.css`, where a vertical gutter would be dead
+ * space.
  *
  * The surfaces that deliberately show no bar are unaffected.
  * `.scrollbar-hide` and the `scrollbar-width: none` rules in `shell.css` are
@@ -66,6 +78,25 @@
   * {
     scrollbar-width: thin;
     scrollbar-color: var(--utility_scrollbar) transparent;
+  }
+
+  /* Containers only — see the note above on why this is not `*`. */
+  :where(
+    html,
+    body,
+    div,
+    main,
+    section,
+    aside,
+    header,
+    footer,
+    nav,
+    ul,
+    ol,
+    pre,
+    textarea,
+    select
+  ) {
     scrollbar-gutter: stable;
   }
 

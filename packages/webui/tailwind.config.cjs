@@ -531,4 +531,32 @@ const tailwindConfig = {
   ],
 };
 
+/**
+ * Register the text and border token families as surface fills as well.
+ *
+ * `backgroundColor` carries the `bg_*` family only, so every `bg-text_default_*`
+ * and `bg-border_*` class in the markup compiled to nothing and the element
+ * silently lost its background. The daily check-in day dot was the visible
+ * case: `bg-text_default_accent` never existed, so a claimable day paired
+ * `text-text_default_inverted_static` (which does exist) with no fill — a white
+ * check mark on a white circle. The usage progress bar, the onboarding step
+ * dots, the rail grip and six `bg-border_*` backgrounds were failing the same
+ * way, all of them written as if the class resolved.
+ *
+ * Merged after construction rather than inlined, so the token tables above
+ * stay the single place each family is written down. Tailwind only emits the
+ * utilities the content actually references, so this widens the naming
+ * surface without widening the compiled output.
+ */
+function surfaceFillsFrom(tokens, prefix) {
+  return Object.fromEntries(
+    Object.entries(tokens).filter(([name]) => name.startsWith(prefix)),
+  );
+}
+tailwindConfig.theme.backgroundColor = {
+  ...tailwindConfig.theme.backgroundColor,
+  ...surfaceFillsFrom(tailwindConfig.theme.textColor, "text_"),
+  ...surfaceFillsFrom(tailwindConfig.theme.borderColor, "border_"),
+};
+
 module.exports = tailwindConfig;
