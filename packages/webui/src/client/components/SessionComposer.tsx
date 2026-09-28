@@ -1544,16 +1544,19 @@ export function WebuiComposer({
     // A newly submitted turn is a Desktop-style request to follow the latest
     // frontier. The scroll listener can still release this lock immediately
     // if the user wheels back into history while the turn is running.
-    const turnRuntimeWriter = createSessionRuntimeWriter(
-      sessionId ?? HOME_SESSION_RUNTIME_KEY,
-    );
+    let turnRuntimeWriter = sessionId
+      ? createSessionRuntimeWriter({ kind: "session", sessionId })
+      : createSessionRuntimeWriter({ kind: "home" });
     const turnHandlers = {
       ...handlers,
-      setStream: turnRuntimeWriter.setStream,
-      setSending: turnRuntimeWriter.setSending,
+      setStream: (update: Parameters<typeof turnRuntimeWriter.setStream>[0]) =>
+        turnRuntimeWriter.setStream(update),
+      setSending: (sending: boolean) => turnRuntimeWriter.setSending(sending),
       onSessionCreated: (createdSessionId: string) => {
         handlers.onSessionCreated?.(createdSessionId);
-        turnRuntimeWriter.moveTo(createdSessionId);
+        if (turnRuntimeWriter.kind === "home") {
+          turnRuntimeWriter = turnRuntimeWriter.migrateToSession(createdSessionId);
+        }
       },
     };
     await submitWebuiComposerTurn(
