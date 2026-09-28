@@ -20,15 +20,15 @@ import {
   WebuiFeedbackActions,
   WebuiMessageActionButton,
 } from "../../src/client/components/MessageActions.js";
+import { WebuiQuestionnaireResponse } from "../../src/client/components/SessionTranscript.js";
 import {
   createWebuiTranscriptRequestCoordinator,
-  runWebuiTranscriptPageRequest,
-  WebuiQuestionnaireResponse,
   getOwnedTranscriptPage,
   mergeOlderTranscriptPage,
+  runWebuiTranscriptPageRequest,
   updateOwnedTranscriptState,
   type WebuiOwnedTranscriptState,
-} from "../../src/client/components/SessionTranscript.js";
+} from "../../src/client/projection/transcript-request-ownership.js";
 import {
   WebuiActivityGroup,
   WebuiTurnProcess,
