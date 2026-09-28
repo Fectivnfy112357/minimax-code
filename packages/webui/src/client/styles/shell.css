@@ -434,9 +434,24 @@
     box-shadow: 0 8px 28px rgb(0 0 0 / 12%);
   }
 
+  /* The `+` trigger's wrap: the button plus the panel it opens. It is the
+   * positioning context for `.webui-composer-menu` and the container the
+   * outside-close test uses, so both anchoring and dismissal follow the button
+   * rather than the composer region. */
+  .webui-composer-add-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
+  /* Anchored to the `+` button's wrap, so the panel always clears it. The old
+   * `bottom: 56px` was measured from the composer region instead, which made
+   * the panel grow over the `+` and the permission pill as soon as anything
+   * below the card changed height. */
   .webui-composer-menu {
-    bottom: 56px;
+    bottom: calc(100% + var(--spacing_8));
     left: 0;
+    right: auto;
     max-height: min(420px, calc(100dvh - 112px));
     overflow-y: auto;
     overscroll-behavior: contain;
@@ -454,8 +469,27 @@
     border-radius: 9px;
     background: transparent;
     color: var(--webui-color-text-primary, #262626);
+    /* Pinned rather than inherited. Inheriting let the rows take whatever the
+     * section's font-size happened to be, which is why the panel read larger
+     * than the 14px row language used everywhere around it. */
+    font-size: var(--size_14);
+    line-height: var(--line_height_20);
     text-align: left;
     cursor: pointer;
+  }
+
+  /* The leading glyph for each row. Fixed-size and held at the icon ramp so
+   * the column of icons aligns; the label keeps the flexible half. */
+  .webui-composer-menu-icon {
+    width: var(--size_16);
+    height: var(--size_16);
+    flex: 0 0 var(--size_16);
+    color: var(--icon_default_secondary);
+  }
+
+  .webui-composer-menu button:hover .webui-composer-menu-icon,
+  .webui-composer-menu button:focus-visible .webui-composer-menu-icon {
+    color: var(--icon_default_primary);
   }
 
   .webui-composer-menu button:hover,
@@ -1123,6 +1157,15 @@
     background: var(--bg_interaction_tertiary_hover, rgba(0, 0, 0, 0.06));
   }
 
+  /* These rows carry no `:focus-visible`, so keyboard focus fell through to the
+   * browser's default blue ring — a raw box that matched nothing around it.
+   * Same treatment the send button, the primary/secondary buttons and the
+   * toggle rows already use. */
+  .webui-workspace-option--desktop:focus-visible {
+    outline: 2px solid var(--border_accent);
+    outline-offset: -2px;
+  }
+
   /* The project row under the composer. It is a LAYOUT element only — the
    * light surface comes from `.message-input-home-container`, the scrim box
    * that already wraps the card, so the card and this row read as one
@@ -1180,20 +1223,93 @@
     flex: 0 0 var(--size_16);
     color: var(--icon_default_secondary);
   }
+
+  /* The directory browser's 取消 / 使用此目录 pair.
+   *
+   * These used to borrow `.webui-commit-dialog-actions`, which is sized for the
+   * 420px centred modal: 8/12 padding and a heavy dark fill read oversized
+   * inside a 240–320px popover, and clashed with the directory rows directly
+   * above them, which are 8/10 on `--radius_8`. They now take the rows' scale
+   * and radius and the project's primary/secondary colours, so the whole panel
+   * reads as one language.
+   *
+   * Geometry is declared once on the shared class rather than reusing
+   * `.webui-button-primary` (8/16) and `.webui-button-secondary` (6/12): those
+   * two differ by 4px of vertical padding, which would render this side-by-side
+   * pair at two different heights. The colours, the hover ramp and the
+   * `:focus-visible` ring are lifted from those buttons unchanged.
+   *
+   * The rule above the pair separates it from the directory list, mirroring
+   * the separator the quick menu uses between `最近` and the commands. */
+  .webui-workspace-browser-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--spacing_8);
+    margin-top: var(--spacing_4);
+    border-top: 1px solid var(--border_default);
+    padding-top: var(--spacing_8);
+  }
+
+  .webui-workspace-browser-action {
+    display: inline-flex;
+    min-height: 28px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border_default);
+    border-radius: var(--radius_8);
+    background: transparent;
+    padding: var(--spacing_4) var(--spacing_12);
+    color: var(--text_default_secondary);
+    font-size: var(--size_14);
+    line-height: var(--line_height_18);
+    cursor: pointer;
+    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+  }
+
+  .webui-workspace-browser-action:hover:not(:disabled) {
+    border-color: var(--border_heavy);
+    background: var(--bg_interaction_tertiary_hover);
+    color: var(--text_default_primary);
+  }
+
+  .webui-workspace-browser-action--primary {
+    border-color: transparent;
+    background: var(--bg_interaction_primary_default);
+    color: var(--text_default_inverted);
+  }
+
+  .webui-workspace-browser-action--primary:hover:not(:disabled) {
+    border-color: transparent;
+    background: var(--bg_interaction_primary_hover);
+    color: var(--text_default_inverted);
+  }
+
+  .webui-workspace-browser-action:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+
+  .webui-workspace-browser-action:focus-visible {
+    outline: 2px solid var(--border_accent);
+    outline-offset: 2px;
+  }
   .webui-model-menu--two-column {
     display: grid;
     grid-template-columns: minmax(220px, 1fr) minmax(220px, 1.4fr);
+    grid-template-rows: minmax(0, 1fr);
     gap: var(--spacing_12);
     min-width: 460px;
     max-width: 560px;
-    max-height: 480px;
+    height: min(320px, calc(100dvh - 112px));
+    max-height: min(320px, calc(100dvh - 112px));
     padding: var(--spacing_8);
     overflow: visible;
   }
   .webui-model-menu-list {
     display: flex;
-    min-height: 240px;
-    max-height: 440px;
+    min-height: 0;
+    height: 100%;
     flex-direction: column;
     gap: 2px;
     overflow-y: auto;
@@ -1204,21 +1320,28 @@
   .webui-model-menu-detail {
     display: flex;
     min-width: 0;
+    min-height: 0;
+    height: 100%;
     flex-direction: column;
-    gap: var(--spacing_16);
+    gap: 0;
     padding: var(--spacing_4);
     overflow-y: auto;
-    max-height: 440px;
   }
   .webui-model-detail-row {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing_8);
+    gap: var(--spacing_4);
+    padding: var(--spacing_8) 0;
+  }
+  .webui-model-setting-context { order: 0; }
+  .webui-model-setting-effort {
+    order: 1;
+    border-top: 1px solid var(--border_default);
   }
   .webui-model-detail-label {
-    color: var(--text_default_secondary);
-    font-size: var(--size_12);
-    line-height: var(--line_height_16);
+    color: var(--text_default_tertiary);
+    font-size: var(--size_14);
+    line-height: var(--line_height_20);
   }
   .webui-model-detail-empty {
     display: flex;
@@ -1278,23 +1401,27 @@
   }
   .webui-model-effort-group {
     display: flex;
-    flex-wrap: wrap;
-    gap: var(--spacing_4, 4px);
+    flex-direction: column;
+    gap: 0;
   }
-  .webui-model-effort-chip {
-    padding: 4px var(--spacing_8, 8px);
+  .webui-model-effort-option {
+    display: flex;
+    width: 100%;
+    min-height: 40px;
+    align-items: center;
+    gap: var(--spacing_8);
     border-radius: var(--radius_8, 8px);
-    background: var(--bg_default_secondary);
+    border: 0;
+    background: transparent;
+    padding: 0 var(--spacing_8);
     color: var(--text_default_primary);
-    font-size: var(--size_12);
-    line-height: var(--line_height_16);
+    font-size: var(--size_14);
+    line-height: var(--line_height_20);
     cursor: pointer;
-    border: 1px solid transparent;
   }
-  .webui-model-effort-chip.is-active {
-    background: var(--bg_interaction_primary_default);
-    color: var(--text_default_inverted_primary, #fff);
-    border-color: transparent;
+  .webui-model-effort-option:hover,
+  .webui-model-context-option:hover {
+    background: var(--bg_interaction_tertiary_hover);
   }
   .webui-model-context-group {
     display: flex;
@@ -1303,9 +1430,11 @@
   }
   .webui-model-context-option {
     display: flex;
+    width: 100%;
+    min-height: 40px;
     align-items: center;
     gap: var(--spacing_8, 8px);
-    padding: 6px var(--spacing_8, 8px);
+    padding: 0 var(--spacing_8, 8px);
     border-radius: var(--radius_8, 8px);
     background: transparent;
     color: var(--text_default_primary);
@@ -1315,7 +1444,7 @@
     border: 1px solid transparent;
   }
   .webui-model-context-option.is-active {
-    background: var(--bg_interaction_tertiary_hover, rgba(0, 0, 0, 0.06));
+    background: transparent;
   }
   .webui-model-context-value {
     font-variant-numeric: tabular-nums;
@@ -4099,10 +4228,30 @@
     padding: 7px 15px;
     color: var(--text_default_primary);
   }
+  /* A marketplace card is a filled surface, not a divided list row: the grey
+   * band carries the card so the two-column grid reads as cards rather than as
+   * columns of a table. Measured off the target render at 1.25x — 60px tall,
+   * 8px corners, 12px of inset on each side. min-height is the measured floor,
+   * not a clamp: the title+description block is what actually sets the height.
+   * `--bg_grouped_tertiary` is gray_75/gray_800, the step below the page, so it
+   * survives dark mode; the hover layer is a translucent black over that fill
+   * rather than a fixed darker grey, which is what keeps the hover correct in
+   * both themes. */
   .webui-plugin-management.is-marketplace .webui-plugin-grid .webui-plugin-row {
-    min-height: 58px;
-    gap: 16px;
-    padding: 8px 0;
+    min-height: 60px;
+    gap: 12px;
+    border-radius: 8px;
+    background: var(--bg_grouped_tertiary);
+    padding: 8px 12px;
+    transition: background-color 120ms ease;
+  }
+  .webui-plugin-management.is-marketplace
+    .webui-plugin-grid
+    .webui-plugin-row:hover {
+    background-image: linear-gradient(
+      var(--bg_interaction_tertiary_hover),
+      var(--bg_interaction_tertiary_hover)
+    );
   }
   .webui-plugin-management.is-marketplace
     .webui-plugin-grid
@@ -4133,6 +4282,28 @@
     background: var(--bg_default_primary);
     padding: 8px 16px;
     color: var(--text_default_primary);
+  }
+  /* The card's action is a filled chip on the card's own grey, not the bordered
+   * outline the management lists use — it sits on a surface already, so the
+   * border would double the edge. Measured at 1.25x: 63x32px for a two-glyph
+   * label, 6px corners, no border. `--bg_interaction_tertiary_press` is
+   * `#0a0a0a14`, which composites to #e3e3e3 over the card's #f5f5f5 — the
+   * #e4e4e4 measured off the target render — and rebinds to a white overlay in
+   * dark mode, so it follows the card instead of staying light. */
+  .webui-plugin-management.is-marketplace .webui-plugin-grid .webui-plugin-row > button {
+    height: 32px;
+    border: 0;
+    border-radius: 6px;
+    background: var(--bg_interaction_tertiary_press);
+    padding: 0 18px;
+    transition: background-color 120ms ease;
+  }
+  .webui-plugin-management.is-marketplace .webui-plugin-grid .webui-plugin-row > button:hover:not(:disabled) {
+    background: var(--bg_interaction_secondary_press);
+  }
+  .webui-plugin-management.is-marketplace .webui-plugin-grid .webui-plugin-row > button:disabled {
+    cursor: default;
+    opacity: 0.55;
   }
   .webui-plugin-list {
     max-width: 960px;

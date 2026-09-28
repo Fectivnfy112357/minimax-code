@@ -95,10 +95,9 @@ export function webuiClientRequestId(prefix: string): string {
   return `${prefix}-${random}`;
 }
 
-/** Build the model-selection request the transport consumes when the user
- *  picks a new model in the picker. The variant and context limit fold the
- *  user's per-pick draft over the model entry's defaults; the empty-string
- *  variant is meaningful and gets forwarded (it disables thinking). */
+/** Build the model-selection request for a model or setting change. Per-pick
+ *  values override the model's current runtime projection; an empty variant
+ *  remains meaningful because it disables thinking. */
 export function buildWebuiModelSelectionRequest(
   model: WebuiModelEntry,
   draft: WebuiModelPickerDraft,
@@ -111,11 +110,18 @@ export function buildWebuiModelSelectionRequest(
     draft.contextLimit !== undefined
       ? draft.contextLimit
       : inheritedContextLimit;
+  const thinking =
+    draft.thinkingEffort === undefined
+      ? model.thinking
+      : draft.thinkingEffort === null
+        ? null
+        : { effort: draft.thinkingEffort };
   return {
     providerId: model.providerId,
     modelId: model.modelId,
     ...(variant !== undefined ? { variant } : {}),
     ...(contextLimit !== undefined ? { contextLimit } : {}),
+    ...(thinking !== undefined ? { thinking } : {}),
     ...(sessionId ? { sessionId } : {}),
   };
 }

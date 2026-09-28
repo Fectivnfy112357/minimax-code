@@ -58,6 +58,7 @@ export type WebuiOutsideCloseSurface =
   | "userMenu"
   | "modelPicker"
   | "permissionMenu"
+  | "composerMenu"
   | "workspacePicker"
   | "slashPopover"
   | "contextMenu";
@@ -106,6 +107,13 @@ export const WEBUI_OUTSIDE_CLOSE_POLICIES: {
     onEscape: true,
     notes:
       "Permission popover listens to pointerdown only at the document level; its container is the trigger-and-popover wrap, NOT the composer region, so a click on the textarea or any other footer control also dismisses it. Escape is handled by the composer's own onKeyDown (textarea and popover), not by a document-level listener — so Escape only closes it when focus is inside the composer.",
+  },
+  composerMenu: {
+    surface: "composerMenu",
+    subscribedKinds: ["pointerdown"],
+    usesContainerContains: true,
+    notes:
+      "The composer's `+` menu (attach / skills / plugins / goal / plan) listens to pointerdown only; its container is the trigger-and-panel wrap, NOT the composer region, so a click on the textarea or any other footer control also dismisses it. Escape is handled by the panel's own onKeyDown.",
   },
   workspacePicker: {
     surface: "workspacePicker",
@@ -212,18 +220,27 @@ export function evaluateOutsideClose(args: {
 export function evaluateComposerDismiss(input: {
   readonly permissionMenuOpen: boolean;
   readonly insidePermissionWrap: boolean;
+  readonly addMenuOpen: boolean;
+  readonly insideAddWrap: boolean;
   readonly insideComposerRegion: boolean;
 }): {
   readonly closeComposerMenu: boolean;
   readonly closePermissionMenu: boolean;
   readonly closeMentionRange: boolean;
 } {
-  if (input.permissionMenuOpen) {
-    // Only the trigger and the popover body count as inside this surface.
+  // Two anchored dropdowns first: while either is open the click is judged
+  // against its OWN trigger-and-body wrap, never against the region. A region
+  // test would swallow every click in the composer and leave the panel stuck.
+  const anchored = input.permissionMenuOpen
+    ? { surface: "permissionMenu" as const, inside: input.insidePermissionWrap }
+    : input.addMenuOpen
+      ? { surface: "composerMenu" as const, inside: input.insideAddWrap }
+      : undefined;
+  if (anchored) {
     const closes = evaluateOutsideClose({
-      surface: "permissionMenu",
+      surface: anchored.surface,
       kind: "pointerdown",
-      insideContainer: input.insidePermissionWrap,
+      insideContainer: anchored.inside,
     }) === "close";
     return {
       closeComposerMenu: closes,
@@ -232,7 +249,7 @@ export function evaluateComposerDismiss(input: {
     };
   }
   if (input.insideComposerRegion) {
-    // Caret moved within the composer: the two region-anchored surfaces stay.
+    // Caret moved within the composer: the region-anchored surface stays.
     return {
       closeComposerMenu: false,
       closePermissionMenu: false,

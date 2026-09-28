@@ -99,6 +99,7 @@ export interface WebuiModelPickerEntry {
   readonly variant?: string;
   readonly supportedVariants?: readonly string[];
   readonly effortOptions?: readonly string[];
+  readonly defaultEffort?: string;
   readonly contextWindowOptions?: readonly number[];
   readonly contextWindowOptionHints?: Readonly<Record<string, string>>;
   readonly contextLimit?: number;
@@ -110,6 +111,8 @@ export interface WebuiModelPickerEntry {
 export interface WebuiModelPickerDraft {
   readonly variant?: string;
   readonly contextLimit?: number;
+  /** null resets to the model's configured default effort. */
+  readonly thinkingEffort?: string | null;
 }
 
 /* Session & message wire types — the loader shape the transport returns. */
@@ -349,6 +352,7 @@ export interface WebuiModelSelectionRequest {
   readonly modelId: string;
   readonly variant?: string;
   readonly contextLimit?: number;
+  readonly thinking?: { readonly effort?: string } | null;
   readonly sessionId?: string;
 }
 

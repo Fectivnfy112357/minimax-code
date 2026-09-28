@@ -2,29 +2,20 @@
  * Composer-side model picker. Mirrors the desktop's two-column popover:
  *
  *   ┌─ models ──────────┬─ detail ──────────────────┐
- *   │ ● MiniMax-M3       │ 思考  [on/off]              │
- *   │   MiniMax-M2.7-…   │ 上下文窗口                  │
- *   │   MiniMax-M2.7     │   ● 512K                  │
- *   │   OpenCode Go      │   ○ 1M  用量较高           │
- *   └────────────────────┴────────────────────────────┘
+ *   │ ● MiniMax-M3       │ 上下文窗口                 │
+ *   │   MiniMax-M2.7-…   │ 512K                      │
+ *   │   MiniMax-M2.7     │ 1M                    ✓   │
+ *   │   OpenCode Go      ├─ 推理等级                 │
+ *   │                    │ default                   │
+ *   └────────────────────┴───────────────────────────┘
  *
- * The left list is the commit action: it folds the per-model drafts
- * (`variant`, `contextLimit`) into a single `selectModel` RPC, then closes
- * the popover. The right panel surfaces fields that already ride on every
- * `WebuiModelEntry`:
- *   - `effortOptions` / `thinkingConfig` (思考 levels). Toggle or chip clicks
- *     just update the focused model's local draft — they don't persist until
- *     the user commits via the left list. For binary on/off, the picker maps
- *     the choice onto the wire `variant` ("thinking" / "").
- *   - `contextWindowOptions` / `contextWindowOptionHints` (上下文窗口). The
- *     selected token count rides on the same `selectModel` payload via
- *     `contextLimit`; the runtime accepts it through the v2 contract so
- *     subsequent `listModels` echoes the new value back.
+ * Model choices and their settings share a compact vertical menu. Selecting a
+ * model closes the menu; changing thinking or context immediately commits the
+ * focused model's draft through the same `selectModel` operation.
  *
- * Drafts live in a `useState` map keyed by `providerId/modelId/variant`.
- * They only reset when the popover transitions from open to closed; the
- * 2-second `listModels` refresh in `app.tsx` does not invalidate them
- * because the persisted selection already round-trips through the runtime.
+ * Drafts live in a `useState` map keyed by `providerId/modelId/variant` so a
+ * setting remains responsive while the runtime refreshes its model catalog.
+ * The runtime projection is the source of truth after the menu is reopened.
  */
 import {
   useEffect,
@@ -52,6 +43,10 @@ export interface ModelPickerProps {
     model: WebuiModelPickerEntry,
     draft: WebuiModelPickerDraft,
   ) => void;
+  readonly onSettingChange: (
+    model: WebuiModelPickerEntry,
+    draft: WebuiModelPickerDraft,
+  ) => void;
   readonly triggerLabel?: string;
 }
 
@@ -69,7 +64,9 @@ function resolveEffortOptions(
   model: WebuiModelPickerEntry,
 ): readonly string[] {
   const explicit = model.effortOptions ?? [];
-  if (explicit.length > 0) return explicit;
+  if (explicit.length > 0) {
+    return explicit.includes("default") ? explicit : ["default", ...explicit];
+  }
   // The runtime reports switchable thinking via `thinkingConfig.mode` +
   // `supportedVariants`. Treat any model that supports both an empty and a
   // non-empty variant as a binary "off / on" toggle so the picker still
@@ -88,6 +85,9 @@ function resolveCurrentEffort(model: WebuiModelPickerEntry): string | undefined 
   if (options.length === 0) return undefined;
   const thinking = model.thinking?.effort?.trim();
   if (thinking && options.includes(thinking)) return thinking;
+  if (options.includes("default")) return "default";
+  const defaultEffort = model.defaultEffort?.trim();
+  if (defaultEffort && options.includes(defaultEffort)) return defaultEffort;
   return model.variant === "thinking"
     ? options.includes("on")
       ? "on"
@@ -115,9 +115,8 @@ function variantForEffort(
   if (thinkingOn && (effort === "on" || effort === "off")) {
     return effort === "on" ? "thinking" : "";
   }
-  // Multi-level efforts (low/high/max, …) are not part of the wire variant.
-  // The picker keeps them in local draft; the parent will see no variant
-  // change because variant is undefined for these models.
+  // Multi-level efforts (low/high/max, …) are not part of the wire variant;
+  // their value is carried by the thinking.effort selection instead.
   return undefined;
 }
 
@@ -125,6 +124,7 @@ export function WebuiModelPicker({
   models,
   selected,
   onSelect,
+  onSettingChange,
   triggerLabel,
 }: ModelPickerProps): ReactElement {
   const [open, setOpen] = useState(false);
@@ -136,11 +136,9 @@ export function WebuiModelPicker({
   const triggerId = useId();
   const menuId = useId();
 
-  // Reset drafts only when the popover closes — not on every parent
-  // re-render. The runtime's `listModels` refresh updates the model list
-  // every two seconds; if we cleared drafts on each refresh the user's
-  // pending toggle/radio choice would snap back to the previous server
-  // value, which is exactly the bug this hook used to cause.
+  // Keep the local mirror through model-catalog refreshes while the menu is
+  // open; each setting change is also committed immediately to the runtime.
+  // Drop the mirror on close so reopening always starts from persisted state.
   useEffect(() => {
     if (open) return;
     setDrafts({});
@@ -188,6 +186,7 @@ export function WebuiModelPicker({
       ...patch,
     };
     setDrafts((current) => ({ ...current, [focusedKeyString]: next }));
+    onSettingChange(focusedModel, next);
   };
 
   const handleSelectModel = (model: WebuiModelPickerEntry) => {
@@ -205,6 +204,11 @@ export function WebuiModelPicker({
 
   const focusedEffort = (() => {
     if (!focusedModel) return undefined;
+    if (focusedDraft.thinkingEffort !== undefined) {
+      if (focusedDraft.thinkingEffort !== null)
+        return focusedDraft.thinkingEffort;
+      return "default";
+    }
     if (focusedDraft.variant !== undefined) {
       // The user has committed an "off" draft → variant === "" → effort "off".
       return focusedDraft.variant === "thinking" ? "on" : "off";
@@ -295,8 +299,8 @@ export function WebuiModelPicker({
             {focusedModel ? (
               <>
                 {focusedEffortOptions.length > 0 ? (
-                  <div className="webui-model-detail-row">
-                    <span className="webui-model-detail-label">思考</span>
+                  <div className="webui-model-detail-row webui-model-setting-effort">
+                    <span className="webui-model-detail-label">推理等级</span>
                     {focusedEffortOptions.length === 2 &&
                     focusedEffortOptions.includes("off") &&
                     focusedEffortOptions.includes("on") &&
@@ -321,7 +325,7 @@ export function WebuiModelPicker({
                     ) : (
                       <div
                         role="radiogroup"
-                        aria-label="思考"
+                        aria-label="推理等级"
                         className="webui-model-effort-group"
                       >
                         {focusedEffortOptions.map((option) => {
@@ -332,7 +336,7 @@ export function WebuiModelPicker({
                               type="button"
                               role="radio"
                               aria-checked={active}
-                              className={`webui-model-effort-chip ${active ? "is-active" : ""}`}
+                              className="webui-model-effort-option"
                               onClick={() => {
                                 if (!focusedModel) return;
                                 const variant = variantForEffort(
@@ -341,10 +345,18 @@ export function WebuiModelPicker({
                                 );
                                 updateFocusedDraft({
                                   ...(variant !== undefined ? { variant } : {}),
+                                  ...(option === "default"
+                                    ? { thinkingEffort: null }
+                                    : option === "off" || option === "on"
+                                      ? {}
+                                      : { thinkingEffort: option }),
                                 });
                               }}
                             >
                               {option}
+                              {active ? (
+                                <span aria-hidden="true" className="webui-model-context-tick">✓</span>
+                              ) : null}
                             </button>
                           );
                         })}
@@ -353,7 +365,7 @@ export function WebuiModelPicker({
                   </div>
                 ) : null}
                 {focusedContextOptions.length > 0 ? (
-                  <div className="webui-model-detail-row">
+                  <div className="webui-model-detail-row webui-model-setting-context">
                     <span className="webui-model-detail-label">上下文窗口</span>
                     <div
                       role="radiogroup"

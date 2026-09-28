@@ -243,6 +243,7 @@ export interface WebuiRuntimeCliService {
     readonly modelId: string;
     readonly variant?: string;
     readonly contextLimit?: number;
+    readonly thinking?: { readonly effort?: string } | null;
     readonly sessionId?: string;
   }): Promise<{ readonly success?: boolean }>;
   getSessionUsage(request: {

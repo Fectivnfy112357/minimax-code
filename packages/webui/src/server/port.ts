@@ -703,6 +703,13 @@ export interface WebuiModelEntry {
   readonly selected?: boolean;
   readonly enabled?: boolean;
   readonly variant?: string;
+  readonly effortOptions?: readonly string[];
+  readonly defaultEffort?: string;
+  readonly contextWindowOptions?: readonly number[];
+  readonly contextWindowOptionHints?: Readonly<Record<string, string>>;
+  readonly contextLimit?: number;
+  readonly thinkingConfig?: { readonly mode?: string };
+  readonly thinking?: { readonly effort?: string };
   readonly providerName?: string;
   readonly status?: {
     readonly state?: string;
@@ -847,6 +854,7 @@ export interface WebuiHarnessPort {
     readonly modelId: string;
     readonly variant?: string;
     readonly contextLimit?: number;
+    readonly thinking?: { readonly effort?: string } | null;
     readonly sessionId?: string;
   }): Promise<{ readonly success?: boolean }>;
   getSessionUsage(request: {

@@ -80,11 +80,14 @@ import {
   WebuiIconCheck,
   WebuiIconChevronDown,
   WebuiIconCommandGoal,
+  WebuiIconCommandPlan,
   WebuiIconFolder,
   WebuiIconPermissionAuto,
   WebuiIconPermissionFull,
   WebuiIconPermissionRequest,
+  WebuiIconPlugins,
   WebuiIconSend,
+  WebuiIconSkillGeneric,
   type WebuiIconProps,
 } from "../icons.js";
 import { OutputError } from "./OutputError.js";
@@ -349,12 +352,17 @@ export function WebuiWorkspaceDirectoryBrowser({
             {error}
           </p>
         ) : null}
-        <div className="webui-commit-dialog-actions">
-          <button type="button" onClick={onCancel}>
+        <div className="webui-workspace-browser-actions">
+          <button
+            type="button"
+            className="webui-workspace-browser-action"
+            onClick={onCancel}
+          >
             取消
           </button>
           <button
             type="button"
+            className="webui-workspace-browser-action webui-workspace-browser-action--primary"
             onClick={submitManualPath}
           >
             使用此目录
@@ -411,12 +419,17 @@ export function WebuiWorkspaceDirectoryBrowser({
       {listing?.truncated ? (
         <p className="webui-composer-menu-empty">子目录过多，仅显示前若干项</p>
       ) : null}
-      <div className="webui-commit-dialog-actions">
-        <button type="button" onClick={onCancel}>
+      <div className="webui-workspace-browser-actions">
+        <button
+          type="button"
+          className="webui-workspace-browser-action"
+          onClick={onCancel}
+        >
           取消
         </button>
         <button
           type="button"
+          className="webui-workspace-browser-action webui-workspace-browser-action--primary"
           disabled={!listing}
           onClick={() => {
             if (listing) onSelect(listing.dir);
@@ -589,6 +602,10 @@ export function WebuiComposer({
   // dropdown hinged to the footer button, so "inside" means "inside this wrap",
   // not "anywhere in the composer".
   const permissionWrapRef = useRef<HTMLDivElement | null>(null);
+  // The `+` menu's own container: the attach button plus the panel it opens.
+  // Distinct from `composerRegionRef` on purpose — a dropdown hinged to that
+  // button dismisses on any other click, the textarea included.
+  const composerAddWrapRef = useRef<HTMLDivElement | null>(null);
   // The workspace picker's own container: the 选择文件夹 trigger plus whichever
   // panel it has open (the 最近 list or the directory browser). The picker has
   // to be judged against THIS, not `composerRegionRef` — see the effect below.
@@ -1141,6 +1158,8 @@ export function WebuiComposer({
       const dismiss = evaluateComposerDismiss({
         permissionMenuOpen,
         insidePermissionWrap: permissionWrapRef.current?.contains(event.target) === true,
+        addMenuOpen: Boolean(composerMenu),
+        insideAddWrap: composerAddWrapRef.current?.contains(event.target) === true,
         insideComposerRegion: composerRegionRef.current?.contains(event.target) === true,
       });
       if (!dismiss.closeComposerMenu && !dismiss.closePermissionMenu && !dismiss.closeMentionRange) {
@@ -1686,29 +1705,6 @@ export function WebuiComposer({
           onChange={(event) => { void addFiles(event.currentTarget.files); event.currentTarget.value = ""; }}
         />
         {sessionId && goalEnabled && goal ? <WebuiGoalBanner goal={goal} patchGoal={patchGoal} clearGoal={clearGoal} onCleared={clearLocalGoal} interactionBlocked={Boolean(questionnaire || permissions.length > 0)} /> : null}
-        {composerMenu ? (
-          <div className="webui-composer-menu" role="menu" aria-label={composerMenu === "root" ? "添加附件或技能" : composerMenu === "skills" ? "技能" : "插件"} data-webui-composer-menu={composerMenu} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); setComposerMenu(undefined); } }}>
-            {composerMenu === "root" ? <>
-              <button type="button" role="menuitem" onClick={() => { setComposerMenu(undefined); fileInputRef.current?.click(); }}>添加文件或图片</button>
-              <button type="button" role="menuitem" onClick={() => setComposerMenu("skills")}>技能 <span aria-hidden="true">›</span></button>
-              <button type="button" role="menuitem" onClick={() => setComposerMenu("plugins")}>插件 <span aria-hidden="true">›</span></button>
-              <div role="separator" />
-              <button type="button" role="menuitem" onClick={() => { setComposerMenu(undefined); activateGoalMode(); }}>目标</button>
-              <button type="button" role="menuitem" onClick={() => { setComposerMenu(undefined); chooseCommand("plan"); }}>计划</button>
-            </> : composerMenu === "skills" ? <>
-              <button type="button" role="menuitem" className="webui-composer-menu-back" onClick={() => setComposerMenu("root")}>‹ 技能</button>
-              {skillsMenuLoading ? <div className="webui-composer-menu-empty">正在加载技能…</div> : skillsMenuError ? <div className="webui-composer-menu-empty" role="alert">{skillsMenuError}</div> : slashSkills.length ? slashSkills.map((skill) => <button key={skill.name} type="button" role="menuitem" onClick={() => { setComposerMenu(undefined); insertAtCaret(`/${skill.name}`); textareaRef.current?.focus(); }}>{skill.displayName ?? skill.name}</button>) : <div className="webui-composer-menu-empty">没有已安装的技能</div>}
-              <div role="separator" />
-              <button type="button" role="menuitem" onClick={() => { setComposerMenu(undefined); onOpenPluginManagement?.("skills"); }}>管理技能</button>
-              <button type="button" role="menuitem" onClick={() => { setComposerMenu(undefined); onOpenPluginManagement?.("skills"); }}>添加技能</button>
-            </> : <>
-              <button type="button" role="menuitem" className="webui-composer-menu-back" onClick={() => setComposerMenu("root")}>‹ 插件</button>
-              {pluginsLoading ? <div className="webui-composer-menu-empty">正在加载插件…</div> : pluginsError ? <div className="webui-composer-menu-empty" role="alert">{pluginsError}</div> : installedPlugins.length ? installedPlugins.map((plugin) => <button key={plugin.name} type="button" role="menuitem" title={plugin.description} onClick={() => { setComposerMenu(undefined); insertAtCaret(`@${plugin.name}`); textareaRef.current?.focus(); }}>{plugin.displayName}</button>) : <div className="webui-composer-menu-empty">{pluginManagement ? "没有已安装的插件" : "插件目录暂不可用"}</div>}
-              <div role="separator" />
-              <button type="button" role="menuitem" onClick={() => { setComposerMenu(undefined); onOpenPluginManagement?.("plugins"); }}>添加插件</button>
-            </>}
-          </div>
-        ) : null}
         <form
           onSubmit={submit}
           onDragOver={(event) => { if (event.dataTransfer.files.length) event.preventDefault(); }}
@@ -1905,6 +1901,7 @@ export function WebuiComposer({
                 className="flex w-full items-center gap-3 px-3 pt-1"
                 data-webui-composer-toolbar="true"
               >
+                <div className="webui-composer-add-wrap" ref={composerAddWrapRef}>
                 <button
                   type="button"
                   aria-label="添加附件或技能"
@@ -1920,6 +1917,37 @@ export function WebuiComposer({
                 >
                   <WebuiIconAttach />
                 </button>
+        {/* The panel lives inside the trigger's wrap rather than at the end of
+         * the section. Anchoring it to the `+` button means it always clears
+         * that button — the old `bottom: 56px` was measured from the composer
+         * region, so the panel grew over the `+` and the permission pill as
+         * soon as the workspace bar changed the region's height. The wrap is
+         * also the surface's container for outside-close, which is why a click
+         * inside the composer could not dismiss it. */}
+        {composerMenu ? (
+          <div className="webui-composer-menu" role="menu" aria-label={composerMenu === "root" ? "添加附件或技能" : composerMenu === "skills" ? "技能" : "插件"} data-webui-composer-menu={composerMenu} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); setComposerMenu(undefined); } }}>
+            {composerMenu === "root" ? <>
+              <button type="button" role="menuitem" onClick={() => { setComposerMenu(undefined); fileInputRef.current?.click(); }}><WebuiIconAttach className="webui-composer-menu-icon" />添加文件或图片</button>
+              <button type="button" role="menuitem" onClick={() => setComposerMenu("skills")}><WebuiIconSkillGeneric className="webui-composer-menu-icon" />技能 <span aria-hidden="true">›</span></button>
+              <button type="button" role="menuitem" onClick={() => setComposerMenu("plugins")}><WebuiIconPlugins className="webui-composer-menu-icon" />插件 <span aria-hidden="true">›</span></button>
+              <div role="separator" />
+              <button type="button" role="menuitem" onClick={() => { setComposerMenu(undefined); activateGoalMode(); }}><WebuiIconCommandGoal className="webui-composer-menu-icon" />目标</button>
+              <button type="button" role="menuitem" onClick={() => { setComposerMenu(undefined); chooseCommand("plan"); }}><WebuiIconCommandPlan className="webui-composer-menu-icon" />计划</button>
+            </> : composerMenu === "skills" ? <>
+              <button type="button" role="menuitem" className="webui-composer-menu-back" onClick={() => setComposerMenu("root")}>‹ 技能</button>
+              {skillsMenuLoading ? <div className="webui-composer-menu-empty">正在加载技能…</div> : skillsMenuError ? <div className="webui-composer-menu-empty" role="alert">{skillsMenuError}</div> : slashSkills.length ? slashSkills.map((skill) => <button key={skill.name} type="button" role="menuitem" onClick={() => { setComposerMenu(undefined); insertAtCaret(`/${skill.name}`); textareaRef.current?.focus(); }}>{skill.displayName ?? skill.name}</button>) : <div className="webui-composer-menu-empty">没有已安装的技能</div>}
+              <div role="separator" />
+              <button type="button" role="menuitem" onClick={() => { setComposerMenu(undefined); onOpenPluginManagement?.("skills"); }}>管理技能</button>
+              <button type="button" role="menuitem" onClick={() => { setComposerMenu(undefined); onOpenPluginManagement?.("skills"); }}>添加技能</button>
+            </> : <>
+              <button type="button" role="menuitem" className="webui-composer-menu-back" onClick={() => setComposerMenu("root")}>‹ 插件</button>
+              {pluginsLoading ? <div className="webui-composer-menu-empty">正在加载插件…</div> : pluginsError ? <div className="webui-composer-menu-empty" role="alert">{pluginsError}</div> : installedPlugins.length ? installedPlugins.map((plugin) => <button key={plugin.name} type="button" role="menuitem" title={plugin.description} onClick={() => { setComposerMenu(undefined); insertAtCaret(`@${plugin.name}`); textareaRef.current?.focus(); }}>{plugin.displayName}</button>) : <div className="webui-composer-menu-empty">{pluginManagement ? "没有已安装的插件" : "插件目录暂不可用"}</div>}
+              <div role="separator" />
+              <button type="button" role="menuitem" onClick={() => { setComposerMenu(undefined); onOpenPluginManagement?.("plugins"); }}>添加插件</button>
+            </>}
+          </div>
+        ) : null}
+                </div>
                 <div className="webui-composer-permission-wrap" ref={permissionWrapRef}>
                   <button
                     type="button"
@@ -1997,6 +2025,9 @@ export function WebuiComposer({
                     models={enabledModels}
                     selected={selectedModel}
                     onSelect={(model, draft) =>
+                      void handleSelectModel(model, draft)
+                    }
+                    onSettingChange={(model, draft) =>
                       void handleSelectModel(model, draft)
                     }
                   />

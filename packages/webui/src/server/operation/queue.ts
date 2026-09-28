@@ -110,6 +110,7 @@ export const selectModelOperation: WebuiOperation<
     readonly modelId: string;
     readonly variant?: string;
     readonly contextLimit?: number;
+    readonly thinking?: { readonly effort?: string } | null;
     readonly sessionId?: string;
   },
   { readonly success?: boolean }
@@ -156,6 +157,19 @@ export const selectModelOperation: WebuiOperation<
         message: "contextLimit must be a positive safe integer",
       };
     if (
+      candidate.thinking !== undefined &&
+      candidate.thinking !== null &&
+      (typeof candidate.thinking !== "object" ||
+        Array.isArray(candidate.thinking) ||
+        typeof (candidate.thinking as Record<string, unknown>).effort !== "string" ||
+        !(candidate.thinking as { effort: string }).effort.trim())
+    )
+      return {
+        ok: false,
+        code: WebuiErrorCode.invalidBody,
+        message: "thinking must be null or an object with an effort string",
+      };
+    if (
       candidate.sessionId !== undefined &&
       typeof candidate.sessionId !== "string"
     )
@@ -175,6 +189,11 @@ export const selectModelOperation: WebuiOperation<
         ...(typeof candidate.contextLimit === "number"
           ? { contextLimit: candidate.contextLimit }
           : {}),
+        ...(candidate.thinking === null
+          ? { thinking: null }
+          : candidate.thinking !== undefined
+            ? { thinking: { effort: (candidate.thinking as { effort: string }).effort } }
+            : {}),
         ...(typeof candidate.sessionId === "string"
           ? { sessionId: candidate.sessionId }
           : {}),
