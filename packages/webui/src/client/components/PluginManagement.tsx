@@ -73,7 +73,6 @@ export function PluginManagement({
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
   const [data, setData] = useState<Row[]>([]);
-  const [marketSkills, setMarketSkills] = useState<Row[]>([]);
   const [personalSkills, setPersonalSkills] = useState<Row[]>([]);
   const [marketPluginTotal, setMarketPluginTotal] = useState(0);
   const [showAllPlugins, setShowAllPlugins] = useState(false);
@@ -121,7 +120,6 @@ export function PluginManagement({
           request("listMarketplacePlugins", {
             source: InstalledPluginSource.OFFICIAL,
             limit: 100,
-            skillLimit: 8,
             keyword: query || undefined,
             category: category ? MARKETPLACE_CATEGORY[category] : undefined,
           }),
@@ -140,7 +138,6 @@ export function PluginManagement({
               installedNames.has(nameOf(item).toLowerCase()),
           })),
         };
-        setMarketSkills(rows(market, "marketplaceSkills").slice(0, 8));
         setMarketPluginTotal(
           typeof (market as Row)?.pluginTotal === "number"
             ? ((market as Row).pluginTotal as number)
@@ -180,7 +177,6 @@ export function PluginManagement({
             })),
           };
           setPersonalSkills(rows(skills, "skills"));
-          setMarketSkills([]);
         } else
           result = await request("listInstalledPlugins", {
             limit: 100,
@@ -216,10 +212,7 @@ export function PluginManagement({
                 ? "servers"
                 : "agents";
       setData(rows(result, key));
-      if (area !== "plugins") {
-        setMarketSkills([]);
-        setPersonalSkills([]);
-      }
+      if (area !== "plugins") setPersonalSkills([]);
       if (area === "agents") setSelectedAgent(rows(result, key)[0]);
     } catch (cause) {
       setData([]);
@@ -427,6 +420,16 @@ export function PluginManagement({
     }
   };
 
+  // Switching the marketplace catalogue. The plugin category filter belongs to
+  // the plugin list, so it is cleared with the switch rather than left applied
+  // to a list it cannot narrow.
+  const selectMarketCatalog = (catalog: "plugins" | "skills") => {
+    setArea(catalog);
+    setView("market");
+    setCategory("");
+    setShowAllPlugins(false);
+  };
+
   const openCreate = (target: Area) => {
     setArea(target);
     setView("personal");
@@ -485,18 +488,24 @@ export function PluginManagement({
           </>
         ) : (
           <>
-            <div className="webui-plugin-header-tabs">
+            {/* The marketplace is a catalogue of two kinds of thing, so the
+             * header picks one: plugins, or skills. They used to share a single
+             * page with the skills appended below the plugin grid, which meant
+             * one list to scroll and one search box claiming to cover both.
+             * Market/personal is still reachable — it is the 管理 view, and its
+             * own header keeps the 市场/个人 pair. */}
+            <div className="webui-plugin-header-tabs" aria-label="插件与技能">
               <button
-                aria-pressed={view === "market"}
-                onClick={() => setView("market")}
+                aria-pressed={area === "plugins"}
+                onClick={() => selectMarketCatalog("plugins")}
               >
-                市场
+                插件
               </button>
               <button
-                aria-pressed={view === "personal"}
-                onClick={() => setView("personal")}
+                aria-pressed={area === "skills"}
+                onClick={() => selectMarketCatalog("skills")}
               >
-                个人
+                技能
               </button>
             </div>
             <div className="webui-plugin-create-anchor">
@@ -588,35 +597,41 @@ export function PluginManagement({
           />
         </nav>
       ) : null}
-      {area === "plugins" && view === "market" ? (
-        <div className="webui-plugin-market-discovery">
-          <nav className="webui-plugin-category-filter" aria-label="市场分类">
-            {categories.map((item) => (
-              <button
-                key={item.id}
-                aria-pressed={category === item.id}
-                onClick={() => {
-                  setShowAllPlugins(false);
-                  setCategory(item.id);
-                }}
-              >
-                {item.label}
-              </button>
-            ))}
-          </nav>
-          <input
-            aria-label="搜索插件或技能"
-            placeholder="搜索插件或技能..."
-            value={query}
-            onChange={(event) => {
-              setShowAllPlugins(false);
-              setQuery(event.currentTarget.value);
-            }}
-          />
-        </div>
-      ) : null}
-      {area === "plugins" && view === "market" ? (
-        <h2 className="webui-plugin-market-heading">插件</h2>
+      {(area === "plugins" || area === "skills") && view === "market" ? (
+        <>
+          <div className="webui-plugin-market-discovery">
+            {/* Plugin categories do not apply to the skill hub, so the nav is
+             * the plugin catalogue's alone. The search box is shared. */}
+            {area === "plugins" ? (
+            <nav className="webui-plugin-category-filter" aria-label="市场分类">
+              {categories.map((item) => (
+                <button
+                  key={item.id}
+                  aria-pressed={category === item.id}
+                  onClick={() => {
+                    setShowAllPlugins(false);
+                    setCategory(item.id);
+                  }}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </nav>
+            ) : null}
+            <input
+              aria-label={area === "skills" ? "搜索技能" : "搜索插件"}
+              placeholder={area === "skills" ? "搜索技能..." : "搜索插件..."}
+              value={query}
+              onChange={(event) => {
+                setShowAllPlugins(false);
+                setQuery(event.currentTarget.value);
+              }}
+            />
+          </div>
+          <h2 className="webui-plugin-market-heading">
+            {area === "skills" ? "技能" : "插件"}
+          </h2>
+        </>
       ) : null}
       {area === "plugins" && view === "personal" && !managementOpen ? (
         <h2 className="webui-plugin-market-heading">插件</h2>
@@ -888,64 +903,14 @@ export function PluginManagement({
           })}
         </div>
       )}
-      {!busy && area === "plugins" && view === "market" ? (
-        <>
-          {marketPluginTotal > 8 ? (
-            <button
-              type="button"
-              className="webui-plugin-show-all"
-              onClick={() => setShowAllPlugins((value) => !value)}
-            >
-              {showAllPlugins ? "收起插件" : `查看全部 ${marketPluginTotal} 个`}
-            </button>
-          ) : null}
-          <section className="webui-plugin-market-skills">
-            <h2 className="webui-plugin-market-heading">技能</h2>
-            <div className="webui-plugin-market-skill-grid">
-              {marketSkills.map((item) => {
-                const name = nameOf(item);
-                const url = read(item, "url", "sourceUrl", "source_url");
-                return (
-                  <article key={`hub-skill-${name}`}>
-                    <div aria-hidden="true">▤</div>
-                    <h3>{read(item, "displayName", "display_name") || name}</h3>
-                    <p>
-                      {read(item, "creatorName", "creator_name") ||
-                        "@MiniMax Code"}
-                    </p>
-                    <button
-                      type="button"
-                      disabled={item.added === true || !url}
-                      onClick={() =>
-                        void mutate("installSkill", {
-                          url,
-                          displayName:
-                            read(item, "displayName", "display_name") ||
-                            undefined,
-                          publisherSourceType:
-                            typeof item.publisherSourceType === "number"
-                              ? item.publisherSourceType
-                              : typeof item.sourceType === "number"
-                                ? item.sourceType
-                                : undefined,
-                          isFromGit:
-                            item.isFromGit === true ||
-                            item.is_from_git === true,
-                          ...(item.creatorInfo &&
-                          typeof item.creatorInfo === "object"
-                            ? { creatorInfo: item.creatorInfo }
-                            : {}),
-                        })
-                      }
-                    >
-                      {item.added === true ? "已添加" : "添加"}
-                    </button>
-                  </article>
-                );
-              })}
-            </div>
-          </section>
-        </>
+      {!busy && area === "plugins" && view === "market" && marketPluginTotal > 8 ? (
+        <button
+          type="button"
+          className="webui-plugin-show-all"
+          onClick={() => setShowAllPlugins((value) => !value)}
+        >
+          {showAllPlugins ? "收起插件" : `查看全部 ${marketPluginTotal} 个`}
+        </button>
       ) : null}
       {!busy && area === "plugins" && view === "personal" ? (
         <section className="webui-plugin-market-skills webui-plugin-personal-skills">

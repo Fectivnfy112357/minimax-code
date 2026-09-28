@@ -1,25 +1,30 @@
 import { describe, expect, it } from "vitest";
 import {
   WEBUI_OUTSIDE_CLOSE_POLICIES,
+  evaluateComposerDismiss,
   evaluateOutsideClose,
   type WebuiOutsideCloseSurface,
 } from "../../src/client/projection/outside-close.js";
 
 /**
- * Pure tests for the four outside-close strategies.
+ * Pure tests for the five outside-close strategies.
  *
- * The four surfaces are: UserMenu, ModelPicker, SessionComposer
- * slash-popover, ContextMenu. Each has a slightly different mix of
- * subscribed event kinds and Escape handling. The tests pin the truth
- * table that lives in `outside-close.ts` and pin the contract that no
- * surface closes on a non-subscribed event (the listener is simply not
- * attached).
+ * The five surfaces are: UserMenu, ModelPicker, the SessionComposer
+ * permission popover, SessionComposer slash-popover, ContextMenu. Each has a
+ * slightly different mix of subscribed event kinds and Escape handling. The
+ * tests pin the truth table that lives in `outside-close.ts` and pin the
+ * contract that no surface closes on a non-subscribed event (the listener is
+ * simply not attached).
  *
  * Manual acceptance (out-of-band, can't be automated in this runner):
  *   - UserMenu: open the user menu, click outside the anchor → menu closes.
  *     Press Escape → menu closes.
  *   - ModelPicker: open the picker, click outside the root → picker closes.
  *     Press Escape → picker stays open (no keydown listener).
+ *   - Permission popover: open it from the composer footer, click the
+ *     textarea → popover closes. Click the trigger → toggles closed. Click a
+ *     row inside the popover → selects that mode. Click the header text or the
+ *     了解更多 link → popover stays open. Press Escape → popover closes.
  *   - Slash popover: type `/ask-` to open the popover, click outside the
  *     composer region → the `/ask-` segment is cleared and the popover
  *     disappears. Press Escape → the composer input handler treats Escape
@@ -31,11 +36,12 @@ import {
 const SURFACES: readonly WebuiOutsideCloseSurface[] = [
   "userMenu",
   "modelPicker",
+  "permissionMenu",
   "slashPopover",
   "contextMenu",
 ];
 
-describe("WEBUI_OUTSIDE_CLOSE_POLICIES — the four surfaces are all registered", () => {
+describe("WEBUI_OUTSIDE_CLOSE_POLICIES — the five surfaces are all registered", () => {
   for (const surface of SURFACES) {
     it(`registers policy for "${surface}"`, () => {
       expect(WEBUI_OUTSIDE_CLOSE_POLICIES[surface]).toBeDefined();
@@ -154,6 +160,167 @@ describe("ModelPicker — pointerdown outside closes; no keydown listener", () =
   });
 });
 
+describe("Permission popover — pointerdown outside its own wrap closes; keydown Escape closes", () => {
+  it("closes on pointerdown outside the trigger-and-popover wrap", () => {
+    expect(
+      evaluateOutsideClose({
+        surface: "permissionMenu",
+        kind: "pointerdown",
+        insideContainer: false,
+      }),
+    ).toBe("close");
+  });
+
+  it("ignores pointerdown inside the wrap (trigger or popover body)", () => {
+    expect(
+      evaluateOutsideClose({
+        surface: "permissionMenu",
+        kind: "pointerdown",
+        insideContainer: true,
+      }),
+    ).toBe("ignore");
+  });
+
+  it("closes on keydown Escape", () => {
+    expect(
+      evaluateOutsideClose({
+        surface: "permissionMenu",
+        kind: "keydown",
+        key: "Escape",
+        insideContainer: false,
+      }),
+    ).toBe("close");
+  });
+
+  it("ignores keydown with non-Escape keys", () => {
+    expect(
+      evaluateOutsideClose({
+        surface: "permissionMenu",
+        kind: "keydown",
+        key: "Enter",
+        insideContainer: false,
+      }),
+    ).toBe("ignore");
+  });
+
+  it("is `not-subscribed` for mousedown events (pointerdown only)", () => {
+    expect(
+      evaluateOutsideClose({
+        surface: "permissionMenu",
+        kind: "mousedown",
+        insideContainer: false,
+      }),
+    ).toBe("not-subscribed");
+  });
+});
+
+describe("evaluateComposerDismiss — the popover's container is its wrap, not the composer region", () => {
+  it("REGRESSION: a click inside the composer region but outside the wrap closes the popover", () => {
+    // The reported bug: the textarea click was tested against the composer
+    // region, read as "inside", and the popover stayed open.
+    expect(
+      evaluateComposerDismiss({
+        permissionMenuOpen: true,
+        insidePermissionWrap: false,
+        insideComposerRegion: true,
+      }),
+    ).toEqual({
+      closeComposerMenu: true,
+      closePermissionMenu: true,
+      closeMentionRange: true,
+    });
+  });
+
+  it("keeps the popover open when the click lands on the trigger or popover body", () => {
+    expect(
+      evaluateComposerDismiss({
+        permissionMenuOpen: true,
+        insidePermissionWrap: true,
+        insideComposerRegion: true,
+      }),
+    ).toEqual({
+      closeComposerMenu: false,
+      closePermissionMenu: false,
+      closeMentionRange: false,
+    });
+  });
+
+  it("closes the popover on a click entirely outside the composer", () => {
+    expect(
+      evaluateComposerDismiss({
+        permissionMenuOpen: true,
+        insidePermissionWrap: false,
+        insideComposerRegion: false,
+      }),
+    ).toEqual({
+      closeComposerMenu: true,
+      closePermissionMenu: true,
+      closeMentionRange: true,
+    });
+  });
+
+  it("keeps the region-anchored surfaces open on a click inside the region", () => {
+    // `composerMenu` and `mentionRange` must NOT regress into dismissing on an
+    // inside click — the caret moving is not a dismissal.
+    expect(
+      evaluateComposerDismiss({
+        permissionMenuOpen: false,
+        insidePermissionWrap: false,
+        insideComposerRegion: true,
+      }),
+    ).toEqual({
+      closeComposerMenu: false,
+      closePermissionMenu: false,
+      closeMentionRange: false,
+    });
+  });
+
+  it("closes everything on a click outside the composer with no surface open yet", () => {
+    // The listener is only attached while something is open, so this is not
+    // reachable in production — it pins the function's own fallback.
+    expect(
+      evaluateComposerDismiss({
+        permissionMenuOpen: false,
+        insidePermissionWrap: false,
+        insideComposerRegion: false,
+      }),
+    ).toEqual({
+      closeComposerMenu: true,
+      closePermissionMenu: true,
+      closeMentionRange: true,
+    });
+  });
+
+  it("ignores the region flag entirely while the popover is open", () => {
+    // The two containers must be independent: if the region were consulted
+    // here, the textarea click would be swallowed again.
+    const insideRegion = evaluateComposerDismiss({
+      permissionMenuOpen: true,
+      insidePermissionWrap: false,
+      insideComposerRegion: true,
+    });
+    const outsideRegion = evaluateComposerDismiss({
+      permissionMenuOpen: true,
+      insidePermissionWrap: false,
+      insideComposerRegion: false,
+    });
+    expect(insideRegion).toEqual(outsideRegion);
+  });
+
+  it("treats an unmounted container ref as outside, never as inside", () => {
+    // `permissionWrapRef.current?.contains(...)` yields `undefined` before the
+    // ref attaches; the component normalises that to `false`. A ref that read
+    // as "inside" would make the popover undismissable again.
+    expect(
+      evaluateComposerDismiss({
+        permissionMenuOpen: true,
+        insidePermissionWrap: undefined as unknown as boolean,
+        insideComposerRegion: undefined as unknown as boolean,
+      }).closePermissionMenu,
+    ).toBe(true);
+  });
+});
+
 describe("Slash popover — pointerdown outside closes; no keydown listener; close clears the slash segment", () => {
   it("closes on pointerdown outside the composer region", () => {
     expect(
@@ -254,7 +421,7 @@ describe("ContextMenu — mousedown outside closes; keydown Escape closes; point
 });
 
 describe("truth table — every (surface × event × inside) cell is exactly one of close / ignore / not-subscribed", () => {
-  // 4 surfaces × 3 event kinds × 2 inside states = 24 cells, all enumerated.
+  // 5 surfaces × 3 event kinds × 2 inside states, enumerated below.
   const cases: ReadonlyArray<{
     surface: WebuiOutsideCloseSurface;
     kind: "pointerdown" | "mousedown" | "keydown";
@@ -271,6 +438,12 @@ describe("truth table — every (surface × event × inside) cell is exactly one
     { surface: "modelPicker", kind: "pointerdown", inside: true },
     { surface: "modelPicker", kind: "mousedown", inside: false },
     { surface: "modelPicker", kind: "keydown", key: "Escape", inside: false },
+
+    { surface: "permissionMenu", kind: "pointerdown", inside: false },
+    { surface: "permissionMenu", kind: "pointerdown", inside: true },
+    { surface: "permissionMenu", kind: "mousedown", inside: false },
+    { surface: "permissionMenu", kind: "keydown", key: "Escape", inside: false },
+    { surface: "permissionMenu", kind: "keydown", key: "Tab", inside: false },
 
     { surface: "slashPopover", kind: "pointerdown", inside: false },
     { surface: "slashPopover", kind: "pointerdown", inside: true },
@@ -315,6 +488,13 @@ describe("policy catalogue — exactly the expected four subscribed kinds per su
     ]);
   });
 
+  it("Permission popover subscribes pointerdown + keydown", () => {
+    expect(WEBUI_OUTSIDE_CLOSE_POLICIES.permissionMenu.subscribedKinds).toEqual([
+      "pointerdown",
+      "keydown",
+    ]);
+  });
+
   it("Slash popover subscribes pointerdown only", () => {
     expect(WEBUI_OUTSIDE_CLOSE_POLICIES.slashPopover.subscribedKinds).toEqual([
       "pointerdown",
@@ -329,13 +509,17 @@ describe("policy catalogue — exactly the expected four subscribed kinds per su
   });
 });
 
-describe("onEscape flag — only UserMenu + ContextMenu flip it on", () => {
+describe("onEscape flag — UserMenu + ContextMenu + the permission popover flip it on", () => {
   it("UserMenu.onEscape is true", () => {
     expect(WEBUI_OUTSIDE_CLOSE_POLICIES.userMenu.onEscape).toBe(true);
   });
 
   it("ModelPicker.onEscape is undefined (no keydown listener)", () => {
     expect(WEBUI_OUTSIDE_CLOSE_POLICIES.modelPicker.onEscape).toBeUndefined();
+  });
+
+  it("PermissionMenu.onEscape is true (composer onKeyDown handles Escape)", () => {
+    expect(WEBUI_OUTSIDE_CLOSE_POLICIES.permissionMenu.onEscape).toBe(true);
   });
 
   it("SlashPopover.onEscape is undefined (no keydown listener)", () => {

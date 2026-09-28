@@ -498,9 +498,12 @@
     position: relative;
   }
 
-  /* The approval trigger. A grouped-surface pill with the current mode's own
-   * glyph, its label, and a chevron — the same three-part affordance the model
-   * picker uses, so both read as dropdowns. */
+  /* The approval trigger. A pill with the current mode's own glyph, its label,
+   * and a chevron — the same three-part affordance the model picker uses, so
+   * both read as dropdowns. The fill is a hover affordance, not a resting
+   * state: a permanent grey chip read as "always on" for what is only a passive
+   * selector, so the pill rests transparent like the `目标` button beside it and
+   * takes the grouped grey only under the pointer. */
   .webui-composer-permission-button {
     display: inline-flex;
     min-height: 32px;
@@ -509,7 +512,7 @@
     padding: 0 var(--spacing_6) 0 var(--spacing_8);
     border: 0;
     border-radius: var(--radius_full);
-    background: var(--bg_grouped_tertiary);
+    background: transparent;
     color: var(--text_default_secondary);
     font-size: var(--size_14);
     font-weight: var(--weight_medium);
@@ -517,7 +520,7 @@
   }
 
   .webui-composer-permission-button:hover:not(:disabled) {
-    background: var(--bg_grouped_secondary_elevated);
+    background: var(--bg_grouped_tertiary);
     color: var(--text_default_primary);
   }
 
@@ -527,17 +530,18 @@
   }
 
   /* `完全访问权限` is the one mode whose own row is orange in the popover, so
-   * the trigger matches it: the pill drops its grouped fill and the label, the
-   * glyph and the chevron all take the warning ramp. Without this the trigger
-   * would be the only place the selected mode is not signalled. */
+   * the trigger matches it: the label, the glyph and the chevron all take the
+   * warning ramp. Without this the trigger would be the only place the selected
+   * mode is not signalled. Only the colour is overridden — the base rule
+   * already supplies the transparent rest state and the grouped hover fill. The
+   * explicit `:hover` is required, not redundant: the base hover selector
+   * outranks a bare modifier class. */
   .webui-composer-permission-button--warning {
     padding-right: var(--spacing_4);
-    background: transparent;
     color: var(--text_status_warning);
   }
 
   .webui-composer-permission-button--warning:hover:not(:disabled) {
-    background: var(--bg_grouped_tertiary);
     color: var(--text_status_warning);
   }
 

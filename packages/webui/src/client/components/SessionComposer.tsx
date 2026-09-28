@@ -100,7 +100,7 @@ import {
   isTurnLive,
   looksLikeAbsoluteWorkspacePath,
 } from "../projection/composer-state.js";
-import { evaluateOutsideClose } from "../projection/outside-close.js";
+import { evaluateComposerDismiss, evaluateOutsideClose } from "../projection/outside-close.js";
 import {
   buildWebuiModelSelectionRequest,
 } from "../projection/action-requests.js";
@@ -574,6 +574,11 @@ export function WebuiComposer({
   const pendingMentionCaretRef = useRef<number>();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const composerRegionRef = useRef<HTMLDivElement | null>(null);
+  // The permission popover's own container: the trigger button plus the popover
+  // body. Distinct from `composerRegionRef` on purpose — the popover is a
+  // dropdown hinged to the footer button, so "inside" means "inside this wrap",
+  // not "anywhere in the composer".
+  const permissionWrapRef = useRef<HTMLDivElement | null>(null);
   const restorationKeyRef = useRef<string>();
   const fieldId = useId();
 
@@ -1111,10 +1116,25 @@ export function WebuiComposer({
     if (!composerMenu && !permissionMenuOpen && !mentionRange) return undefined;
     const onPointerDown = (event: PointerEvent) => {
       if (!(event.target instanceof Node)) return;
-      if (composerRegionRef.current?.contains(event.target)) return;
-      setComposerMenu(undefined);
-      setPermissionMenuOpen(false);
-      setMentionRange(undefined);
+      // The three surfaces share this listener but NOT their container: the
+      // `+` menu and the mention list are anchored to the textarea and stay
+      // open while the caret moves inside the composer, while the permission
+      // popover is a dropdown hinged to the footer button and dismisses on any
+      // other click, the textarea included. Judging all three against the
+      // composer region is what made the popover un-dismissable from inside
+      // the composer. The decision itself lives in `evaluateComposerDismiss`;
+      // see that function for the full rule.
+      const dismiss = evaluateComposerDismiss({
+        permissionMenuOpen,
+        insidePermissionWrap: permissionWrapRef.current?.contains(event.target) === true,
+        insideComposerRegion: composerRegionRef.current?.contains(event.target) === true,
+      });
+      if (!dismiss.closeComposerMenu && !dismiss.closePermissionMenu && !dismiss.closeMentionRange) {
+        return;
+      }
+      if (dismiss.closeComposerMenu) setComposerMenu(undefined);
+      if (dismiss.closePermissionMenu) setPermissionMenuOpen(false);
+      if (dismiss.closeMentionRange) setMentionRange(undefined);
     };
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
@@ -1861,7 +1881,7 @@ export function WebuiComposer({
                 >
                   <WebuiIconAttach />
                 </button>
-                <div className="webui-composer-permission-wrap">
+                <div className="webui-composer-permission-wrap" ref={permissionWrapRef}>
                   <button
                     type="button"
                     className={`webui-composer-permission-button${permissionMode === "bypassPermissions" ? " webui-composer-permission-button--warning" : ""}`}
