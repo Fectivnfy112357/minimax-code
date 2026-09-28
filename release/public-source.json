@@ -3516,6 +3516,7 @@
     "packages/webui/src/client/projection/composer-interactions.ts",
     "packages/webui/src/client/projection/composer-state.ts",
     "packages/webui/src/client/projection/effect-reducer.ts",
+    "packages/webui/src/client/projection/event-parsers.ts",
     "packages/webui/src/client/projection/file-line-navigation.ts",
     "packages/webui/src/client/projection/goal-state.ts",
     "packages/webui/src/client/projection/message-file-reference.ts",
