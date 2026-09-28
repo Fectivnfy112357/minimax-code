@@ -3528,6 +3528,7 @@
     "packages/webui/src/client/projection/shell-surface.ts",
     "packages/webui/src/client/projection/tool-projection.ts",
     "packages/webui/src/client/projection/transcript-projection.ts",
+    "packages/webui/src/client/projection/transcript-request-ownership.ts",
     "packages/webui/src/client/projection/transcript-shape.ts",
     "packages/webui/src/client/projection/usage-settings.ts",
     "packages/webui/src/client/projection/workspace-panel-state.ts",
