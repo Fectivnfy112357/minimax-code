@@ -17,6 +17,7 @@
 // behaviour (the `cancelled = true` path) is not asserted here, by
 // design.
 
+import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 
 import {
@@ -561,6 +562,44 @@ describe("W2 · trace 10 · reducer purity + cross-session rejection (no cleanup
     );
     expect(result.commands).toEqual([]);
     expect(result.state).toBe(before);
+  });
+});
+
+describe("D3 · watchEvents reduces each event against the latest stream", () => {
+  it("keeps a spawned child available to the following completion event", () => {
+    const source = readFileSync(
+      new URL("../../src/client/components/SessionComposer.tsx", import.meta.url),
+      "utf8",
+    );
+    const watchCallback = source.match(
+      /const unsubscribe = watchEvents\?\.\(\(event\) => \{([\s\S]*?)\n    \}, \(\) =>/u,
+    )?.[1];
+    expect(watchCallback).toBeDefined();
+    // 检查真实订阅回调从运行时 store 读取最新快照；事件序列断言其正确归约结果。
+    expect(watchCallback).toMatch(
+      /stream:\s*readSessionRuntimeState\(\s*sessionId\s*\?\?\s*HOME_SESSION_RUNTIME_KEY\s*,?\s*\)\.stream/u,
+    );
+
+    const spawned = event({
+      type: "session.spawned",
+      payload: {
+        sessionId: SESSION,
+        data: { sessionId: "child-1", agentName: "worker", status: "running" },
+      },
+    });
+    const completed = event({
+      type: "session.finish",
+      payload: { sessionId: SESSION, data: { sessionId: "child-1" } },
+    });
+    const first = reduceWebuiEffect(makeState(), spawned, SESSION);
+    const second = reduceWebuiEffect(first.state, completed, SESSION);
+
+    expect(first.state.stream.workspaceProgress.subagents).toEqual([
+      expect.objectContaining({ sessionId: "child-1", status: "running" }),
+    ]);
+    expect(second.state.stream.workspaceProgress.subagents).toEqual([
+      expect.objectContaining({ sessionId: "child-1", status: "completed" }),
+    ]);
   });
 });
 
