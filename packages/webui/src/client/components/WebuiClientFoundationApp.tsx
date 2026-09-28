@@ -1029,7 +1029,7 @@ export function WebuiClientFoundationApp(
             </div>
             {!homeMode ? (
               <div
-                className={`webui-expandable-motion webui-progress-panel-motion${progressPanelOpen ? " is-open" : ""}`}
+                className={`webui-progress-panel-motion${progressPanelOpen ? " is-open" : ""}`}
                 aria-hidden={!progressPanelOpen}
                 ref={(element) => element?.toggleAttribute("inert", !progressPanelOpen)}
               >

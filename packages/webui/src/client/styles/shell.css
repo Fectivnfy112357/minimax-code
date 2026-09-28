@@ -34,8 +34,9 @@
   .webui-workspace-panel { position: relative; display: flex; width: 50%; min-width: 0; min-height: 0; flex: 0 1 50%; flex-direction: column; overflow: hidden; border-left: 1px solid var(--border_default); background: var(--bg_default_primary); color: var(--text_default_primary); animation: webui-panel-enter-right 180ms cubic-bezier(.2, .7, .2, 1) both; }
   .webui-workspace-panel.is-expanded { position: fixed; inset: 0; }
   .webui-workspace-panel.is-expanded .webui-workspace-file-tree-panel { width: min(360px, 34vw); flex-basis: min(360px, 34vw); }
-  .webui-progress-panel-motion { position: absolute; top: 72px; right: 12px; z-index: 45; width: min(344px, calc(100% - 24px)); max-height: calc(100% - 84px); overflow: hidden; transform-origin: top right; }
-  .webui-progress-overview-panel { position: static; display: flex; width: 100%; max-height: inherit; flex-direction: column; overflow: auto; border: 0; background: transparent; padding: 0; }
+  .webui-progress-panel-motion { position: absolute; top: 72px; right: 12px; z-index: 45; display: block; width: min(344px, calc(100% - 24px)); max-height: calc(100% - 84px); overflow-x: hidden; overflow-y: auto; clip-path: inset(0 0 100% 0 round 16px); opacity: 0; pointer-events: none; transition: clip-path 180ms cubic-bezier(.2, .7, .2, 1), opacity 140ms ease-out; }
+  .webui-progress-panel-motion.is-open { clip-path: inset(0 0 0 0 round 16px); opacity: 1; pointer-events: auto; }
+  .webui-progress-overview-panel { position: static; display: flex; width: 100%; flex-direction: column; overflow: visible; border: 0; background: transparent; padding: 0; }
   .webui-session-has-progress-panel { box-sizing: border-box; padding-right: 368px; }
   .webui-workspace-panel-header, .webui-workspace-panel-actions, .webui-workspace-tabs, .webui-workspace-tab { display: flex; align-items: center; }
   .webui-workspace-panel-header { position: relative; z-index: 2; min-height: 56px; flex: 0 0 56px; justify-content: space-between; gap: var(--spacing_8); border-bottom: 1px solid var(--border_default); padding: 0 var(--spacing_8); }
@@ -157,7 +158,7 @@
   .webui-file-preview-line-active { display: inline-block; width: 100%; background: var(--bg_interaction_tertiary_selected); }
   .webui-workspace-content [aria-current="true"] { color: var(--text_label_accent_default); }
   .webui-workspace-content ul { list-style: none; margin: 0; padding: 0; }
-  .webui-progress-overview-card { position: relative; display: flex; width: 100%; max-height: none; min-height: 0; flex-shrink: 0; flex-direction: column; overflow-x: hidden; overflow-y: auto; border: .5px solid var(--border_default); border-radius: 16px; background: var(--bg_grouped_secondary_elevated); padding: 6px; box-shadow: 0 6px 24px rgb(0 0 0 / 8%); color: var(--text_default_primary); }
+  .webui-progress-overview-card { position: relative; display: flex; width: 100%; flex-direction: column; border: .5px solid var(--border_default); border-radius: 16px; background: var(--bg_grouped_secondary_elevated); padding: 6px; box-shadow: 0 6px 24px rgb(0 0 0 / 8%); color: var(--text_default_primary); }
   .webui-environment-panel, .webui-progress-panel, .webui-subagents-panel { display: flex; flex-shrink: 0; flex-direction: column; overflow: hidden; }
   .webui-environment-panel + .webui-progress-panel { border-top: 1px solid var(--border_light); }
   .webui-progress-panel + .webui-subagents-panel { border-top: 1px solid var(--border_light); }
@@ -206,7 +207,6 @@
   .webui-expandable-motion { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows 180ms cubic-bezier(.2, .7, .2, 1), opacity 140ms ease-out; }
   .webui-expandable-motion > * { min-height: 0; overflow: hidden; }
   .webui-expandable-motion.is-open { grid-template-rows: 1fr; opacity: 1; }
-  .webui-progress-panel-motion > .webui-progress-overview-panel { overflow: auto; }
   .webui-file-tree-row:hover { background: var(--bg_interaction_tertiary_hover); color: var(--text_default_primary); }
   .webui-file-tree-row.is-selected { background: var(--bg_interaction_tertiary_selected); color: var(--text_default_primary); }
   .webui-file-viewer { margin-top: var(--spacing_8); }
