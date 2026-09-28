@@ -4141,6 +4141,7 @@
   }
   .webui-plugin-management.is-marketplace .webui-plugin-grid {
     max-width: 768px;
+    row-gap: 12px;
   }
   .webui-plugin-market-heading {
     max-width: 768px;
@@ -4228,30 +4229,20 @@
     padding: 7px 15px;
     color: var(--text_default_primary);
   }
-  /* A marketplace card is a filled surface, not a divided list row: the grey
-   * band carries the card so the two-column grid reads as cards rather than as
-   * columns of a table. Measured off the target render at 1.25x — 60px tall,
-   * 8px corners, 12px of inset on each side. min-height is the measured floor,
-   * not a clamp: the title+description block is what actually sets the height.
-   * `--bg_grouped_tertiary` is gray_75/gray_800, the step below the page, so it
-   * survives dark mode; the hover layer is a translucent black over that fill
-   * rather than a fixed darker grey, which is what keeps the hover correct in
-   * both themes. */
+  /* Marketplace rows stay open at rest and reveal a rounded surface only
+   * while hovered or keyboard-focused. */
   .webui-plugin-management.is-marketplace .webui-plugin-grid .webui-plugin-row {
     min-height: 60px;
     gap: 12px;
-    border-radius: 8px;
-    background: var(--bg_grouped_tertiary);
+    border-radius: 12px;
+    background: transparent;
     padding: 8px 12px;
     transition: background-color 120ms ease;
   }
   .webui-plugin-management.is-marketplace
     .webui-plugin-grid
-    .webui-plugin-row:hover {
-    background-image: linear-gradient(
-      var(--bg_interaction_tertiary_hover),
-      var(--bg_interaction_tertiary_hover)
-    );
+    .webui-plugin-row:is(:hover, :focus-within) {
+    background-color: var(--bg_grouped_tertiary);
   }
   .webui-plugin-management.is-marketplace
     .webui-plugin-grid
@@ -4283,13 +4274,7 @@
     padding: 8px 16px;
     color: var(--text_default_primary);
   }
-  /* The card's action is a filled chip on the card's own grey, not the bordered
-   * outline the management lists use — it sits on a surface already, so the
-   * border would double the edge. Measured at 1.25x: 63x32px for a two-glyph
-   * label, 6px corners, no border. `--bg_interaction_tertiary_press` is
-   * `#0a0a0a14`, which composites to #e3e3e3 over the card's #f5f5f5 — the
-   * #e4e4e4 measured off the target render — and rebinds to a white overlay in
-   * dark mode, so it follows the card instead of staying light. */
+  /* Keep the action compact and legible against the transparent row. */
   .webui-plugin-management.is-marketplace .webui-plugin-grid .webui-plugin-row > button {
     height: 32px;
     border: 0;
