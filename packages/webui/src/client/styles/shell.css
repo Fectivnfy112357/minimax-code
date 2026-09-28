@@ -3751,6 +3751,27 @@
   .webui-plugin-management.is-marketplace .webui-plugin-header-inner {
     max-width: none;
     min-height: 32px;
+    /* Inset from the rail. The marketplace row has no horizontal padding on
+     * its container, so without this the segmented control sits flush against
+     * the rail. Left only: the close button is positioned against this row's
+     * padding box, so padding on the right would not move it anyway. */
+    padding-left: var(--spacing_24);
+  }
+  /* The base segment sizing is tuned for the 960px management view; at the top
+   * of the marketplace it reads oversized. An explicit button height keeps the
+   * track at 38px whatever the inherited line-height does. */
+  .webui-plugin-management.is-marketplace .webui-plugin-header-tabs {
+    gap: 2px;
+    padding: 3px;
+  }
+  .webui-plugin-management.is-marketplace .webui-plugin-header-tabs button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 64px;
+    height: 32px;
+    padding: 0 14px;
+    font-size: 14px;
   }
   .webui-plugin-management.is-marketplace .webui-plugin-create-anchor {
     gap: 8px;
