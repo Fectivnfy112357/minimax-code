@@ -185,7 +185,10 @@ describe("W0 · stylesheet composition", () => {
 
 describe("W0 · structural declarations W5 must preserve", () => {
   it("keeps the rail at the desktop's fixed width", () => {
-    expect(declaration(winning(".webui-rail").body, "width")).toBe("256px");
+    // The shell markup pins the same value via `w-[240px]`, so the two must
+    // keep agreeing — a rail that is 240 in CSS but 256 in markup renders at
+    // whichever wins, which is how the two drifted apart in the first place.
+    expect(declaration(winning(".webui-rail").body, "width")).toBe("240px");
   });
 
   it("reserves a non-overlapping right gutter while the progress panel floats", () => {
@@ -196,9 +199,11 @@ describe("W0 · structural declarations W5 must preserve", () => {
     expect(declaration(winning(".webui-session-layout").body, "width")).toBe(
       "100%",
     );
+    // Must stay wider than the floating progress panel itself, or the panel
+    // would sit on top of the transcript instead of beside it.
     expect(
       declaration(winning(".webui-session-has-progress-panel").body, "padding-right"),
-    ).toBe("368px");
+    ).toBe("312px");
 
     const viewport = winning(".webui-session-scroll-viewport");
     expect(declaration(viewport.body, "min-height")).toBe("0");
@@ -239,7 +244,9 @@ describe("W0 · structural declarations W5 must preserve", () => {
     expect(declaration(emptyState.body, "text-align")).toBe("center");
 
     const messageList = winning(".webui-session-layout .message-list");
-    expect(declaration(messageList.body, "max-width")).toBe("768px");
+    // Narrowed 768 → 736 together with the rail so the measure still clears
+    // the collapsed rail plus the floating progress panel.
+    expect(declaration(messageList.body, "max-width")).toBe("736px");
     expect(declaration(messageList.body, "margin-left")).toBe("auto");
     expect(declaration(messageList.body, "margin-right")).toBe("auto");
     expect(declaration(messageList.body, "min-width")).toBe("0");
@@ -323,7 +330,9 @@ describe("W0 · at-rules and animations W5/W6 must not remove", () => {
       ".signin-card-collapsing, .signin-day-claimed-animation",
       ".webui-message-actions",
       ".webui-settings-content",
-      ".webui-settings-toggle span",
+      // Renamed from `.webui-settings-toggle span` when the toggle became the
+      // shared `.webui-toggle-switch` control.
+      ".webui-toggle-switch, .webui-toggle-switch > span",
     ]);
   });
 
@@ -335,10 +344,20 @@ describe("W0 · at-rules and animations W5/W6 must not remove", () => {
       ...transcriptCss.matchAll(/@keyframes\s+([A-Za-z0-9_-]+)/gu),
     ].map((match) => match[1]);
 
+    // NOTE: this enumerates *declared* @keyframes, not the ones actually
+    // referenced by an `animation` shorthand. `webui-popover-enter` is declared
+    // but currently referenced nowhere — recorded as dead CSS rather than
+    // deleted here, since removing it is a visual-affecting cleanup that
+    // belongs in its own change.
     expect(names.sort()).toEqual([
       "message-appear",
       "signin-card-collapse",
       "signin-day-claimed",
+      "webui-menu-enter",
+      "webui-modal-enter",
+      "webui-overlay-enter",
+      "webui-panel-enter-right",
+      "webui-popover-enter",
       "webui-settings-content-in",
       "webui-settings-search-highlight",
       "webui-signin-claim-spin",

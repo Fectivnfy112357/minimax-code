@@ -180,24 +180,28 @@ describe("plugin marketplace data paths", () => {
     );
   });
 
-  it("keeps 市场 / 个人 on the management header", () => {
-    // The pair still means something there — it is how you reach what is
-    // installed — so the split moved the control rather than deleting it.
-    // Bounded by the create-menu anchor that follows the header's two branches.
+  it("keeps a way into what is installed from the marketplace header", () => {
+    // What is installed used to be the 个人 half of a 市场/个人 tab pair. That
+    // pair is gone: the header now carries the 插件/技能 catalogue pair plus a
+    // single 管理 entry that opens the management view (`managementOpen` +
+    // `view: "personal"`). The point this assertion protects is unchanged —
+    // the installed view stays reachable from the marketplace header rather
+    // than being deleted — but the control is an entry button, not a pressed
+    // tab, so it has no `aria-pressed`.
+    //
+    // Bounded by the create-menu trigger, which is the last control in this
+    // button group. The old `webui-plugin-create-anchor` boundary sat at the
+    // *opening* of the group and so cut the 管理 button off entirely.
     const managingHeader = component.slice(
       component.indexOf("{managementOpen ? ("),
-      component.indexOf("webui-plugin-create-anchor"),
+      component.indexOf("webui-plugin-create-trigger"),
     );
-    // The label sits on its own line in the source, so match it the way the
-    // file is written rather than the way it renders.
-    expect(managingHeader).toMatch(/>\s*市场\s*<\/button>/);
-    expect(managingHeader).toMatch(/>\s*个人\s*<\/button>/);
-    expect(managingHeader).toContain('aria-pressed={view === "market"}');
-    expect(managingHeader).toContain('aria-pressed={view === "personal"}');
-    expect(managingHeader).toContain('setView("market")');
-    expect(managingHeader).toContain('setView("personal")');
-    // …and the marketplace branch in the same span is the catalogue pair.
+    // The marketplace branch in the same span is the catalogue pair.
     expect(managingHeader).toContain('onClick={() => selectMarketCatalog("plugins")}');
     expect(managingHeader).toContain('onClick={() => selectMarketCatalog("skills")}');
+    // The 管理 entry is what actually opens the installed view.
+    expect(managingHeader).toMatch(/>\s*管理\s*<\/button>/);
+    expect(managingHeader).toContain("setManagementOpen(true)");
+    expect(managingHeader).toContain('setView("personal")');
   });
 });

@@ -335,6 +335,11 @@ describe("UsagePanel states", () => {
   });
 
   it("renders real quota rows, credits and reset labels", () => {
+    // Reset stamps are relative to now on purpose: a hard-coded timestamp
+    // silently stops rendering its label once wall-clock time passes it, and
+    // `formatUsageResetLabel` deliberately renders nothing for a past stamp.
+    // A fixed stamp made this test a time bomb.
+    const now = Date.now();
     const html = render({
       status: "ready",
       result: {
@@ -346,19 +351,22 @@ describe("UsagePanel states", () => {
           fiveHour: {
             usedPercent: 96,
             totalPercent: 100,
-            resetAtMs: 1_790_078_400_000,
+            // 3h13m out, so the label reads `3小时13分后重置`.
+            resetAtMs: now + 3 * 3_600_000 + 13 * 60_000,
             unlimited: false,
           },
           weekly: {
             usedPercent: 38,
             totalPercent: 100,
-            resetAtMs: 1_790_524_800_000,
+            // 5d7h out, so the label reads `5天7小时后重置`.
+            resetAtMs: now + 5 * 86_400_000 + 7 * 3_600_000,
             unlimited: false,
           },
           video: {
             usedCount: 0,
             totalCount: 3,
-            resetAtMs: 1_790_092_800_000,
+            // 13m out, so the label reads `13分后重置`.
+            resetAtMs: now + 13 * 60_000,
             unlimited: false,
           },
         },
@@ -377,6 +385,35 @@ describe("UsagePanel states", () => {
     expect(html).not.toContain("7726.21");
     expect(html).toContain("后重置");
     expect(html).toContain("webui-user-menu-usage-hairline");
+  });
+
+  it("omits the reset label once the reset stamp is in the past", () => {
+    // The other half of the contract: a past stamp must render no label at
+    // all, so the popover never claims a reset that already happened.
+    const html = render({
+      status: "ready",
+      result: {
+        signedIn: true,
+        hasTokenPlan: true,
+        creditBalance: "7726.2119999999995",
+        quota: {
+          fiveHour: {
+            usedPercent: 96,
+            totalPercent: 100,
+            resetAtMs: Date.now() - 60_000,
+            unlimited: false,
+          },
+          weekly: {
+            usedPercent: 38,
+            totalPercent: 100,
+            resetAtMs: Date.now() - 60_000,
+            unlimited: false,
+          },
+        },
+      },
+    });
+    expect(html).toContain("5 小时限额");
+    expect(html).not.toContain("后重置");
   });
 
   it("renders the not-subscribed branch without quota rows", () => {

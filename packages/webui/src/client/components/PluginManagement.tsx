@@ -806,8 +806,9 @@ export function PluginManagement({
              * header picks one: plugins, or skills. They used to share a single
              * page with the skills appended below the plugin grid, which meant
              * one list to scroll and one search box claiming to cover both.
-             * Market/personal is still reachable — it is the 管理 view, and its
-             * own header keeps the 市场/个人 pair. */}
+             * What is installed is no longer the 个人 half of a 市场/个人 pair —
+             * that pair is gone. The 管理 button in the same button group opens
+             * the management view, which is where installed plugins live. */}
             <div className="webui-plugin-header-tabs" aria-label="插件与技能">
               <button
                 aria-pressed={area === "plugins"}

@@ -838,9 +838,9 @@ describe("WebUI shell — desktop anatomy", () => {
   it("sizes and colours the rail the way the desktop does", () => {
     const html = renderShell();
 
-    // 256px fixed, one step off the main surface, and no border between the two.
-    expect(html).toMatch(/data-webui-rail-width="256"/u);
-    expect(html).toMatch(/w-\[256px\]/u);
+    // 240px fixed, one step off the main surface, and no border between the two.
+    expect(html).toMatch(/data-webui-rail-width="240"/u);
+    expect(html).toMatch(/w-\[240px\]/u);
     expect(html).toMatch(/webui-rail-scroll/u);
     expect(html).toMatch(/bg-bg_default_scrim/u);
     // The main surface is the lightest step.
