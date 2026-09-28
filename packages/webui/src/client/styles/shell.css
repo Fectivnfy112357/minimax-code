@@ -4028,8 +4028,8 @@
   .webui-plugin-create-menu button:hover {
     background: var(--bg_interaction_tertiary_hover);
   }
-  /* Anchored to `webui-plugin-header-inner`, which is the positioned row — the
-   * header itself is now the sticky full-bleed bar. */
+  /* The back button is anchored to `webui-plugin-header-inner`, which is the
+   * positioned row — the header itself is the sticky full-bleed bar. */
   .webui-plugin-header-inner > button {
     position: absolute;
     left: 0;
@@ -4038,15 +4038,6 @@
     background: transparent;
     color: var(--text_default_secondary);
     font-size: 14px;
-  }
-  .webui-plugin-header-inner > .webui-plugin-close {
-    left: auto;
-    right: 0;
-    width: 28px;
-    height: 28px;
-    padding: 0;
-    font-size: 22px;
-    line-height: 1;
   }
   .webui-plugin-header h1 {
     margin: 0 auto;

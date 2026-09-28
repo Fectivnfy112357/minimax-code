@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import {
   InstalledPluginSource,
   MarketplaceCategory,
@@ -8,6 +8,20 @@ import type { WebuiTransport } from "../contracts.js";
 
 type Row = Record<string, unknown>;
 type Area = "plugins" | "skills" | "apps" | "mcp" | "agents";
+type PluginManagementSelection = {
+  readonly area: Area;
+  readonly view: "market" | "personal";
+  readonly query: string;
+  readonly category: string;
+};
+const sameSelection = (
+  left: PluginManagementSelection,
+  right: PluginManagementSelection,
+): boolean =>
+  left.area === right.area &&
+  left.view === right.view &&
+  left.query === right.query &&
+  left.category === right.category;
 const CATEGORIES: readonly { id: Area; label: string }[] = [
   { id: "plugins", label: "插件" },
   { id: "skills", label: "技能" },
@@ -63,11 +77,9 @@ const rows = (value: unknown, key: string): Row[] => {
 
 export function PluginManagement({
   transport,
-  onClose,
   initialArea = "plugins",
 }: {
   readonly transport?: WebuiTransport;
-  readonly onClose: () => void;
   readonly initialArea?: Area;
 }): ReactElement {
   const [area, setArea] = useState<Area>(initialArea);
@@ -76,8 +88,15 @@ export function PluginManagement({
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
+  const selectionRef = useRef<PluginManagementSelection>({
+    area,
+    view,
+    query,
+    category,
+  });
+  selectionRef.current = { area, view, query, category };
+  const reloadRequestRef = useRef(0);
   const [data, setData] = useState<Row[]>([]);
-  const [personalSkills, setPersonalSkills] = useState<Row[]>([]);
   const [marketPluginTotal, setMarketPluginTotal] = useState(0);
   /* The skill hub reports `hasMore`/`nextCursor` where the plugin marketplace
    * reports a `pluginTotal`, so a skill count is only known to be exact when the
@@ -122,6 +141,13 @@ export function PluginManagement({
     });
   };
   const reload = async () => {
+    const selection: PluginManagementSelection = { area, view, query, category };
+    const isSelectionCurrent = () =>
+      sameSelection(selectionRef.current, selection);
+    if (!isSelectionCurrent()) return;
+    const requestId = ++reloadRequestRef.current;
+    const isRequestCurrent = () =>
+      requestId === reloadRequestRef.current && isSelectionCurrent();
     setBusy(true);
     setError("");
     try {
@@ -149,21 +175,21 @@ export function PluginManagement({
               installedNames.has(nameOf(item).toLowerCase()),
           })),
         };
-        setMarketPluginTotal(
-          typeof (market as Row)?.pluginTotal === "number"
-            ? ((market as Row).pluginTotal as number)
-            : rows(market, "plugins").length,
-        );
-        setPersonalSkills([]);
+        if (isRequestCurrent()) {
+          setMarketPluginTotal(
+            typeof (market as Row)?.pluginTotal === "number"
+              ? ((market as Row).pluginTotal as number)
+              : rows(market, "plugins").length,
+          );
+        }
       } else if (area === "plugins") {
         if (view === "personal") {
-          const [installed, marketplace, skills] = await Promise.all([
+          const [installed, marketplace] = await Promise.all([
             request("listInstalledPlugins", {
               limit: 100,
               keyword: query || undefined,
             }),
             request("listMarketplacePlugins", { limit: 100 }),
-            request("listRuntimeSkills", {}),
           ]);
           const marketplaceIcons = new Map(
             rows(marketplace, "plugins").flatMap((item) => {
@@ -187,7 +213,6 @@ export function PluginManagement({
                 read(item, "iconUrl", "icon_url"),
             })),
           };
-          setPersonalSkills(rows(skills, "skills"));
         } else
           result = await request("listInstalledPlugins", {
             limit: 100,
@@ -200,14 +225,15 @@ export function PluginManagement({
             keyword: query || undefined,
           });
           const listed = rows(result, "skills");
-          setMarketSkillTotal(
-            result && typeof result === "object" && (result as Row).hasMore === true
-              ? null
-              : listed.length,
-          );
+          if (isRequestCurrent())
+            setMarketSkillTotal(
+              result && typeof result === "object" && (result as Row).hasMore === true
+                ? null
+                : listed.length,
+            );
         } else {
           result = await request("listRuntimeSkills", {});
-          setMarketSkillTotal(null);
+          if (isRequestCurrent()) setMarketSkillTotal(null);
         }
       } else if (area === "apps") result = await request("listApps");
       else if (area === "mcp")
@@ -230,18 +256,22 @@ export function PluginManagement({
               : area === "mcp"
                 ? "servers"
                 : "agents";
+      if (!isRequestCurrent()) return;
       setData(rows(result, key));
-      if (area !== "plugins") setPersonalSkills([]);
       if (area === "agents") setSelectedAgent(rows(result, key)[0]);
     } catch (cause) {
+      if (!isRequestCurrent()) return;
       setData([]);
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
-      setBusy(false);
+      if (isRequestCurrent()) setBusy(false);
     }
   };
   useEffect(() => {
     void reload();
+    return () => {
+      reloadRequestRef.current += 1;
+    };
   }, [area, view, query, category]);
   const filtered = useMemo(
     () =>
@@ -272,17 +302,21 @@ export function PluginManagement({
     action: WebuiPluginManagementAction,
     input: Row,
   ): Promise<boolean> => {
+    const selection: PluginManagementSelection = { area, view, query, category };
+    const isSelectionCurrent = () =>
+      sameSelection(selectionRef.current, selection);
     setBusy(true);
     setError("");
     try {
       await request(action, input);
-      await reload();
+      if (isSelectionCurrent()) await reload();
       return true;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      if (isSelectionCurrent())
+        setError(cause instanceof Error ? cause.message : String(cause));
       return false;
     } finally {
-      setBusy(false);
+      if (isSelectionCurrent()) setBusy(false);
     }
   };
   const confirmMutation = (
@@ -486,8 +520,7 @@ export function PluginManagement({
     >
       {/* Two elements because the bar is pinned: the header is the sticky,
        * full-bleed, opaque surface, and the row inside it keeps the width the
-       * content is laid out against. `webui-plugin-header-inner` is what the
-       * absolutely positioned close button anchors to. */}
+       * content is laid out against. */}
       <header className="webui-plugin-header">
         <div className="webui-plugin-header-inner">
         {managementOpen ? (
@@ -504,20 +537,6 @@ export function PluginManagement({
               ‹ 插件
             </button>
             <h1>管理</h1>
-            <div className="webui-plugin-header-tabs">
-              <button
-                aria-pressed={view === "market"}
-                onClick={() => setView("market")}
-              >
-                市场
-              </button>
-              <button
-                aria-pressed={view === "personal"}
-                onClick={() => setView("personal")}
-              >
-                个人
-              </button>
-            </div>
           </>
         ) : (
           <>
@@ -590,14 +609,6 @@ export function PluginManagement({
             </div>
           </>
         )}
-        <button
-          type="button"
-          className="webui-plugin-close"
-          aria-label="关闭插件管理"
-          onClick={onClose}
-        >
-          ×
-        </button>
         </div>
       </header>
       {managementOpen ? (
@@ -607,13 +618,11 @@ export function PluginManagement({
               key={item.id}
               aria-pressed={area === item.id}
               onClick={() => {
+                setData([]);
+                setBusy(true);
+                setError("");
                 setArea(item.id);
-                if (
-                  item.id === "mcp" ||
-                  item.id === "agents" ||
-                  item.id === "apps"
-                )
-                  setView("personal");
+                setView("personal");
               }}
             >
               <span>{item.label}</span>
@@ -946,37 +955,6 @@ export function PluginManagement({
               ? `查看全部${marketNoun}`
               : `查看全部 ${marketTotal} 个`}
         </button>
-      ) : null}
-      {!busy && area === "plugins" && view === "personal" ? (
-        <section className="webui-plugin-market-skills webui-plugin-personal-skills">
-          <h2 className="webui-plugin-market-heading">技能</h2>
-          {personalSkills.map((item) => {
-            const name = nameOf(item);
-            const isOn = enabled(item);
-            return (
-              <article key={`personal-skill-${name}`}>
-                <span>{read(item, "displayName", "display_name") || name}</span>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={isOn}
-                  aria-label={`启用 ${name}`}
-                  onClick={() =>
-                    void mutate("setSkillEnabled", {
-                      skillName: name,
-                      enabled: !isOn,
-                      ...(item.locationUri
-                        ? { locationUri: item.locationUri }
-                        : {}),
-                    })
-                  }
-                >
-                  {isOn ? "使用中" : "使用"}
-                </button>
-              </article>
-            );
-          })}
-        </section>
       ) : null}
       {dialog ? (
         <div

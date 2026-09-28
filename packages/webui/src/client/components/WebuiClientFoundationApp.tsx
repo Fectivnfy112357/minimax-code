@@ -698,9 +698,6 @@ export function WebuiClientFoundationApp(
   const openPluginManagement = useCallback((area: WebuiPluginManagementArea) => {
     dispatchShellSurface({ type: "open-plugin-management", area });
   }, [dispatchShellSurface]);
-  const closePluginManagement = useCallback(() => {
-    dispatchShellSurface({ type: "close-plugin-management" });
-  }, [dispatchShellSurface]);
   const [workspacePanelStates, setWorkspacePanelStates] = useState<WorkspacePanelSessionStates>(() => new Map());
   const sessionPanelState = selectedSessionId
     ? getWorkspacePanelSessionState(workspacePanelStates, selectedSessionId)
@@ -866,7 +863,7 @@ export function WebuiClientFoundationApp(
             data-webui-shell-region="surface"
             className="relative flex min-h-0 min-w-0 flex-1 flex-row"
           >
-            {pluginManagementArea ? <PluginManagement transport={transport} initialArea={pluginManagementArea} onClose={closePluginManagement} /> : <>
+            {pluginManagementArea ? <PluginManagement transport={transport} initialArea={pluginManagementArea} /> : <>
             {!homeMode && !workspacePanel.open ? <WebuiWorkspacePanelControls filePanelOpen={false} progressPanelOpen={progressPanelOpen} onOpenFiles={() => { setProgressPanelOpen(false); dispatchWorkspacePanel({ type: "open-primary-view", kind: "files", sessionId: selectedSessionId, workspaceDir: selectedSession?.workspaceDir }); }} onToggleProgressPanel={() => setProgressPanelOpen((open) => !open)} /> : null}
             <div className="relative flex h-full min-w-0 flex-1 flex-col">
               <div
