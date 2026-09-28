@@ -374,7 +374,7 @@ export function WebuiSessionTranscript({
   // records update the same message identities in this list while history
   // supplies the persisted fields and older messages.
   const turnLive = isTurnLive(streamPhase);
-  const previousTurnLiveRef = useRef(turnLive);
+  const previousTurnStateRef = useRef({ sessionId, turnLive });
   useEffect(() => {
     const token = coordinator.beginRequest(sessionId);
     if (!token) return;
@@ -420,9 +420,10 @@ export function WebuiSessionTranscript({
     );
   }, [coordinator, loadMessages, sessionId]);
   useEffect(() => {
-    const wasLive = previousTurnLiveRef.current;
-    previousTurnLiveRef.current = turnLive;
-    if (!wasLive || turnLive) return undefined;
+    const previous = previousTurnStateRef.current;
+    previousTurnStateRef.current = { sessionId, turnLive };
+    // 加载历史页只处理会话内的 live → idle 转换；切换会话由首屏请求负责。
+    if (previous.sessionId !== sessionId || !previous.turnLive || turnLive) return undefined;
     const token = coordinator.beginRequest(sessionId);
     if (!token) return undefined;
     void runWebuiTranscriptPageRequest(
@@ -503,7 +504,10 @@ export function WebuiSessionTranscript({
       '[data-webui-session-scroll="true"]',
     );
     if (!transcript || !viewport) return undefined;
-    if (!previousTurnLiveRef.current) {
+    if (
+      previousTurnStateRef.current.sessionId !== sessionId ||
+      !previousTurnStateRef.current.turnLive
+    ) {
       autoFollowRef.current = true;
       manualScrollIntentRef.current = false;
     }
