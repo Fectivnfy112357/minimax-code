@@ -1,5 +1,4 @@
 import { expect, test } from "@playwright/test";
-import { fixtureTransportInit } from "./fixture.mjs";
 
 test.beforeEach(async ({ page }) => {
   page.on("pageerror", (error) => console.error("BROWSER_PAGE_ERROR", error.stack ?? error.message));
@@ -7,10 +6,21 @@ test.beforeEach(async ({ page }) => {
 });
 
 async function openApp(page, hash = "#session=A") {
-  await page.addInitScript({ content: fixtureTransportInit });
   await page.goto(`/${hash}`);
+  await assertHarnessServer(page);
   await expect(page.locator("#webui-root")).toBeVisible();
   await expect.poll(() => page.evaluate(() => window.__fixture.requests.some((request) => request.operation === "listSessions"))).toBe(true);
+}
+
+async function configureFixture(page, setup) {
+  await page.addInitScript({ content: `window.__WEBUI_FIXTURE_SETUP__ ??= []; window.__WEBUI_FIXTURE_SETUP__.push((${setup.toString()}));` });
+}
+
+async function assertHarnessServer(page) {
+  const expectedServerId = test.info().config.metadata.webuiBrowserServerId;
+  const health = await page.request.get("http://127.0.0.1:4179/health");
+  expect(await health.json()).toEqual({ status: "ok", serverId: expectedServerId });
+  await expect.poll(() => page.evaluate(() => window.__WEBUI_TEST_SERVER_ID__)).toBe(expectedServerId);
 }
 
 async function switchSession(page, sessionId) {
@@ -18,9 +28,9 @@ async function switchSession(page, sessionId) {
 }
 
 test("A history is never rendered during B's delayed first page", async ({ page }) => {
-  await page.addInitScript({ content: fixtureTransportInit });
-  await page.addInitScript(() => window.__fixture.delayNext("getMessages", { id: "B" }));
+  await configureFixture(page, () => window.__fixture.delayNext("getMessages", { id: "B" }));
   await page.goto("/#session=A");
+  await assertHarnessServer(page);
   await expect(page.getByText("History A synthetic")).toBeVisible();
 
   await switchSession(page, "B");
@@ -34,13 +44,13 @@ test("A history is never rendered during B's delayed first page", async ({ page 
 });
 
 test("late A loadOlder completion leaves B messages, loading, and errors untouched", async ({ page }) => {
-  await page.addInitScript({ content: fixtureTransportInit });
-  await page.addInitScript(() => {
+  await configureFixture(page, () => {
     window.__fixture.setPage("A", { messages: [{ msgId: "history-A", role: "user", msgContent: "History A synthetic", timestamp: 1_700_000_000_001 }], hasMore: true, nextCursor: "cursor-A" });
-    window.__fixture.setPage("B", { messages: [{ msgId: "history-B", role: "user", msgContent: "History B synthetic", timestamp: 1_700_000_000_002 }], hasMore: false });
+    window.__fixture.setPage("B", { messages: [{ msgId: "history-B", role: "user", msgContent: "History B synthetic", timestamp: 1_700_000_000_002 }], hasMore: true, nextCursor: "cursor-B" });
     window.__fixture.delayNext("getMessages", { id: "A", before: "cursor-A" });
   });
   await page.goto("/#session=A");
+  await assertHarnessServer(page);
   await expect(page.getByText("History A synthetic")).toBeVisible();
   await page.getByRole("button", { name: "加载更早消息" }).click();
   await expect.poll(() => page.evaluate(() => window.__fixture.pending.some((item) => item.operation === "getMessages" && item.body.before === "cursor-A"))).toBe(true);
@@ -53,6 +63,7 @@ test("late A loadOlder completion leaves B messages, loading, and errors untouch
   await expect(page.getByText("Late A page synthetic")).toHaveCount(0);
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "正在加载更早消息" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "加载更早消息" })).toBeEnabled();
 });
 
 test("watchEvents keeps a spawned subagent through its next status event", async ({ page }) => {
@@ -74,9 +85,13 @@ test("stream DONE settles A after switching to B and A frames stay out of B", as
 
   await switchSession(page, "B");
   await expect(page.getByText("History B synthetic")).toBeVisible();
+  const bHistoryCount = await page.getByText("History B synthetic").count();
   await page.evaluate(() => window.__fixture.emitStream("A", { dataJson: JSON.stringify({ type: "agent_message", agent_message: { msg_id: "late-live-A", msg_content: "Late live A synthetic" } }) }));
   await expect(page.getByText("Late live A synthetic")).toHaveCount(0);
   await page.evaluate(() => window.__fixture.emitStream("A", { dataJson: "[DONE]" }));
+  await page.evaluate(() => window.__fixture.emitStream("A", { dataJson: JSON.stringify({ type: "agent_message", agent_message: { msg_id: "post-done-live-A", msg_content: "Post DONE A synthetic" } }) }));
+  await expect(page.getByText("Post DONE A synthetic")).toHaveCount(0);
+  await expect(page.getByText("History B synthetic")).toHaveCount(bHistoryCount);
 
   await switchSession(page, "A");
   await expect(page.getByText("思考中…")).toHaveCount(0);
@@ -89,7 +104,20 @@ test("home turn migrates its live writer once to the newly created session", asy
   await page.getByRole("button", { name: "发送" }).click();
   await expect.poll(() => page.evaluate(() => window.__fixture.requests.some((request) => request.operation === "createSession"))).toBe(true);
   await expect.poll(() => page.evaluate(() => window.__fixture.requests.some((request) => request.operation === "sendMessage" && request.body.id === "created-C"))).toBe(true);
+  await expect.poll(() => page.evaluate(() => window.__fixture.activeStreamSessionIds())).toContain("created-C");
+  await expect.poll(() => page.evaluate(() => window.__fixture.activeStreamSessionIds())).not.toContain("__webui-home__");
   await expect(page.getByText("思考中…")).toBeVisible();
+  await expect.poll(() => page.evaluate(() => new URLSearchParams(location.hash.replace(/^#/u, "")).get("session"))).toBe("created-C");
+  const createdTranscript = page.locator('[data-webui-transcript="created-C"]');
+  await expect(createdTranscript).toBeVisible();
+  await page.evaluate(() => window.__fixture.emitStream("created-C", { dataJson: JSON.stringify({ type: "agent_message", agent_message: { msg_id: "created-live-C", msg_content: "Transferred stream C synthetic" } }) }));
+  await expect(createdTranscript.getByText("Transferred stream C synthetic")).toBeVisible();
+  await page.evaluate(() => { window.location.hash = ""; });
+  await expect(page.getByPlaceholder("输入消息…（输入 / 唤起命令）")).toBeVisible();
+  await expect(page.getByText("Transferred stream C synthetic")).toHaveCount(0);
+  await expect(page.getByText("思考中…")).toHaveCount(0);
+  await switchSession(page, "created-C");
+  await expect(createdTranscript.getByText("Transferred stream C synthetic")).toBeVisible();
   await page.evaluate(() => window.__fixture.emitStream("created-C", { dataJson: "[DONE]" }));
   await expect(page.getByText("思考中…")).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => new URLSearchParams(location.hash.replace(/^#/u, "")).get("session"))).toBe("created-C");

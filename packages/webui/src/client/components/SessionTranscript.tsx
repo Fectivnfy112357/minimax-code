@@ -366,6 +366,21 @@ export function WebuiSessionTranscript({
   const loading = visibleState?.loading ?? true;
   const error = visibleState?.error;
   const transcriptRef = useRef<HTMLElement | null>(null);
+  const loadingLifecycleRef = useRef(0);
+  const beginLoadingLifecycle = () => ++loadingLifecycleRef.current;
+  const settleLoadingLifecycle = (
+    lifecycleId: number,
+    ownerSessionId: string,
+    generation: number,
+  ) => {
+    setTranscriptState((current) =>
+      lifecycleId === loadingLifecycleRef.current &&
+      current.ownerSessionId === ownerSessionId &&
+      current.generation === generation
+        ? { ...current, loading: false }
+        : current,
+    );
+  };
   const { stream } = useSessionRuntimeState(sessionId).state;
   const streamPhase = stream.phase;
   const autoFollowRef = useRef(true);
@@ -378,6 +393,7 @@ export function WebuiSessionTranscript({
   useEffect(() => {
     const token = coordinator.beginRequest(sessionId);
     if (!token) return;
+    const loadingLifecycleId = beginLoadingLifecycle();
     setTranscriptState((current) => {
       if (!coordinator.isCurrent(token)) return current;
       if (current.ownerSessionId !== token.ownerSessionId || current.generation !== token.generation) {
@@ -411,12 +427,11 @@ export function WebuiSessionTranscript({
           error: reason instanceof Error ? reason.message : String(reason),
         }));
       },
-      (commit) => {
-        commit((owned) => ({
-          ...owned,
-          loading: false,
-        }));
-      },
+      () => settleLoadingLifecycle(
+        loadingLifecycleId,
+        token.ownerSessionId,
+        token.generation,
+      ),
     );
   }, [coordinator, loadMessages, sessionId]);
   useEffect(() => {
@@ -426,6 +441,7 @@ export function WebuiSessionTranscript({
     if (previous.sessionId !== sessionId || !previous.turnLive || turnLive) return undefined;
     const token = coordinator.beginRequest(sessionId);
     if (!token) return undefined;
+    const loadingLifecycleId = beginLoadingLifecycle();
     void runWebuiTranscriptPageRequest(
       coordinator,
       token,
@@ -443,7 +459,11 @@ export function WebuiSessionTranscript({
           error: reason instanceof Error ? reason.message : String(reason),
         }));
       },
-      () => undefined,
+      () => settleLoadingLifecycle(
+        loadingLifecycleId,
+        token.ownerSessionId,
+        token.generation,
+      ),
     );
     return undefined;
   }, [coordinator, loadMessages, sessionId, turnLive]);
@@ -578,6 +598,7 @@ export function WebuiSessionTranscript({
         if (!requestedCursor) return;
         const token = coordinator.beginRequest(sessionId);
         if (!token) return;
+        const loadingLifecycleId = beginLoadingLifecycle();
         const viewport = transcriptRef.current?.closest<HTMLElement>(
           '[data-webui-session-scroll="true"]',
         );
@@ -612,12 +633,11 @@ export function WebuiSessionTranscript({
               error: reason instanceof Error ? reason.message : String(reason),
             }));
           },
-          (commit) => {
-            commit((owned) => ({
-              ...owned,
-              loading: false,
-            }));
-          },
+          () => settleLoadingLifecycle(
+            loadingLifecycleId,
+            token.ownerSessionId,
+            token.generation,
+          ),
         );
       }
     : undefined;

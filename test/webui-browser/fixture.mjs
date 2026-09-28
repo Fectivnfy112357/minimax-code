@@ -116,6 +116,11 @@ export function installFixtureTransport() {
     emitStream(sessionId, streamFrame) {
       for (const socket of sockets) if (socket.isStream && socket.request?.body?.id === sessionId && !socket.closed) socket.streamFrame(streamFrame);
     },
+    activeStreamSessionIds() {
+      return [...sockets]
+        .filter((socket) => socket.isStream && !socket.closed)
+        .map((socket) => socket.request?.body?.id);
+    },
   };
   window.WebSocket = FixtureWebSocket;
 }

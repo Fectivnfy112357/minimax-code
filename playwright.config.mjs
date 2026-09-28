@@ -1,4 +1,8 @@
 import { defineConfig } from "@playwright/test";
+import { randomUUID } from "node:crypto";
+
+const serverId = process.env.WEBUI_BROWSER_SERVER_ID ?? randomUUID();
+process.env.WEBUI_BROWSER_SERVER_ID = serverId;
 
 export default defineConfig({
   testDir: "./test/webui-browser",
@@ -6,6 +10,7 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   reporter: "list",
+  metadata: { webuiBrowserServerId: serverId },
   use: {
     baseURL: "http://127.0.0.1:4179",
     viewport: { width: 1440, height: 900 },
@@ -22,6 +27,7 @@ export default defineConfig({
     command: "node test/webui-browser/server.mjs",
     url: "http://127.0.0.1:4179/health",
     reuseExistingServer: !process.env.CI,
+    env: { ...process.env, WEBUI_BROWSER_SERVER_ID: serverId },
     timeout: 15_000,
   },
 });

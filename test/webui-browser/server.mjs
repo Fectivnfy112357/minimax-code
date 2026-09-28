@@ -1,14 +1,17 @@
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { installFixtureTransport } from "./fixture.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../dist-webui/client");
 const port = 4179;
+const serverId = process.env.WEBUI_BROWSER_SERVER_ID ?? randomUUID();
 const server = createServer(async (request, response) => {
   const pathname = new URL(request.url ?? "/", `http://127.0.0.1:${port}`).pathname;
   if (pathname === "/health") {
-    response.writeHead(200).end("ok");
+    response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ status: "ok", serverId }));
     return;
   }
   const name = pathname === "/" || pathname === "/index.html" ? "index.html" : path.basename(pathname);
@@ -21,7 +24,7 @@ const server = createServer(async (request, response) => {
     if (name === "index.html") {
       const html = body.toString().replace(
         "</head>",
-        '<script>window.__WEBUI_CONFIG__={websocketUrl:"ws://fixture.invalid",token:"synthetic-token"};</script></head>',
+        `<script>window.__WEBUI_TEST_SERVER_ID__=${JSON.stringify(serverId)};window.__WEBUI_CONFIG__={websocketUrl:"ws://fixture.invalid",token:"synthetic-token"};(${installFixtureTransport.toString()})();for(const setup of window.__WEBUI_FIXTURE_SETUP__??[])setup();</script></head>`,
       );
       body = Buffer.from(html);
     }
