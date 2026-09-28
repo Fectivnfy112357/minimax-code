@@ -63,6 +63,69 @@ function mergeQueryCollapseViews(
   return [...byQueryKey.values()];
 }
 
+export interface WebuiOwnedTranscriptState {
+  readonly ownerSessionId: string;
+  readonly generation: number;
+  readonly page: WebuiClientMessagePage;
+  readonly loading: boolean;
+  readonly error?: string;
+}
+
+export function getOwnedTranscriptPage(
+  state: WebuiOwnedTranscriptState,
+  sessionId: string,
+): WebuiClientMessagePage | undefined {
+  return state.ownerSessionId === sessionId ? state.page : undefined;
+}
+
+export function updateOwnedTranscriptState(
+  current: WebuiOwnedTranscriptState,
+  ownerSessionId: string,
+  generation: number,
+  update: (current: WebuiOwnedTranscriptState) => WebuiOwnedTranscriptState,
+): WebuiOwnedTranscriptState {
+  return current.ownerSessionId === ownerSessionId && current.generation === generation
+    ? update(current)
+    : current;
+}
+
+export function mergeOlderTranscriptPage(
+  current: WebuiOwnedTranscriptState,
+  olderPage: WebuiClientMessagePage,
+  requestedCursor: string,
+): { readonly state: WebuiOwnedTranscriptState; readonly error?: string } {
+  if (
+    (olderPage.messages?.length ?? 0) === 0 ||
+    (olderPage.hasMore && olderPage.nextCursor === requestedCursor)
+  ) {
+    return {
+      state: {
+        ...current,
+        page: { ...current.page, hasMore: false, nextCursor: undefined },
+      },
+      error: "没有找到更早的消息，请刷新会话后重试。",
+    };
+  }
+
+  return {
+    state: {
+      ...current,
+      page: {
+        messages: [
+          ...(olderPage.messages ?? []),
+          ...(current.page.messages ?? []),
+        ],
+        queryCollapseViews: mergeQueryCollapseViews(
+          current.page.queryCollapseViews ?? [],
+          olderPage.queryCollapseViews ?? [],
+        ),
+        nextCursor: olderPage.nextCursor,
+        hasMore: olderPage.hasMore,
+      },
+    },
+  };
+}
+
 /**
  * Historical questionnaire-response projection. Once the user submits a
  * questionnaire we render the question and the recorded answers inside the
@@ -198,11 +261,45 @@ export function WebuiSessionTranscript({
   readonly onOpenFile?: (input: { readonly sessionId: string; readonly workspaceDir: string; readonly reference: WebuiMessageFileReference }) => void;
   readonly onOpenTurnReview?: (command: Extract<WorkspacePanelCommand, { type: "open-turn-review" }>) => void;
 } & WebuiSessionTranscriptCapabilities): ReactElement {
-  const [page, setPage] = useState<WebuiClientMessagePage>(
-    () => initialMessages ?? {},
+  const generationRef = useRef({ ownerSessionId: sessionId, generation: 0 });
+  if (generationRef.current.ownerSessionId !== sessionId) {
+    generationRef.current = {
+      ownerSessionId: sessionId,
+      generation: generationRef.current.generation + 1,
+    };
+  }
+  const requestOwner = generationRef.current.ownerSessionId;
+  const requestGeneration = generationRef.current.generation;
+  const [transcriptState, setTranscriptState] = useState<WebuiOwnedTranscriptState>(
+    () => ({
+      ownerSessionId: sessionId,
+      generation: 0,
+      page: initialMessages ?? {},
+      loading: initialMessages === undefined,
+    }),
   );
-  const [loading, setLoading] = useState(initialMessages === undefined);
-  const [error, setError] = useState<string | undefined>();
+  const commitForGeneration = (
+    ownerSessionId: string,
+    generation: number,
+    update: (current: WebuiOwnedTranscriptState) => WebuiOwnedTranscriptState,
+  ) => {
+    setTranscriptState((current) => {
+      if (
+        generationRef.current.ownerSessionId !== ownerSessionId ||
+        generationRef.current.generation !== generation
+      ) return current;
+      return updateOwnedTranscriptState(current, ownerSessionId, generation, update);
+    });
+  };
+  const visibleState = transcriptState.ownerSessionId === sessionId &&
+      transcriptState.generation === requestGeneration
+    ? transcriptState
+    : undefined;
+  const visiblePage = visibleState
+    ? getOwnedTranscriptPage(visibleState, sessionId) ?? {}
+    : {};
+  const loading = visibleState?.loading ?? true;
+  const error = visibleState?.error;
   const transcriptRef = useRef<HTMLElement | null>(null);
   const { stream } = useSessionRuntimeState(sessionId).state;
   const streamPhase = stream.phase;
@@ -214,51 +311,70 @@ export function WebuiSessionTranscript({
   const turnLive = isTurnLive(streamPhase);
   const previousTurnLiveRef = useRef(turnLive);
   useEffect(() => {
-    let cancelled = false;
-    if (initialMessages === undefined) setLoading(true);
-    setError(undefined);
+    setTranscriptState((current) => {
+      if (current.ownerSessionId !== requestOwner || current.generation !== requestGeneration) {
+        return {
+          ownerSessionId: requestOwner,
+          generation: requestGeneration,
+          page: initialMessages ?? {},
+          loading: initialMessages === undefined,
+        };
+      }
+      return {
+        ...current,
+        loading: initialMessages === undefined ? true : current.loading,
+        error: undefined,
+      };
+    });
     void loadMessages({ id: sessionId })
       .then((nextPage) => {
-        if (!cancelled) setPage(nextPage);
+        commitForGeneration(requestOwner, requestGeneration, (owned) => ({
+          ...owned,
+          page: nextPage,
+        }));
       })
       .catch((reason: unknown) => {
-        if (!cancelled)
-          setError(reason instanceof Error ? reason.message : String(reason));
+        commitForGeneration(requestOwner, requestGeneration, (owned) => ({
+          ...owned,
+          error: reason instanceof Error ? reason.message : String(reason),
+        }));
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        commitForGeneration(requestOwner, requestGeneration, (owned) => ({
+          ...owned,
+          loading: false,
+        }));
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [loadMessages, sessionId]);
+  }, [loadMessages, requestGeneration, requestOwner, sessionId]);
   useEffect(() => {
     const wasLive = previousTurnLiveRef.current;
     previousTurnLiveRef.current = turnLive;
     if (!wasLive || turnLive) return undefined;
-    let cancelled = false;
     void loadMessages({ id: sessionId })
-      .then((nextPage) => { if (!cancelled) setPage(nextPage); })
+      .then((nextPage) => {
+        commitForGeneration(requestOwner, requestGeneration, (owned) => ({
+          ...owned,
+          page: nextPage,
+        }));
+      })
       .catch((reason: unknown) => {
-        if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
+        commitForGeneration(requestOwner, requestGeneration, (owned) => ({
+          ...owned,
+          error: reason instanceof Error ? reason.message : String(reason),
+        }));
       });
-    return () => { cancelled = true; };
-  }, [loadMessages, sessionId, turnLive]);
+    return undefined;
+  }, [loadMessages, requestGeneration, requestOwner, sessionId, turnLive]);
   const messages = useMemo(
-    () => projectWebuiTranscriptMessages(page, stream.messages, streamPhase !== "done"),
-    [page, stream.messages, streamPhase],
+    () => projectWebuiTranscriptMessages(visiblePage, stream.messages, streamPhase !== "done"),
+    [visiblePage, stream.messages, streamPhase],
   );
   const items = useMemo(
     () => messages.flatMap(projectWebuiMessage),
     [messages],
   );
-  // Per-message leaf-renderer input view. Both adapters in
-  // `projection/transcript-shape.ts` produce this shape; the historical
-  // adapter owns the persisted fields (`actions`, `initialDiff`,
-  // `attachments`), the live adapter owns the in-flight markers
-  // (`streaming`, `streamMessageId`, `messageRootId`). `MessageItem` reads
-  // the view through its `view` prop and falls back to legacy per-field
-  // props when the view is absent.
+  // 每条消息使用统一视图；历史适配器提供持久化字段，实时适配器提供流式标记。
+  // MessageItem 只通过 view 属性读取这些值。
   const turnViewsByMessageId = useMemo(
     () =>
       new Map<string, WebuiTurnView>(
@@ -273,8 +389,11 @@ export function WebuiSessionTranscript({
   // does: a process disclosure carrying the thinking and the tool steps, then
   // the assistant's markdown. A user turn is its own block.
   const queryDurationByMessageId = useMemo(
-    () => projectWebuiQueryDurations(page.messages ?? [], page.queryCollapseViews ?? []),
-    [page.messages, page.queryCollapseViews],
+    () => projectWebuiQueryDurations(
+      visiblePage.messages ?? [],
+      visiblePage.queryCollapseViews ?? [],
+    ),
+    [visiblePage.messages, visiblePage.queryCollapseViews],
   );
   const groups = useMemo(
     () => groupWebuiTranscriptItems(items, queryDurationByMessageId),
@@ -361,53 +480,55 @@ export function WebuiSessionTranscript({
             : "default",
     }));
   }, [groups, streamPhase]);
-  const loadOlder =
-    page.hasMore && page.nextCursor
-      ? () => {
-          if (loading) return;
-          const viewport = transcriptRef.current?.closest<HTMLElement>(
-            '[data-webui-session-scroll="true"]',
-          );
-          const previousScrollTop = viewport?.scrollTop;
-          setLoading(true);
-          setError(undefined);
-          void loadMessages({ id: sessionId, before: page.nextCursor })
-            .then((olderPage) => {
+  const loadOlder = visibleState?.page.hasMore && visibleState.page.nextCursor
+    ? () => {
+        if (loading) return;
+        const requestedCursor = visibleState.page.nextCursor;
+        if (!requestedCursor) return;
+        const ownerAtRequest = requestOwner;
+        const generationAtRequest = requestGeneration;
+        const viewport = transcriptRef.current?.closest<HTMLElement>(
+          '[data-webui-session-scroll="true"]',
+        );
+        const previousScrollTop = viewport?.scrollTop;
+        commitForGeneration(ownerAtRequest, generationAtRequest, (owned) => ({
+          ...owned,
+          loading: true,
+          error: undefined,
+        }));
+        void loadMessages({ id: ownerAtRequest, before: requestedCursor })
+          .then((olderPage) => {
+            commitForGeneration(
+              ownerAtRequest,
+              generationAtRequest,
+              (owned) => {
+                const result = mergeOlderTranscriptPage(owned, olderPage, requestedCursor);
+                return { ...result.state, error: result.error };
+              },
+            );
+            requestAnimationFrame(() => {
               if (
-                (olderPage.messages?.length ?? 0) === 0 ||
-                (olderPage.hasMore && olderPage.nextCursor === page.nextCursor)
-              ) {
-                setError("没有找到更早的消息，请刷新会话后重试。");
-                setPage((current) => ({
-                  ...current,
-                  hasMore: false,
-                  nextCursor: undefined,
-                }));
-                return;
-              }
-              setPage((current) => ({
-                messages: [
-                  ...(olderPage.messages ?? []),
-                  ...(current.messages ?? []),
-                ],
-                queryCollapseViews: mergeQueryCollapseViews(
-                  current.queryCollapseViews ?? [],
-                  olderPage.queryCollapseViews ?? [],
-                ),
-                nextCursor: olderPage.nextCursor,
-                hasMore: olderPage.hasMore,
-              }));
-              requestAnimationFrame(() => {
-                if (viewport?.isConnected && previousScrollTop !== undefined)
-                  viewport.scrollTop = previousScrollTop;
-              });
-            })
-            .catch((reason: unknown) => {
-              setError(reason instanceof Error ? reason.message : String(reason));
-            })
-            .finally(() => setLoading(false));
-        }
-      : undefined;
+                generationRef.current.ownerSessionId === ownerAtRequest &&
+                generationRef.current.generation === generationAtRequest &&
+                viewport?.isConnected &&
+                previousScrollTop !== undefined
+              ) viewport.scrollTop = previousScrollTop;
+            });
+          })
+          .catch((reason: unknown) => {
+            commitForGeneration(ownerAtRequest, generationAtRequest, (owned) => ({
+              ...owned,
+              error: reason instanceof Error ? reason.message : String(reason),
+            }));
+          })
+          .finally(() => {
+            commitForGeneration(ownerAtRequest, generationAtRequest, (owned) => ({
+              ...owned,
+              loading: false,
+            }));
+          });
+      }
+    : undefined;
   return (
     <section
       ref={transcriptRef}
