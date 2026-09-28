@@ -746,8 +746,8 @@ export function WebuiClientFoundationApp(
             <aside
               aria-label="Primary navigation"
               data-webui-shell-region="rail"
-              data-webui-rail-width={railCollapsed ? "64" : "256"}
-              className={`webui-rail relative z-50 flex h-full select-none flex-col overflow-visible bg-bg_default_scrim ${railCollapsed ? "w-[64px]" : "w-[256px]"}`}
+              data-webui-rail-width={railCollapsed ? "64" : "240"}
+              className={`webui-rail relative z-50 flex h-full select-none flex-col overflow-visible bg-bg_default_scrim ${railCollapsed ? "w-[64px]" : "w-[240px]"}`}
             >
               {/* The desktop keeps the rail controls above the first navigation row. */}
               <div className="flex w-full flex-shrink-0 flex-col pb-3">

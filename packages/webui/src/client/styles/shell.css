@@ -34,10 +34,10 @@
   .webui-workspace-panel { position: relative; display: flex; width: 50%; min-width: 0; min-height: 0; flex: 0 1 50%; flex-direction: column; overflow: hidden; border-left: 1px solid var(--border_default); background: var(--bg_default_primary); color: var(--text_default_primary); animation: webui-panel-enter-right 180ms cubic-bezier(.2, .7, .2, 1) both; }
   .webui-workspace-panel.is-expanded { position: fixed; inset: 0; }
   .webui-workspace-panel.is-expanded .webui-workspace-file-tree-panel { width: min(360px, 34vw); flex-basis: min(360px, 34vw); }
-  .webui-progress-panel-motion { position: absolute; top: 72px; right: 12px; z-index: 45; display: block; width: min(344px, calc(100% - 24px)); max-height: calc(100% - 84px); overflow-x: hidden; overflow-y: auto; clip-path: inset(0 0 100% 0 round 16px); opacity: 0; pointer-events: none; transition: clip-path 180ms cubic-bezier(.2, .7, .2, 1), opacity 140ms ease-out; }
+  .webui-progress-panel-motion { position: absolute; top: 56px; right: 12px; z-index: 45; display: block; width: min(288px, calc(100% - 24px)); max-height: calc(100% - 68px); overflow-x: hidden; overflow-y: auto; clip-path: inset(0 0 100% 0 round 16px); opacity: 0; pointer-events: none; transition: clip-path 180ms cubic-bezier(.2, .7, .2, 1), opacity 140ms ease-out; }
   .webui-progress-panel-motion.is-open { clip-path: inset(0 0 0 0 round 16px); opacity: 1; pointer-events: auto; }
   .webui-progress-overview-panel { position: static; display: flex; width: 100%; flex-direction: column; overflow: visible; border: 0; background: transparent; padding: 0; }
-  .webui-session-has-progress-panel { box-sizing: border-box; padding-right: 368px; }
+  .webui-session-has-progress-panel { box-sizing: border-box; padding-right: 312px; }
   .webui-workspace-panel-header, .webui-workspace-panel-actions, .webui-workspace-tabs, .webui-workspace-tab { display: flex; align-items: center; }
   .webui-workspace-panel-header { position: relative; z-index: 2; min-height: 56px; flex: 0 0 56px; justify-content: space-between; gap: var(--spacing_8); border-bottom: 1px solid var(--border_default); padding: 0 var(--spacing_8); }
   .webui-workspace-tabs { min-width: 0; flex: 1 1 auto; gap: var(--spacing_8); overflow: visible; }
@@ -387,11 +387,11 @@
   @media (max-width: 720px) { .webui-provider-form-provider-grid { grid-template-columns: minmax(0, 1fr); } .webui-provider-form-actions { flex-wrap: wrap; } }
   /* --------------------------------------------------------------- surfaces */
 
-  /* The rail: 256px, one step off the main surface, no border between them. */
+  /* Match the desktop navigation rail while keeping the main surface roomy. */
   .webui-rail {
     display: flex;
     flex-direction: column;
-    width: 256px;
+    width: 240px;
     background-color: var(--bg_default_scrim);
     transition: width 180ms cubic-bezier(.2, .7, .2, 1);
   }
@@ -1835,7 +1835,7 @@
   .webui-session-layout .message-list {
     width: 100%;
     min-width: 0;
-    max-width: 768px;
+    max-width: 736px;
     margin-right: auto;
     margin-left: auto;
     align-items: stretch;
