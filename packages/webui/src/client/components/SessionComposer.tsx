@@ -430,6 +430,7 @@ export function WebuiComposer({
   enqueueMessage,
   teamModeOff,
   listWorkspaceFileTree,
+  browseWorkspaceDirs,
   pluginManagement,
   getPermissionMode,
   setPermissionMode,
