@@ -3638,6 +3638,7 @@
     "scripts/build.mjs",
     "scripts/check-standalone-boundary.mjs",
     "scripts/check-webui-boundary.mjs",
+    "scripts/check-webui-css-equivalence.mjs",
     "scripts/check-windows-source-location.mjs",
     "scripts/ci-changes.mjs",
     "scripts/export-source-preview.mjs",
