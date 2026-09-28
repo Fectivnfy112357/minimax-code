@@ -69,6 +69,17 @@
     scrollbar-gutter: stable;
   }
 
+  /* Chromium/WebKit ignore the legacy scrollbar pseudo-elements whenever
+   * scrollbar-width is set to a value other than auto. Use those pseudo-
+   * elements there so the custom track and hidden arrow buttons take effect;
+   * browsers without them keep the standard thin scrollbar above. */
+  @supports selector(::-webkit-scrollbar) {
+    * {
+      scrollbar-width: auto;
+      scrollbar-color: auto;
+    }
+  }
+
   *::-webkit-scrollbar {
     width: 6px;
     height: 6px;
