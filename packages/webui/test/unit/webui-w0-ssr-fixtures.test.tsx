@@ -20,7 +20,13 @@ import {
   WebuiFeedbackActions,
   WebuiMessageActionButton,
 } from "../../src/client/components/MessageActions.js";
-import { WebuiQuestionnaireResponse } from "../../src/client/components/SessionTranscript.js";
+import {
+  WebuiQuestionnaireResponse,
+  getOwnedTranscriptPage,
+  mergeOlderTranscriptPage,
+  updateOwnedTranscriptState,
+  type WebuiOwnedTranscriptState,
+} from "../../src/client/components/SessionTranscript.js";
 import {
   WebuiActivityGroup,
   WebuiTurnProcess,
@@ -319,5 +325,108 @@ describe("W0 · SSR · WebuiQuestionnaireResponse", () => {
     );
 
     expect(html).toContain("(未提供)");
+  });
+});
+
+describe("WebUI transcript page session ownership", () => {
+  const page = (ids: readonly string[], cursor?: string) => ({
+    messages: ids.map((msgId) => ({ msgId })),
+    nextCursor: cursor,
+    hasMore: Boolean(cursor),
+  });
+
+  const state = (
+    ownerSessionId: string,
+    generation: number,
+    messages: readonly string[],
+    loading: boolean,
+    error?: string,
+  ): WebuiOwnedTranscriptState => ({
+    ownerSessionId,
+    generation,
+    page: page(messages, "cursor-a"),
+    loading,
+    error,
+  });
+
+  it("hides A history while B first page is still pending", () => {
+    const a = state("A", 1, ["a-history"], false);
+    const b = state("B", 2, [], true);
+
+    expect(getOwnedTranscriptPage(a, "B")).toBeUndefined();
+    expect(getOwnedTranscriptPage(b, "B")?.messages).toEqual([]);
+  });
+
+  it("ignores every late A completion after B owns the transcript", () => {
+    const b = state("B", 2, ["b-history"], true, "B error");
+    const lateSuccess = updateOwnedTranscriptState(b, "A", 1, () =>
+      state("A", 1, ["a-history"], false),
+    );
+    const lateCatch = updateOwnedTranscriptState(lateSuccess, "A", 1, (current) => ({
+      ...current,
+      error: "A error",
+    }));
+    const lateFinally = updateOwnedTranscriptState(lateCatch, "A", 1, (current) => ({
+      ...current,
+      loading: false,
+    }));
+
+    expect(lateFinally).toBe(b);
+    expect(lateFinally.page.messages?.map(({ msgId }) => msgId)).toEqual([
+      "b-history",
+    ]);
+    expect(lateFinally.loading).toBe(true);
+    expect(lateFinally.error).toBe("B error");
+  });
+
+  it("prepends same-session pages with cursor and collapse-view progression", () => {
+    const current = state("A", 1, ["newer"], false);
+    const currentPage = {
+      ...current,
+      page: {
+        ...current.page,
+        queryCollapseViews: [
+          { queryKey: "shared", currentTurnId: "new-turn", processingStartedAtMs: 2 },
+          { queryKey: "new", currentTurnId: "new-turn", processingStartedAtMs: 3 },
+        ],
+      },
+    };
+    const result = mergeOlderTranscriptPage(currentPage, {
+      messages: [{ msgId: "older" }],
+      queryCollapseViews: [
+        { queryKey: "shared", currentTurnId: "old-turn", processingStartedAtMs: 1 },
+        { queryKey: "old", currentTurnId: "old-turn", processingStartedAtMs: 0 },
+      ],
+      nextCursor: "cursor-older",
+      hasMore: true,
+    }, "cursor-a");
+
+    expect(result.error).toBeUndefined();
+    expect(result.state.page.messages?.map(({ msgId }) => msgId)).toEqual([
+      "older",
+      "newer",
+    ]);
+    expect(result.state.page.nextCursor).toBe("cursor-older");
+    expect(result.state.page.queryCollapseViews).toEqual([
+      { queryKey: "shared", currentTurnId: "old-turn", processingStartedAtMs: 1 },
+      { queryKey: "new", currentTurnId: "new-turn", processingStartedAtMs: 3 },
+      { queryKey: "old", currentTurnId: "old-turn", processingStartedAtMs: 0 },
+    ]);
+  });
+
+  it("keeps the no-progress error and disables further pagination", () => {
+    const current = state("A", 1, ["newer"], true);
+    const result = mergeOlderTranscriptPage(current, {
+      messages: [],
+      nextCursor: "cursor-a",
+      hasMore: true,
+    }, "cursor-a");
+
+    expect(result.error).toBe("没有找到更早的消息，请刷新会话后重试。");
+    expect(result.state.page.messages?.map(({ msgId }) => msgId)).toEqual([
+      "newer",
+    ]);
+    expect(result.state.page.hasMore).toBe(false);
+    expect(result.state.page.nextCursor).toBeUndefined();
   });
 });
