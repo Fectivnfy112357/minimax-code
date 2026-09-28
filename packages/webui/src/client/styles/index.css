@@ -42,6 +42,20 @@
  * This is a base-layer rule, not a component one: it is `*`-scoped, so it
  * belongs with preflight rather than in `shell.css`'s components block.
  *
+ * `scrollbar-gutter: stable` is part of the same policy, for the same reason.
+ * A custom `::-webkit-scrollbar` is a *classic* bar: it takes width out of the
+ * content box instead of floating over it (which is what the platform default
+ * does on macOS, and why this reflow is invisible there and new everywhere
+ * else). Any container whose content height crosses its overflow threshold —
+ * the plugin marketplace as a search narrows it, the transcript as a turn
+ * finishes or a session is cleared, a `pre` code view as you move between a
+ * short file and a long one — then re-lays-out horizontally, and centred
+ * content moves by half the bar's width. Reserving the gutter unconditionally
+ * makes the content box identical in both states, so nothing moves. The
+ * layout effect is inert on `html`/`body`: the shell mounts at `h-screen`, so
+ * the document itself never scrolls. The four sideways-only scrollers opt back
+ * out in `shell.css`, where a vertical gutter would be dead space.
+ *
  * The surfaces that deliberately show no bar are unaffected.
  * `.scrollbar-hide` and the `scrollbar-width: none` rules in `shell.css` are
  * class selectors, so they outrank both this `*` element rule and the
@@ -52,6 +66,7 @@
   * {
     scrollbar-width: thin;
     scrollbar-color: var(--utility_scrollbar) transparent;
+    scrollbar-gutter: stable;
   }
 
   *::-webkit-scrollbar {
