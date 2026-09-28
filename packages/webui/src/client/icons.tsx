@@ -129,6 +129,48 @@ export function WebuiIconChevronDown({ className }: WebuiIconProps): ReactElemen
   );
 }
 
+/** approval mode `请求批准` — a raised open hand, drawn on the 20-unit grid the
+ *  rest of the composer toolbar uses. */
+export function WebuiIconPermissionRequest({ className }: WebuiIconProps): ReactElement {
+  return (
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}>
+      <path
+        d="M8 17.6V15.6C6.8 15.2 6 14 5.6 12.6L4.4 10A1.1 1.1 0 0 1 6.6 10L7 10.6V4.6A1.05 1.05 0 0 1 9.1 4.6V8.4V3.2A1.05 1.05 0 0 1 11.2 3.2V8.4V4.2A1.05 1.05 0 0 1 13.3 4.2V8.4V6.6A0.85 0.85 0 0 1 15 6.6V11.6C15 14.2 13 16 10.4 16H9.2C8.8 16 8.4 15.8 8 15.6Z"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/** approval mode `帮我批准` — a command box carrying a `>` prompt. */
+export function WebuiIconPermissionAuto({ className }: WebuiIconProps): ReactElement {
+  return (
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}>
+      <rect x="2.9" y="3.9" width="14.2" height="12.2" rx="3" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M6.9 7.9 9.5 10l-2.6 2.1M11.4 12.6h2.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** approval mode `完全访问权限` — a shield carrying an exclamation mark. */
+export function WebuiIconPermissionFull({ className }: WebuiIconProps): ReactElement {
+  return (
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}>
+      <path
+        d="M10 2.6 16.4 4.7v4.7c0 3.7-2.7 6.6-6.4 8.1-3.7-1.5-6.4-4.4-6.4-8.1V4.7L10 2.6Z"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+      <path d="M10 7.4v3.8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <circle cx="10" cy="13.6" r="0.95" fill="currentColor" />
+    </svg>
+  );
+}
+
 /** composer send — the desktop's `send-button` glyph. */
 export function WebuiIconFile({ className }: WebuiIconProps): ReactElement {
   return (

@@ -77,9 +77,15 @@ import {
 } from "./ModelPicker.js";
 import {
   WebuiIconAttach,
+  WebuiIconCheck,
+  WebuiIconChevronDown,
   WebuiIconCommandGoal,
   WebuiIconFolder,
+  WebuiIconPermissionAuto,
+  WebuiIconPermissionFull,
+  WebuiIconPermissionRequest,
   WebuiIconSend,
+  type WebuiIconProps,
 } from "../icons.js";
 import { OutputError } from "./OutputError.js";
 import {
@@ -162,11 +168,46 @@ type ComposerMentionChoice =
 
 type WebuiComposerPermissionMode = "default" | "auto" | "bypassPermissions";
 
-const PERMISSION_MODE_LABEL: Readonly<Record<WebuiComposerPermissionMode, string>> = {
-  default: "主动询问",
-  auto: "智能授权",
-  bypassPermissions: "始终授权",
+const PERMISSION_MODE_ORDER = ["default", "auto", "bypassPermissions"] as const;
+
+interface WebuiComposerPermissionOption {
+  readonly label: string;
+  readonly description: string;
+  readonly Icon: (props: WebuiIconProps) => ReactElement;
+}
+
+/** The popover's own question, and where "了解更多" points. The docs page is the
+ *  public one the README already links; `/permission` is documented there. */
+const PERMISSION_MODE_QUESTION = "应如何批准 minimax code 操作?";
+const PERMISSION_MODE_LEARN_MORE = "了解更多";
+const PERMISSION_MODE_DOCS_URL = "https://agent.minimax.io/docs/cli/features";
+
+/** Ordered most-restrictive first, mirroring the `ask` / `auto` / `full` actions
+ *  the `/permission` command takes. */
+const PERMISSION_MODE_OPTION: Readonly<Record<WebuiComposerPermissionMode, WebuiComposerPermissionOption>> = {
+  default: {
+    label: "请求批准",
+    description: "编辑外部文件和使用互联网时始终询问",
+    Icon: WebuiIconPermissionRequest,
+  },
+  auto: {
+    label: "帮我批准",
+    description: "仅对检测到的风险操作请求批准",
+    Icon: WebuiIconPermissionAuto,
+  },
+  bypassPermissions: {
+    label: "完全访问权限",
+    description: "可不受限制地访问互联网和你电脑上的任何文件",
+    Icon: WebuiIconPermissionFull,
+  },
 };
+
+/** The trigger and the rows share one glyph per mode, so the pill always
+ *  previews the icon the popover marks as selected. */
+function PermissionModeIcon({ mode }: { readonly mode: WebuiComposerPermissionMode }): ReactElement {
+  const { Icon } = PERMISSION_MODE_OPTION[mode];
+  return <Icon className="webui-composer-permission-icon" />;
+}
 
 function readPermissionMode(value: unknown): WebuiComposerPermissionMode | undefined {
   const mode = typeof value === "string"
@@ -1823,8 +1864,8 @@ export function WebuiComposer({
                 <div className="webui-composer-permission-wrap">
                   <button
                     type="button"
-                    className="webui-composer-permission-button"
-                    aria-label="授权模式"
+                    className={`webui-composer-permission-button${permissionMode === "bypassPermissions" ? " webui-composer-permission-button--warning" : ""}`}
+                    aria-label={permissionMode ? `授权模式：${PERMISSION_MODE_OPTION[permissionMode].label}` : "授权模式"}
                     aria-haspopup="menu"
                     aria-expanded={permissionMenuOpen}
                     disabled={permissionUnavailable || permissionBusy || !permissionMode}
@@ -1836,15 +1877,46 @@ export function WebuiComposer({
                       setPermissionMenuOpen((open) => !open);
                     }}
                   >
-                    <span aria-hidden="true">↪</span>
-                    <span>{permissionMode ? PERMISSION_MODE_LABEL[permissionMode] : permissionUnavailable ? "授权不可用" : "读取授权模式…"}</span>
+                    {permissionMode ? <PermissionModeIcon mode={permissionMode} /> : <WebuiIconPermissionRequest className="webui-composer-permission-icon" />}
+                    <span>{permissionMode ? PERMISSION_MODE_OPTION[permissionMode].label : permissionUnavailable ? "授权不可用" : "读取授权模式…"}</span>
+                    <WebuiIconChevronDown className="webui-composer-permission-chevron" />
                   </button>
-                  {permissionMenuOpen ? <div className="webui-composer-permission-menu" role="menu" aria-label="授权模式" onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); setPermissionMenuOpen(false); } }}>
-                    {(["default", "auto", "bypassPermissions"] as const).map((mode) => <button key={mode} type="button" role="menuitemradio" aria-checked={permissionMode === mode} disabled={permissionBusy} onClick={() => void changePermissionMode(mode)}>
-                      <span>{mode === "default" ? "♧" : mode === "auto" ? "♢" : "↪"}</span>
-                      <span>{PERMISSION_MODE_LABEL[mode]}</span>
-                      <span className="webui-composer-permission-check" aria-hidden="true">{permissionMode === mode ? "✓" : ""}</span>
-                    </button>)}
+                  {permissionMenuOpen ? <div className="webui-composer-permission-menu" role="menu" aria-label={PERMISSION_MODE_QUESTION} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); setPermissionMenuOpen(false); } }}>
+                    <div className="webui-composer-permission-header">
+                      <span className="webui-composer-permission-question">{PERMISSION_MODE_QUESTION}</span>
+                      <a
+                        className="webui-composer-permission-learn-more"
+                        href={PERMISSION_MODE_DOCS_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onPointerDown={(event) => event.stopPropagation()}
+                      >
+                        {PERMISSION_MODE_LEARN_MORE}
+                      </a>
+                    </div>
+                    {PERMISSION_MODE_ORDER.map((mode) => {
+                      const option = PERMISSION_MODE_OPTION[mode];
+                      const { Icon } = option;
+                      const active = permissionMode === mode;
+                      return (
+                        <button
+                          key={mode}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={active}
+                          className="webui-composer-permission-option"
+                          disabled={permissionBusy}
+                          onClick={() => void changePermissionMode(mode)}
+                        >
+                          <Icon className="webui-composer-permission-icon" />
+                          <span className="webui-composer-permission-copy">
+                            <span className="webui-composer-permission-label">{option.label}</span>
+                            <span className="webui-composer-permission-description">{option.description}</span>
+                          </span>
+                          {active ? <WebuiIconCheck className="webui-composer-permission-check" /> : null}
+                        </button>
+                      );
+                    })}
                   </div> : null}
                 </div>
                 {goalEnabled && createGoal ? (

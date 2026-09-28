@@ -431,7 +431,6 @@
   }
 
   .webui-composer-menu button,
-  .webui-composer-permission-menu button,
   .webui-composer-mention-option {
     display: flex;
     width: 100%;
@@ -448,7 +447,6 @@
   }
 
   .webui-composer-menu button:hover,
-  .webui-composer-permission-menu button:hover,
   .webui-composer-mention-option:hover,
   .webui-composer-mention-option[aria-selected="true"] {
     background: var(--webui-color-bg-secondary, #f5f5f5);
@@ -488,18 +486,27 @@
     position: relative;
   }
 
+  /* The approval trigger. A grouped-surface pill with the current mode's own
+   * glyph, its label, and a chevron — the same three-part affordance the model
+   * picker uses, so both read as dropdowns. */
   .webui-composer-permission-button {
     display: inline-flex;
     min-height: 32px;
     align-items: center;
-    gap: 7px;
-    padding: 0 10px;
+    gap: var(--spacing_4);
+    padding: 0 var(--spacing_6) 0 var(--spacing_8);
     border: 0;
-    border-radius: 999px;
-    background: var(--webui-color-bg-secondary, #f5f5f5);
-    color: var(--webui-color-text-secondary, #666);
-    font-size: 13px;
+    border-radius: var(--radius_full);
+    background: var(--bg_grouped_tertiary);
+    color: var(--text_default_secondary);
+    font-size: var(--size_14);
+    font-weight: var(--weight_medium);
     cursor: pointer;
+  }
+
+  .webui-composer-permission-button:hover:not(:disabled) {
+    background: var(--bg_grouped_secondary_elevated);
+    color: var(--text_default_primary);
   }
 
   .webui-composer-permission-button:disabled {
@@ -507,20 +514,140 @@
     opacity: 0.55;
   }
 
-  .webui-composer-permission-menu {
-    right: 0;
-    bottom: 40px;
-    min-width: 200px;
+  /* `完全访问权限` is the one mode whose own row is orange in the popover, so
+   * the trigger matches it: the pill drops its grouped fill and the label, the
+   * glyph and the chevron all take the warning ramp. Without this the trigger
+   * would be the only place the selected mode is not signalled. */
+  .webui-composer-permission-button--warning {
+    padding-right: var(--spacing_4);
+    background: transparent;
+    color: var(--text_status_warning);
   }
 
-  .webui-composer-permission-menu button[aria-checked="true"] {
-    background: var(--webui-color-bg-secondary, #f5f5f5);
+  .webui-composer-permission-button--warning:hover:not(:disabled) {
+    background: var(--bg_grouped_tertiary);
+    color: var(--text_status_warning);
+  }
+
+  .webui-composer-permission-button--warning .webui-composer-permission-chevron {
+    color: var(--icon_status_warning);
+  }
+
+  .webui-composer-permission-icon {
+    width: var(--size_16);
+    height: var(--size_16);
+    flex: 0 0 var(--size_16);
+  }
+
+  .webui-composer-permission-chevron {
+    width: var(--size_12);
+    height: var(--size_12);
+    flex: 0 0 var(--size_12);
+    margin-left: var(--spacing_2);
+    color: var(--icon_default_tertiary);
+  }
+
+  /* The popover is a question plus three answers: a header row, then one
+   * two-line row per mode. These rows carry their own button reset rather than
+   * joining the single-line `.webui-composer-menu button` rule above — that
+   * rule's `min-height: 38px` and centred alignment are the wrong shape for a
+   * stacked label, and its compound selector would outrank a single class
+   * anyway. The selected row carries no fill: the orange label, description,
+   * glyph, and trailing check are the whole selection signal, so a grey
+   * background would compete with the row hover. */
+  .webui-composer-permission-menu {
+    bottom: 40px;
+    left: 0;
+    min-width: 320px;
+    max-width: min(360px, calc(100vw - 32px));
+    padding: var(--spacing_6);
+  }
+
+  .webui-composer-permission-option {
+    display: flex;
+    width: 100%;
+    align-items: flex-start;
+    gap: var(--spacing_12);
+    padding: var(--spacing_8);
+    border: 0;
+    border-radius: var(--radius_8);
+    background: transparent;
+    color: var(--text_default_primary);
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .webui-composer-permission-option:hover:not(:disabled) {
+    background: var(--bg_grouped_tertiary);
+  }
+
+  .webui-composer-permission-option:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+
+  .webui-composer-permission-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--spacing_12);
+    padding: var(--spacing_4) var(--spacing_8) var(--spacing_8);
+  }
+
+  .webui-composer-permission-question {
+    min-width: 0;
+    color: var(--text_default_secondary);
+    font-size: var(--size_12);
+    line-height: var(--line_height_18);
+  }
+
+  .webui-composer-permission-learn-more {
+    flex: 0 0 auto;
+    color: var(--text_default_tertiary);
+    font-size: var(--size_12);
+    line-height: var(--line_height_18);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    white-space: nowrap;
+  }
+
+  .webui-composer-permission-learn-more:hover {
+    color: var(--text_default_secondary);
+  }
+
+  .webui-composer-permission-copy {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .webui-composer-permission-label {
+    color: var(--text_default_primary);
+    font-size: var(--size_14);
+    font-weight: var(--weight_medium);
+    line-height: var(--line_height_20);
+  }
+
+  .webui-composer-permission-description {
+    color: var(--text_default_tertiary);
+    font-size: var(--size_12);
+    line-height: var(--line_height_18);
   }
 
   .webui-composer-permission-check {
-    width: 16px;
-    margin-left: auto;
-    text-align: right;
+    width: var(--size_16);
+    height: var(--size_16);
+    flex: 0 0 var(--size_16);
+    align-self: center;
+  }
+
+  .webui-composer-permission-option[aria-checked="true"] .webui-composer-permission-icon,
+  .webui-composer-permission-option[aria-checked="true"] .webui-composer-permission-label,
+  .webui-composer-permission-option[aria-checked="true"] .webui-composer-permission-description,
+  .webui-composer-permission-option[aria-checked="true"] .webui-composer-permission-check {
+    color: var(--text_status_warning);
   }
 
   .webui-composer-mention-menu {
