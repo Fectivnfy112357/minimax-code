@@ -33,6 +33,41 @@ import type { SlashCommandEntry, WebuiRunCommandName } from "../slash-palette.js
 import { isWebuiRunnableCommand, classifyWebuiSlashCommand } from "../slash-palette.js";
 
 /**
+ * Absolute-path check shared by the project picker and the submit guard.
+ * Deliberately not `node:path`: this runs in the browser, where the
+ * POSIX and Windows shapes both have to be recognised. The server stays
+ * the authority — it rejects anything relative or missing.
+ */
+export function looksLikeAbsoluteWorkspacePath(value: string): boolean {
+  return (
+    value.startsWith("/") ||
+    value.startsWith("\\\\") ||
+    /^[a-zA-Z]:[\\/]/.test(value)
+  );
+}
+
+/**
+ * The `workspaceDir` field for a `createSession` call, or a failure the
+ * user can act on.
+ *
+ * A browser can only ever hand us a bare folder name, and the server
+ * answers that with `workspaceDir must be an absolute path`. Failing here
+ * keeps the reported cause next to the picker that produced it.
+ */
+function createSessionWorkspaceField(workspaceDir?: string): {
+  readonly workspaceDir?: string;
+} {
+  if (workspaceDir === undefined) return {};
+  const value = workspaceDir.trim();
+  if (!value) throw new Error("项目目录不能为空，请重新选择项目目录");
+  if (!looksLikeAbsoluteWorkspacePath(value))
+    throw new Error(
+      `项目目录需要绝对路径，收到的是「${value}」。请重新选择项目目录`,
+    );
+  return { workspaceDir: value };
+}
+
+/**
  * Whether the live turn column should own the render surface. Mirrors the
  * Desktop's `phase === "streaming" || "waiting" || "reconnecting"` rule.
  *
@@ -235,9 +270,7 @@ export async function submitWebuiGoal(
     if (!args.createSession) throw new Error("无法创建目标会话");
     const result = await args.createSession({
       name: "main",
-      ...(args.createSessionWorkspaceDir
-        ? { workspaceDir: args.createSessionWorkspaceDir }
-        : {}),
+      ...createSessionWorkspaceField(args.createSessionWorkspaceDir),
       teamModeOff: args.teamModeOff,
     });
     sessionId = createdSessionId(result);
@@ -282,7 +315,7 @@ export async function submitWebuiComposerTurn(
     try {
       const result = await args.createSession({
         name: "main",
-        workspaceDir: args.createSessionWorkspaceDir,
+        ...createSessionWorkspaceField(args.createSessionWorkspaceDir),
         teamModeOff: args.teamModeOff,
       });
       sessionId = createdSessionId(result);

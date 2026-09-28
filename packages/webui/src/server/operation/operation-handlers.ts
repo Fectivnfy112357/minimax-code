@@ -1,5 +1,6 @@
 import { runWebuiCommand } from "../commands/runner.js";
 import type { WebuiHarnessPort } from "../port.js";
+import { listWorkspaceDirectories } from "./workspace.js";
 import {
   projectContextSnapshot,
   projectSessionStream,
@@ -121,6 +122,13 @@ export function createOperationHandlers(
     }),
     listWorkspaceFileTree: async (_context, body) => ({
       body: await port.listWorkspaceFileTree(body),
+    }),
+    // Server-local, not a harness port call: the browser cannot hand the
+    // WebUI an absolute path, so the picker asks this process — which
+    // already serves this machine's files, git and terminals — to name
+    // the candidates.
+    browseWorkspaceDirs: async (_context, body) => ({
+      body: listWorkspaceDirectories(body.dir),
     }),
     readWorkspaceFile: async (_context, body) => ({
       body: await port.readWorkspaceFile(body),

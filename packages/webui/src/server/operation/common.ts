@@ -1,5 +1,7 @@
 import { WebuiErrorCode } from "../envelope.js";
-import { requireNonEmptyString, requireRecord } from "./operation-contract.js";
+import { statSync } from "node:fs";
+import { isAbsolute } from "node:path";
+import { invalidBody, requireNonEmptyString, requireRecord } from "./operation-contract.js";
 import type { WebuiOperationValidation } from "./operation-contract.js";
 import type {
   WebuiPermissionDecision,
@@ -14,6 +16,34 @@ export function validateSessionIdBody(
   const id = requireNonEmptyString(operation, record.body, "id");
   if (typeof id !== "string") return id;
   return { ok: true, body: { id } };
+}
+
+
+/**
+ * The one rule every working directory on the wire has to satisfy.
+ *
+ * A browser cannot produce an absolute path for a picked folder, so this
+ * is what keeps a bare directory name out of a session's cwd. Both
+ * `createSession` and the project picker's directory walk go through
+ * here so the two entry points reject the same inputs with the same
+ * wording. The value must already be trimmed.
+ */
+export function validateAbsoluteDirectory(
+  operation: string,
+  field: string,
+  value: string,
+): WebuiOperationValidation<string> {
+  if (!value)
+    return invalidBody(`${operation} ${field} must not be empty`);
+  if (!isAbsolute(value))
+    return invalidBody(`${operation} ${field} must be an absolute path`);
+  try {
+    if (!statSync(value).isDirectory())
+      return invalidBody(`${operation} ${field} must be an existing directory`);
+  } catch {
+    return invalidBody(`${operation} ${field} must be an existing directory`);
+  }
+  return { ok: true, body: value };
 }
 
 

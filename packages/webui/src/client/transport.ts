@@ -364,6 +364,7 @@ export function createWebuiTransport({
     patchGoal: (body) => request("patchGoal", body),
     clearGoal: (body) => request("clearGoal", body),
     listWorkspaceFileTree: (body) => request("listWorkspaceFileTree", body),
+    browseWorkspaceDirs: (body) => request("browseWorkspaceDirs", body),
     readWorkspaceFile: (body) => request("readWorkspaceFile", body),
     getWorkspaceEnvironment: (body) => request("getWorkspaceEnvironment", body),
     mutateWorkspaceGit: (body) => request("mutateWorkspaceGit", body),

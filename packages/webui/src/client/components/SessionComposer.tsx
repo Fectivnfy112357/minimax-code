@@ -14,6 +14,7 @@
 
 import {
   Fragment,
+  useCallback,
   useEffect,
   useId,
   useLayoutEffect,
@@ -65,6 +66,7 @@ import type {
   WebuiQuestionnaireAnswer,
   WebuiQuestionnaireRequest,
   WebuiQueueItem,
+  WebuiWorkspaceDirectoryListing,
   WebuiWorkspaceFile,
 } from "../../server/port.js";
 import { WebuiGoalBanner } from "./GoalBanner.js";
@@ -90,6 +92,7 @@ import {
   submitWebuiComposerTurn,
   resolveWebuiSubmissionIntent,
   isTurnLive,
+  looksLikeAbsoluteWorkspacePath,
 } from "../projection/composer-state.js";
 import { evaluateOutsideClose } from "../projection/outside-close.js";
 import {
@@ -208,90 +211,176 @@ function readBrowserFile(file: File): Promise<string> {
 }
 
 /**
- * Open a directory picker and return the chosen directory's path string.
+ * Directory browser behind the composer's "选择新项目".
  *
- * Webui has no native IPC bridge like the desktop's Electron main, so it
- * has to use whatever the browser exposes:
- *   1. `<input type="file" webkitdirectory>` — supported everywhere. Chromium
- *      exposes `File.path` for the absolute path; other engines fall back to
- *      `webkitRelativePath` for the directory name only.
- *   2. `window.showDirectoryPicker()` — Chromium 86+, gives a directory handle
- *      but no path string; we use the directory name as a best-effort label.
+ * A browser cannot name a directory for us: the File System Access API
+ * hands back a bare directory name, `File.path` exists only inside
+ * Electron, and `webkitRelativePath` is relative by definition — while
+ * the server requires a real absolute path for a session's working
+ * directory. So the server enumerates this machine's directories and the
+ * user picks from what it reports.
  *
- * Resolves to `undefined` when the user cancels. Returns an empty string
- * when the picker succeeded but no path was derivable (Safari etc.) so the
- * caller can prompt for a manual path.
+ * When the transport has no `browseWorkspaceDirs` — a static fixture
+ * transport, or a server that predates the operation — the browser falls
+ * back to a manual absolute-path field. Either way a failure is shown in
+ * the popover; it never resolves to a silent no-op.
  */
-function pickWorkspaceDirectory(): Promise<string | undefined> {
-  if (typeof window === "undefined") return Promise.resolve(undefined);
-  if (typeof window.showDirectoryPicker === "function") {
-    return window
-      .showDirectoryPicker()
-      .then((handle) => {
-        // Chromium returns a handle but no path. Surface the directory name so
-        // the user can confirm what they picked; the runtime will resolve it.
-        return handle.name || "";
-      })
-      .catch((error) => {
-        if (
-          typeof error === "object" &&
-          error !== null &&
-          "name" in error &&
-          (error as { name?: string }).name === "AbortError"
-        ) {
-          return undefined;
-        }
-        throw error;
-      });
-  }
-  return new Promise<string | undefined>((resolve) => {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.style.position = "fixed";
-    input.style.left = "-9999px";
-    // webkitdirectory is the legacy attribute; the spec uses "directory".
-    input.setAttribute("webkitdirectory", "");
-    input.setAttribute("directory", "");
-    input.addEventListener(
-      "change",
-      () => {
-        const file = input.files?.[0];
-        document.body.removeChild(input);
-        if (!file) {
-          resolve(undefined);
-          return;
-        }
-        // Chromium exposes the absolute path on `File.path`. We slice off the
-        // relative portion to land on the directory the user picked.
-        // Fall back to the legacy `webkitRelativePath` (just the directory
-        // name) for browsers that don't expose `path`.
-        const filePath = (file as File & { path?: string }).path;
-        const relativePath = file.webkitRelativePath || "";
-        if (filePath) {
-          const dirPath = filePath.slice(
-            0,
-            filePath.length - relativePath.length,
+export function WebuiWorkspaceDirectoryBrowser({
+  browseWorkspaceDirs,
+  initialDir,
+  onSelect,
+  onCancel,
+}: {
+  readonly browseWorkspaceDirs?: WebuiTransport["browseWorkspaceDirs"];
+  readonly initialDir?: string;
+  readonly onSelect: (dir: string) => void;
+  readonly onCancel: () => void;
+}): ReactElement {
+  const [listing, setListing] = useState<WebuiWorkspaceDirectoryListing>();
+  const [error, setError] = useState<string>();
+  const [loading, setLoading] = useState(false);
+  const [manualPath, setManualPath] = useState(initialDir ?? "");
+
+  const browse = useCallback(
+    (dir?: string) => {
+      if (!browseWorkspaceDirs) return;
+      setLoading(true);
+      setError(undefined);
+      void browseWorkspaceDirs(dir ? { dir } : {})
+        .then((next) => {
+          setListing(next);
+          setManualPath(next.dir);
+        })
+        .catch((reason: unknown) => {
+          setError(
+            reason instanceof Error ? reason.message : String(reason),
           );
-          resolve(dirPath.replace(/[\\/]$/, "") || filePath);
-        } else if (relativePath) {
-          resolve(relativePath.split("/")[0] ?? "");
-        } else {
-          resolve("");
-        }
-      },
-      { once: true },
+        })
+        .finally(() => setLoading(false));
+    },
+    [browseWorkspaceDirs],
+  );
+
+  useEffect(() => {
+    browse(initialDir);
+  }, [browse, initialDir]);
+
+  const submitManualPath = useCallback(() => {
+    const value = manualPath.trim();
+    if (!value) {
+      setError("请输入项目目录的绝对路径");
+      return;
+    }
+    if (!looksLikeAbsoluteWorkspacePath(value)) {
+      setError("需要绝对路径，例如 /home/you/projects/my-project");
+      return;
+    }
+    onSelect(value);
+  }, [manualPath, onSelect]);
+
+  if (!browseWorkspaceDirs)
+    return (
+      <div className="flex flex-col gap-2" data-webui-workspace-manual="true">
+        <label className="webui-commit-dialog-label">
+          <span>项目绝对路径</span>
+          <input
+            value={manualPath}
+            autoFocus
+            placeholder="/home/you/projects/my-project"
+            onChange={(event) => {
+              setManualPath(event.target.value);
+              setError(undefined);
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter") return;
+              event.preventDefault();
+              submitManualPath();
+            }}
+          />
+        </label>
+        {error ? (
+          <p className="webui-commit-dialog-error" role="alert">
+            {error}
+          </p>
+        ) : null}
+        <div className="webui-commit-dialog-actions">
+          <button type="button" onClick={onCancel}>
+            取消
+          </button>
+          <button
+            type="button"
+            onClick={submitManualPath}
+          >
+            使用此目录
+          </button>
+        </div>
+      </div>
     );
-    input.addEventListener(
-      "cancel",
-      () => {
-        document.body.removeChild(input);
-        resolve(undefined);
-      },
-      { once: true },
-    );
-    document.body.appendChild(input);
-    input.click();
-  });
+
+  return (
+    <div className="flex flex-col gap-2" data-webui-workspace-browser="true">
+      <div className="flex items-center gap-2">
+        {listing?.parent ? (
+          <button
+            type="button"
+            className="webui-workspace-option webui-workspace-option--desktop"
+            data-webui-workspace-action="up"
+            onClick={() => browse(listing.parent)}
+          >
+            <span className="min-w-0 flex-1 truncate text-left">上一级</span>
+          </button>
+        ) : null}
+        <span
+          className="min-w-0 flex-1 truncate text-text_default_secondary text-size_12"
+          title={listing?.dir}
+        >
+          {listing?.dir ?? "正在读取目录…"}
+        </span>
+      </div>
+      {error ? (
+        <p className="webui-commit-dialog-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+      {loading ? (
+        <p className="webui-composer-menu-empty">正在读取目录…</p>
+      ) : listing?.entries.length ? (
+        listing.entries.map((entry) => (
+          <button
+            key={entry.path}
+            type="button"
+            className="webui-workspace-option webui-workspace-option--desktop"
+            data-webui-workspace-action="enter"
+            onClick={() => browse(entry.path)}
+          >
+            <WebuiIconFolder className="flex-shrink-0" />
+            <span className="min-w-0 flex-1 truncate text-left">
+              {entry.name}
+            </span>
+          </button>
+        ))
+      ) : (
+        <p className="webui-composer-menu-empty">此目录下没有子目录</p>
+      )}
+      {listing?.truncated ? (
+        <p className="webui-composer-menu-empty">子目录过多，仅显示前若干项</p>
+      ) : null}
+      <div className="webui-commit-dialog-actions">
+        <button type="button" onClick={onCancel}>
+          取消
+        </button>
+        <button
+          type="button"
+          disabled={!listing}
+          onClick={() => {
+            if (listing) onSelect(listing.dir);
+          }}
+        >
+          使用此目录
+        </button>
+      </div>
+    </div>
+  );
 }
 
 export function WebuiComposer({
@@ -389,6 +478,7 @@ export function WebuiComposer({
   readonly onSessionCreated?: (sessionId: string) => void;
   readonly teamModeOff: boolean;
   readonly listWorkspaceFileTree?: WebuiTransport["listWorkspaceFileTree"];
+  readonly browseWorkspaceDirs?: WebuiTransport["browseWorkspaceDirs"];
   readonly pluginManagement?: WebuiTransport["pluginManagement"];
   readonly getPermissionMode?: WebuiTransport["getPermissionMode"];
   readonly setPermissionMode?: WebuiTransport["setPermissionMode"];
@@ -429,6 +519,7 @@ export function WebuiComposer({
   const [skillsMenuLoading, setSkillsMenuLoading] = useState(false);
   const [skillsMenuError, setSkillsMenuError] = useState<string>();
   const [workspaceFiles, setWorkspaceFiles] = useState<readonly { readonly path: string; readonly name: string; readonly type?: string }[]>([]);
+  const [workspaceBrowserOpen, setWorkspaceBrowserOpen] = useState(false);
   const [mentionRange, setMentionRange] = useState<WebuiMentionRange>();
   const [mentionIndex, setMentionIndex] = useState(0);
   const [permissionMode, setPermissionModeValue] = useState<WebuiComposerPermissionMode>();
@@ -1829,7 +1920,24 @@ export function WebuiComposer({
                 : "选择文件夹"}
             </span>
             </button>
-            {workspaceMenuOpen ? (
+            {workspaceBrowserOpen ? (
+              <div
+                role="dialog"
+                aria-label="选择项目目录"
+                data-webui-workspace-browser-dialog="true"
+                className="webui-workspace-menu webui-workspace-menu--desktop"
+              >
+                <WebuiWorkspaceDirectoryBrowser
+                  browseWorkspaceDirs={browseWorkspaceDirs}
+                  initialDir={createSessionWorkspaceDir}
+                  onSelect={(dir) => {
+                    setWorkspaceBrowserOpen(false);
+                    onWorkspaceChange(dir);
+                  }}
+                  onCancel={() => setWorkspaceBrowserOpen(false)}
+                />
+              </div>
+            ) : workspaceMenuOpen ? (
               <div
                 role="listbox"
                 aria-label="工作目录"
@@ -1844,9 +1952,7 @@ export function WebuiComposer({
                   className="webui-workspace-option webui-workspace-option--desktop"
                   onClick={() => {
                     setWorkspaceMenuOpen(false);
-                    void pickWorkspaceDirectory().then((path) => {
-                      if (path) onWorkspaceChange(path);
-                    });
+                    setWorkspaceBrowserOpen(true);
                   }}
                 >
                   <WebuiIconFolder className="flex-shrink-0" />

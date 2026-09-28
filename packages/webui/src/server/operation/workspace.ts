@@ -1,7 +1,12 @@
 import { WebuiErrorCode } from "../envelope.js";
+import { readdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import type { WebuiOperation, WebuiOperationValidation } from "./operation-contract.js";
+import { invalidBody } from "./operation-contract.js";
 import type {
   WebuiCanvasDocument,
+  WebuiWorkspaceDirectoryListing,
   WebuiWorkspaceEnvironment,
   WebuiWorkspaceFile,
   WebuiWorkspaceFileContent,
@@ -11,12 +16,24 @@ import type {
   WebuiWorkspaceReviewSearchResult,
   WebuiWorkspaceReviewSummary,
 } from "../port.js";
-import { validateObjectBody } from "./common.js";
-import { LIST_WORKSPACE_FILE_TREE_OPERATION_NAME, READ_WORKSPACE_FILE_OPERATION_NAME, GET_WORKSPACE_ENVIRONMENT_OPERATION_NAME, MUTATE_WORKSPACE_GIT_OPERATION_NAME, GET_WORKSPACE_REVIEW_SUMMARY_OPERATION_NAME, LIST_WORKSPACE_REVIEW_FILE_DIFFS_OPERATION_NAME, GET_WORKSPACE_REVIEW_FILE_CONTENT_OPERATION_NAME, SEARCH_WORKSPACE_REVIEW_DIFFS_OPERATION_NAME, READ_CANVAS_OPERATION_NAME, APPLY_CANVAS_OPERATION_NAME, CREATE_TERMINAL_OPERATION_NAME, LIST_TERMINALS_OPERATION_NAME, WRITE_TERMINAL_OPERATION_NAME, RESIZE_TERMINAL_OPERATION_NAME, DISPOSE_TERMINAL_OPERATION_NAME, WATCH_TERMINAL_OPERATION_NAME } from "./names.js";
+import {
+  validateAbsoluteDirectory,
+  validateObjectBody,
+  validateOptionalObjectBody,
+} from "./common.js";
+import { LIST_WORKSPACE_FILE_TREE_OPERATION_NAME, BROWSE_WORKSPACE_DIRS_OPERATION_NAME, READ_WORKSPACE_FILE_OPERATION_NAME, GET_WORKSPACE_ENVIRONMENT_OPERATION_NAME, MUTATE_WORKSPACE_GIT_OPERATION_NAME, GET_WORKSPACE_REVIEW_SUMMARY_OPERATION_NAME, LIST_WORKSPACE_REVIEW_FILE_DIFFS_OPERATION_NAME, GET_WORKSPACE_REVIEW_FILE_CONTENT_OPERATION_NAME, SEARCH_WORKSPACE_REVIEW_DIFFS_OPERATION_NAME, READ_CANVAS_OPERATION_NAME, APPLY_CANVAS_OPERATION_NAME, CREATE_TERMINAL_OPERATION_NAME, LIST_TERMINALS_OPERATION_NAME, WRITE_TERMINAL_OPERATION_NAME, RESIZE_TERMINAL_OPERATION_NAME, DISPOSE_TERMINAL_OPERATION_NAME, WATCH_TERMINAL_OPERATION_NAME } from "./names.js";
+
+/** Upper bound on one directory listing. A home directory can hold
+ *  thousands of folders and the picker only needs a browsable page. */
+const WORKSPACE_DIRECTORY_LIMIT = 500;
 
 interface ListWorkspaceFileTreeBody {
   readonly workspaceDir: string;
   readonly path?: string;
+}
+interface BrowseWorkspaceDirsBody {
+  /** Absent means "start from the user's home directory". */
+  readonly dir?: string;
 }
 interface ReadWorkspaceFileBody {
   readonly workspaceDir: string;
@@ -51,6 +68,53 @@ export const listWorkspaceFileTreeOperation: WebuiOperation<ListWorkspaceFileTre
     };
   },
 };
+export const browseWorkspaceDirsOperation: WebuiOperation<BrowseWorkspaceDirsBody, WebuiWorkspaceDirectoryListing> = {
+  name: BROWSE_WORKSPACE_DIRS_OPERATION_NAME,
+  validate: (body): WebuiOperationValidation<BrowseWorkspaceDirsBody> => {
+    const result = validateOptionalObjectBody(BROWSE_WORKSPACE_DIRS_OPERATION_NAME, body);
+    if (!result.ok) return result;
+    if (result.body.dir === undefined) return { ok: true, body: {} };
+    if (typeof result.body.dir !== "string")
+      return invalidBody(`${BROWSE_WORKSPACE_DIRS_OPERATION_NAME} dir must be a string`);
+    const dir = validateAbsoluteDirectory(
+      BROWSE_WORKSPACE_DIRS_OPERATION_NAME,
+      "dir",
+      result.body.dir.trim(),
+    );
+    return dir.ok ? { ok: true, body: { dir: dir.body } } : dir;
+  },
+};
+
+/**
+ * Enumerate the sub-directories of `dir` for the composer's project
+ * picker. Defaults to the user's home directory when the caller has no
+ * starting point yet.
+ *
+ * Files are left out on purpose: a session's working directory has to be
+ * a directory, so a file in this list could only produce a request the
+ * server rejects. Dot-directories are hidden for the same reason a
+ * native file chooser hides them.
+ */
+export function listWorkspaceDirectories(
+  dir?: string,
+): WebuiWorkspaceDirectoryListing {
+  const target = dir ?? homedir();
+  const entries = readdirSync(target, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
+    .map((entry) => ({ name: entry.name, path: join(target, entry.name) }))
+    .sort((left, right) =>
+      left.name.localeCompare(right.name, undefined, { sensitivity: "base" }),
+    );
+  const parent = dirname(target);
+  return {
+    dir: target,
+    // `dirname("/")` is `/`; there is no way up from the root.
+    ...(parent !== target ? { parent } : {}),
+    entries: entries.slice(0, WORKSPACE_DIRECTORY_LIMIT),
+    truncated: entries.length > WORKSPACE_DIRECTORY_LIMIT,
+  };
+}
+
 export const readWorkspaceFileOperation: WebuiOperation<ReadWorkspaceFileBody, WebuiWorkspaceFileContent> = {
   name: READ_WORKSPACE_FILE_OPERATION_NAME,
   validate: (body): WebuiOperationValidation<ReadWorkspaceFileBody> => {

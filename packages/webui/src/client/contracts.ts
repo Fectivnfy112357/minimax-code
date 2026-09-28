@@ -62,6 +62,7 @@ import type {
   WebuiVersionInfo,
   WebuiAttachmentInput,
   WebuiWorkspaceEnvironment,
+  WebuiWorkspaceDirectoryListing,
   WebuiWorkspaceFile,
   WebuiWorkspaceFileContent,
   WebuiWorkspaceGitMutationRequest,
@@ -406,6 +407,11 @@ export interface WebuiTransport {
     readonly workspaceDir: string;
     readonly path?: string;
   }) => Promise<readonly WebuiWorkspaceFile[]>;
+  /** One level of the local directory tree. Absent `dir` starts the walk
+   * at the server user's home directory. */
+  readonly browseWorkspaceDirs?: (request: {
+    readonly dir?: string;
+  }) => Promise<WebuiWorkspaceDirectoryListing>;
   readonly readWorkspaceFile?: (request: {
     readonly workspaceDir: string;
     readonly path: string;

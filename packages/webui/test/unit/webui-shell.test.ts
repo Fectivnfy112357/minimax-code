@@ -34,6 +34,7 @@ import {
   sortWebuiProjectSessionIds,
 } from "../../src/client/components/SessionRail.js";
 import { WebuiSessionTranscript } from "../../src/client/components/SessionTranscript.js";
+import { WebuiWorkspaceDirectoryBrowser } from "../../src/client/components/SessionComposer.js";
 import {
   TurnElapsedRow,
   WebuiThinkingBlock,
@@ -58,6 +59,7 @@ import {
 import {
   buildWebuiComposerHandlers,
   createdSessionId,
+  looksLikeAbsoluteWorkspacePath,
   submitWebuiGoal,
   submitWebuiComposerTurn,
 } from "../../src/client/projection/composer-state.js";
@@ -1861,6 +1863,97 @@ describe("WebUI composer app-to-helper seam", () => {
     expect(
       createSessionOperation.validate({ name: "" }).ok,
     ).toBe(false);
+  });
+
+  it("recognises absolute workspace paths on both platforms and rejects bare names", () => {
+    // A browser can only report a bare folder name for a picked project, so
+    // this predicate is what keeps one out of a createSession request.
+    expect(looksLikeAbsoluteWorkspacePath("/home/you/project")).toBe(true);
+    expect(looksLikeAbsoluteWorkspacePath("C:\\Users\\you\\project")).toBe(true);
+    expect(looksLikeAbsoluteWorkspacePath("\\\\server\\share\\project")).toBe(
+      true,
+    );
+    expect(looksLikeAbsoluteWorkspacePath("my-project")).toBe(false);
+    expect(looksLikeAbsoluteWorkspacePath("./my-project")).toBe(false);
+    expect(looksLikeAbsoluteWorkspacePath("")).toBe(false);
+  });
+
+  it("refuses a relative workspace folder before it can reach createSession", async () => {
+    // Reported bug: 选择新项目 fed the bare directory name the browser picker
+    // returns, and the turn died on the server's
+    // `workspaceDir must be an absolute path`. The submit path now fails with
+    // a message that names the cause, without calling createSession.
+    const { setStream, getState } = makeRecording();
+    const createSession = vi.fn(async () => ({ sessionId: "created" }));
+    const sendMessage: WebuiClientMessageSender = vi.fn(async () => undefined);
+
+    await submitWebuiComposerTurn(
+      {
+        draft: "hi",
+        sending: false,
+        deps: { sendMessage },
+        createSession,
+        createSessionWorkspaceDir: "my-project",
+        teamModeOff: false,
+      },
+      buildWebuiComposerHandlers({
+        setStream,
+        setSending: () => undefined,
+        onDraftChange: () => undefined,
+      }),
+    );
+
+    expect(createSession).not.toHaveBeenCalled();
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(getState().refusal).toContain("绝对路径");
+  });
+
+  it("passes an absolute workspace folder straight through to createSession", async () => {
+    const { setStream, getState } = makeRecording();
+    const requests: unknown[] = [];
+    const createSession = vi.fn(async (request) => {
+      requests.push(request);
+      return { sessionId: "created" };
+    });
+    const sendMessage: WebuiClientMessageSender = vi.fn(async (_request, onFrame) => {
+      onFrame({ dataJson: "[DONE]" });
+    });
+
+    await submitWebuiComposerTurn(
+      {
+        draft: "hi",
+        sending: false,
+        deps: { sendMessage },
+        createSession,
+        createSessionWorkspaceDir: "/work/minimax-code",
+        teamModeOff: false,
+      },
+      buildWebuiComposerHandlers({
+        setStream,
+        setSending: () => undefined,
+        onDraftChange: () => undefined,
+      }),
+    );
+
+    expect(requests).toEqual([
+      { name: "main", workspaceDir: "/work/minimax-code", teamModeOff: false },
+    ]);
+    expect(getState().phase).toBe("done");
+  });
+
+  it("offers a manual absolute-path field when the transport cannot browse directories", () => {
+    // The old picker resolved to "" on any engine without File.path, and the
+    // caller dropped that falsy value — clicking 选择新项目 did nothing at all.
+    // Without browseWorkspaceDirs the popover must show a usable field.
+    const markup = renderToStaticMarkup(
+      createElement(WebuiWorkspaceDirectoryBrowser, {
+        onSelect: () => undefined,
+        onCancel: () => undefined,
+      }),
+    );
+
+    expect(markup).toContain("项目绝对路径");
+    expect(markup).toContain("使用此目录");
   });
 
   it("migrates the in-flight home turn into the created session and leaves home clean", async () => {

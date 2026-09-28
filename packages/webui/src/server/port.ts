@@ -404,6 +404,27 @@ export interface WebuiWorkspaceFileContent {
   readonly error?: string;
 }
 
+export interface WebuiWorkspaceDirectoryEntry {
+  readonly name: string;
+  readonly path: string;
+}
+
+/**
+ * One level of the local directory tree, for the composer's project
+ * picker. A browser cannot hand the WebUI an absolute path — the File
+ * System Access API returns a bare directory name, and `File.path` only
+ * exists inside Electron — so the server enumerates the candidates and
+ * the browser picks from what the server reports.
+ */
+export interface WebuiWorkspaceDirectoryListing {
+  readonly dir: string;
+  /** Absent at the filesystem root, where there is nowhere to go up. */
+  readonly parent?: string;
+  readonly entries: readonly WebuiWorkspaceDirectoryEntry[];
+  /** True when `dir` held more directories than one listing carries. */
+  readonly truncated: boolean;
+}
+
 /**
  * The small, session-scoped projection used by the Desktop environment
  * section. Keep the runtime's snapshot ids and file-level details private;

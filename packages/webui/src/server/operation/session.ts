@@ -1,6 +1,4 @@
 import { WebuiErrorCode } from "../envelope.js";
-import { statSync } from "node:fs";
-import { isAbsolute } from "node:path";
 import {
   invalidBody,
   requireNonEmptyString,
@@ -16,7 +14,7 @@ import type {
   WebuiSessionTreeRequest,
   WebuiSessionTreePage,
 } from "../port.js";
-import { validateSessionIdBody } from "./common.js";
+import { validateAbsoluteDirectory, validateSessionIdBody } from "./common.js";
 import { VERSION_OPERATION_NAME, LIST_SESSIONS_OPERATION_NAME, LIST_VISIBLE_PROJECTS_OPERATION_NAME, GET_SESSION_TREE_OPERATION_NAME, CREATE_SESSION_OPERATION_NAME, GET_SESSION_OPERATION_NAME } from "./names.js";
 type VersionRequestBody = undefined;
 
@@ -179,36 +177,24 @@ function validateCreateSessionRequestBody(
   // `workspaceDir` is optional: the harness resolves a default workspace
   // when it is absent (desktop's 不需要项目 / default-directory flows).
   // When present it must be a real absolute path — relative and missing
-  // directories are still rejected.
+  // directories are still rejected. The browser project picker cannot
+  // produce one (see `validateAbsoluteDirectory`), so this is also what
+  // stops a bare folder name from becoming a session's cwd.
   const workspaceDir =
     typeof candidate.workspaceDir === "string"
       ? candidate.workspaceDir.trim()
       : "";
   if (candidate.workspaceDir !== undefined && !workspaceDir)
-    return {
-      ok: false,
-      code: WebuiErrorCode.invalidBody,
-      message: "createSession workspaceDir must not be empty",
-    };
-  if (workspaceDir && !isAbsolute(workspaceDir))
-    return {
-      ok: false,
-      code: WebuiErrorCode.invalidBody,
-      message: "workspaceDir must be an absolute path",
-    };
-  try {
-    if (workspaceDir && !statSync(workspaceDir).isDirectory())
-      return {
-        ok: false,
-        code: WebuiErrorCode.invalidBody,
-        message: "workspaceDir must be an existing directory",
-      };
-  } catch {
-    return {
-      ok: false,
-      code: WebuiErrorCode.invalidBody,
-      message: "workspaceDir must be an existing directory",
-    };
+    return invalidBody(
+      `${CREATE_SESSION_OPERATION_NAME} workspaceDir must not be empty`,
+    );
+  if (workspaceDir) {
+    const dir = validateAbsoluteDirectory(
+      CREATE_SESSION_OPERATION_NAME,
+      "workspaceDir",
+      workspaceDir,
+    );
+    if (!dir.ok) return dir;
   }
   if (
     candidate.teamModeOff !== undefined &&

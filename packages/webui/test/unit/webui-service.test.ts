@@ -2016,6 +2016,118 @@ describe("WebUI service", () => {
   });
 });
 
+describe("WebUI workspace directory browsing", () => {
+  // A browser cannot hand the WebUI an absolute path: the File System Access
+  // API returns a bare directory name and `File.path` exists only inside
+  // Electron. The server therefore enumerates the candidates the picker
+  // offers, and every path it reports has to satisfy the same rule
+  // createSession enforces.
+  async function withTempTree(
+    run: (root: string) => Promise<void>,
+  ): Promise<void> {
+    const root = await mkdtemp(path.join(os.tmpdir(), "webui-workspace-dirs-"));
+    try {
+      await mkdir(path.join(root, "beta"));
+      await mkdir(path.join(root, "Alpha"));
+      await mkdir(path.join(root, ".hidden"));
+      await writeFile(path.join(root, "notes.md"), "synthetic\n");
+      await run(root);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }
+
+  it("lists only directories, hides dot-directories, and reports an absolute parent", async () => {
+    const { listWorkspaceDirectories } = await import(
+      "../../src/server/operation/workspace.js"
+    );
+
+    await withTempTree(async (root) => {
+      const listing = listWorkspaceDirectories(root);
+
+      expect(listing.dir).toBe(root);
+      expect(listing.parent).toBe(path.dirname(root));
+      expect(listing.entries.map((entry) => entry.name)).toEqual([
+        "Alpha",
+        "beta",
+      ]);
+      expect(listing.truncated).toBe(false);
+      // The property that broke the picker: every candidate the server
+      // offers is a path createSession will accept.
+      expect(
+        listing.entries.every((entry) => path.isAbsolute(entry.path)),
+      ).toBe(true);
+      expect(
+        listing.entries.every((entry) => entry.path.startsWith(root)),
+      ).toBe(true);
+    });
+  });
+
+  it("has no parent to offer at the filesystem root", async () => {
+    const { listWorkspaceDirectories } = await import(
+      "../../src/server/operation/workspace.js"
+    );
+    const root = path.parse(path.resolve(os.tmpdir())).root;
+
+    const listing = listWorkspaceDirectories(root);
+
+    expect(listing.dir).toBe(root);
+    expect(listing.parent).toBeUndefined();
+  });
+
+  it("starts at the server user's home directory when no directory is given", async () => {
+    const { listWorkspaceDirectories } = await import(
+      "../../src/server/operation/workspace.js"
+    );
+
+    expect(listWorkspaceDirectories().dir).toBe(os.homedir());
+  });
+
+  it("rejects relative, empty, missing and non-string directories", async () => {
+    const { browseWorkspaceDirsOperation } = await import(
+      "../../src/server/operation/workspace.js"
+    );
+
+    expect(browseWorkspaceDirsOperation.validate(undefined)).toEqual({
+      ok: true,
+      body: {},
+    });
+    expect(browseWorkspaceDirsOperation.validate({}).ok).toBe(true);
+    expect(browseWorkspaceDirsOperation.validate({ dir: "  " }).ok).toBe(false);
+    expect(
+      browseWorkspaceDirsOperation.validate({ dir: "relative/dir" }).ok,
+    ).toBe(false);
+    expect(browseWorkspaceDirsOperation.validate({ dir: 42 }).ok).toBe(false);
+    expect(
+      browseWorkspaceDirsOperation.validate({
+        dir: path.join(os.tmpdir(), "webui-not-a-real-directory"),
+      }).ok,
+    ).toBe(false);
+    expect(
+      browseWorkspaceDirsOperation.validate({
+        dir: ` ${os.tmpdir()} `,
+      }),
+    ).toEqual({ ok: true, body: { dir: os.tmpdir() } });
+  });
+
+  it("serves an absolute listing through the operation registry", async () => {
+    const { createOperationRegistry } = await import("../../src/server/index.js");
+    const registry = createOperationRegistry(new ScriptedHarnessPort());
+
+    const entry = registry.get("browseWorkspaceDirs");
+    expect(entry).toBeDefined();
+
+    await withTempTree(async (root) => {
+      const result = (await entry!.handle(
+        { requestId: "browse" },
+        { dir: root },
+      )) as { readonly body: { readonly dir: string } };
+
+      expect(result.body.dir).toBe(root);
+    });
+  });
+});
+
 describe("WebUI operation allowlist", () => {
   it("routes all authoritative diff operations through the service registry", async () => {
     const { createOperationRegistry } = await import("../../src/server/index.js");

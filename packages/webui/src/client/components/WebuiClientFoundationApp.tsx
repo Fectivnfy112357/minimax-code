@@ -934,6 +934,7 @@ export function WebuiClientFoundationApp(
                     listModels={transport?.listModels}
                     listSkills={transport?.listSkills}
                     listWorkspaceFileTree={transport?.listWorkspaceFileTree}
+                    browseWorkspaceDirs={transport?.browseWorkspaceDirs}
                     pluginManagement={transport?.pluginManagement}
                     getPermissionMode={transport?.getPermissionMode}
                     setPermissionMode={transport?.setPermissionMode}

@@ -18,6 +18,7 @@ export const CREATE_GOAL_OPERATION_NAME = "createGoal" as const;
 export const PATCH_GOAL_OPERATION_NAME = "patchGoal" as const;
 export const CLEAR_GOAL_OPERATION_NAME = "clearGoal" as const;
 export const LIST_WORKSPACE_FILE_TREE_OPERATION_NAME = "listWorkspaceFileTree" as const;
+export const BROWSE_WORKSPACE_DIRS_OPERATION_NAME = "browseWorkspaceDirs" as const;
 export const READ_WORKSPACE_FILE_OPERATION_NAME = "readWorkspaceFile" as const;
 export const GET_WORKSPACE_ENVIRONMENT_OPERATION_NAME = "getWorkspaceEnvironment" as const;
 export const MUTATE_WORKSPACE_GIT_OPERATION_NAME = "mutateWorkspaceGit" as const;
