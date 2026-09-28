@@ -22,3 +22,64 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/*
+ * Global scrollbar shape.
+ *
+ * Without this every scrollable surface in the shell renders the platform's
+ * default bar: a wide grey trough, plus a pair of arrow buttons on the
+ * platforms that still draw them. That is heavier than most of the surfaces it
+ * sits on — a settings list, a plugin panel, a queue popover. This pins one
+ * shape for all of them: a hairline rounded thumb on a transparent track, in the
+ * `--utility_scrollbar` ramp the desktop already ships and the shell previously
+ * left unreferenced.
+ *
+ * `scrollbar-width` / `scrollbar-color` carry Firefox and the `::-webkit-`
+ * pseudo-elements carry Chromium and WebKit, so both halves are needed.
+ * Firefox ignores the webkit pseudo-elements outright, and setting only the
+ * webkit pair leaves Firefox on the default bar.
+ *
+ * This is a base-layer rule, not a component one: it is `*`-scoped, so it
+ * belongs with preflight rather than in `shell.css`'s components block.
+ *
+ * The surfaces that deliberately show no bar are unaffected.
+ * `.scrollbar-hide` and the `scrollbar-width: none` rules in `shell.css` are
+ * class selectors, so they outrank both this `*` element rule and the
+ * `*::-webkit-scrollbar` pair, and the hide rules reach `display: none` on a
+ * property this block does not set.
+ */
+@layer base {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--utility_scrollbar) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  /* The transparent border insets the 4px thumb inside the 6px track, so the
+   * bar breathes against the surface edge instead of touching it. */
+  *::-webkit-scrollbar-thumb {
+    border: 1px solid transparent;
+    border-radius: 999px;
+    background: var(--utility_scrollbar);
+    background-clip: padding-box;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: var(--text_default_tertiary);
+    background-clip: padding-box;
+  }
+
+  /* The corner is only painted when both axes overflow; left as the default it
+   * draws a filled square against an otherwise invisible track. */
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+}

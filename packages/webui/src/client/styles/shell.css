@@ -3681,10 +3681,20 @@
       transition: none;
     }
   }
+  /* `scrollbar-gutter: stable` reserves the bar's 6px even when this container
+   * does not overflow. Without it the gutter appears and disappears with the
+   * content height — and this container is `width: 100%`, so every appearance
+   * takes 6px out of the content box. The marketplace centres its content
+   * (`margin: 0 auto` under a max-width) and pins its title with
+   * `left: 50% / translateX(-50%)`, so both shift by 3px the moment a search
+   * narrows the result list past the overflow threshold, and the whole page
+   * appears to twitch. The other scroll containers in this file are
+   * left-aligned, so the same gutter costs them no visible shift. */
   .webui-plugin-management {
     width: 100%;
     height: 100%;
     overflow: auto;
+    scrollbar-gutter: stable;
     padding: 28px 24px 48px;
     color: var(--text_default_primary);
   }
