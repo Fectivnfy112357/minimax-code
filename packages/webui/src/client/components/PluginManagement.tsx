@@ -594,6 +594,54 @@ export function PluginManagement({
       setError(cause instanceof Error ? cause.message : String(cause));
     }
   };
+  const switchMcpToJson = () => {
+    try {
+      const timeoutMs = mcpTimeoutMs.trim() ? Number(mcpTimeoutMs) : undefined;
+      if (timeoutMs !== undefined && (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0))
+        throw new Error("超时必须是正整数（毫秒）");
+      const config: Row = {
+        transport: mcpTransport,
+        ...(mcpTransport === "stdio"
+          ? {
+              command: mcpCommand,
+              ...(mcpArgs.trim()
+                ? { args: mcpArgs.split(/\s+/u).filter(Boolean) }
+                : {}),
+            }
+          : { url: mcpUrl }),
+        ...(mcpDescription.trim() ? { description: mcpDescription.trim() } : {}),
+        ...(timeoutMs ? { timeoutMs } : {}),
+      };
+      const record = (value: string, label: string): Row | undefined => {
+        if (!value.trim()) return undefined;
+        const parsed: unknown = JSON.parse(value);
+        if (
+          !parsed ||
+          typeof parsed !== "object" ||
+          Array.isArray(parsed) ||
+          Object.values(parsed).some((entry) => typeof entry !== "string")
+        )
+          throw new Error(`${label}必须是字符串键值对象`);
+        return parsed as Row;
+      };
+      const env = mcpTransport === "stdio" ? record(mcpEnv, "环境变量") : undefined;
+      const headers = mcpTransport === "stdio" ? undefined : record(mcpHeaders, "请求头");
+      if (env && Object.keys(env).length > 0) config.env = env;
+      if (headers && Object.keys(headers).length > 0) config.headers = headers;
+      config.enabled = mcpEnabled;
+      setMcpJson(
+        JSON.stringify(
+          { [mcpName.trim() || "my-mcp-server"]: config },
+          null,
+          2,
+        ),
+      );
+      setMcpJsonMode(true);
+      setError("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
   const beginAgent = (item?: Row) => {
     setEditing(item);
     setAgentName(read(item ?? {}, "name", "displayName", "display_name"));
@@ -1169,10 +1217,7 @@ export function PluginManagement({
                   <button
                     type="button"
                     aria-pressed={mcpJsonMode}
-                    onClick={() => {
-                      setMcpJsonMode(true);
-                      setError("");
-                    }}
+                    onClick={switchMcpToJson}
                   >
                     JSON
                   </button>
