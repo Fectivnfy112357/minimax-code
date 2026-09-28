@@ -2041,6 +2041,15 @@
     line-height: 22px;
     transition: color 120ms ease;
   }
+  /* The category glyph is a viewBox-only <svg> with no width/height, so this
+   * wrapper collapses to a 0x0 box and paints nothing — Desktop's title carries
+   * no leading glyph either. A flex `gap` still reserves its 8px beside that
+   * empty box, which pushed the title 8px right of the detail rows it heads.
+   * Taking the node out of layout drops the phantom gap and leaves the title
+   * flush with the row icons below it. */
+  .activity-group-icon {
+    display: none;
+  }
   .activity-group-header:hover { color: var(--text_default_primary); }
   .activity-group-summary { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .activity-group-chevron {
@@ -2053,7 +2062,7 @@
   .activity-group[open] .activity-group-chevron { transform: rotate(90deg); }
   .activity-group-body {
     position: relative;
-    margin-top: var(--spacing_16);
+    margin-top: var(--spacing_8);
     padding-left: 0;
   }
   .activity-group-items {
