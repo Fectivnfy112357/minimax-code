@@ -189,6 +189,55 @@ export function resolveWebuiSubmissionIntent(args: {
   return { kind: "submit-turn" };
 }
 
+/** What Enter means at the textarea. */
+export type WebuiComposerEnterAction = "submit" | "newline";
+
+/**
+ * Decide what a bare Enter in the composer textarea does.
+ *
+ * Enter is already overloaded here before it can be a shortcut: with the
+ * mention menu open it accepts the highlighted entry, and with the slash
+ * command popover open it accepts the highlighted command. Both of those
+ * branches live in the component's `onKeyDown` and return early, so this
+ * resolver only ever sees the key once nothing else has claimed it.
+ *
+ * The remaining decision is send-versus-newline, and it is pure: the same key
+ * event plus the gate the send button already uses. Routing the button and the
+ * keyboard through one `submitBlocked` flag is the point — a keyboard shortcut
+ * that could submit through a path the button would have refused is the bug
+ * this shape exists to prevent.
+ *
+ * `newline` means "do not preventDefault": the textarea inserts its own
+ * line break and nothing else happens.
+ */
+export function resolveWebuiComposerEnterAction(args: {
+  readonly shiftKey: boolean;
+  readonly altKey: boolean;
+  readonly ctrlKey: boolean;
+  readonly metaKey: boolean;
+  /** True while an IME candidate window is open. */
+  readonly isComposing: boolean;
+  /** The send button's `disabled` condition, hoisted to a single value. */
+  readonly submitBlocked: boolean;
+}): WebuiComposerEnterAction {
+  // Any modifier keeps Enter as a newline. Shift+Enter is the conventional
+  // multi-line gesture, and the platform modifiers belong to the browser and
+  // the desktop shell (Ctrl/Cmd+Enter as a submit alias, Alt as a
+  // newline-alias) — claiming them would break both.
+  if (args.shiftKey || args.altKey || args.ctrlKey || args.metaKey) {
+    return "newline";
+  }
+  // An IME candidate is confirmed with Enter. Sending on that keystroke would
+  // fire mid-composition and discard the candidate the user was still choosing
+  // between, so composition always wins over the shortcut.
+  if (args.isComposing) return "newline";
+  // Nothing sendable right now (empty draft, a command already running, a goal
+  // already submitting): fall back to the textarea's own newline rather than
+  // swallowing the key.
+  if (args.submitBlocked) return "newline";
+  return "submit";
+}
+
 /** Inputs the composer submit handler needs. */
 export interface WebuiComposerSubmitArgs {
   readonly sessionId?: string;

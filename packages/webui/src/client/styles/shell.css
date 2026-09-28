@@ -1602,7 +1602,14 @@
     cursor: default;
   }
 
-  /* The one restrained call to action on the page: dark fill, inverted glyph. */
+  /* The composer's call to action: a filled blue disc carrying an inverted
+   * glyph. `#3a83f7` is a brand blue with no entry in the transcribed desktop
+   * palette — those run cyan (`#0094fc`, `#0077d9`) and are visibly cooler —
+   * so it stays a literal here, matching how the toggle switch already pins
+   * `#0094fc`, rather than being forced onto a `--blue_*` step that would
+   * render a different hue. The glyph is pinned to `#fff` instead of
+   * `--text_default_inverted`, which the dark theme binds to `--gray_1000`:
+   * a fixed blue fill needs white ink in both themes. */
   .webui-send-button {
     display: flex;
     align-items: center;
@@ -1610,17 +1617,17 @@
     width: 36px;
     height: 36px;
     flex-shrink: 0;
-    border-radius: var(--radius_12);
-    background-color: var(--bg_interaction_primary_default);
-    color: var(--text_default_inverted);
+    border-radius: 50%;
+    background-color: #3a83f7;
+    color: #fff;
     transition: background-color 120ms ease;
   }
   .webui-send-button:hover:not(:disabled) {
-    background-color: var(--bg_interaction_primary_hover);
+    background-color: #3579e3;
   }
   .webui-send-button:disabled {
-    background-color: var(--bg_interaction_primary_inactive);
-    color: var(--text_default_inverted);
+    background-color: rgb(58 131 247 / 40%);
+    color: #fff;
     cursor: not-allowed;
   }
   .webui-send-button:focus-visible {
@@ -3090,23 +3097,28 @@
     font-variant-numeric: tabular-nums;
   }
 
+  /* The stop button is the send button's twin: same disc, same blue, same
+   * 36px, so the mid-turn swap reads as the glyph changing rather than the
+   * control resizing. This block sits after `.webui-send-button` and its
+   * `background` shorthand would otherwise win the cascade, which is why the
+   * fill is repeated here rather than inherited. */
   .webui-send-button--stop {
     display: inline-flex;
-    width: 32px;
-    height: 32px;
+    width: 36px;
+    height: 36px;
     align-items: center;
     justify-content: center;
     border: 0;
     border-radius: 50%;
-    background: var(--gray_1000);
+    background: #3a83f7;
     cursor: pointer;
   }
 
   .webui-send-stop-square {
-    width: 10px;
-    height: 10px;
+    width: 11px;
+    height: 11px;
     border-radius: 2px;
-    background: var(--gray_0);
+    background: #fff;
   }
 
   .webui-questionnaire-header {

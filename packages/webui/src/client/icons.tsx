@@ -215,9 +215,13 @@ export function WebuiIconDiffFile({ fileName, className }: WebuiIconProps & { re
   return <WebuiIconFile className={className} />;
 }
 
+/** The send glyph is the only consumer of this icon, and its rendered
+ * footprint is fixed by the 36px disc around it: the path's ink spans 12.16 of
+ * the 20-unit viewBox, so 20px renders a 12.2px arrow inside the disc, which
+ * is the proportion the composer send button is drawn to. */
 export function WebuiIconSend({ className }: WebuiIconProps): ReactElement {
   return (
-    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}>
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}>
       <path d="M10.0795 16V4M16.159 9.47515L10.0795 4L4 9.47515" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"></path>
     </svg>
   );

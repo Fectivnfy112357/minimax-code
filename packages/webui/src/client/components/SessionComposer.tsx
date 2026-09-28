@@ -99,6 +99,7 @@ import {
   submitWebuiGoal,
   submitWebuiComposerTurn,
   resolveWebuiSubmissionIntent,
+  resolveWebuiComposerEnterAction,
   isTurnLive,
   looksLikeAbsoluteWorkspacePath,
 } from "../projection/composer-state.js";
@@ -1416,6 +1417,10 @@ export function WebuiComposer({
   }, [sessionLayout]);
   const messageDraft = [draft.trim(), ...urlReferences.map((reference) => reference.url.trim()).filter(Boolean)].filter(Boolean).join("\n");
   const sendable = (canCompose || canQueue) && (Boolean(messageDraft) || attachments.length > 0);
+  // The one gate for "a submit can start right now". The send button's
+  // `disabled` and the Enter shortcut both read this value, so the keyboard
+  // can never open a submit path the button itself would have refused.
+  const submitBlocked = !sendable || commandRunning || goalSubmitting;
   // The submit handler is a single call into
   // `submitWebuiComposerTurn` with the assembled handler bundle. The
   // assembly itself is `buildWebuiComposerHandlers` — a named unit
@@ -1790,6 +1795,28 @@ export function WebuiComposer({
                       const command = commandSuggestions[commandIndex];
                       if (command) chooseCommand(command.name);
                     }
+                  // Reached only once neither the mention menu nor the slash
+                  // popover claimed the key — both return above. Enter sends;
+                  // every modifier and an open IME candidate keep the
+                  // textarea's own newline.
+                  if (event.key === "Enter") {
+                    const action = resolveWebuiComposerEnterAction({
+                      shiftKey: event.shiftKey,
+                      altKey: event.altKey,
+                      ctrlKey: event.ctrlKey,
+                      metaKey: event.metaKey,
+                      isComposing: event.nativeEvent.isComposing,
+                      submitBlocked,
+                    });
+                    if (action === "submit") {
+                      event.preventDefault();
+                      // `requestSubmit` raises the form's submit event rather
+                      // than bypassing it, so the keyboard lands on the same
+                      // `onSubmit` the send button reaches.
+                      event.currentTarget.form?.requestSubmit();
+                      return;
+                    }
+                  }
                   }}
                   disabled={!canCompose && !canQueue}
                   placeholder={goalMode ? "描述你想完成的目标" : "输入消息…（输入 / 唤起命令）"}
@@ -2032,7 +2059,7 @@ export function WebuiComposer({
                   ) : (
                     <button
                       type="submit"
-                      disabled={!sendable || commandRunning || goalSubmitting}
+                      disabled={submitBlocked}
                       aria-label="发送"
                       data-webui-composer-submit="true"
                       className="webui-send-button"
