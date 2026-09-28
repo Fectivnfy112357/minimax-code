@@ -734,6 +734,29 @@ export function WebuiClientFoundationApp(
     <div data-webui-shell="two-column" className="w-full h-screen relative">
       <div className="relative flex h-screen overflow-hidden bg-bg_grouped_secondary">
         <div className="pointer-events-none absolute inset-x-0 top-0 z-[50] h-[46px]" />
+        <div className="pointer-events-none absolute left-[126px] top-0 z-[60] flex h-[38px] items-center gap-1">
+          <button
+            type="button"
+            data-webui-sidebar-toggle="true"
+            aria-label={railCollapsed ? "展开导航栏" : "收起导航栏"}
+            aria-expanded={!railCollapsed}
+            onClick={() => setRailCollapsed((collapsed) => !collapsed)}
+            className="pointer-events-auto flex size-8 items-center justify-center rounded-[8px] text-text_default_tertiary hover:bg-bg_interaction_tertiary_hover"
+          >
+            <WebuiIconSidebarToggle />
+          </button>
+          <button
+            type="button"
+            data-webui-search="true"
+            data-webui-placeholder-chrome="search"
+            aria-disabled="true"
+            aria-label="搜索"
+            disabled
+            className="pointer-events-auto flex size-[30px] cursor-default items-center justify-center rounded-lg text-text_default_tertiary opacity-70"
+          >
+            <WebuiIconSearch />
+          </button>
+        </div>
 
         <div className="contents">
           {/* -------------------------------------------------------------- rail */}
@@ -747,37 +770,9 @@ export function WebuiClientFoundationApp(
               aria-label="Primary navigation"
               data-webui-shell-region="rail"
               data-webui-rail-width={railCollapsed ? "64" : "240"}
-              className={`webui-rail relative z-50 flex h-full select-none flex-col overflow-visible bg-bg_default_scrim ${railCollapsed ? "w-[64px]" : "w-[240px]"}`}
+              className={`webui-rail relative z-50 flex h-full select-none flex-col overflow-visible ${railCollapsed ? "w-[64px] bg-transparent" : "w-[240px] bg-bg_default_scrim"}`}
             >
-              {/* The desktop keeps the rail controls above the first navigation row. */}
-              <div className="flex w-full flex-shrink-0 flex-col pb-3">
-                <div className="relative flex h-[38px] w-full items-center">
-                  <div className="ml-auto flex items-center gap-1 pr-2">
-                    <button
-                      type="button"
-                      data-webui-sidebar-toggle="true"
-                      aria-label={railCollapsed ? "展开导航栏" : "收起导航栏"}
-                      aria-expanded={!railCollapsed}
-                      onClick={() => setRailCollapsed((collapsed) => !collapsed)}
-                      className="flex size-8 items-center justify-center rounded-[8px] text-text_default_tertiary hover:bg-bg_interaction_tertiary_hover"
-                    >
-                      <WebuiIconSidebarToggle />
-                    </button>
-                    <button
-                      type="button"
-                      data-webui-search="true"
-                      data-webui-placeholder-chrome="search"
-                      aria-disabled="true"
-                      aria-label="搜索"
-                      disabled
-                      className="flex size-[30px] cursor-default items-center justify-center rounded-lg text-text_default_tertiary opacity-70"
-                    >
-                      <WebuiIconSearch />
-                    </button>
-                  </div>
-                </div>
-              </div>
-
+              <div className="h-[50px] flex-shrink-0" aria-hidden="true" />
               {!railCollapsed ? (
                 <>
                   <div
@@ -833,7 +828,7 @@ export function WebuiClientFoundationApp(
 
                 </>
               ) : null}
-              <div className="relative flex-shrink-0 border-t-[0.5px] border-border_default">
+              {!railCollapsed ? <div className="relative flex-shrink-0 border-t-[0.5px] border-border_default">
                 <UserMenu
                   collapsed={railCollapsed}
                   hostLabel={hostLabel}
@@ -844,7 +839,7 @@ export function WebuiClientFoundationApp(
                   getSigninPanel={transport?.getSigninPanel}
                   claimSignin={transport?.claimSignin}
                 />
-              </div>
+              </div> : null}
             </aside>
             </LeftRail>
           </div>
@@ -908,7 +903,7 @@ export function WebuiClientFoundationApp(
                     </div>
                     )
                   ) : (
-                    <div className="flex w-full items-center gap-2">
+                    <div className={`flex w-full items-center gap-2 ${railCollapsed ? "pl-[142px]" : ""}`}>
                       <span className="text-text_default_secondary text-size_12 leading-line_height_16">
                         {selectedSession?.title ?? ""}
                       </span>
