@@ -110,6 +110,7 @@ import {
 import {
   createSessionRuntimeWriter,
   HOME_SESSION_RUNTIME_KEY,
+  readSessionRuntimeState,
   useSessionRuntimeState,
 } from "../session-runtime-store.js";
 import { initialWebuiStreamState } from "../stream.js";
@@ -734,7 +735,9 @@ export function WebuiComposer({
     const unsubscribe = watchEvents?.((event) => {
       const commands = reduceWebuiEffect(
         {
-          stream,
+          stream: readSessionRuntimeState(
+            sessionId ?? HOME_SESSION_RUNTIME_KEY,
+          ).stream,
           permissions,
           questionnaire,
           goal,
