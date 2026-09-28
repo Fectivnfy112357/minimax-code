@@ -1776,6 +1776,30 @@ export function WebuiComposer({
                       onDraftChange(draft.slice(0, commandMatch.index));
                       return;
                     }
+                    // Enter is claimed above by an open mention menu, and below by
+                    // an open slash popover. This MUST sit before the
+                    // `commandSuggestions.length === 0` guard: that guard
+                    // returns for EVERY key, so a branch placed after it never
+                    // runs in the common case of an ordinary message — which is
+                    // exactly how a first attempt at this silently did nothing.
+                    if (event.key === "Enter" && commandSuggestions.length === 0) {
+                      const action = resolveWebuiComposerEnterAction({
+                        shiftKey: event.shiftKey,
+                        altKey: event.altKey,
+                        ctrlKey: event.ctrlKey,
+                        metaKey: event.metaKey,
+                        isComposing: event.nativeEvent.isComposing,
+                        submitBlocked,
+                      });
+                      if (action === "submit") {
+                        event.preventDefault();
+                        // `requestSubmit` raises the form's submit event rather
+                        // than bypassing it, so the keyboard lands on the same
+                        // `onSubmit` the send button reaches.
+                        event.currentTarget.form?.requestSubmit();
+                        return;
+                      }
+                    }
                     if (commandSuggestions.length === 0) return;
                     if (event.key === "ArrowDown") {
                       event.preventDefault();
@@ -1795,28 +1819,6 @@ export function WebuiComposer({
                       const command = commandSuggestions[commandIndex];
                       if (command) chooseCommand(command.name);
                     }
-                  // Reached only once neither the mention menu nor the slash
-                  // popover claimed the key — both return above. Enter sends;
-                  // every modifier and an open IME candidate keep the
-                  // textarea's own newline.
-                  if (event.key === "Enter") {
-                    const action = resolveWebuiComposerEnterAction({
-                      shiftKey: event.shiftKey,
-                      altKey: event.altKey,
-                      ctrlKey: event.ctrlKey,
-                      metaKey: event.metaKey,
-                      isComposing: event.nativeEvent.isComposing,
-                      submitBlocked,
-                    });
-                    if (action === "submit") {
-                      event.preventDefault();
-                      // `requestSubmit` raises the form's submit event rather
-                      // than bypassing it, so the keyboard lands on the same
-                      // `onSubmit` the send button reaches.
-                      event.currentTarget.form?.requestSubmit();
-                      return;
-                    }
-                  }
                   }}
                   disabled={!canCompose && !canQueue}
                   placeholder={goalMode ? "描述你想完成的目标" : "输入消息…（输入 / 唤起命令）"}

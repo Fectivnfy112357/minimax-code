@@ -2067,12 +2067,14 @@
   }
   /* The live "推理中…" row trails the streamed thinking detail (or the tool
    * row above it, when the detail is still empty). It carried no margin at
-   * all, so it sat flush against whatever preceded it. */
+   * all, so it sat flush against whatever preceded it. The step is 16px so
+   * the live row reads as its own beat rather than another line of the
+   * paragraph it follows. */
   .webui-thinking-live-status {
     display: flex;
     min-height: 28px;
     align-items: center;
-    margin-top: var(--spacing_8);
+    margin-top: var(--spacing_16);
     gap: var(--spacing_8);
     color: var(--text_default_tertiary);
     font-size: 14px;
