@@ -106,6 +106,7 @@ import {
   useSessionRuntimeState,
 } from "../session-runtime-store.js";
 import { deriveConversationUsageNotice } from "../projection/message-projection.js";
+import { deriveRecentWorkspaceDirs } from "../projection/composer-state.js";
 
 /**
  * Hash helpers used by the shell. `main.tsx` also calls
@@ -571,6 +572,13 @@ export function WebuiClientFoundationApp(
     },
   );
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
+  // The `最近` group in the workspace picker. Derived from the sessions the
+  // client already holds rather than a new operation — see
+  // `deriveRecentWorkspaceDirs` for why there is nothing to call instead.
+  const recentWorkspaceDirs = useMemo(
+    () => deriveRecentWorkspaceDirs(flatSessionsWithChildren),
+    [flatSessionsWithChildren],
+  );
   // Tracks whether the user has explicitly cleared the workspace in *this*
   // session; the effect below checks both this and the persisted flag.
   const userClearedWorkspaceRef = useRef(readNoProjectFlag());
@@ -776,13 +784,13 @@ export function WebuiClientFoundationApp(
               {!railCollapsed ? (
                 <>
                   <div
-                    className="flex-shrink-0 px-2 pb-px"
+                    className="flex-shrink-0 px-4 pb-px"
                     data-webui-rail-fixed-row="true"
                   >
                     <RailRow
                       label="新建任务"
                       icon={<WebuiIconNewTask className="flex-shrink-0" />}
-                      active={homeMode}
+                      active={homeMode && !pluginManagementOpen}
                       onSelect={startNewTask}
                     />
                   </div>
@@ -936,6 +944,7 @@ export function WebuiClientFoundationApp(
                     onWorkspaceChange={handleWorkspaceChange}
                     workspaceMenuOpen={workspaceMenuOpen}
                     setWorkspaceMenuOpen={setWorkspaceMenuOpen}
+                    recentWorkspaceDirs={recentWorkspaceDirs}
                     runCommand={transport?.runCommand}
                     sendMessage={transport?.sendMessage}
                     enqueueMessage={transport?.enqueueMessage}

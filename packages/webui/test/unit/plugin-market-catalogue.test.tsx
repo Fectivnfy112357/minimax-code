@@ -14,6 +14,13 @@
 // that reaches the catalogue, and it is enough to render either one. The
 // managing header and the fetch paths are effects SSR never runs; those are
 // pinned by reading the source, the same way `webui-shell.test.ts` does.
+//
+// The split was never meant to leave the two pages looking different: they are
+// two catalogues of one page, so they share a layout. SSR cannot observe that
+// shared layout — with no effect run there is no data, and an empty list
+// renders 「暂无内容」 instead of the grid — so the layout contract itself is
+// pinned by reading the component, and the two render branches are pinned by
+// SSR. See 「marketplace page layout parity」 below.
 
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
@@ -80,6 +87,77 @@ describe("plugin marketplace catalogue", () => {
   });
 });
 
+// 技能 used to be laid out as a management list while 插件 got the marketplace
+// treatment: a single-column stack of 84px rows with hairline dividers and 50px
+// icons, capped at 960px, with no 「查看全部」 at all. `webui-plugin-grid` — the
+// two-column 768px card grid, 58px rows, 40px icons — was gated on
+// `area === "plugins" && view === "market"`, so the skill tab inherited none of
+// it. One condition now decides "this is a marketplace page", and every layout
+// consequence hangs off that single condition rather than off the plugin area.
+describe("marketplace page layout parity", () => {
+  it("keys the card grid off the catalogue, not the plugin area", () => {
+    // The regression in one assertion: re-gating the grid on the plugin area
+    // would put 技能 back into the divided list while this file still passes
+    // every other check.
+    expect(component).toMatch(
+      /const isMarketCatalogue\s*=\s*\(area === "plugins" \|\| area === "skills"\) && view === "market";/,
+    );
+    expect(component).toContain(
+      'className={`webui-plugin-list ${isMarketCatalogue ? "webui-plugin-grid" : ""}`}',
+    );
+  });
+
+  it("previews the same number of cards on both pages", () => {
+    expect(component).toContain("const MARKET_PREVIEW_COUNT = 8;");
+    expect(component).toMatch(
+      /isMarketCatalogue && !showAllCatalogue\s*\?\s*filtered\.slice\(0, MARKET_PREVIEW_COUNT\)/,
+    );
+  });
+
+  it("offers the same expand affordance on both pages", () => {
+    // SSR cannot reach this control: no effect runs, so there is no data and no
+    // total. The wiring is pinned by reading the component, as above.
+    expect(component).toContain(
+      "!busy && isMarketCatalogue && visibleMarketTotal > MARKET_PREVIEW_COUNT",
+    );
+    // The label names the catalogue rather than being hard-coded to plugins,
+    // so 技能 reads 「查看全部技能」 / 「收起技能」 instead of 「收起插件」.
+    expect(component).toContain("`收起${marketNoun}`");
+    expect(component).toContain(
+      'const marketNoun = area === "skills" ? "技能" : "插件";',
+    );
+    expect(component).toContain("`查看全部 ${marketTotal} 个`");
+  });
+
+  it("does not state a skill count the hub cannot supply", () => {
+    // `listSkillHub` returns `{skills, hasMore, nextCursor}` — there is no
+    // `pluginTotal` equivalent. When the page came back truncated the total is
+    // unknowable, so the label drops the number rather than claiming "查看全部
+    // 100 个" for an arbitrarily capped fetch.
+    expect(component).toContain("(result as Row).hasMore === true");
+    expect(component).toMatch(
+      /marketTotal === null\s*\?\s*`查看全部\$\{marketNoun\}`/,
+    );
+    // …and the control is still offered on the strength of what is in hand, so
+    // a truncated listing is not silently stuck at the preview.
+    expect(component).toContain("const visibleMarketTotal = marketTotal ?? filtered.length;");
+  });
+
+  it("resets the expansion when the catalogue changes", () => {
+    // Carrying an expanded 插件 list into the 技能 tab would render skills past
+    // the preview on a page the user never expanded.
+    //
+    // The class is `[^}]`, not `[\s\S]`: an unbounded lazy match runs straight
+    // past this function's closing brace and finds the same setter in the
+    // category-filter and search handlers further down, so the assertion would
+    // pass with the reset deleted. `[^}]` cannot cross a brace, so the setter
+    // has to be inside the body.
+    expect(component).toMatch(
+      /const selectMarketCatalog = \(catalog: "plugins" \| "skills"\) => \{[^}]*setShowAllCatalogue\(false\);/,
+    );
+  });
+});
+
 describe("plugin marketplace data paths", () => {
   it("stops asking the plugin listing for a skills side payload", () => {
     // `skillLimit` existed only to feed the embedded grid. The skill catalogue
@@ -92,8 +170,13 @@ describe("plugin marketplace data paths", () => {
   it("clears the plugin category filter when the catalogue changes", () => {
     // The categories cannot narrow the skill list, so carrying one over would
     // leave a filter applied to a list it does not describe.
+    //
+    // `[^}]` rather than `[\s\S]` so the match is bounded by this function's
+    // body: an unbounded lazy match would satisfy itself from any later
+    // `setCategory("")` added to the file. There is only one today, which is
+    // exactly why this is a tightening and not a bug fix.
     expect(component).toMatch(
-      /const selectMarketCatalog = \(catalog: "plugins" \| "skills"\) => \{[\s\S]*?setCategory\(""\);/,
+      /const selectMarketCatalog = \(catalog: "plugins" \| "skills"\) => \{[^}]*setCategory\(""\);/,
     );
   });
 

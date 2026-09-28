@@ -922,7 +922,36 @@ describe("WebUI shell — desktop anatomy", () => {
     expect(html).toMatch(/webui-nav-item/u);
     expect(html).toMatch(/webui-empty-state/u);
     expect(html).toMatch(/webui-textarea/u);
-    expect(html).toMatch(/webui-pill/u);
+    // The workspace trigger moved off the generic `webui-pill` onto the
+    // purpose-built bar class, because it now sits inside the grey band that
+    // carries the project context rather than floating as its own pill.
+    // `webui-pill` is still live — SessionRail's project chips use it — but the
+    // rail is not part of this render, so asserting it here would only pass by
+    // accident of composition.
+    expect(html).toMatch(/webui-workspace-bar/u);
+    expect(html).toMatch(/webui-workspace-bar-trigger/u);
+  });
+
+  it("nests the project row inside the scrim container, not beside it", () => {
+    const html = renderShell();
+
+    // The seam the row used to have came from being a SIBLING of the scrim
+    // container: the card, the container's own `pb-2` and the row's separate
+    // fill met along one line and read as two stacked boxes. Sharing the
+    // container's box is what makes the card and the band one surface, so
+    // document order is the cheap structural proxy — the row must come after
+    // the scrim opens and before the composer form ends.
+    const scrim = html.indexOf("message-input-home-container");
+    const form = html.indexOf('data-webui-composer="true"');
+    const bar = html.indexOf("webui-workspace-bar");
+
+    expect(scrim).toBeGreaterThan(-1);
+    expect(form).toBeGreaterThan(-1);
+    expect(bar).toBeGreaterThan(-1);
+    expect(form).toBeLessThan(scrim);
+    expect(scrim).toBeLessThan(bar);
+    // Exactly one scrim box: a second would reintroduce the second surface.
+    expect(html.split("message-input-home-container")).toHaveLength(2);
   });
 
   it("uses the desktop's own class composition for rows and pills", () => {

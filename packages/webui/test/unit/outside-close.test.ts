@@ -7,14 +7,15 @@ import {
 } from "../../src/client/projection/outside-close.js";
 
 /**
- * Pure tests for the five outside-close strategies.
+ * Pure tests for the six outside-close strategies.
  *
- * The five surfaces are: UserMenu, ModelPicker, the SessionComposer
- * permission popover, SessionComposer slash-popover, ContextMenu. Each has a
- * slightly different mix of subscribed event kinds and Escape handling. The
- * tests pin the truth table that lives in `outside-close.ts` and pin the
- * contract that no surface closes on a non-subscribed event (the listener is
- * simply not attached).
+ * The six surfaces are: UserMenu, ModelPicker, the SessionComposer
+ * permission popover, the SessionComposer workspace picker,
+ * SessionComposer slash-popover, ContextMenu. Each has a slightly different
+ * mix of subscribed event kinds and Escape handling. The tests pin the truth
+ * table that lives in `outside-close.ts` and pin the contract that no
+ * surface closes on a non-subscribed event (the listener is simply not
+ * attached).
  *
  * Manual acceptance (out-of-band, can't be automated in this runner):
  *   - UserMenu: open the user menu, click outside the anchor → menu closes.
@@ -37,11 +38,12 @@ const SURFACES: readonly WebuiOutsideCloseSurface[] = [
   "userMenu",
   "modelPicker",
   "permissionMenu",
+  "workspacePicker",
   "slashPopover",
   "contextMenu",
 ];
 
-describe("WEBUI_OUTSIDE_CLOSE_POLICIES — the five surfaces are all registered", () => {
+describe("WEBUI_OUTSIDE_CLOSE_POLICIES — the six surfaces are all registered", () => {
   for (const surface of SURFACES) {
     it(`registers policy for "${surface}"`, () => {
       expect(WEBUI_OUTSIDE_CLOSE_POLICIES[surface]).toBeDefined();
@@ -321,6 +323,49 @@ describe("evaluateComposerDismiss — the popover's container is its wrap, not t
   });
 });
 
+describe("Workspace picker — pointerdown outside its own wrap closes; no keydown listener", () => {
+  it("closes on pointerdown outside the trigger-and-panel wrap", () => {
+    expect(
+      evaluateOutsideClose({
+        surface: "workspacePicker",
+        kind: "pointerdown",
+        insideContainer: false,
+      }),
+    ).toBe("close");
+  });
+
+  it("ignores pointerdown inside the wrap (trigger, 最近 rows, or the browser dialog)", () => {
+    expect(
+      evaluateOutsideClose({
+        surface: "workspacePicker",
+        kind: "pointerdown",
+        insideContainer: true,
+      }),
+    ).toBe("ignore");
+  });
+
+  it("is `not-subscribed` for keydown events (Escape was never wired)", () => {
+    expect(
+      evaluateOutsideClose({
+        surface: "workspacePicker",
+        kind: "keydown",
+        key: "Escape",
+        insideContainer: false,
+      }),
+    ).toBe("not-subscribed");
+  });
+
+  it("is `not-subscribed` for mousedown events (pointerdown only)", () => {
+    expect(
+      evaluateOutsideClose({
+        surface: "workspacePicker",
+        kind: "mousedown",
+        insideContainer: false,
+      }),
+    ).toBe("not-subscribed");
+  });
+});
+
 describe("Slash popover — pointerdown outside closes; no keydown listener; close clears the slash segment", () => {
   it("closes on pointerdown outside the composer region", () => {
     expect(
@@ -421,7 +466,7 @@ describe("ContextMenu — mousedown outside closes; keydown Escape closes; point
 });
 
 describe("truth table — every (surface × event × inside) cell is exactly one of close / ignore / not-subscribed", () => {
-  // 5 surfaces × 3 event kinds × 2 inside states, enumerated below.
+  // 6 surfaces × 3 event kinds × 2 inside states, enumerated below.
   const cases: ReadonlyArray<{
     surface: WebuiOutsideCloseSurface;
     kind: "pointerdown" | "mousedown" | "keydown";
@@ -444,6 +489,11 @@ describe("truth table — every (surface × event × inside) cell is exactly one
     { surface: "permissionMenu", kind: "mousedown", inside: false },
     { surface: "permissionMenu", kind: "keydown", key: "Escape", inside: false },
     { surface: "permissionMenu", kind: "keydown", key: "Tab", inside: false },
+
+    { surface: "workspacePicker", kind: "pointerdown", inside: false },
+    { surface: "workspacePicker", kind: "pointerdown", inside: true },
+    { surface: "workspacePicker", kind: "mousedown", inside: false },
+    { surface: "workspacePicker", kind: "keydown", key: "Escape", inside: false },
 
     { surface: "slashPopover", kind: "pointerdown", inside: false },
     { surface: "slashPopover", kind: "pointerdown", inside: true },
@@ -495,6 +545,12 @@ describe("policy catalogue — exactly the expected four subscribed kinds per su
     ]);
   });
 
+  it("Workspace picker subscribes pointerdown only", () => {
+    expect(WEBUI_OUTSIDE_CLOSE_POLICIES.workspacePicker.subscribedKinds).toEqual([
+      "pointerdown",
+    ]);
+  });
+
   it("Slash popover subscribes pointerdown only", () => {
     expect(WEBUI_OUTSIDE_CLOSE_POLICIES.slashPopover.subscribedKinds).toEqual([
       "pointerdown",
@@ -520,6 +576,10 @@ describe("onEscape flag — UserMenu + ContextMenu + the permission popover flip
 
   it("PermissionMenu.onEscape is true (composer onKeyDown handles Escape)", () => {
     expect(WEBUI_OUTSIDE_CLOSE_POLICIES.permissionMenu.onEscape).toBe(true);
+  });
+
+  it("WorkspacePicker.onEscape is undefined (no keydown listener)", () => {
+    expect(WEBUI_OUTSIDE_CLOSE_POLICIES.workspacePicker.onEscape).toBeUndefined();
   });
 
   it("SlashPopover.onEscape is undefined (no keydown listener)", () => {

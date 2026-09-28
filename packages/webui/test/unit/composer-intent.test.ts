@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  deriveRecentWorkspaceDirs,
   isTurnLive,
   resolveWebuiSubmissionIntent,
   type WebuiSubmissionIntent,
@@ -439,5 +440,84 @@ describe("Desktop composer interaction contracts", () => {
       expect(setPermissionModeOperation.validate({ mode }).ok).toBe(true);
     }
     expect(setPermissionModeOperation.validate({ mode: "off" }).ok).toBe(false);
+  });
+});
+
+describe("deriveRecentWorkspaceDirs — the 最近 group in the workspace picker", () => {
+  it("orders by most recently updated session", () => {
+    expect(
+      deriveRecentWorkspaceDirs([
+        { workspaceDir: "/old", updatedAt: 10 },
+        { workspaceDir: "/new", updatedAt: 30 },
+        { workspaceDir: "/mid", updatedAt: 20 },
+      ]),
+    ).toEqual(["/new", "/mid", "/old"]);
+  });
+
+  it("collapses duplicate workspaces and keeps the newest one's rank", () => {
+    expect(
+      deriveRecentWorkspaceDirs([
+        { workspaceDir: "/a", updatedAt: 50 },
+        { workspaceDir: "/a", updatedAt: 90 },
+        { workspaceDir: "/b", updatedAt: 40 },
+      ]),
+    ).toEqual(["/a", "/b"]);
+  });
+
+  it("skips sessions with no workspace — 不需要项目 covers those", () => {
+    expect(
+      deriveRecentWorkspaceDirs([
+        { workspaceDir: undefined, updatedAt: 99 },
+        { workspaceDir: "   ", updatedAt: 98 },
+        { workspaceDir: "", updatedAt: 97 },
+        { workspaceDir: "/real", updatedAt: 1 },
+      ]),
+    ).toEqual(["/real"]);
+  });
+
+  it("trims whitespace so a padded path matches its trimmed twin", () => {
+    expect(
+      deriveRecentWorkspaceDirs([
+        { workspaceDir: "/a", updatedAt: 20 },
+        { workspaceDir: "  /a  ", updatedAt: 10 },
+      ]),
+    ).toEqual(["/a"]);
+  });
+
+  it("treats a missing updatedAt as oldest rather than newest", () => {
+    expect(
+      deriveRecentWorkspaceDirs([
+        { workspaceDir: "/undated" },
+        { workspaceDir: "/dated", updatedAt: 5 },
+      ]),
+    ).toEqual(["/dated", "/undated"]);
+  });
+
+  it("caps the list at the limit, keeping the most recent", () => {
+    expect(
+      deriveRecentWorkspaceDirs(
+        [
+          { workspaceDir: "/a", updatedAt: 5 },
+          { workspaceDir: "/b", updatedAt: 4 },
+          { workspaceDir: "/c", updatedAt: 3 },
+          { workspaceDir: "/d", updatedAt: 2 },
+        ],
+        2,
+      ),
+    ).toEqual(["/a", "/b"]);
+  });
+
+  it("returns an empty list when nothing has a workspace", () => {
+    expect(deriveRecentWorkspaceDirs([])).toEqual([]);
+    expect(deriveRecentWorkspaceDirs([{ updatedAt: 1 }])).toEqual([]);
+  });
+
+  it("does not mutate the input array", () => {
+    const sessions = [
+      { workspaceDir: "/a", updatedAt: 1 },
+      { workspaceDir: "/b", updatedAt: 9 },
+    ];
+    deriveRecentWorkspaceDirs(sessions);
+    expect(sessions.map((s) => s.workspaceDir)).toEqual(["/a", "/b"]);
   });
 });

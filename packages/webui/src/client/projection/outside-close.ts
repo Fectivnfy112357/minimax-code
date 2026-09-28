@@ -1,9 +1,9 @@
 /**
  * Outside-close policy catalogue.
  *
- * Five WebUI surfaces close themselves when an interaction happens outside
+ * Six WebUI surfaces close themselves when an interaction happens outside
  * the surface's container. The implementations vary across components
- * today; this module captures the five existing behaviours as data so the
+ * today; this module captures the six existing behaviours as data so the
  * truth table lives in one place and a future refactor (e.g. unifying
  * pointerdown + mousedown into a single hook) can read from it without
  * rebuilding the matrix.
@@ -16,45 +16,49 @@
  *
  *   `pointerdown` — the modern, fire-and-forget pointer event. Fires for
  *                    mouse, touch, pen. Used by UserMenu, ModelPicker,
- *                    SessionComposer's permission popover and slash-popover.
+ *                    SessionComposer's permission popover, workspace picker
+ *                    and slash-popover.
  *   `mousedown`    — the legacy mouse-only event. Used by ContextMenu;
  *                    kept verbatim because the desktop's context menu
  *                    listener is also `mousedown`.
  *   `keydown`      — keyboard event. Used by UserMenu and ContextMenu
  *                    for the Escape key, and by the composer for the
- *                    permission popover; the two `pointerdown`-only
- *                    surfaces (ModelPicker, slash-popover) do NOT listen
- *                    to keyboard — the regex-driven dismiss in
+ *                    permission popover; the `pointerdown`-only surfaces
+ *                    (ModelPicker, workspace picker, slash-popover) do NOT
+ *                    listen to keyboard — the regex-driven dismiss in
  *                    slash-popover is triggered by the input change, and
  *                    ModelPicker is dismissed by the click that opens
  *                    another picker / blurs the textarea.
  *
  * Truth table — every (event, target-relationship-to-container) cell:
  *
- *   | surface       | pointerdown outside | pointerdown inside | mousedown outside | Escape |
- *   |---------------|---------------------|--------------------|-------------------|--------|
- *   | userMenu      | close               | ignore             | (n/a — pointer)   | close  |
- *   | modelPicker   | close               | ignore             | (n/a — pointer)   | (n/a)  |
- *   | permissionMenu| close               | ignore             | (n/a — pointer)   | close  |
- *   | slashPopover  | close (clear draft) | ignore             | (n/a — pointer)   | (n/a)  |
- *   | contextMenu   | (n/a — mousedown)   | (n/a — mousedown)  | close             | close  |
+ *   | surface        | pointerdown outside | pointerdown inside | mousedown outside | Escape |
+ *   |----------------|---------------------|--------------------|-------------------|--------|
+ *   | userMenu       | close               | ignore             | (n/a — pointer)   | close  |
+ *   | modelPicker    | close               | ignore             | (n/a — pointer)   | (n/a)  |
+ *   | permissionMenu | close               | ignore             | (n/a — pointer)   | close  |
+ *   | workspacePicker| close               | ignore             | (n/a — pointer)   | (n/a)  |
+ *   | slashPopover   | close (clear draft) | ignore             | (n/a — pointer)   | (n/a)  |
+ *   | contextMenu    | (n/a — mousedown)   | (n/a — mousedown)  | close             | close  |
  *
  * Every cell maps to `evaluateOutsideClose(...) === true | false | null`
  * (null = event not subscribed by this surface; the component never
  * attaches a listener for it, so the value is purely documentation).
  *
  * "Container" is per-surface and the difference is load-bearing:
- * `permissionMenu`'s container is the trigger-and-popover wrap, while
- * `slashPopover`'s is the whole composer region. Both therefore answer
- * "ignore" for an inside click, but they answer it for DIFFERENT clicks —
- * the permission popover dismisses on a textarea click, the slash popover
- * does not. Reusing one ref for both is what made the popover stick.
+ * `permissionMenu`'s and `workspacePicker`'s containers are their own
+ * trigger-and-body wraps, while `slashPopover`'s is the whole composer
+ * region. All three therefore answer "ignore" for an inside click, but
+ * they answer it for DIFFERENT clicks — the permission popover and the
+ * workspace picker dismiss on a textarea click, the slash popover does
+ * not. Reusing one ref for both shapes is what made those panels stick.
  */
 
 export type WebuiOutsideCloseSurface =
   | "userMenu"
   | "modelPicker"
   | "permissionMenu"
+  | "workspacePicker"
   | "slashPopover"
   | "contextMenu";
 
@@ -103,6 +107,13 @@ export const WEBUI_OUTSIDE_CLOSE_POLICIES: {
     notes:
       "Permission popover listens to pointerdown only at the document level; its container is the trigger-and-popover wrap, NOT the composer region, so a click on the textarea or any other footer control also dismisses it. Escape is handled by the composer's own onKeyDown (textarea and popover), not by a document-level listener — so Escape only closes it when focus is inside the composer.",
   },
+  workspacePicker: {
+    surface: "workspacePicker",
+    subscribedKinds: ["pointerdown"],
+    usesContainerContains: true,
+    notes:
+      "Workspace picker (the 选择文件夹 bar under the composer) listens to pointerdown only; its container is its own wrap — trigger pill plus the menu or the directory-browser dialog — so any other click dismisses it. No Escape handler: Escape was never wired for this surface.",
+  },
   slashPopover: {
     surface: "slashPopover",
     subscribedKinds: ["pointerdown"],
@@ -139,6 +150,8 @@ export const WEBUI_OUTSIDE_CLOSE_POLICIES: {
  *   | permissionMenu | pointerdown | (any)   | false  | close      |
  *   | permissionMenu | keydown     | Escape  | (any)  | close      |
  *   | permissionMenu | keydown     | other   | (any)  | ignore     |
+ *   | workspacePicker | pointerdown | (any)  | true   | ignore     |
+ *   | workspacePicker | pointerdown | (any)  | false  | close      |
  *   | slashPopover   | pointerdown | (any)   | true   | ignore     |
  *   | slashPopover   | pointerdown | (any)   | false  | close      |
  *   | contextMenu    | mousedown   | (any)   | true   | ignore     |

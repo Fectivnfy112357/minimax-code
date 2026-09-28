@@ -384,3 +384,48 @@ export function createdSessionId(
 ): string | undefined {
   return result.sessionId?.trim() || result.session?.sessionId?.trim() || undefined;
 }
+
+/**
+ * Workspace directories to offer as `最近` in the project picker, derived
+ * from session history.
+ *
+ * There is no `listRecentWorkspaces` operation: the runtime exposes only
+ * `browseWorkspaceDirs` (an on-demand filesystem walk behind the 选择新项目
+ * browser) and `listWorkspaceFileTree` (files inside a workspace). The only
+ * recency signal the client already holds is the session list, so that is
+ * what this reads — a workspace you have actually worked in, most recently
+ * touched first. No extra round trip, and the list can never name a
+ * directory the user has not been in.
+ *
+ * Ordering rules, in priority order:
+ *   - sessions are scanned newest-first, so a workspace's FIRST appearance
+ *     fixes its rank; a later session in the same workspace does not
+ *     demote it;
+ *   - duplicates collapse on the raw path;
+ *   - blank and missing `workspaceDir` are skipped (a session with no
+ *     project is exactly what the `不需要项目` row is for);
+ *   - `limit` caps the rendered rows. The cap is applied last so a workspace
+ *     that only appears late in the list is still reachable.
+ *
+ * The caller sorts by recency; this function deliberately does not read the
+ * clock, so the result is a pure function of its input.
+ */
+export function deriveRecentWorkspaceDirs(
+  sessions: ReadonlyArray<{
+    readonly workspaceDir?: string;
+    readonly updatedAt?: number;
+  }>,
+  limit = 6,
+): readonly string[] {
+  const byRecency = [...sessions].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const session of byRecency) {
+    const dir = session.workspaceDir?.trim();
+    if (!dir || seen.has(dir)) continue;
+    seen.add(dir);
+    result.push(dir);
+    if (result.length >= limit) break;
+  }
+  return result;
+}

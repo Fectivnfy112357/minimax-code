@@ -28,6 +28,10 @@ const categories: readonly { id: string; label: string }[] = [
   { id: "education", label: "教育" },
   { id: "other", label: "其他" },
 ];
+/** Cards shown before the catalogue is expanded. Both marketplace pages
+ * preview this many and then offer 「查看全部」, so the two pages are laid out
+ * against the same height at rest. */
+const MARKET_PREVIEW_COUNT = 8;
 const MARKETPLACE_CATEGORY: Readonly<Record<string, number>> = {
   other: MarketplaceCategory.OTHER,
   office: MarketplaceCategory.OFFICE,
@@ -75,7 +79,14 @@ export function PluginManagement({
   const [data, setData] = useState<Row[]>([]);
   const [personalSkills, setPersonalSkills] = useState<Row[]>([]);
   const [marketPluginTotal, setMarketPluginTotal] = useState(0);
-  const [showAllPlugins, setShowAllPlugins] = useState(false);
+  /* The skill hub reports `hasMore`/`nextCursor` where the plugin marketplace
+   * reports a `pluginTotal`, so a skill count is only known to be exact when the
+   * listing came back complete. `null` means "the total is not knowable from
+   * this response" and the label falls back to a bare 「查看全部技能」. */
+  const [marketSkillTotal, setMarketSkillTotal] = useState<number | null>(
+    null,
+  );
+  const [showAllCatalogue, setShowAllCatalogue] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [dialog, setDialog] = useState<"mcp" | "agent" | "skill" | null>(null);
@@ -182,15 +193,23 @@ export function PluginManagement({
             limit: 100,
             keyword: query || undefined,
           });
-      } else if (area === "skills")
-        result =
-          view === "market"
-            ? await request("listSkillHub", {
-                limit: 100,
-                keyword: query || undefined,
-              })
-            : await request("listRuntimeSkills", {});
-      else if (area === "apps") result = await request("listApps");
+      } else if (area === "skills") {
+        if (view === "market") {
+          result = await request("listSkillHub", {
+            limit: 100,
+            keyword: query || undefined,
+          });
+          const listed = rows(result, "skills");
+          setMarketSkillTotal(
+            result && typeof result === "object" && (result as Row).hasMore === true
+              ? null
+              : listed.length,
+          );
+        } else {
+          result = await request("listRuntimeSkills", {});
+          setMarketSkillTotal(null);
+        }
+      } else if (area === "apps") result = await request("listApps");
       else if (area === "mcp")
         result = await request("listMcpServers", {
           keyword: query || undefined,
@@ -235,6 +254,20 @@ export function PluginManagement({
       ),
     [data, query],
   );
+  /* Plugins and skills are two catalogues rendered by one page, so they share
+   * every layout decision. `isMarketCatalogue` is the single condition that
+   * says "this is the marketplace page rather than a management list" — the
+   * two-column card grid, the shared 768px measure and the 「查看全部」 preview
+   * are all keyed off it, which is what keeps 技能 laid out exactly like 插件. */
+  const isMarketCatalogue =
+    (area === "plugins" || area === "skills") && view === "market";
+  const marketNoun = area === "skills" ? "技能" : "插件";
+  const marketTotal =
+    area === "skills" ? marketSkillTotal : marketPluginTotal;
+  // When the total is unknown the affordance is still offered once the fetched
+  // page itself overflows the preview, so the control is never gated on a
+  // number this response could not supply.
+  const visibleMarketTotal = marketTotal ?? filtered.length;
   const mutate = async (
     action: WebuiPluginManagementAction,
     input: Row,
@@ -427,7 +460,7 @@ export function PluginManagement({
     setArea(catalog);
     setView("market");
     setCategory("");
-    setShowAllPlugins(false);
+    setShowAllCatalogue(false);
   };
 
   const openCreate = (target: Area) => {
@@ -597,7 +630,7 @@ export function PluginManagement({
           />
         </nav>
       ) : null}
-      {(area === "plugins" || area === "skills") && view === "market" ? (
+      {isMarketCatalogue ? (
         <>
           <div className="webui-plugin-market-discovery">
             {/* Plugin categories do not apply to the skill hub, so the nav is
@@ -609,7 +642,7 @@ export function PluginManagement({
                   key={item.id}
                   aria-pressed={category === item.id}
                   onClick={() => {
-                    setShowAllPlugins(false);
+                    setShowAllCatalogue(false);
                     setCategory(item.id);
                   }}
                 >
@@ -623,14 +656,12 @@ export function PluginManagement({
               placeholder={area === "skills" ? "搜索技能..." : "搜索插件..."}
               value={query}
               onChange={(event) => {
-                setShowAllPlugins(false);
+                setShowAllCatalogue(false);
                 setQuery(event.currentTarget.value);
               }}
             />
           </div>
-          <h2 className="webui-plugin-market-heading">
-            {area === "skills" ? "技能" : "插件"}
-          </h2>
+          <h2 className="webui-plugin-market-heading">{marketNoun}</h2>
         </>
       ) : null}
       {area === "plugins" && view === "personal" && !managementOpen ? (
@@ -714,10 +745,10 @@ export function PluginManagement({
         <p className="webui-plugin-empty">暂无内容</p>
       ) : (
         <div
-          className={`webui-plugin-list ${area === "plugins" && view === "market" ? "webui-plugin-grid" : ""}`}
+          className={`webui-plugin-list ${isMarketCatalogue ? "webui-plugin-grid" : ""}`}
         >
-          {(area === "plugins" && view === "market" && !showAllPlugins
-            ? filtered.slice(0, 8)
+          {(isMarketCatalogue && !showAllCatalogue
+            ? filtered.slice(0, MARKET_PREVIEW_COUNT)
             : filtered
           ).map((item, index) => {
             const name = nameOf(item) || `item-${index}`;
@@ -903,13 +934,17 @@ export function PluginManagement({
           })}
         </div>
       )}
-      {!busy && area === "plugins" && view === "market" && marketPluginTotal > 8 ? (
+      {!busy && isMarketCatalogue && visibleMarketTotal > MARKET_PREVIEW_COUNT ? (
         <button
           type="button"
           className="webui-plugin-show-all"
-          onClick={() => setShowAllPlugins((value) => !value)}
+          onClick={() => setShowAllCatalogue((value) => !value)}
         >
-          {showAllPlugins ? "收起插件" : `查看全部 ${marketPluginTotal} 个`}
+          {showAllCatalogue
+            ? `收起${marketNoun}`
+            : marketTotal === null
+              ? `查看全部${marketNoun}`
+              : `查看全部 ${marketTotal} 个`}
         </button>
       ) : null}
       {!busy && area === "plugins" && view === "personal" ? (

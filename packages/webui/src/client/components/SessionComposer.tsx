@@ -182,6 +182,11 @@ const PERMISSION_MODE_QUESTION = "应如何批准 minimax code 操作?";
 const PERMISSION_MODE_LEARN_MORE = "了解更多";
 const PERMISSION_MODE_DOCS_URL = "https://agent.minimax.io/docs/cli/features";
 
+/** Default for `recentWorkspaceDirs`. A module constant, not an inline `[]`, so
+ *  the prop keeps one identity across renders when the parent does not supply
+ *  it — an inline default would be a fresh array every render. */
+const EMPTY_WORKSPACE_DIRS: readonly string[] = [];
+
 /** Ordered most-restrictive first, mirroring the `ask` / `auto` / `full` actions
  *  the `/permission` command takes. */
 const PERMISSION_MODE_OPTION: Readonly<Record<WebuiComposerPermissionMode, WebuiComposerPermissionOption>> = {
@@ -434,6 +439,7 @@ export function WebuiComposer({
   onWorkspaceChange,
   workspaceMenuOpen,
   setWorkspaceMenuOpen,
+  recentWorkspaceDirs = EMPTY_WORKSPACE_DIRS,
   runCommand,
   sendMessage,
   resumeSession,
@@ -491,6 +497,10 @@ export function WebuiComposer({
    *  parent's workspace-change handler can also close the popover. */
   readonly workspaceMenuOpen: boolean;
   readonly setWorkspaceMenuOpen: (open: boolean) => void;
+  /** Workspace directories offered as `最近`, newest first. Derived from
+   *  session history by `deriveRecentWorkspaceDirs`; empty when the user has
+   *  no project sessions yet. */
+  readonly recentWorkspaceDirs?: readonly string[];
   readonly runCommand?: (request: { readonly command: "help" | "new" | "compact" | "status" | "usage" | "model"; readonly input?: string; readonly sessionId?: string; readonly agentName?: string; readonly workspaceDir?: string; }) => Promise<Record<string, unknown>>;
   readonly sendMessage?: WebuiClientMessageSender;
   readonly enqueueMessage?: WebuiClientMessageEnqueuer;
@@ -579,6 +589,10 @@ export function WebuiComposer({
   // dropdown hinged to the footer button, so "inside" means "inside this wrap",
   // not "anywhere in the composer".
   const permissionWrapRef = useRef<HTMLDivElement | null>(null);
+  // The workspace picker's own container: the 选择文件夹 trigger plus whichever
+  // panel it has open (the 最近 list or the directory browser). The picker has
+  // to be judged against THIS, not `composerRegionRef` — see the effect below.
+  const workspacePickerRef = useRef<HTMLDivElement | null>(null);
   const restorationKeyRef = useRef<string>();
   const fieldId = useId();
 
@@ -1139,6 +1153,31 @@ export function WebuiComposer({
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [composerMenu, permissionMenuOpen, mentionRange]);
+  // The workspace picker had NO outside-close listener at all: the only ways to
+  // close it were re-clicking its trigger, picking a row, or navigating away,
+  // so a stray click anywhere on the page left the panel hanging open. It gets
+  // its own effect rather than joining the listener above because it is a
+  // separate surface with a separate container — the trigger-and-panel wrap —
+  // and it renders below the form, outside the composer's own dismiss group.
+  useEffect(() => {
+    if (!workspaceMenuOpen && !workspaceBrowserOpen) return undefined;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!(event.target instanceof Node)) return;
+      if (
+        evaluateOutsideClose({
+          surface: "workspacePicker",
+          kind: "pointerdown",
+          insideContainer: workspacePickerRef.current?.contains(event.target) === true,
+        }) !== "close"
+      ) {
+        return;
+      }
+      setWorkspaceMenuOpen(false);
+      setWorkspaceBrowserOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [workspaceMenuOpen, workspaceBrowserOpen, setWorkspaceMenuOpen]);
   // Flip the popover below the composer when there isn't enough room above
   // for the full 320px cap. The measurement runs in `useLayoutEffect` so the
   // first paint already shows the correct placement — a normal `useEffect`
@@ -1985,26 +2024,28 @@ export function WebuiComposer({
                 </div>
               </div>
             </div>
-          </div>
-        </form>
 
+        {/* The project row lives INSIDE the scrim container rather than beside
+         * it. `.message-input-home-container` is the light surface that already
+         * wraps the card, so sharing that box is what makes the card and the
+         * band one continuous surface. As siblings they left a seam — the
+         * card's rounded corners, the container's `pb-2` and a second, slightly
+         * different grey all met along one line and read as two stacked boxes. */}
         {!sessionLayout ? (
-          <>
-        {/* The workspace pills sit outside the card, as they do on the desktop. */}
-        <div
-          className="flex w-full items-center gap-3 px-3"
-          data-webui-workspace-toolbar="true"
-        >
-          <div className="relative">
+          <div
+            className="webui-workspace-bar"
+            data-webui-workspace-toolbar="true"
+          >
+          <div className="relative" ref={workspacePickerRef}>
             <button
               type="button"
               aria-haspopup="listbox"
               aria-expanded={workspaceMenuOpen}
               data-webui-workspace-picker="true"
-              className="webui-pill max-w-[220px] min-w-0 text-text_default_primary"
+              className="webui-workspace-bar-trigger"
               onClick={() => setWorkspaceMenuOpen(!workspaceMenuOpen)}
             >
-            <span className="flex size-5 shrink-0 items-center justify-center text-icon_default_primary">
+            <span className="flex size-5 shrink-0 items-center justify-center">
               <WebuiIconFolder />
             </span>
             <span className="min-w-0 flex-1 truncate whitespace-nowrap leading-5">
@@ -2037,6 +2078,39 @@ export function WebuiComposer({
                 data-webui-workspace-menu="true"
                 className="webui-workspace-menu webui-workspace-menu--desktop"
               >
+                {/* Desktop shape: a `最近` group of workspaces the user has
+                 * actually been in, a rule, then the two commands. The group
+                 * is omitted entirely when there is no history — an empty
+                 * `最近` header above a divider reads as a broken panel. */}
+                {recentWorkspaceDirs.length > 0 ? (
+                  <>
+                    <div className="webui-workspace-menu-header" aria-hidden="true">
+                      最近
+                    </div>
+                    {recentWorkspaceDirs.map((dir) => {
+                      const active = dir === createSessionWorkspaceDir;
+                      return (
+                        <button
+                          key={dir}
+                          type="button"
+                          role="option"
+                          aria-selected={active}
+                          data-webui-workspace-recent={dir}
+                          className="webui-workspace-option webui-workspace-option--desktop"
+                          title={dir}
+                          onClick={() => onWorkspaceChange(dir)}
+                        >
+                          <WebuiIconFolder className="flex-shrink-0" />
+                          <span className="min-w-0 flex-1 truncate text-left">
+                            {workspaceProjectName(dir)}
+                          </span>
+                          {active ? <WebuiIconCheck className="webui-workspace-option-check" /> : null}
+                        </button>
+                      );
+                    })}
+                    <div className="webui-workspace-menu-separator" role="separator" />
+                  </>
+                ) : null}
                 <button
                   type="button"
                   role="option"
@@ -2068,10 +2142,11 @@ export function WebuiComposer({
                 </button>
               </div>
             ) : null}
+            </div>
           </div>
-        </div>
-          </>
         ) : null}
+          </div>
+        </form>
         {credentialMessage ? (
           <p
             role="alert"

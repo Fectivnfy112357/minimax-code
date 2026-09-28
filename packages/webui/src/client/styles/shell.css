@@ -1122,6 +1122,64 @@
   .webui-workspace-menu--desktop .webui-workspace-option--desktop:hover {
     background: var(--bg_interaction_tertiary_hover, rgba(0, 0, 0, 0.06));
   }
+
+  /* The project row under the composer. It is a LAYOUT element only — the
+   * light surface comes from `.message-input-home-container`, the scrim box
+   * that already wraps the card, so the card and this row read as one
+   * continuous band with no seam. Giving the row its own fill, radius or
+   * shadow is what reintroduced the seam: two greys meeting along one line.
+   * Vertical padding only; the container owns the rounding and the bleed. */
+  .webui-workspace-bar {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: var(--spacing_12);
+    padding: var(--spacing_6) var(--spacing_8) var(--spacing_2);
+  }
+
+  .webui-workspace-bar-trigger {
+    display: flex;
+    min-width: 0;
+    max-width: 260px;
+    min-height: 28px;
+    align-items: center;
+    gap: var(--spacing_8);
+    border: 0;
+    border-radius: var(--radius_8);
+    background: transparent;
+    padding: 0 var(--spacing_8);
+    color: var(--text_default_primary);
+    font-size: var(--size_14);
+    cursor: pointer;
+    transition: background-color 120ms ease;
+  }
+
+  .webui-workspace-bar-trigger:hover:not(:disabled) {
+    background: var(--bg_interaction_tertiary_hover);
+  }
+
+  /* The picker's own subhead, the rule under it, and the selection check.
+   * The header is a label rather than a row: it is not actionable, so it
+   * carries no hit area and the rule below it does the visual separation. */
+  .webui-workspace-menu-header {
+    padding: var(--spacing_4) 10px var(--spacing_4);
+    color: var(--text_default_tertiary);
+    font-size: var(--size_12);
+    line-height: var(--line_height_16, 16px);
+  }
+
+  .webui-workspace-menu-separator {
+    height: 1px;
+    margin: var(--spacing_4) 0;
+    background: var(--border_default);
+  }
+
+  .webui-workspace-option-check {
+    width: var(--size_16);
+    height: var(--size_16);
+    flex: 0 0 var(--size_16);
+    color: var(--icon_default_secondary);
+  }
   .webui-model-menu--two-column {
     display: grid;
     grid-template-columns: minmax(220px, 1fr) minmax(220px, 1.4fr);
