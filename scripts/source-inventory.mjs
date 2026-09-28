@@ -12,7 +12,6 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 const skipped = new Set([
   ".git",
   "node_modules",
-  "webui-visual-regression",
   "dist",
   WEBUI_DIST_DIRECTORY,
   ".cache",
