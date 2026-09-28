@@ -79,9 +79,11 @@ const rows = (value: unknown, key: string): Row[] => {
 export function PluginManagement({
   transport,
   initialArea = "plugins",
+  onChatWithAgent,
 }: {
   readonly transport?: WebuiTransport;
   readonly initialArea?: Area;
+  readonly onChatWithAgent?: (name: string) => Promise<void>;
 }): ReactElement {
   const [area, setArea] = useState<Area>(initialArea);
   const [view, setView] = useState<"market" | "personal">("market");
@@ -112,6 +114,8 @@ export function PluginManagement({
   const [dialog, setDialog] = useState<"mcp" | "agent" | "skill" | null>(null);
   const [editing, setEditing] = useState<Row | undefined>();
   const [selectedAgent, setSelectedAgent] = useState<Row | undefined>();
+  const selectedAgentRef = useRef<Row | undefined>();
+  selectedAgentRef.current = selectedAgent;
   const [mcpName, setMcpName] = useState("");
   const [mcpTransport, setMcpTransport] = useState("stdio");
   const [mcpCommand, setMcpCommand] = useState("");
@@ -295,8 +299,38 @@ export function PluginManagement({
                 ? "servers"
                 : "agents";
       if (!isRequestCurrent()) return;
-      setData(rows(result, key));
-      if (area === "agents") setSelectedAgent(rows(result, key)[0]);
+      let nextRows = rows(result, key);
+      if (area === "agents") {
+        nextRows = await Promise.all(
+          nextRows.map(async (item) => {
+            if (!read(item, "avatar")) return item;
+            try {
+              const asset = await request("readAgentAvatar", {
+                name: nameOf(item),
+              });
+              return asset && typeof asset === "object"
+                ? { ...item, ...(asset as Row) }
+                : item;
+            } catch {
+              return item;
+            }
+          }),
+        );
+      }
+      if (!isRequestCurrent()) return;
+      setData(nextRows);
+      if (area === "agents") {
+        const selectedName = nameOf(selectedAgentRef.current ?? {});
+        const selected =
+          nextRows.find((item) => nameOf(item) === selectedName) ??
+          nextRows[0];
+        setSelectedAgent(selected);
+        setEditing(selected);
+        setAgentName(read(selected ?? {}, "name", "displayName", "display_name"));
+        setAgentDescription(read(selected ?? {}, "description"));
+        setAgentPrompt(read(selected ?? {}, "systemPrompt", "system_prompt"));
+        setAgentModel(read(selected ?? {}, "model"));
+      }
     } catch (cause) {
       if (!isRequestCurrent()) return;
       setData([]);
@@ -644,11 +678,11 @@ export function PluginManagement({
   };
   const beginAgent = (item?: Row) => {
     setEditing(item);
+    setSelectedAgent(item);
     setAgentName(read(item ?? {}, "name", "displayName", "display_name"));
     setAgentDescription(read(item ?? {}, "description"));
     setAgentPrompt(read(item ?? {}, "systemPrompt", "system_prompt"));
     setAgentModel(read(item ?? {}, "model"));
-    setDialog("agent");
   };
   const saveAgent = async () => {
     const input = editing
@@ -670,8 +704,15 @@ export function PluginManagement({
             systemPrompt: agentPrompt,
           },
         };
-    if (await mutate(editing ? "updateAgent" : "createAgent", input))
-      setDialog(null);
+    await mutate(editing ? "updateAgent" : "createAgent", input);
+  };
+  const chatWithAgent = async () => {
+    if (!editing || !onChatWithAgent) return;
+    try {
+      await onChatWithAgent(nameOf(editing));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
   };
   const saveSkill = async () => {
     if (
@@ -904,13 +945,6 @@ export function PluginManagement({
           </button>
         </div>
       ) : null}
-      {area === "agents" ? (
-        <div className="webui-plugin-toolbar">
-          <button type="button" onClick={() => beginAgent()}>
-            ＋ 创建 Agent
-          </button>
-        </div>
-      ) : null}
       {area === "skills" && view === "personal" ? (
         <div className="webui-plugin-toolbar">
           <button
@@ -939,37 +973,107 @@ export function PluginManagement({
       ) : area === "agents" ? (
         <div className="webui-agent-editor">
           <div className="webui-agent-list">
+            <div className="webui-agent-list-heading">全部 Agent</div>
             {filtered.map((item) => (
               <button
                 key={nameOf(item)}
                 aria-pressed={selectedAgent === item}
-                onClick={() => setSelectedAgent(item)}
+                onClick={() => beginAgent(item)}
               >
-                {nameOf(item)}
+                <span className="webui-agent-avatar webui-agent-avatar--small">
+                  {read(item, "avatarDataUrl").startsWith("data:image/") ? (
+                    <img src={read(item, "avatarDataUrl")} alt="" />
+                  ) : (
+                    <span aria-hidden="true">🤖</span>
+                  )}
+                </span>
+                <span>{read(item, "displayName", "display_name") || nameOf(item)}</span>
               </button>
             ))}
+            <button
+              className="webui-agent-create"
+              type="button"
+              onClick={() => beginAgent()}
+            >
+              <span aria-hidden="true">＋</span> 创建 Agent
+            </button>
           </div>
-          {selectedAgent ? (
-            <div className="webui-agent-detail">
-              <h2>{nameOf(selectedAgent)}</h2>
-              <p>{read(selectedAgent, "description")}</p>
-              <pre>{read(selectedAgent, "systemPrompt", "system_prompt")}</pre>
-              <div className="webui-plugin-actions">
-                <button onClick={() => beginAgent(selectedAgent)}>编辑</button>
+          <div className="webui-agent-detail">
+            <div className="webui-agent-fields">
+              <label className="webui-agent-avatar-field">
+                头像
+                <span className="webui-agent-avatar webui-agent-avatar--large">
+                  {read(selectedAgent ?? {}, "avatarDataUrl").startsWith("data:image/") ? (
+                    <img src={read(selectedAgent ?? {}, "avatarDataUrl")} alt="Agent 头像" />
+                  ) : (
+                    <span aria-hidden="true">🤖</span>
+                  )}
+                </span>
+              </label>
+              <label>
+                名称
+                <input
+                  value={agentName}
+                  onChange={(event) => setAgentName(event.currentTarget.value)}
+                  placeholder="Agent 名称"
+                />
+              </label>
+              <label className="webui-agent-model-field">
+                模型
+                <input
+                  value={agentModel}
+                  onChange={(event) => setAgentModel(event.currentTarget.value)}
+                  placeholder="provider/model-name"
+                  readOnly={Boolean(editing)}
+                  aria-readonly={editing ? "true" : undefined}
+                  title={editing ? "当前运行时只支持在创建时设置模型" : undefined}
+                />
+              </label>
+              <label className="webui-agent-prompt-field">
+                系统提示词
+                <textarea
+                  className="webui-agent-prompt"
+                  value={agentPrompt}
+                  onChange={(event) => setAgentPrompt(event.currentTarget.value)}
+                  placeholder="输入系统提示词"
+                  spellCheck={false}
+                />
+              </label>
+            </div>
+            <div className="webui-agent-form-actions">
+              {editing ? (
                 <button
+                  className="webui-agent-delete"
+                  type="button"
                   onClick={() =>
                     confirmMutation("删除 Agent", "deleteAgent", {
-                      name: nameOf(selectedAgent),
+                      name: nameOf(editing),
                     })
                   }
                 >
                   删除
                 </button>
-              </div>
+              ) : <span />}
+              <button
+                type="button"
+                className="webui-agent-save"
+                disabled={busy || !agentName.trim()}
+                onClick={() => void saveAgent()}
+              >
+                保存
+              </button>
+              {editing && onChatWithAgent ? (
+                <button
+                  type="button"
+                  className="webui-agent-chat"
+                  disabled={busy}
+                  onClick={() => void chatWithAgent()}
+                >
+                  和他对话
+                </button>
+              ) : null}
             </div>
-          ) : (
-            <p className="webui-plugin-empty">暂无 Agent</p>
-          )}
+          </div>
         </div>
       ) : filtered.length === 0 ? (
         <p className="webui-plugin-empty">暂无内容</p>

@@ -31,6 +31,7 @@ const ACTIONS = new Set<WebuiPluginManagementRequest["action"]>([
   "setMcpServerEnabled",
   "testMcpServer",
   "listAgents",
+  "readAgentAvatar",
   "getAgent",
   "createAgent",
   "updateAgent",
@@ -142,6 +143,7 @@ const INPUT_SHAPES: Readonly<Record<WebuiPluginManagementAction, InputShape>> =
         include: "string",
       },
     },
+    readAgentAvatar: { required: { name: "string" } },
     getAgent: { required: { name: "string" } },
     createAgent: {
       required: { name: "string" },

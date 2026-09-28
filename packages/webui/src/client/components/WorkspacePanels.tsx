@@ -357,17 +357,22 @@ export function WebuiProgressOverviewPanel({ workspaceDir, isDefaultWorkspace = 
 }
 
 function FileTree({ files, onOpen, expandedPaths, loadingPaths, directoryErrors, onToggle, selectedPath }: { readonly files: readonly WebuiWorkspaceFile[]; readonly onOpen: (file: WebuiWorkspaceFile) => void; readonly expandedPaths: ReadonlySet<string>; readonly loadingPaths: ReadonlySet<string>; readonly directoryErrors: Readonly<Record<string, string>>; readonly onToggle: (file: WebuiWorkspaceFile) => void; readonly selectedPath?: string }): ReactElement {
-  return <div className="webui-file-tree">{files.map((file) => <div key={file.path}>
-    <button type="button" className={`webui-file-tree-row ${file.path === selectedPath ? "is-selected" : ""}`} aria-current={file.path === selectedPath ? "true" : undefined} aria-expanded={file.type === "directory" ? expandedPaths.has(file.path) : undefined} aria-busy={file.type === "directory" && loadingPaths.has(file.path) ? "true" : undefined} onClick={() => file.type === "directory" ? onToggle(file) : onOpen(file)}>
-      {file.type === "directory" ? <WebuiIconChevronLeft className={`inline size-3 ${expandedPaths.has(file.path) ? "rotate-90" : ""}`} /> : <WebuiIconFile className="inline size-3" />} {file.name}
-    </button>
-    {file.type === "directory" && expandedPaths.has(file.path) ? <div className="webui-file-tree-children">
-      {loadingPaths.has(file.path) ? <p role="status">正在加载目录…</p>
-        : directoryErrors[file.path] ? <p role="alert">{directoryErrors[file.path]}</p>
-          : file.children?.length ? <FileTree files={file.children} onOpen={onOpen} expandedPaths={expandedPaths} loadingPaths={loadingPaths} directoryErrors={directoryErrors} onToggle={onToggle} selectedPath={selectedPath} />
-            : <p>此文件夹为空。</p>}
-    </div> : null}
-  </div>)}</div>;
+  return <div className="webui-file-tree">{files.map((file) => {
+    const expanded = expandedPaths.has(file.path);
+    return <div key={file.path}>
+      <button type="button" className={`webui-file-tree-row ${file.path === selectedPath ? "is-selected" : ""}`} aria-current={file.path === selectedPath ? "true" : undefined} aria-expanded={file.type === "directory" ? expanded : undefined} aria-busy={file.type === "directory" && loadingPaths.has(file.path) ? "true" : undefined} onClick={() => file.type === "directory" ? onToggle(file) : onOpen(file)}>
+        {file.type === "directory" ? <WebuiIconChevronLeft className={`inline size-3 transition-transform duration-[180ms] ease-out ${expanded ? "rotate-90" : ""}`} /> : <WebuiIconFile className="inline size-3" />} {file.name}
+      </button>
+      {file.type === "directory" ? <div className={`webui-expandable-motion${expanded ? " is-open" : ""}`} aria-hidden={!expanded} ref={(element) => element?.toggleAttribute("inert", !expanded)}>
+        <div className="webui-file-tree-children">
+          {loadingPaths.has(file.path) ? <p role="status">正在加载目录…</p>
+            : directoryErrors[file.path] ? <p role="alert">{directoryErrors[file.path]}</p>
+              : file.children?.length ? <FileTree files={file.children} onOpen={onOpen} expandedPaths={expandedPaths} loadingPaths={loadingPaths} directoryErrors={directoryErrors} onToggle={onToggle} selectedPath={selectedPath} />
+                : <p>此文件夹为空。</p>}
+        </div>
+      </div> : null}
+    </div>;
+  })}</div>;
 }
 
 export function WebuiFilePreview({ tab, result, codeMode }: {

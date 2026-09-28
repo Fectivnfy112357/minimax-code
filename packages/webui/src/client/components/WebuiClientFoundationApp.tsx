@@ -863,7 +863,13 @@ export function WebuiClientFoundationApp(
             data-webui-shell-region="surface"
             className="relative flex min-h-0 min-w-0 flex-1 flex-row"
           >
-            {pluginManagementArea ? <PluginManagement transport={transport} initialArea={pluginManagementArea} /> : <>
+            {pluginManagementArea ? <PluginManagement transport={transport} initialArea={pluginManagementArea} onChatWithAgent={async (name) => {
+              if (!transport?.createSession) throw new Error("当前 WebUI 未连接会话创建服务");
+              const created = await transport.createSession({ name });
+              const sessionId = created.sessionId ?? created.session?.sessionId;
+              if (!sessionId) throw new Error("创建 Agent 会话失败");
+              handleSessionCreated(sessionId);
+            }} /> : <>
             {!homeMode && !workspacePanel.open ? <WebuiWorkspacePanelControls filePanelOpen={false} progressPanelOpen={progressPanelOpen} onOpenFiles={() => { setProgressPanelOpen(false); dispatchWorkspacePanel({ type: "open-primary-view", kind: "files", sessionId: selectedSessionId, workspaceDir: selectedSession?.workspaceDir }); }} onToggleProgressPanel={() => setProgressPanelOpen((open) => !open)} /> : null}
             <div className="relative flex h-full min-w-0 flex-1 flex-col">
               <div
@@ -1021,7 +1027,17 @@ export function WebuiClientFoundationApp(
                 </div>
               </div>
             </div>
-            {!homeMode && progressPanelOpen ? <aside className="webui-progress-overview-panel" data-testid="progress-overview-panel" aria-label="环境信息与进度">{progressPanelContent}</aside> : null}
+            {!homeMode ? (
+              <div
+                className={`webui-expandable-motion webui-progress-panel-motion${progressPanelOpen ? " is-open" : ""}`}
+                aria-hidden={!progressPanelOpen}
+                ref={(element) => element?.toggleAttribute("inert", !progressPanelOpen)}
+              >
+                <aside className="webui-progress-overview-panel" data-testid="progress-overview-panel" aria-label="环境信息与进度">
+                  {progressPanelContent}
+                </aside>
+              </div>
+            ) : null}
             {!homeMode && workspacePanel.open ? <WebuiWorkspacePanel state={workspacePanel} dispatch={dispatchWorkspacePanel} sessionId={selectedSessionId} workspaceDir={selectedSession?.workspaceDir} listWorkspaceFileTree={transport?.listWorkspaceFileTree} readWorkspaceFile={transport?.readWorkspaceFile} readCanvas={transport?.readCanvas} applyCanvas={transport?.applyCanvas} createTerminal={transport?.createTerminal} listTerminals={transport?.listTerminals} writeTerminal={transport?.writeTerminal} disposeTerminal={transport?.disposeTerminal} watchTerminal={transport?.watchTerminal} getWorkspaceReviewSummary={transport?.getWorkspaceReviewSummary} listWorkspaceReviewFileDiffs={transport?.listWorkspaceReviewFileDiffs} searchWorkspaceReviewDiffs={transport?.searchWorkspaceReviewDiffs} onClose={() => dispatchWorkspacePanel({ type: "close-panel" })} /> : null}
             </>}
           </main>

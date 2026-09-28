@@ -30,6 +30,7 @@ export type CliPluginManagementAction =
   | "setMcpServerEnabled"
   | "testMcpServer"
   | "listAgents"
+  | "readAgentAvatar"
   | "getAgent"
   | "createAgent"
   | "updateAgent"
@@ -182,6 +183,7 @@ const inputShapes: Readonly<Record<CliPluginManagementAction, InputShape>> = {
       include: "string",
     },
   },
+  readAgentAvatar: { required: { name: "string" } },
   getAgent: { required: { name: "string" } },
   createAgent: {
     required: { name: "string" },
@@ -204,7 +206,7 @@ const inputShapes: Readonly<Record<CliPluginManagementAction, InputShape>> = {
   deleteAgent: { required: { name: "string" } },
 };
 
-function pluginManagement(
+async function pluginManagement(
   options: Parameters<typeof createCliManagementApplication>[0],
   request: CliPluginManagementRequest,
 ): Promise<unknown> {
@@ -366,6 +368,16 @@ function pluginManagement(
       return requireAgentManagement(options).listAgents(
         input as Parameters<LocalAgentRuntimeManagementPort["listAgents"]>[0],
       );
+    case "readAgentAvatar": {
+      const avatar = await requireAgentManagement(options).readCustomAgentAvatar(
+        required("name"),
+      );
+      return avatar
+        ? {
+            avatarDataUrl: `data:${avatar.contentType};base64,${Buffer.from(avatar.bytes).toString("base64")}`,
+          }
+        : {};
+    }
     case "getAgent":
       return requireAgentManagement(options).getAgent({
         name: required("name"),

@@ -31,10 +31,11 @@
   .webui-plugin-categories {
     scrollbar-gutter: auto;
   }
-  .webui-workspace-panel { position: relative; display: flex; width: 50%; min-width: 0; min-height: 0; flex: 0 1 50%; flex-direction: column; overflow: hidden; border-left: 1px solid var(--border_default); background: var(--bg_default_primary); color: var(--text_default_primary); }
+  .webui-workspace-panel { position: relative; display: flex; width: 50%; min-width: 0; min-height: 0; flex: 0 1 50%; flex-direction: column; overflow: hidden; border-left: 1px solid var(--border_default); background: var(--bg_default_primary); color: var(--text_default_primary); animation: webui-panel-enter-right 180ms cubic-bezier(.2, .7, .2, 1) both; }
   .webui-workspace-panel.is-expanded { position: fixed; inset: 0; }
   .webui-workspace-panel.is-expanded .webui-workspace-file-tree-panel { width: min(360px, 34vw); flex-basis: min(360px, 34vw); }
-  .webui-progress-overview-panel { position: absolute; top: 72px; right: 12px; z-index: 45; display: flex; width: min(344px, calc(100% - 24px)); max-height: calc(100% - 84px); flex-direction: column; overflow: auto; border: 0; background: transparent; padding: 0; }
+  .webui-progress-panel-motion { position: absolute; top: 72px; right: 12px; z-index: 45; width: min(344px, calc(100% - 24px)); max-height: calc(100% - 84px); overflow: hidden; transform-origin: top right; }
+  .webui-progress-overview-panel { position: static; display: flex; width: 100%; max-height: inherit; flex-direction: column; overflow: auto; border: 0; background: transparent; padding: 0; }
   .webui-session-has-progress-panel { box-sizing: border-box; padding-right: 368px; }
   .webui-workspace-panel-header, .webui-workspace-panel-actions, .webui-workspace-tabs, .webui-workspace-tab { display: flex; align-items: center; }
   .webui-workspace-panel-header { position: relative; z-index: 2; min-height: 56px; flex: 0 0 56px; justify-content: space-between; gap: var(--spacing_8); border-bottom: 1px solid var(--border_default); padding: 0 var(--spacing_8); }
@@ -87,7 +88,7 @@
   .webui-workspace-edit-action:not(:disabled):hover { background: var(--bg_interaction_tertiary_hover); }
   .webui-workspace-tree-toggle { display: inline-flex; width: 34px; height: 34px; flex: 0 0 34px; align-items: center; justify-content: center; border: 0; border-radius: 8px; background: transparent; color: var(--icon_default_secondary); }
   .webui-workspace-tree-toggle:hover, .webui-workspace-tree-toggle[aria-pressed="true"] { background: var(--bg_interaction_tertiary_selected); color: var(--icon_default_primary); }
-  .webui-workspace-file-tree-panel { display: flex; width: clamp(232px, 24vw, 288px); flex: 0 0 clamp(232px, 24vw, 288px); min-height: 0; flex-direction: column; border-left: 1px solid var(--border_default); background: var(--bg_default_primary); }
+  .webui-workspace-file-tree-panel { display: flex; width: clamp(232px, 24vw, 288px); flex: 0 0 clamp(232px, 24vw, 288px); min-height: 0; flex-direction: column; border-left: 1px solid var(--border_default); background: var(--bg_default_primary); animation: webui-panel-enter-right 180ms cubic-bezier(.2, .7, .2, 1) both; }
   .webui-workspace-file-search { display: flex; height: 40px; flex: 0 0 40px; align-items: center; gap: var(--spacing_8); margin: var(--spacing_8) var(--spacing_12); border: 1px solid var(--border_default); border-radius: 10px; padding: 0 var(--spacing_8); color: var(--icon_default_tertiary); }
   .webui-workspace-file-search input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text_default_primary); font-size: var(--size_14); }
   .webui-workspace-file-search input::placeholder { color: var(--text_default_tertiary); }
@@ -201,7 +202,11 @@
   .webui-workspace-panel-close { display: flex; width: 32px; height: 32px; flex: 0 0 32px; align-items: center; justify-content: center; border: 0; border-radius: var(--radius_8); background: transparent; color: var(--icon_default_tertiary); }
   .webui-workspace-panel-close:hover { background: var(--bg_interaction_tertiary_hover); color: var(--icon_default_primary); }
   .webui-workspace-content { min-height: 0; flex: 1; overflow: auto; padding: var(--spacing_8); }
-  .webui-file-tree-row { display: flex; width: 100%; min-height: 32px; align-items: center; gap: var(--spacing_8); overflow: hidden; border: 0; border-radius: 6px; background: transparent; padding: 0 var(--spacing_4); color: var(--text_default_secondary); text-align: left; text-overflow: ellipsis; white-space: nowrap; font-size: var(--size_14); }
+  .webui-file-tree-row { display: flex; width: 100%; min-height: 32px; align-items: center; gap: var(--spacing_8); overflow: hidden; border: 0; border-radius: 6px; background: transparent; padding: 0 var(--spacing_4); color: var(--text_default_secondary); text-align: left; text-overflow: ellipsis; white-space: nowrap; font-size: var(--size_14); transition: background-color 120ms ease-out, color 120ms ease-out; }
+  .webui-expandable-motion { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows 180ms cubic-bezier(.2, .7, .2, 1), opacity 140ms ease-out; }
+  .webui-expandable-motion > * { min-height: 0; overflow: hidden; }
+  .webui-expandable-motion.is-open { grid-template-rows: 1fr; opacity: 1; }
+  .webui-progress-panel-motion > .webui-progress-overview-panel { overflow: auto; }
   .webui-file-tree-row:hover { background: var(--bg_interaction_tertiary_hover); color: var(--text_default_primary); }
   .webui-file-tree-row.is-selected { background: var(--bg_interaction_tertiary_selected); color: var(--text_default_primary); }
   .webui-file-viewer { margin-top: var(--spacing_8); }
@@ -218,8 +223,8 @@
   .webui-xterm-host .xterm { height: 100%; }
   .webui-xterm-host .xterm-viewport { background: var(--bg_default_secondary) !important; }
   .webui-terminal-actions { display: flex; gap: var(--spacing_8); }
-  .webui-settings-mask { position: fixed; inset: 0; z-index: 100; display: flex; background: var(--utility_scrim); }
-  .webui-settings-modal { display: flex; width: 100vw; height: 100vh; overflow: hidden; background: var(--bg_default_primary); color: var(--text_default_primary); }
+  .webui-settings-mask { position: fixed; inset: 0; z-index: 100; display: flex; background: var(--utility_scrim); animation: webui-overlay-enter 160ms ease-out both; }
+  .webui-settings-modal { display: flex; width: 100vw; height: 100vh; overflow: hidden; background: var(--bg_default_primary); color: var(--text_default_primary); animation: webui-modal-enter 200ms cubic-bezier(.2, .7, .2, 1) both; }
   .webui-settings-sidebar { width: 260px; flex: 0 0 260px; overflow-y: hidden; }
   .webui-settings-back, .webui-settings-nav-item { display: flex; width: 100%; align-items: center; gap: var(--spacing_8); border: 0; background: transparent; color: var(--text_default_secondary); text-align: left; }
   .webui-settings-back { font-size: var(--size_14); }
@@ -388,6 +393,7 @@
     flex-direction: column;
     width: 256px;
     background-color: var(--bg_default_scrim);
+    transition: width 180ms cubic-bezier(.2, .7, .2, 1);
   }
   .webui-rail-scroll {
     scrollbar-width: none;
@@ -429,6 +435,8 @@
     border-radius: 14px;
     background: var(--webui-color-bg-primary, #fff);
     box-shadow: 0 8px 28px rgb(0 0 0 / 12%);
+    transform-origin: bottom left;
+    animation: webui-menu-enter 150ms cubic-bezier(.2, .7, .2, 1) both;
   }
 
   /* The `+` trigger's wrap: the button plus the panel it opens. It is the
@@ -977,6 +985,8 @@
     padding: 6px;
     box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
     color: var(--text_default_primary);
+    transform-origin: top left;
+    animation: webui-menu-enter 140ms cubic-bezier(.2, .7, .2, 1) both;
   }
   .webui-context-menu-item-wrap { position: relative; }
   .webui-context-menu-item {
@@ -1015,6 +1025,8 @@
     background: var(--bg_grouped_secondary_elevated);
     padding: 6px;
     box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
+    transform-origin: top left;
+    animation: webui-menu-enter 140ms cubic-bezier(.2, .7, .2, 1) both;
   }
 
   /* The "load more" row under the session list. */
@@ -1127,6 +1139,8 @@
     border-radius: var(--radius_12);
     background: var(--bg_default_primary);
     box-shadow: 0 8px 24px var(--shadow_default);
+    transform-origin: bottom left;
+    animation: webui-menu-enter 150ms cubic-bezier(.2, .7, .2, 1) both;
   }
   .webui-workspace-menu--desktop {
     display: flex;
@@ -1553,6 +1567,8 @@
     background: var(--bg_default_primary);
     box-shadow: 0 8px 24px var(--shadow_default);
     max-height: 320px;
+    transform-origin: bottom center;
+    animation: webui-menu-enter 150ms cubic-bezier(.2, .7, .2, 1) both;
   }
   /* Flip variant: when the composer is too close to the viewport top, the
    * popover cannot fit above without clipping content. The composer measures
@@ -2549,6 +2565,8 @@
     background-color: var(--bg_grouped_secondary_elevated);
     box-shadow: 0 0 10px var(--shadow_default);
     padding: 4px;
+    transform-origin: bottom left;
+    animation: webui-menu-enter 150ms cubic-bezier(.2, .7, .2, 1) both;
   }
   .webui-user-menu-anchor-collapsed .webui-user-menu-popover {
     left: 48px;
@@ -4308,41 +4326,167 @@
   }
   .webui-agent-editor {
     display: grid;
-    max-width: 960px;
-    min-height: 55vh;
-    grid-template-columns: 275px minmax(0, 1fr);
-    gap: 24px;
+    width: min(960px, 100%);
+    min-height: 560px;
+    grid-template-columns: 250px minmax(0, 1fr);
+    gap: 32px;
     margin: 0 auto;
   }
   .webui-agent-list {
     display: flex;
+    min-width: 0;
     flex-direction: column;
-    gap: 4px;
+    gap: 2px;
+  }
+  .webui-agent-list-heading {
+    margin: 0 0 8px 10px;
+    color: var(--text_default_tertiary);
+    font-size: 14px;
   }
   .webui-agent-list button {
+    display: flex;
+    min-height: 44px;
+    align-items: center;
+    gap: 10px;
     border: 0;
     border-radius: 9px;
     background: transparent;
-    padding: 10px 14px;
+    padding: 7px 10px;
     text-align: left;
     color: var(--text_default_primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .webui-agent-list button[aria-pressed="true"] {
     background: var(--bg_grouped_secondary);
   }
-  .webui-agent-detail h2 {
-    margin: 0 0 14px;
-    font-size: 20px;
-    font-weight: 550;
+  .webui-agent-list button.webui-agent-create {
+    margin-top: 4px;
+    color: var(--text_default_tertiary);
   }
-  .webui-agent-detail pre {
-    min-height: 260px;
-    overflow: auto;
+  .webui-agent-list button.webui-agent-create span {
+    width: 24px;
+    text-align: center;
+    font-size: 22px;
+    line-height: 1;
+  }
+  .webui-agent-detail {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+  }
+  .webui-agent-fields {
+    display: grid;
+    grid-template-columns: minmax(140px, 1fr) minmax(0, 2fr);
+    gap: 22px 18px;
+  }
+  .webui-agent-fields > label {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 10px;
+    color: var(--text_default_primary);
+    font-size: 14px;
+  }
+  .webui-agent-fields input,
+  .webui-agent-prompt {
+    width: 100%;
     border: 1px solid var(--border_default);
-    border-radius: 10px;
-    padding: 16px;
-    white-space: pre-wrap;
+    border-radius: 11px;
+    background: var(--bg_default_primary);
+    padding: 12px 14px;
+    color: var(--text_default_primary);
     font: inherit;
+  }
+  .webui-agent-fields input {
+    min-height: 46px;
+  }
+  .webui-agent-fields input[readonly] {
+    color: var(--text_default_secondary);
+    background: var(--bg_grouped_secondary);
+  }
+  .webui-agent-avatar-field {
+    grid-row: span 1;
+  }
+  .webui-agent-avatar {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    border: 1px solid var(--border_default);
+    border-radius: 50%;
+    background: var(--bg_grouped_secondary);
+  }
+  .webui-agent-avatar--small {
+    width: 32px;
+    height: 32px;
+    font-size: 20px;
+  }
+  .webui-agent-avatar--large {
+    width: 64px;
+    height: 64px;
+    font-size: 36px;
+  }
+  .webui-agent-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .webui-agent-model-field {
+    grid-column: 1 / -1;
+  }
+  .webui-agent-prompt-field {
+    grid-column: 1 / -1;
+  }
+  .webui-agent-prompt {
+    height: min(300px, 38vh);
+    min-height: 180px;
+    max-height: 38vh;
+    overflow-y: auto;
+    resize: vertical;
+    white-space: pre-wrap;
+    line-height: 1.55;
+    scrollbar-width: none;
+  }
+  .webui-agent-prompt::-webkit-scrollbar {
+    display: none;
+  }
+  .webui-agent-prompt::placeholder {
+    color: var(--text_default_tertiary);
+  }
+  .webui-agent-form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 22px;
+  }
+  .webui-agent-form-actions button {
+    min-width: 96px;
+    min-height: 44px;
+    border: 0;
+    border-radius: 10px;
+    background: var(--bg_grouped_secondary);
+    padding: 0 18px;
+    color: var(--text_default_primary);
+  }
+  .webui-agent-form-actions button.webui-agent-save {
+    background: var(--bg_grouped_secondary);
+    color: var(--text_default_primary);
+  }
+  .webui-agent-form-actions button.webui-agent-chat {
+    background: var(--text_default_primary);
+    color: var(--text_default_inverted);
+  }
+  .webui-agent-form-actions button:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+  .webui-agent-form-actions button.webui-agent-delete {
+    margin-right: auto;
+    background: transparent;
+    color: var(--text_label_danger_secondary_default);
   }
   .webui-plugin-backdrop {
     position: fixed;
@@ -4607,6 +4751,20 @@
     }
     .webui-agent-editor {
       grid-template-columns: 1fr;
+      min-height: 0;
+      gap: 22px;
+    }
+    .webui-agent-list {
+      max-height: 240px;
+      overflow-y: auto;
+    }
+    .webui-agent-fields {
+      grid-template-columns: minmax(80px, 0.5fr) minmax(0, 1fr);
+      gap: 18px 12px;
+    }
+    .webui-agent-prompt {
+      height: min(260px, 38vh);
+      max-height: 38vh;
     }
     .webui-plugin-form {
       grid-template-columns: 1fr;
@@ -4634,4 +4792,10 @@
       padding: 14px 20px 18px;
     }
   }
+
+  @keyframes webui-overlay-enter { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes webui-modal-enter { from { opacity: 0; transform: translateY(8px) scale(.995); } to { opacity: 1; transform: translateY(0) scale(1); } }
+  @keyframes webui-panel-enter-right { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: translateX(0); } }
+  @keyframes webui-popover-enter { from { opacity: 0; transform: translateY(-6px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+  @keyframes webui-menu-enter { from { opacity: 0; transform: translateY(6px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
 }

@@ -23,6 +23,7 @@ export type WebuiPluginManagementAction =
   | "setMcpServerEnabled"
   | "testMcpServer"
   | "listAgents"
+  | "readAgentAvatar"
   | "getAgent"
   | "createAgent"
   | "updateAgent"

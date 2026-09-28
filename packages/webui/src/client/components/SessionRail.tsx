@@ -431,7 +431,11 @@ export function WebuiProjectList({
                     {projectName}
                   </span>
                 </button>
-                {expanded ? (
+                <div
+                  className={`webui-expandable-motion${expanded ? " is-open" : ""}`}
+                  aria-hidden={!expanded}
+                  ref={(element) => element?.toggleAttribute("inert", !expanded)}
+                >
                   <ul
                     className="webui-project-session-list"
                     data-webui-project-sessions={project.key}
@@ -488,7 +492,7 @@ export function WebuiProjectList({
                       );
                     })}
                   </ul>
-                ) : null}
+                </div>
               </li>
             );
           })}
