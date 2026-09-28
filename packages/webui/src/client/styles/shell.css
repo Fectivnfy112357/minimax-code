@@ -120,8 +120,7 @@
   .webui-workspace-add-menu button { width: 100%; min-height: 34px; justify-content: flex-start; gap: var(--spacing_8); border-radius: 8px; padding: 0 10px; color: inherit; font-size: var(--size_14); text-align: left; white-space: nowrap; }
   .webui-workspace-add-menu button:hover { background: var(--bg_interaction_tertiary_hover); }
   .webui-workspace-add-menu button svg { color: var(--icon_default_secondary); }
-  .webui-workspace-content { min-height: 0; flex: 1; overflow: auto; padding: var(--spacing_12); }
-  .webui-workspace-content pre { overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+
   .webui-turn-review { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; overflow: auto; }
   .webui-turn-review-summary { display: flex; min-height: 48px; flex: 0 0 48px; align-items: center; justify-content: space-between; gap: var(--spacing_12); border-bottom: 1px solid var(--border_default); padding: 0 var(--spacing_16); color: var(--text_default_primary); font-size: var(--size_14); }
   .webui-turn-review-files { min-width: 0; flex: 1 1 auto; overflow: auto; }
@@ -156,8 +155,7 @@
   .webui-turn-review .webui-workspace-review-search-results { flex: 0 0 auto; overflow: auto; border-bottom: 1px solid var(--border_light); padding: var(--spacing_8) var(--spacing_12); }
   .webui-workspace-review-search-results button { max-width: 100%; overflow: hidden; color: var(--text_default_secondary); text-overflow: ellipsis; white-space: nowrap; }
   .webui-file-preview-line-active { display: inline-block; width: 100%; background: var(--bg_interaction_tertiary_selected); }
-  .webui-workspace-content [aria-current="true"] { color: var(--text_label_accent_default); }
-  .webui-workspace-content ul { list-style: none; margin: 0; padding: 0; }
+
   .webui-progress-overview-card { position: relative; display: flex; width: 100%; flex-direction: column; border: .5px solid var(--border_default); border-radius: 16px; background: var(--bg_grouped_secondary_elevated); padding: 6px; box-shadow: 0 6px 24px rgb(0 0 0 / 8%); color: var(--text_default_primary); }
   .webui-environment-panel, .webui-progress-panel, .webui-subagents-panel { display: flex; flex-shrink: 0; flex-direction: column; overflow: hidden; }
   .webui-environment-panel + .webui-progress-panel { border-top: 1px solid var(--border_light); }
@@ -176,8 +174,8 @@
   .webui-commit-dialog-header button { border: 0; background: transparent; color: var(--icon_default_tertiary); }
   .webui-commit-dialog-label { display: flex; flex-direction: column; gap: var(--spacing_4); color: var(--text_default_secondary); font-size: var(--size_12); }
   .webui-commit-dialog-label textarea { min-height: 88px; resize: vertical; border: 1px solid var(--border_default); border-radius: var(--radius_8); background: var(--bg_default_primary); padding: var(--spacing_8); color: var(--text_default_primary); font: inherit; outline: 0; }
-  .webui-commit-dialog-hint, .webui-commit-dialog-error, .webui-environment-error { margin: 0; color: var(--text_default_tertiary); font-size: var(--size_12); }
-  .webui-commit-dialog-error, .webui-environment-error { color: var(--text_label_danger_secondary_default); }
+  .webui-commit-dialog-hint, .webui-commit-dialog-error { margin: 0; color: var(--text_default_tertiary); font-size: var(--size_12); }
+  .webui-commit-dialog-error { color: var(--text_label_danger_secondary_default); }
   .webui-commit-dialog-actions { justify-content: flex-end; }
   .webui-commit-dialog-actions button { border: 1px solid var(--border_default); border-radius: var(--radius_8); background: transparent; padding: var(--spacing_8) var(--spacing_12); color: var(--text_default_primary); }
   .webui-commit-dialog-actions button:last-child { border-color: var(--border_accent); background: var(--bg_interaction_primary_default); color: var(--text_default_inverted); }
@@ -202,17 +200,17 @@
   .webui-subagent-status--error { color: var(--text_label_danger_secondary_default); }
   .webui-workspace-panel-close { display: flex; width: 32px; height: 32px; flex: 0 0 32px; align-items: center; justify-content: center; border: 0; border-radius: var(--radius_8); background: transparent; color: var(--icon_default_tertiary); }
   .webui-workspace-panel-close:hover { background: var(--bg_interaction_tertiary_hover); color: var(--icon_default_primary); }
-  .webui-workspace-content { min-height: 0; flex: 1; overflow: auto; padding: var(--spacing_8); }
+
   .webui-file-tree-row { display: flex; width: 100%; min-height: 32px; align-items: center; gap: var(--spacing_8); overflow: hidden; border: 0; border-radius: 6px; background: transparent; padding: 0 var(--spacing_4); color: var(--text_default_secondary); text-align: left; text-overflow: ellipsis; white-space: nowrap; font-size: var(--size_14); transition: background-color 120ms ease-out, color 120ms ease-out; }
   .webui-expandable-motion { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows 180ms cubic-bezier(.2, .7, .2, 1), opacity 140ms ease-out; }
   .webui-expandable-motion > * { min-height: 0; overflow: hidden; }
   .webui-expandable-motion.is-open { grid-template-rows: 1fr; opacity: 1; }
   .webui-file-tree-row:hover { background: var(--bg_interaction_tertiary_hover); color: var(--text_default_primary); }
   .webui-file-tree-row.is-selected { background: var(--bg_interaction_tertiary_selected); color: var(--text_default_primary); }
-  .webui-file-viewer { margin-top: var(--spacing_8); }
+
   .file-tab { display: flex; align-items: center; gap: var(--spacing_4); overflow: hidden; padding: 0 var(--spacing_8); font-size: var(--size_12); white-space: nowrap; }
   .file-tab button { margin-left: auto; border: 0; background: transparent; color: inherit; }
-  .webui-file-viewer pre { max-height: 48vh; overflow: auto; margin-top: var(--spacing_8); white-space: pre-wrap; font-family: Hack, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; }
+
   .webui-canvas-content, .webui-terminal-empty { position: relative; display: flex; min-height: 300px; height: calc(100% - 180px); flex-direction: column; align-items: center; justify-content: center; gap: var(--spacing_8); padding: var(--spacing_16); color: var(--text_default_secondary); text-align: center; }
   .webui-canvas-content p, .webui-terminal-empty p { margin: 0; color: var(--text_default_tertiary); font-size: var(--size_12); }
   .webui-canvas-stage { display: flex; min-width: 160px; min-height: 100px; align-items: center; justify-content: center; gap: var(--spacing_8); transform-origin: center; }
@@ -240,9 +238,9 @@
   .webui-settings-icon { width: 18px; height: 18px; flex: 0 0 18px; }
   .webui-settings-content { min-width: 0; flex: 1; overflow: auto; animation: webui-settings-content-in 180ms ease both; }
   .webui-settings-content-header { display: flex; align-items: flex-start; justify-content: space-between; }
-  .webui-settings-eyebrow { margin: 0 0 var(--spacing_4); color: var(--text_default_tertiary); font-size: var(--size_12); }
+
   .webui-settings-content h2 { margin: 0; font-size: var(--size_16); font-weight: var(--weight_medium); line-height: 26px; }
-  .webui-settings-close { border: 0; background: transparent; color: var(--icon_default_tertiary); }
+
   .webui-settings-panels { max-width: 760px; margin: 0 auto; }
   .webui-settings-panel { margin-bottom: var(--spacing_24); border: 1px solid var(--border_default); border-radius: var(--radius_12); background: var(--bg_grouped_primary); }
   .webui-settings-panel > h3 { margin: 0; padding: var(--spacing_16) var(--spacing_20) var(--spacing_8); font-size: var(--size_16); font-weight: var(--weight_medium); }
@@ -251,23 +249,14 @@
   .webui-settings-row strong { font-size: var(--size_14); font-weight: var(--weight_regular); }
   .webui-settings-row span { margin-top: var(--spacing_4); color: var(--text_default_tertiary); font-size: var(--size_12); }
   .webui-settings-row select { min-width: 150px; padding: var(--spacing_8); border: 1px solid var(--border_default); border-radius: var(--radius_8); background: var(--bg_default_primary); color: var(--text_default_primary); }
-  .webui-settings-action { margin: 0 var(--spacing_20) var(--spacing_16); padding: var(--spacing_8) var(--spacing_12); border: 1px solid var(--border_default); border-radius: var(--radius_8); background: transparent; color: var(--text_default_primary); }
+
   .webui-settings-error { margin: 0 var(--spacing_20) var(--spacing_16); color: var(--text_label_danger_secondary_default); font-size: var(--size_12); }
   .webui-settings-empty-panel { max-width: 760px; min-height: 220px; margin: 0 auto; }
   .webui-settings-data-dir { max-width: 760px; margin: var(--spacing_32) auto 0; color: var(--text_default_tertiary); font-size: var(--size_12); word-break: break-all; }
-  .webui-settings-empty { height: var(--spacing_128); }
-  .webui-settings-theme-options { display: flex; gap: var(--spacing_12); }
-  .mavis-settings-theme-option { }
-  .mavis-settings-theme-preview { }
+
   .mavis-settings-theme-preview.is-selected { outline-color: var(--border_accent); }
   .mavis-settings-theme-preview img { border-radius: var(--radius_8); object-fit: cover; }
-  .webui-settings-mode-options { display: flex; gap: var(--spacing_12); padding: var(--spacing_12); }
-  .webui-settings-mode-card { display: flex; min-height: 118px; flex: 1; flex-direction: column; align-items: flex-start; gap: var(--spacing_4); padding: var(--spacing_12) var(--spacing_16); border: 0; border-radius: var(--radius_12); background: var(--bg_interaction_secondary_default); color: var(--text_default_primary); text-align: left; }
-  .webui-settings-mode-card:disabled { cursor: not-allowed; opacity: .6; }
-  .webui-settings-disabled-row { cursor: default; opacity: .6; }
-  .webui-settings-disabled-row:hover { background: transparent; }
-  .webui-settings-mode-card strong { font-size: var(--size_14); font-weight: var(--weight_regular); }
-  .webui-settings-mode-card span { color: var(--text_default_secondary); font-size: var(--size_12); }
+
   .webui-settings-no-results { padding: var(--spacing_16); color: var(--text_default_secondary); font-size: var(--size_12); }
   .webui-generic-page { display: flex; max-width: 840px; margin: 0 auto; flex-direction: column; gap: 32px; padding: 0 var(--spacing_16) var(--spacing_32); }
   .webui-generic-section { display: flex; width: 100%; flex-direction: column; gap: var(--spacing_12); }
@@ -1060,22 +1049,6 @@
     border-radius: var(--radius_full);
     background-color: var(--bg_grouped_tertiary);
   }
-  .webui-segmented-item {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--spacing_4);
-    height: 26px;
-    padding: 0 var(--spacing_12);
-    border-radius: var(--radius_full);
-    font-size: var(--size_14);
-    line-height: var(--line_height_22);
-    color: var(--text_default_tertiary);
-    white-space: nowrap;
-  }
-  .webui-segmented-item[aria-current="true"] {
-    color: var(--text_default_primary);
-  }
 
   /* ---------------------------------------------------------------- composer */
 
@@ -1649,26 +1622,6 @@
   }
 
   /* A quick-action chip: 32px, 8px radius, a hairline ring. */
-  .webui-chip {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--spacing_4);
-    height: 32px;
-    flex-shrink: 0;
-    padding: 0 var(--spacing_8);
-    border-radius: var(--radius_8);
-    box-shadow: inset 0 0 0 1px var(--border_default);
-    font-size: var(--size_14);
-    line-height: var(--line_height_20);
-    transition: background-color 120ms ease;
-  }
-  .webui-chip:hover:not(:disabled) {
-    background-color: var(--bg_interaction_tertiary_hover);
-  }
-  .webui-chip:disabled {
-    cursor: default;
-  }
 
   /* ---------------------------------------------------------------- actions */
 
@@ -1970,10 +1923,6 @@
 
   /* The assistant's process disclosure: a summary line, a hairline, and the
    * collapsible body that carries the thinking and the tool steps. */
-  .webui-turn-process-separator {
-    margin-top: var(--spacing_16);
-    border-bottom: 0.5px solid var(--border_default);
-  }
 
   /* Desktop assistant rows are a plain reading flow. Thinking and tool work
    * sit in that flow as activity rows; the assistant is never rendered as a
@@ -2116,10 +2065,14 @@
     font-size: 14px;
     line-height: 20px;
   }
+  /* The live "推理中…" row trails the streamed thinking detail (or the tool
+   * row above it, when the detail is still empty). It carried no margin at
+   * all, so it sat flush against whatever preceded it. */
   .webui-thinking-live-status {
     display: flex;
     min-height: 28px;
     align-items: center;
+    margin-top: var(--spacing_8);
     gap: var(--spacing_8);
     color: var(--text_default_tertiary);
     font-size: 14px;
@@ -2315,14 +2268,7 @@
   }
   /* The desktop's `--thinking` variant: a step down from the chat body, and
    * never bolded. */
-  .webui-markdown-thinking .webui-markdown {
-    font-size: 14px;
-    line-height: 20px;
-    color: var(--text_default_primary);
-  }
-  .webui-markdown-thinking .webui-markdown :is(strong, b) {
-    font-weight: 400;
-  }
+
   .webui-markdown :is(h1, h2, h3, h4, h5, h6):first-child {
     margin-block-start: 0;
   }
@@ -2680,32 +2626,13 @@
     font-size: 12px;
     line-height: 16px;
   }
-  .webui-user-menu-usage-row {
-    display: flex;
-    min-height: 24px;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-  }
-  .webui-user-menu-usage-row > span {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .webui-user-menu-usage-row > strong {
-    flex: 0 0 auto;
-    font-weight: 400;
-  }
+
   .webui-user-menu-usage-hairline {
     height: 1px;
     margin: 8px 0;
     background-color: var(--border_default);
   }
-  .webui-user-menu-usage-message {
-    margin: 4px 0 0;
-    color: var(--text_default_tertiary);
-  }
+
   .webui-user-menu-usage-signed-out {
     margin: 0;
     color: var(--text_default_secondary);
@@ -3166,13 +3093,6 @@
     line-height: 16px;
   }
 
-  .webui-questionnaire-steps-meta {
-    margin: 0;
-    color: var(--text_default_tertiary);
-    font-size: 12px;
-    line-height: 16px;
-  }
-
   .webui-questionnaire-options {
     display: flex;
     flex-direction: column;
@@ -3590,9 +3510,7 @@
     border-left: 1px solid var(--border_default);
   }
 
-  .webui-user-inline-editor,
-  .webui-message-dialog-surface,
-  .webui-rewind-dialog {
+  .webui-user-inline-editor, .webui-message-dialog-surface {
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -3618,9 +3536,7 @@
     resize: vertical;
   }
 
-  .webui-inline-editor-actions,
-  .webui-message-dialog-actions,
-  .webui-goal-editor-actions {
+  .webui-inline-editor-actions, .webui-message-dialog-actions {
     display: flex;
     justify-content: flex-end;
     gap: 8px;
@@ -3636,8 +3552,7 @@
     background: rgb(0 0 0 / 28%);
   }
 
-  .webui-message-dialog-surface,
-  .webui-rewind-dialog {
+  .webui-message-dialog-surface {
     width: min(520px, 100%);
     max-height: min(640px, 90vh);
     overflow: auto;
@@ -3653,8 +3568,7 @@
     font-size: 12px;
   }
 
-  .webui-message-mutation-error,
-  .webui-goal-error {
+  .webui-message-mutation-error {
     margin: 4px 0 0;
     color: var(--text_status_error);
     font-size: 12px;
@@ -3726,10 +3640,7 @@
     cursor: pointer;
   }
 
-  .webui-goal-status,
-  .webui-goal-wait,
-  .webui-goal-usage,
-  .webui-goal-updated {
+  .webui-goal-status, .webui-goal-wait, .webui-goal-usage {
     color: var(--text_default_secondary);
     font-size: 12px;
   }
@@ -3982,13 +3893,7 @@
     width: 30px;
     padding: 0;
   }
-  .webui-plugin-management.is-marketplace .webui-plugin-header-title {
-    position: absolute;
-    left: 50%;
-    transform: translateX(-50%);
-    font-size: 16px;
-    font-weight: 500;
-  }
+
   .webui-plugin-create-anchor {
     position: relative;
     display: flex;
@@ -4152,10 +4057,7 @@
     color: var(--text_default_secondary);
     font-size: 13px;
   }
-  .webui-plugin-market-skills {
-    max-width: 960px;
-    margin: 34px auto 0;
-  }
+
   .webui-plugin-market-skill-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -4204,26 +4106,7 @@
     padding: 5px 11px;
     color: var(--text_default_primary);
   }
-  .webui-plugin-personal-skills {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-  .webui-plugin-personal-skills article {
-    display: flex;
-    min-height: 58px;
-    align-items: center;
-    justify-content: space-between;
-    border-bottom: 1px solid var(--border_default);
-    padding: 0 10px;
-  }
-  .webui-plugin-personal-skills button {
-    border: 1px solid var(--border_default);
-    border-radius: 8px;
-    background: var(--bg_default_primary);
-    padding: 7px 15px;
-    color: var(--text_default_primary);
-  }
+
   /* Marketplace rows stay open at rest and reveal a rounded surface only
    * while hovered or keyboard-focused. */
   .webui-plugin-management.is-marketplace .webui-plugin-grid .webui-plugin-row {

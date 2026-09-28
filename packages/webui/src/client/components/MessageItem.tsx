@@ -73,7 +73,6 @@ export function MessageItem({
   getSessionRewindPreview,
   rewindSession,
   editSessionMessage,
-  onMutationComplete,
   workspaceDir,
   onOpenFile,
   onOpenTurnReview,
@@ -82,7 +81,6 @@ export function MessageItem({
   readonly view: WebuiTurnView;
   /** Group-level turn duration; computed by SessionTranscript's group collapse. */
   readonly wallClockDurationMs?: number;
-  readonly onMutationComplete?: () => void;
   readonly workspaceDir?: string;
   readonly onOpenFile?: (input: { readonly sessionId: string; readonly workspaceDir: string; readonly reference: WebuiMessageFileReference }) => void;
   readonly onOpenTurnReview?: (command: Extract<WorkspacePanelCommand, { type: "open-turn-review" }>) => void;
@@ -151,7 +149,7 @@ export function MessageItem({
     if (!sessionId || !rewindSession) return;
     setMutationBusy(true);
     void rewindSession(buildWebuiRewindRequest(sessionId, messageId, webuiClientRequestId("rewind"), rewindTurnDiff))
-      .then(() => { setRewindOpen(false); onMutationComplete?.(); })
+      .then(() => { setRewindOpen(false); })
       .catch((error: unknown) => setMutationError(error instanceof Error ? error.message : String(error)))
       .finally(() => setMutationBusy(false));
   };
@@ -161,7 +159,7 @@ export function MessageItem({
     if (!request) return;
     setMutationBusy(true);
     void editSessionMessage(request)
-      .then(() => { setEditing(false); onMutationComplete?.(); })
+      .then(() => { setEditing(false); })
       .catch((error: unknown) => setMutationError(error instanceof Error ? error.message : String(error)))
       .finally(() => setMutationBusy(false));
   };
@@ -169,7 +167,7 @@ export function MessageItem({
     if (!sessionId || !forkSession || forkOptions?.canFork === false) return;
     setMutationBusy(true);
     void forkSession(buildWebuiMessageForkRequest(sessionId, messageId, webuiClientRequestId("fork"), forkTitle))
-      .then(() => { setForkOpen(false); onMutationComplete?.(); })
+      .then(() => { setForkOpen(false); })
       .catch((error: unknown) => setMutationError(error instanceof Error ? error.message : String(error)))
       .finally(() => setMutationBusy(false));
   };

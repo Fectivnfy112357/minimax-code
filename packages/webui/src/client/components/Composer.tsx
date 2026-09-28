@@ -1,11 +1,14 @@
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 
-export function Composer({ onSubmit, disabled, children }: { readonly onSubmit?: (text: string) => void; readonly disabled?: boolean; readonly children?: ReactNode }) {
-  if (children)
-    return <div data-webui-component="composer" className="contents">{children}</div>;
-  const [draft, setDraft] = useState("");
-  return <form className="webui-card flex flex-col gap-spacing_8 p-spacing_16" onSubmit={(event) => { event.preventDefault(); if (draft.trim()) { onSubmit?.(draft.trim()); setDraft(""); } }}>
-    <textarea className="webui-textarea webui-composer-input" value={draft} disabled={disabled} onChange={(event) => setDraft(event.target.value)} placeholder="Ask MiniMax Code anything" />
-    <div className="flex items-center justify-end gap-spacing_8"><button className="webui-send-button" type="submit" disabled={disabled || !draft.trim()}>Send</button></div>
-  </form>;
+/** Layout wrapper only. `WebuiComposer` in `SessionComposer.tsx` owns the real
+ * composer; this component survives solely to carry the `composer` data hook
+ * the shell grid hangs its measurement off.
+ *
+ * It used to be a standalone form with its own draft state, textarea and send
+ * button. That implementation was superseded in `fe0ad4f`, the same commit
+ * that introduced the `children` short-circuit below — so the form branch was
+ * unreachable from the day it was written, and no call site has passed
+ * `onSubmit` or `disabled` since. */
+export function Composer({ children }: { readonly children: ReactNode }) {
+  return <div data-webui-component="composer" className="contents">{children}</div>;
 }

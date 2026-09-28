@@ -139,23 +139,6 @@ export const WEBUI_FIELD_OWNERSHIP_TABLE: readonly WebuiFieldOwnershipRow[] = [
 // ── Shared leaf renderer input contract ──────────────────────────────
 
 /**
- * Capability subset the leaf renderer passes through to its action
- * handlers. Kept verbatim from `MessageItem` so adapters don't have to
- * shape it differently — runtime-bindable, not data-derived.
- */
-export type WebuiTurnViewCapabilities = Pick<
-  WebuiTransport,
-  | "getTurnDiff"
-  | "revertTurnDiff"
-  | "reapplyTurnDiff"
-  | "getSessionForkOptions"
-  | "forkSession"
-  | "getSessionRewindPreview"
-  | "rewindSession"
-  | "editSessionMessage"
->;
-
-/**
  * The normalised turn view shared by historical and live rendering.
  *
  * Ownership rule: `WebuiTurnViewBase` contains fields read by the shared

@@ -26,41 +26,6 @@ export function booleanValue(value: unknown): boolean | undefined {
 }
 
 /**
- * Read a string from any of the named keys on a record, in order, accepting
- * either camelCase or snake_case spellings the wire layer carries. Returns the
- * first non-empty trimmed string, or undefined when none qualifies.
- */
-export function readStringAliases(
-  value: Record<string, unknown> | undefined,
-  keys: readonly string[],
-): string | undefined {
-  if (!value) return undefined;
-  for (const key of keys) {
-    const candidate = value[key];
-    if (typeof candidate === "string" && candidate.trim()) return candidate;
-  }
-  return undefined;
-}
-
-/**
- * Read a number from any of the named keys on a record, in order. Returns the
- * first finite number, or undefined when none qualifies. The wire layer hands
- * the client both camelCase and snake_case keys for the same value.
- */
-export function readNumberAliases(
-  value: Record<string, unknown> | undefined,
-  keys: readonly string[],
-): number | undefined {
-  if (!value) return undefined;
-  for (const key of keys) {
-    const candidate = value[key];
-    if (typeof candidate === "number" && Number.isFinite(candidate))
-      return candidate;
-  }
-  return undefined;
-}
-
-/**
  * Project an unknown error into a human-readable string for the user-facing
  * `refusal` field or for the `interactionError` banner. The original code
  * repeated `error instanceof Error ? error.message : String(error)` in 41

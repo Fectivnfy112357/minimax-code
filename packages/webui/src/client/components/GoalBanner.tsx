@@ -37,13 +37,11 @@ export function WebuiGoalBanner({
   patchGoal,
   clearGoal,
   onCleared,
-  isGenerating = false,
   interactionBlocked = false,
 }: {
   readonly goal?: WebuiGoal;
 
   readonly onCleared?: () => void;
-  readonly isGenerating?: boolean;
   readonly interactionBlocked?: boolean;
 } & WebuiGoalBannerCapabilities): ReactElement | null {
   const [editing, setEditing] = useState(false);
@@ -119,7 +117,6 @@ export function WebuiGoalBanner({
       {editing ? <div className="webui-goal-editor" data-testid="goal-editor"><textarea data-testid="thread-goal-banner-edit-input" value={objective} onChange={(event) => setObjective(event.target.value)} placeholder="更新目标内容" /><input data-testid="thread-goal-banner-budget-input" value={budget} onChange={(event) => setBudget(event.target.value)} placeholder="Token 预算 — 例如 50K、200000；留空表示取消" /><div><button type="button" data-testid="thread-goal-banner-cancel-edit" onClick={() => setEditing(false)} disabled={busy}>取消</button><button type="button" data-testid="thread-goal-banner-save" onClick={saveEdit} disabled={busy}>保存</button></div></div> : null}
       {confirmClear ? <div className="webui-goal-confirm" data-testid="goal-clear-confirm"><strong>删除目标？</strong><p>删除目标后，目标模式会关闭，转为普通模式继续。</p><button type="button" onClick={() => setConfirmClear(false)} disabled={busy}>取消</button><button type="button" data-testid="goal-clear-confirm-confirm" onClick={clear} disabled={busy}>删除</button></div> : null}
       {error ? <p role="alert" data-testid="thread-goal-error">{error}</p> : null}
-      {isGenerating ? <span data-testid="thread-goal-generating" aria-hidden="true" /> : null}
     </section>
   );
 }

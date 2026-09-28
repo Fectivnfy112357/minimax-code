@@ -48,15 +48,6 @@ export function WebuiIconBrand({ className }: WebuiIconProps): ReactElement {
   );
 }
 
-/** local/cloud source switcher — the desktop's cloud outline glyph. */
-export function WebuiIconCloud({ className }: WebuiIconProps): ReactElement {
-  return (
-    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}>
-      <path d="M6.2 16.1H15.1C16.8121 16.1 18.2 14.7121 18.2 13C18.2 11.3506 16.9118 10.0021 15.2862 9.906C15.0634 6.9897 12.6309 4.7 9.65714 4.7C7.21296 4.7 5.12873 6.25154 4.33188 8.42142C2.26235 8.53519 0.6 10.2686 0.6 12.3667C0.6 14.5389 2.38112 16.3 4.57778 16.3H6.2V15.1H4.57778C3.04453 15.1 1.8 13.8755 1.8 12.3667C1.8 10.8579 3.04453 9.63333 4.57778 9.63333C4.74189 9.63333 4.90156 9.64754 5.05522 9.67425L5.65066 9.77793L5.82451 9.19986C6.32607 7.53138 7.85657 5.9 9.65714 5.9C12.0296 5.9 13.9571 7.82757 13.9571 10.2V10.8H15.1C16.149 10.8 17 11.651 17 12.7C17 13.749 16.149 14.6 15.1 14.6H6.2V16.1Z" fill="currentColor" />
-    </svg>
-  );
-}
-
 /** circle-plus, the rail's fixed new-task row — the desktop's `新建任务` glyph. */
 export function WebuiIconNewTask({ className }: WebuiIconProps): ReactElement {
   return (
@@ -296,16 +287,6 @@ export function WebuiIconSearch({ className }: WebuiIconProps): ReactElement {
   );
 }
 
-/** workspace controls — the desktop's browser/globe entry glyph. */
-export function WebuiIconGlobe({ className }: WebuiIconProps): ReactElement {
-  return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}>
-      <circle cx="10" cy="10" r="7.8" stroke="currentColor" strokeWidth="1.2" />
-      <path d="M2.5 10H17.5M10 2.2C12.1 4.3 13.2 7 13.2 10C13.2 13 12.1 15.7 10 17.8C7.9 15.7 6.8 13 6.8 10C6.8 7 7.9 4.3 10 2.2Z" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
 /** workspace add-menu glyph — Desktop's review/search icon. */
 export function WebuiIconWorkspaceReview({ className }: WebuiIconProps): ReactElement {
   return <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}><circle cx="8.5" cy="8.5" r="6.1" stroke="currentColor" strokeWidth="1.2" /><path d="m13 13 4.1 4.1M8.5 5.8v5.4M5.8 8.5h5.4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" /></svg>;
@@ -334,39 +315,11 @@ export function WebuiIconWorkspaceExpand({ className }: WebuiIconProps): ReactEl
 // model. `new` reuses the rail's `WebuiIconNewTask` so the popover and the rail stay in
 // sync when the desktop's glyph shifts.
 
-/** slash palette — `help` row leading glyph. */
-export function WebuiIconCommandHelp({ className }: WebuiIconProps): ReactElement {
-  return (
-    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}>
-      <path
-        fillRule="evenodd"
-        clipRule="evenodd"
-        d="M10 1.875C5.5127 1.875 1.875 5.5127 1.875 10C1.875 14.4873 5.5127 18.125 10 18.125C14.4873 18.125 18.125 14.4873 18.125 10C18.125 5.5127 14.4873 1.875 10 1.875ZM10 3.125C6.78906 3.125 4.125 5.78906 4.125 10C4.125 14.2109 6.78906 16.875 10 16.875C13.2109 16.875 15.875 14.2109 15.875 10C15.875 5.78906 13.2109 3.125 10 3.125ZM10 5.625C10.3452 5.625 10.625 5.90482 10.625 6.25C10.625 6.59518 10.3452 6.875 10 6.875C9.65482 6.875 9.375 6.59518 9.375 6.25C9.375 5.90482 9.65482 5.625 10 5.625ZM9.375 9.375C9.375 9.03088 9.65482 8.75065 10 8.75065C10.3452 8.75065 10.625 9.03088 10.625 9.375V13.75C10.625 14.0941 10.3452 14.375 10 14.375C9.65482 14.375 9.375 14.0941 9.375 13.75V9.375Z"
-        fill="currentColor"
-      />
-    </svg>
-  );
-}
-
 /** slash palette — `compact` row leading glyph. */
 export function WebuiIconCommandCompact({ className }: WebuiIconProps): ReactElement {
   return (
     <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}>
       <path d="M9.125 2.375C9.40195 2.375 9.625 2.59805 9.625 2.875V3.875H10.375V2.875C10.375 2.59805 10.598 2.375 10.875 2.375C11.152 2.375 11.375 2.59805 11.375 2.875V3.875H12.375C12.9299 3.875 13.375 4.32011 13.375 4.875V7.375C13.375 7.92989 12.9299 8.375 12.375 8.375H7.625C7.07011 8.375 6.625 7.92989 6.625 7.375V4.875C6.625 4.32011 7.07011 3.875 7.625 3.875H8.625V2.875C8.625 2.59805 8.848 2.375 9.125 2.375ZM7.625 5.125V5.875H12.375V5.125H7.625Z M7.625 11.625H12.375C12.9299 11.625 13.375 12.0701 13.375 12.625V15.125C13.375 15.6799 12.9299 16.125 12.375 16.125H11.375V17.125C11.375 17.402 11.152 17.625 10.875 17.625C10.598 17.625 10.375 17.402 10.375 17.125V16.125H9.625V17.125C9.625 17.402 9.40195 17.625 9.125 17.625C8.848 17.625 8.625 17.402 8.625 17.125V16.125H7.625C7.07011 16.125 6.625 15.6799 6.625 15.125V12.625C6.625 12.0701 7.07011 11.625 7.625 11.625ZM7.625 14.125H12.375V12.875H7.625V14.125Z"
-        fill="currentColor"
-      />
-    </svg>
-  );
-}
-
-/** slash palette — `status` row leading glyph. */
-export function WebuiIconCommandStatus({ className }: WebuiIconProps): ReactElement {
-  return (
-    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}>
-      <path
-        fillRule="evenodd"
-        clipRule="evenodd"
-        d="M10 1.875C5.5127 1.875 1.875 5.5127 1.875 10C1.875 14.4873 5.5127 18.125 10 18.125C14.4873 18.125 18.125 14.4873 18.125 10C18.125 5.5127 14.4873 1.875 10 1.875ZM10 3.125C6.78906 3.125 4.125 5.78906 4.125 10C4.125 14.2109 6.78906 16.875 10 16.875C13.2109 16.875 15.875 14.2109 15.875 10C15.875 5.78906 13.2109 3.125 10 3.125ZM10 5C10.34521 5 10.625 5.27982 10.625 5.625V10.3125C10.625 10.6577 10.34521 10.9375 10 10.9375C9.65479 10.9375 9.375 10.6577 9.375 10.3125V5.625C9.375 5.27982 9.65479 5 10 5ZM10 12.8125C10.34521 12.8125 10.625 13.0923 10.625 13.4375V13.75C10.625 14.0952 10.34521 14.375 10 14.375C9.65479 14.375 9.375 14.0952 9.375 13.75V13.4375C9.375 13.0923 9.65479 12.8125 10 12.8125Z"
         fill="currentColor"
       />
     </svg>
@@ -381,22 +334,6 @@ export function WebuiIconCommandUsage({ className }: WebuiIconProps): ReactEleme
       <path d="M5.5 13.75V9.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
       <path d="M9.75 13.75V6.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
       <path d="M14 13.75V3.75" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-/** slash palette — `model` row leading glyph. */
-export function WebuiIconCommandModel({ className }: WebuiIconProps): ReactElement {
-  return (
-    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}>
-      <path
-        d="M10 1.875L17.5 5.625V14.375L10 18.125L2.5 14.375V5.625L10 1.875Z"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-      />
-      <path d="M2.5 5.625L10 10L17.5 5.625" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-      <path d="M10 10V18.125" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -667,15 +604,6 @@ export function WebuiIconMessageFork({ className, size = 20 }: WebuiSizedIconPro
   return (
     <svg width={size} height={size} viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}>
       <path fill="currentColor" d="M17.6123 6.8125C17.6123 7.14385 17.344 7.41305 17.0127 7.41309C16.6813 7.41309 16.4131 7.14387 16.4131 6.8125V4.36426L11.3379 9.44043C10.9881 9.79041 10.5714 10.0669 10.1133 10.2539C9.65713 10.4401 9.16839 10.5337 8.67578 10.5293H2.20801C1.87677 10.5292 1.60843 10.2609 1.6084 9.92969C1.60843 9.59843 1.87677 9.33021 2.20801 9.33008H8.68164C9.01674 9.33367 9.34987 9.27017 9.66016 9.14355C9.97034 9.01693 10.2524 8.82876 10.4893 8.5918L15.5654 3.5166H13.1172C12.7858 3.5166 12.5166 3.24836 12.5166 2.91699C12.5166 2.58565 12.7858 2.31738 13.1172 2.31738H17.0127C17.0904 2.31739 17.1682 2.33222 17.2412 2.3623C17.2596 2.36989 17.2765 2.38034 17.2939 2.38965C17.3448 2.41685 17.3936 2.45022 17.4365 2.49316C17.4795 2.53611 17.5128 2.58486 17.54 2.63574C17.5493 2.65317 17.5598 2.67007 17.5674 2.68848C17.5975 2.76146 17.6123 2.8393 17.6123 2.91699V6.8125ZM17.6123 16.9424C17.6123 17.0198 17.5971 17.0972 17.5674 17.1699C17.5598 17.1883 17.5493 17.2052 17.54 17.2227C17.5127 17.2741 17.4798 17.3239 17.4365 17.3672C17.3938 17.4098 17.3446 17.4417 17.2939 17.4688C17.2097 17.514 17.115 17.543 17.0127 17.543H13.1172C12.786 17.543 12.5168 17.2736 12.5166 16.9424C12.5168 16.6112 12.7859 16.3428 13.1172 16.3428H15.5645L11.9131 12.6914C11.6793 12.4572 11.6794 12.078 11.9131 11.8438C12.1474 11.6094 12.5274 11.6094 12.7617 11.8438L16.4131 15.4951V13.0469C16.4131 12.7155 16.6813 12.4473 17.0127 12.4473C17.344 12.4473 17.6123 12.7155 17.6123 13.0469V16.9424Z" />
-    </svg>
-  );
-}
-
-/** activity — desktop activity-group header glyph (a four-point sparkle). */
-export function WebuiIconActivity({ className, size = 16 }: WebuiSizedIconProps): ReactElement {
-  return (
-    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" aria-hidden="true" className={className}>
-      <path d="M8 1.5L9.17157 6.32843C9.43675 7.21854 9.78146 7.56325 10.6716 7.82843L15.5 9L10.6716 10.1716C9.78146 10.4367 9.43675 10.7815 9.17157 11.6716L8 16.5L6.82843 11.6716C6.56325 10.7815 6.21854 10.4367 5.32843 10.1716L0.5 9L5.32843 7.82843C6.21854 7.56325 6.56325 7.21854 6.82843 6.32843L8 1.5Z" fill="currentColor" />
     </svg>
   );
 }

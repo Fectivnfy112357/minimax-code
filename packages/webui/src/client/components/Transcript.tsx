@@ -1,9 +1,13 @@
 import type { ReactNode } from "react";
-import { WebuiMarkdown } from "../markdown.js";
 
-export function Transcript({ messages, children }: { readonly messages?: readonly { readonly id: string; readonly answer: string }[]; readonly children?: ReactNode }) {
-  if (children)
-    return <div data-webui-component="transcript" className="contents">{children}</div>;
-  if (!messages) return null;
-  return <div className="flex flex-col gap-spacing_12">{messages.map((message) => <article key={message.id} className="webui-message"><WebuiMarkdown source={message.answer} /></article>)}</div>;
+/** Layout wrapper only. `WebuiSessionTranscript` in `SessionTranscript.tsx`
+ * owns the real transcript; this component survives solely to carry the
+ * `transcript` data hook.
+ *
+ * It used to render a `messages` list through `WebuiMarkdown`. That branch was
+ * superseded in `fe0ad4f` in favour of the `children` short-circuit below, and
+ * the single call site has never passed `messages` — which is why the
+ * `WebuiMarkdown` import that outlived the branch stayed here until now. */
+export function Transcript({ children }: { readonly children: ReactNode }) {
+  return <div data-webui-component="transcript" className="contents">{children}</div>;
 }
