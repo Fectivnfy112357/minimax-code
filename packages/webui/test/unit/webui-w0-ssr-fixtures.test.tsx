@@ -21,6 +21,8 @@ import {
   WebuiMessageActionButton,
 } from "../../src/client/components/MessageActions.js";
 import {
+  createWebuiTranscriptRequestCoordinator,
+  runWebuiTranscriptPageRequest,
   WebuiQuestionnaireResponse,
   getOwnedTranscriptPage,
   mergeOlderTranscriptPage,
@@ -377,6 +379,76 @@ describe("WebUI transcript page session ownership", () => {
     ]);
     expect(lateFinally.loading).toBe(true);
     expect(lateFinally.error).toBe("B error");
+  });
+
+  it("keeps B when A and B page requests complete out of order", async () => {
+    const coordinator = createWebuiTranscriptRequestCoordinator("A");
+    let current = state("A", 0, ["a-start"], true);
+    let resolveA!: (value: ReturnType<typeof page>) => void;
+    const requestA = new Promise<ReturnType<typeof page>>((resolve) => { resolveA = resolve; });
+    const tokenA = coordinator.beginRequest("A");
+    expect(tokenA).toBeDefined();
+    const run = (token: NonNullable<typeof tokenA>, request: Promise<ReturnType<typeof page>>) =>
+      runWebuiTranscriptPageRequest(
+        coordinator,
+        token,
+        () => request,
+        (update) => { current = update(current); },
+        (nextPage, commit) => { commit((owned) => ({ ...owned, page: nextPage })); },
+        (reason, commit) => { commit((owned) => ({ ...owned, error: String(reason) })); },
+        (commit) => { commit((owned) => ({ ...owned, loading: false })); },
+      );
+    const pendingA = run(tokenA!, requestA);
+
+    coordinator.commitOwner("B");
+    current = state("B", 1, ["b-start"], true);
+    let resolveB!: (value: ReturnType<typeof page>) => void;
+    const requestB = new Promise<ReturnType<typeof page>>((resolve) => { resolveB = resolve; });
+    const tokenB = coordinator.beginRequest("B");
+    expect(tokenB).toBeDefined();
+    const pendingB = run(tokenB!, requestB);
+    resolveB(page(["b-result"]));
+    await pendingB;
+    resolveA(page(["a-late-result"]));
+    await pendingA;
+
+    expect(current.ownerSessionId).toBe("B");
+    expect(current.page.messages?.map(({ msgId }) => msgId)).toEqual(["b-result"]);
+    expect(current.loading).toBe(false);
+  });
+
+  it("lets only the newest request for one owner commit", async () => {
+    const coordinator = createWebuiTranscriptRequestCoordinator("A");
+    let current = state("A", 0, [], true);
+    const defer = () => {
+      let resolve!: (value: ReturnType<typeof page>) => void;
+      const promise = new Promise<ReturnType<typeof page>>((done) => { resolve = done; });
+      return { promise, resolve };
+    };
+    const run = (token: NonNullable<ReturnType<typeof coordinator.beginRequest>>, request: Promise<ReturnType<typeof page>>) =>
+      runWebuiTranscriptPageRequest(
+        coordinator,
+        token,
+        () => request,
+        (update) => { current = update(current); },
+        (nextPage, commit) => { commit((owned) => ({ ...owned, page: nextPage })); },
+        (reason, commit) => { commit((owned) => ({ ...owned, error: String(reason) })); },
+        (commit) => { commit((owned) => ({ ...owned, loading: false })); },
+      );
+    const olderRequest = defer();
+    const olderToken = coordinator.beginRequest("A");
+    const pendingOlder = run(olderToken!, olderRequest.promise);
+    const newerRequest = defer();
+    const newerToken = coordinator.beginRequest("A");
+    const pendingNewer = run(newerToken!, newerRequest.promise);
+
+    newerRequest.resolve(page(["newest"]));
+    await pendingNewer;
+    olderRequest.resolve(page(["stale"]));
+    await pendingOlder;
+
+    expect(current.page.messages?.map(({ msgId }) => msgId)).toEqual(["newest"]);
+    expect(current.loading).toBe(false);
   });
 
   it("prepends same-session pages with cursor and collapse-view progression", () => {

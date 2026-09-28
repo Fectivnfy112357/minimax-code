@@ -17,11 +17,11 @@
 // behaviour (the `cancelled = true` path) is not asserted here, by
 // design.
 
-import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 
 import {
   applyWebuiEffectCommands,
+  createWebuiWatchEventCallback,
   initialWebuiEffectState,
   reduceWebuiEffect,
   type WebuiEffectCommand,
@@ -567,17 +567,24 @@ describe("W2 · trace 10 · reducer purity + cross-session rejection (no cleanup
 
 describe("D3 · watchEvents reduces each event against the latest stream", () => {
   it("keeps a spawned child available to the following completion event", () => {
-    const source = readFileSync(
-      new URL("../../src/client/components/SessionComposer.tsx", import.meta.url),
-      "utf8",
-    );
-    const watchCallback = source.match(
-      /const unsubscribe = watchEvents\?\.\(\(event\) => \{([\s\S]*?)\n    \}, \(\) =>/u,
-    )?.[1];
-    expect(watchCallback).toBeDefined();
-    // 检查真实订阅回调从运行时 store 读取最新快照；事件序列断言其正确归约结果。
-    expect(watchCallback).toMatch(
-      /stream:\s*readSessionRuntimeState\(\s*sessionId\s*\?\?\s*HOME_SESSION_RUNTIME_KEY\s*,?\s*\)\.stream/u,
+    let store = makeState();
+    const read = () => store;
+    const callback = createWebuiWatchEventCallback(
+      SESSION,
+      () => read().stream,
+      () => ({
+        permissions: read().permissions,
+        questionnaire: read().questionnaire,
+        goal: read().goal,
+      }),
+      {
+        refreshPending: () => undefined,
+        setSending: () => undefined,
+        setStream: (patch) => { store = { ...store, stream: patch(store.stream) }; },
+        setPermissions: (patch) => { store = { ...store, permissions: patch(store.permissions) }; },
+        setQuestionnaire: (patch) => { store = { ...store, questionnaire: patch(store.questionnaire) }; },
+        setGoal: (goal) => { store = { ...store, goal }; },
+      },
     );
 
     const spawned = event({
@@ -591,13 +598,12 @@ describe("D3 · watchEvents reduces each event against the latest stream", () =>
       type: "session.finish",
       payload: { sessionId: SESSION, data: { sessionId: "child-1" } },
     });
-    const first = reduceWebuiEffect(makeState(), spawned, SESSION);
-    const second = reduceWebuiEffect(first.state, completed, SESSION);
-
-    expect(first.state.stream.workspaceProgress.subagents).toEqual([
+    callback(spawned);
+    expect(store.stream.workspaceProgress.subagents).toEqual([
       expect.objectContaining({ sessionId: "child-1", status: "running" }),
     ]);
-    expect(second.state.stream.workspaceProgress.subagents).toEqual([
+    callback(completed);
+    expect(store.stream.workspaceProgress.subagents).toEqual([
       expect.objectContaining({ sessionId: "child-1", status: "completed" }),
     ]);
   });

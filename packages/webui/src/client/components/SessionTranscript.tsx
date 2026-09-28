@@ -54,6 +54,8 @@ import {
   type WebuiTurnView,
 } from "../projection/transcript-shape.js";
 
+const EMPTY_TRANSCRIPT_PAGE: WebuiClientMessagePage = {};
+
 function mergeQueryCollapseViews(
   current: NonNullable<WebuiClientMessagePage["queryCollapseViews"]>,
   older: NonNullable<WebuiClientMessagePage["queryCollapseViews"]>,
@@ -69,6 +71,77 @@ export interface WebuiOwnedTranscriptState {
   readonly page: WebuiClientMessagePage;
   readonly loading: boolean;
   readonly error?: string;
+}
+
+export interface WebuiTranscriptRequestToken {
+  readonly ownerSessionId: string;
+  readonly generation: number;
+  readonly requestId: number;
+}
+
+export function createWebuiTranscriptRequestCoordinator(initialOwner: string) {
+  let owner = { ownerSessionId: initialOwner, generation: 0 };
+  let latestRequestId = 0;
+
+  return {
+    commitOwner(ownerSessionId: string): void {
+      if (owner.ownerSessionId === ownerSessionId) return;
+      owner = { ownerSessionId, generation: owner.generation + 1 };
+      latestRequestId = 0;
+    },
+    getCommittedOwner() {
+      return owner;
+    },
+    beginRequest(ownerSessionId: string): WebuiTranscriptRequestToken | undefined {
+      if (owner.ownerSessionId !== ownerSessionId) return undefined;
+      latestRequestId += 1;
+      return { ...owner, requestId: latestRequestId };
+    },
+    isCurrent(token: WebuiTranscriptRequestToken): boolean {
+      return owner.ownerSessionId === token.ownerSessionId &&
+        owner.generation === token.generation &&
+        latestRequestId === token.requestId;
+    },
+  };
+}
+
+export async function runWebuiTranscriptPageRequest<TPage>(
+  coordinator: ReturnType<typeof createWebuiTranscriptRequestCoordinator>,
+  token: WebuiTranscriptRequestToken,
+  load: () => Promise<TPage>,
+  stateCommit: (update: (state: WebuiOwnedTranscriptState) => WebuiOwnedTranscriptState) => void,
+  onSuccess: (
+    page: TPage,
+    commit: (update: (state: WebuiOwnedTranscriptState) => WebuiOwnedTranscriptState) => boolean,
+  ) => void,
+  onError: (
+    reason: unknown,
+    commit: (update: (state: WebuiOwnedTranscriptState) => WebuiOwnedTranscriptState) => boolean,
+  ) => void,
+  onFinally: (
+    commit: (update: (state: WebuiOwnedTranscriptState) => WebuiOwnedTranscriptState) => boolean,
+  ) => void,
+): Promise<void> {
+  const commit = (
+    update: (state: WebuiOwnedTranscriptState) => WebuiOwnedTranscriptState,
+  ): boolean => {
+    if (!coordinator.isCurrent(token)) return false;
+    stateCommit((state) => updateOwnedTranscriptState(
+      state,
+      token.ownerSessionId,
+      token.generation,
+      update,
+    ));
+    return true;
+  };
+  try {
+    const page = await load();
+    if (coordinator.isCurrent(token)) onSuccess(page, commit);
+  } catch (reason) {
+    if (coordinator.isCurrent(token)) onError(reason, commit);
+  } finally {
+    if (coordinator.isCurrent(token)) onFinally(commit);
+  }
 }
 
 export function getOwnedTranscriptPage(
@@ -261,15 +334,12 @@ export function WebuiSessionTranscript({
   readonly onOpenFile?: (input: { readonly sessionId: string; readonly workspaceDir: string; readonly reference: WebuiMessageFileReference }) => void;
   readonly onOpenTurnReview?: (command: Extract<WorkspacePanelCommand, { type: "open-turn-review" }>) => void;
 } & WebuiSessionTranscriptCapabilities): ReactElement {
-  const generationRef = useRef({ ownerSessionId: sessionId, generation: 0 });
-  if (generationRef.current.ownerSessionId !== sessionId) {
-    generationRef.current = {
-      ownerSessionId: sessionId,
-      generation: generationRef.current.generation + 1,
-    };
-  }
-  const requestOwner = generationRef.current.ownerSessionId;
-  const requestGeneration = generationRef.current.generation;
+  const coordinatorRef = useRef(createWebuiTranscriptRequestCoordinator(sessionId));
+  const coordinator = coordinatorRef.current;
+  useLayoutEffect(() => {
+    coordinator.commitOwner(sessionId);
+  }, [coordinator, sessionId]);
+  const committedOwner = coordinator.getCommittedOwner();
   const [transcriptState, setTranscriptState] = useState<WebuiOwnedTranscriptState>(
     () => ({
       ownerSessionId: sessionId,
@@ -278,26 +348,21 @@ export function WebuiSessionTranscript({
       loading: initialMessages === undefined,
     }),
   );
-  const commitForGeneration = (
-    ownerSessionId: string,
-    generation: number,
+  const commitTranscriptRequest = (
+    token: WebuiTranscriptRequestToken,
     update: (current: WebuiOwnedTranscriptState) => WebuiOwnedTranscriptState,
   ) => {
-    setTranscriptState((current) => {
-      if (
-        generationRef.current.ownerSessionId !== ownerSessionId ||
-        generationRef.current.generation !== generation
-      ) return current;
-      return updateOwnedTranscriptState(current, ownerSessionId, generation, update);
-    });
+    setTranscriptState((current) => coordinator.isCurrent(token)
+      ? updateOwnedTranscriptState(current, token.ownerSessionId, token.generation, update)
+      : current);
   };
   const visibleState = transcriptState.ownerSessionId === sessionId &&
-      transcriptState.generation === requestGeneration
+      transcriptState.generation === committedOwner.generation
     ? transcriptState
     : undefined;
   const visiblePage = visibleState
-    ? getOwnedTranscriptPage(visibleState, sessionId) ?? {}
-    : {};
+    ? getOwnedTranscriptPage(visibleState, sessionId) ?? EMPTY_TRANSCRIPT_PAGE
+    : EMPTY_TRANSCRIPT_PAGE;
   const loading = visibleState?.loading ?? true;
   const error = visibleState?.error;
   const transcriptRef = useRef<HTMLElement | null>(null);
@@ -311,12 +376,15 @@ export function WebuiSessionTranscript({
   const turnLive = isTurnLive(streamPhase);
   const previousTurnLiveRef = useRef(turnLive);
   useEffect(() => {
+    const token = coordinator.beginRequest(sessionId);
+    if (!token) return;
     setTranscriptState((current) => {
-      if (current.ownerSessionId !== requestOwner || current.generation !== requestGeneration) {
+      if (!coordinator.isCurrent(token)) return current;
+      if (current.ownerSessionId !== token.ownerSessionId || current.generation !== token.generation) {
         return {
-          ownerSessionId: requestOwner,
-          generation: requestGeneration,
-          page: initialMessages ?? {},
+          ownerSessionId: token.ownerSessionId,
+          generation: token.generation,
+          page: initialMessages ?? EMPTY_TRANSCRIPT_PAGE,
           loading: initialMessages === undefined,
         };
       }
@@ -326,45 +394,58 @@ export function WebuiSessionTranscript({
         error: undefined,
       };
     });
-    void loadMessages({ id: sessionId })
-      .then((nextPage) => {
-        commitForGeneration(requestOwner, requestGeneration, (owned) => ({
+    void runWebuiTranscriptPageRequest(
+      coordinator,
+      token,
+      () => loadMessages({ id: sessionId }),
+      (update) => commitTranscriptRequest(token, update),
+      (nextPage, commit) => {
+        commit((owned) => ({
           ...owned,
           page: nextPage,
         }));
-      })
-      .catch((reason: unknown) => {
-        commitForGeneration(requestOwner, requestGeneration, (owned) => ({
+      },
+      (reason, commit) => {
+        commit((owned) => ({
           ...owned,
           error: reason instanceof Error ? reason.message : String(reason),
         }));
-      })
-      .finally(() => {
-        commitForGeneration(requestOwner, requestGeneration, (owned) => ({
+      },
+      (commit) => {
+        commit((owned) => ({
           ...owned,
           loading: false,
         }));
-      });
-  }, [loadMessages, requestGeneration, requestOwner, sessionId]);
+      },
+    );
+  }, [coordinator, loadMessages, sessionId]);
   useEffect(() => {
     const wasLive = previousTurnLiveRef.current;
     previousTurnLiveRef.current = turnLive;
     if (!wasLive || turnLive) return undefined;
-    void loadMessages({ id: sessionId })
-      .then((nextPage) => {
-        commitForGeneration(requestOwner, requestGeneration, (owned) => ({
+    const token = coordinator.beginRequest(sessionId);
+    if (!token) return undefined;
+    void runWebuiTranscriptPageRequest(
+      coordinator,
+      token,
+      () => loadMessages({ id: sessionId }),
+      (update) => commitTranscriptRequest(token, update),
+      (nextPage, commit) => {
+        commit((owned) => ({
           ...owned,
           page: nextPage,
         }));
-      })
-      .catch((reason: unknown) => {
-        commitForGeneration(requestOwner, requestGeneration, (owned) => ({
+      },
+      (reason, commit) => {
+        commit((owned) => ({
           ...owned,
           error: reason instanceof Error ? reason.message : String(reason),
         }));
-      });
+      },
+      () => undefined,
+    );
     return undefined;
-  }, [loadMessages, requestGeneration, requestOwner, sessionId, turnLive]);
+  }, [coordinator, loadMessages, sessionId, turnLive]);
   const messages = useMemo(
     () => projectWebuiTranscriptMessages(visiblePage, stream.messages, streamPhase !== "done"),
     [visiblePage, stream.messages, streamPhase],
@@ -485,48 +566,49 @@ export function WebuiSessionTranscript({
         if (loading) return;
         const requestedCursor = visibleState.page.nextCursor;
         if (!requestedCursor) return;
-        const ownerAtRequest = requestOwner;
-        const generationAtRequest = requestGeneration;
+        const token = coordinator.beginRequest(sessionId);
+        if (!token) return;
         const viewport = transcriptRef.current?.closest<HTMLElement>(
           '[data-webui-session-scroll="true"]',
         );
         const previousScrollTop = viewport?.scrollTop;
-        commitForGeneration(ownerAtRequest, generationAtRequest, (owned) => ({
+        commitTranscriptRequest(token, (owned) => ({
           ...owned,
           loading: true,
           error: undefined,
         }));
-        void loadMessages({ id: ownerAtRequest, before: requestedCursor })
-          .then((olderPage) => {
-            commitForGeneration(
-              ownerAtRequest,
-              generationAtRequest,
-              (owned) => {
-                const result = mergeOlderTranscriptPage(owned, olderPage, requestedCursor);
-                return { ...result.state, error: result.error };
-              },
-            );
+        void runWebuiTranscriptPageRequest(
+          coordinator,
+          token,
+          () => loadMessages({ id: token.ownerSessionId, before: requestedCursor }),
+          (update) => commitTranscriptRequest(token, update),
+          (olderPage, commit) => {
+            const applied = commit((owned) => {
+              const result = mergeOlderTranscriptPage(owned, olderPage, requestedCursor);
+              return { ...result.state, error: result.error };
+            });
+            if (!applied) return;
             requestAnimationFrame(() => {
               if (
-                generationRef.current.ownerSessionId === ownerAtRequest &&
-                generationRef.current.generation === generationAtRequest &&
+                coordinator.isCurrent(token) &&
                 viewport?.isConnected &&
                 previousScrollTop !== undefined
               ) viewport.scrollTop = previousScrollTop;
             });
-          })
-          .catch((reason: unknown) => {
-            commitForGeneration(ownerAtRequest, generationAtRequest, (owned) => ({
+          },
+          (reason, commit) => {
+            commit((owned) => ({
               ...owned,
               error: reason instanceof Error ? reason.message : String(reason),
             }));
-          })
-          .finally(() => {
-            commitForGeneration(ownerAtRequest, generationAtRequest, (owned) => ({
+          },
+          (commit) => {
+            commit((owned) => ({
               ...owned,
               loading: false,
             }));
-          });
+          },
+        );
       }
     : undefined;
   return (

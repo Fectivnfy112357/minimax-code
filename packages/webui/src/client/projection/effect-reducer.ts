@@ -420,6 +420,22 @@ export function applyWebuiEffectCommands(
   }
 }
 
+export function createWebuiWatchEventCallback(
+  sessionId: string,
+  readStream: () => WebuiStreamState,
+  readState: () => Omit<WebuiEffectState, "stream">,
+  handlers: WebuiEffectHandlers,
+): (event: WebuiRuntimeEvent) => void {
+  return (event) => {
+    const commands = reduceWebuiEffect(
+      { ...readState(), stream: readStream() },
+      event,
+      sessionId,
+    ).commands;
+    applyWebuiEffectCommands(commands, handlers);
+  };
+}
+
 // `initialWebuiWorkspaceProgress` is re-exported only because a few tests
 // reach for it as the "empty" workspace progress state. The reducer itself
 // doesn't import it directly.

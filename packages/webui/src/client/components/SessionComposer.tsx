@@ -92,8 +92,7 @@ import {
 } from "../icons.js";
 import { OutputError } from "./OutputError.js";
 import {
-  applyWebuiEffectCommands,
-  reduceWebuiEffect,
+  createWebuiWatchEventCallback,
 } from "../projection/effect-reducer.js";
 import {
   buildWebuiComposerHandlers,
@@ -727,29 +726,11 @@ export function WebuiComposer({
           error instanceof Error ? error.message : String(error),
         );
     });
-    // Runtime event protocol: the pure decision lives in
-    // `reduceWebuiEffect`, the ordered setter calls in
-    // `applyWebuiEffectCommands`. The order of setter calls, the exception
-    // swallowing on `refreshPending`, and the `cancelled` guard around its
-    // post-await writes are load-bearing — do not reorder them.
-    const unsubscribe = watchEvents?.((event) => {
-      const commands = reduceWebuiEffect(
-        {
-          stream: readSessionRuntimeState(
-            sessionId ?? HOME_SESSION_RUNTIME_KEY,
-          ).stream,
-          permissions,
-          questionnaire,
-          goal,
-        },
-        event,
-        sessionId,
-      ).commands;
-      applyWebuiEffectCommands(commands, {
-        // The original closure called `refreshPending()` unconditionally
-        // and let its own `if (cancelled) return;` guard drop post-await
-        // writes. The executor only owns the catch-swallow — we don't
-        // add a second `cancelled` gate here.
+    const onRuntimeEvent = createWebuiWatchEventCallback(
+      sessionId,
+      () => readSessionRuntimeState(sessionId ?? HOME_SESSION_RUNTIME_KEY).stream,
+      () => ({ permissions, questionnaire, goal }),
+      {
         refreshPending: () => {
           void refreshPending().catch(() => undefined);
         },
@@ -758,8 +739,9 @@ export function WebuiComposer({
         setPermissions,
         setQuestionnaire,
         setGoal,
-      });
-    }, () => {
+      },
+    );
+    const unsubscribe = watchEvents?.(onRuntimeEvent, () => {
       // A reconnect may have missed permission, questionnaire or queue events
       // while the browser was suspended. Re-read the authoritative state once
       // the replacement event stream is open.
