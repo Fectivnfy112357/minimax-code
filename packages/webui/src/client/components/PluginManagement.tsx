@@ -5,6 +5,7 @@ import {
 } from "@mavis/protocol/local";
 import type { WebuiPluginManagementAction } from "../../shared/plugin-management.js";
 import type { WebuiTransport } from "../contracts.js";
+import { ToggleSwitch } from "./ToggleSwitch.js";
 
 type Row = Record<string, unknown>;
 type Area = "plugins" | "skills" | "apps" | "mcp" | "agents";
@@ -117,8 +118,19 @@ export function PluginManagement({
   const [mcpArgs, setMcpArgs] = useState("");
   const [mcpUrl, setMcpUrl] = useState("");
   const [mcpDescription, setMcpDescription] = useState("");
+  const [mcpEnabled, setMcpEnabled] = useState(true);
+  const [mcpAdvancedOpen, setMcpAdvancedOpen] = useState(false);
+  const [mcpEnv, setMcpEnv] = useState("{}");
+  const [mcpHeaders, setMcpHeaders] = useState("{}");
+  const [mcpTimeoutMs, setMcpTimeoutMs] = useState("");
   const [mcpJsonMode, setMcpJsonMode] = useState(false);
-  const [mcpJson, setMcpJson] = useState("{}");
+  const [mcpJson, setMcpJson] = useState(() =>
+    JSON.stringify(
+      { "my-mcp-server": { transport: "stdio", command: "", enabled: true } },
+      null,
+      2,
+    ),
+  );
   const [agentName, setAgentName] = useState("");
   const [agentDescription, setAgentDescription] = useState("");
   const [agentPrompt, setAgentPrompt] = useState("");
@@ -232,7 +244,33 @@ export function PluginManagement({
                 : listed.length,
             );
         } else {
-          result = await request("listRuntimeSkills", {});
+          // Runtime skills intentionally exclude disabled entries. The
+          // management list must include them so the user can turn them back on.
+          const skills: Row[] = [];
+          let cursor: string | undefined;
+          for (;;) {
+            const page = await request("listManageableSkills", {
+              limit: 200,
+              keyword: query || undefined,
+              excludeBuiltin: true,
+              cursor,
+            });
+            skills.push(...rows(page, "skills"));
+            const nextCursor =
+              page && typeof page === "object" &&
+              typeof (page as Row).nextCursor === "string"
+                ? ((page as Row).nextCursor as string)
+                : undefined;
+            if (
+              !page ||
+              typeof page !== "object" ||
+              (page as Row).hasMore !== true ||
+              !nextCursor
+            )
+              break;
+            cursor = nextCursor;
+          }
+          result = { skills };
           if (isRequestCurrent()) setMarketSkillTotal(null);
         }
       } else if (area === "apps") result = await request("listApps");
@@ -376,7 +414,23 @@ export function PluginManagement({
     setMcpCommand(read(config, "command"));
     setMcpArgs(Array.isArray(config.args) ? config.args.join(" ") : "");
     setMcpUrl(read(config, "url"));
-    setMcpJson(JSON.stringify(config, null, 2));
+    setMcpEnabled(item?.enabled !== false);
+    setMcpAdvancedOpen(false);
+    setMcpEnv(JSON.stringify(config.env ?? {}, null, 2));
+    setMcpHeaders(JSON.stringify(config.headers ?? {}, null, 2));
+    setMcpTimeoutMs(typeof config.timeoutMs === "number" ? String(config.timeoutMs) : "");
+    setMcpJson(
+      JSON.stringify(
+        {
+          [nameOf(item ?? {}) || "my-mcp-server"]: {
+            ...config,
+            enabled: item?.enabled !== false,
+          },
+        },
+        null,
+        2,
+      ),
+    );
     setMcpJsonMode(false);
     setDialog("mcp");
   };
@@ -393,33 +447,152 @@ export function PluginManagement({
     }
   };
   const saveMcp = async () => {
+    const parseJsonDraft = (
+      source: string,
+    ): { name: string; enabled: boolean; config: Row } => {
+      const parsed: unknown = JSON.parse(source);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+        throw new Error("JSON 配置必须是对象");
+      const root = parsed as Row;
+      const servers =
+        root.mcpServers && typeof root.mcpServers === "object" && !Array.isArray(root.mcpServers)
+          ? (root.mcpServers as Row)
+          : root;
+      let name = mcpName.trim();
+      let rawConfig: Row;
+      if (typeof servers.transport === "string") {
+        if (typeof servers.name === "string") name = servers.name;
+        rawConfig = servers;
+      } else {
+        const entries = Object.entries(servers);
+        const entry = entries[0];
+        if (
+          entries.length !== 1 ||
+          !entry ||
+          !entry[1] ||
+          typeof entry[1] !== "object" ||
+          Array.isArray(entry[1])
+        )
+          throw new Error("请提供单个 server 配置，或只包含一个 server 的 mcpServers 对象");
+        name = entry[0];
+        rawConfig = entry[1] as Row;
+      }
+      if (!name) throw new Error("请填写 Server 名称");
+      const { enabled, ...configWithName } = rawConfig;
+      const config = { ...configWithName };
+      delete config.name;
+      return {
+        name,
+        enabled: typeof enabled === "boolean" ? enabled : mcpEnabled,
+        config,
+      };
+    };
+    const parseRecord = (value: string, label: string): Row | undefined => {
+      if (!value.trim()) return undefined;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(value);
+      } catch {
+        throw new Error(`${label}必须是有效 JSON`);
+      }
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) ||
+        Object.values(parsed).some((entry) => typeof entry !== "string"))
+        throw new Error(`${label}必须是字符串键值对象`);
+      return parsed as Row;
+    };
     let config: Row;
+    let name = mcpName.trim();
+    let enabled = mcpEnabled;
     if (mcpJsonMode) {
       try {
-        const parsed: unknown = JSON.parse(mcpJson);
-        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
-          throw new Error("JSON 配置必须是对象");
-        config = parsed as Row;
+        const draft = parseJsonDraft(mcpJson);
+        name = draft.name;
+        enabled = draft.enabled;
+        config = draft.config;
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : String(cause));
         return;
       }
-    } else
-      config = {
-        transport: mcpTransport,
-        description: mcpDescription,
-        ...(mcpTransport === "stdio"
-          ? { command: mcpCommand, args: mcpArgs.split(/\s+/u).filter(Boolean) }
-          : { url: mcpUrl }),
-      };
-    if (
-      await mutate(editing ? "updateMcpServer" : "createMcpServer", {
-        name: mcpName.trim(),
+    } else {
+      try {
+        const env = mcpTransport === "stdio" ? parseRecord(mcpEnv, "环境变量") : undefined;
+        const headers = mcpTransport === "stdio" ? undefined : parseRecord(mcpHeaders, "请求头");
+        const timeoutMs = mcpTimeoutMs.trim() ? Number(mcpTimeoutMs) : undefined;
+        if (timeoutMs !== undefined && (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0))
+          throw new Error("超时必须是正整数（毫秒）");
+        config = {
+          transport: mcpTransport,
+          description: mcpDescription,
+          ...(timeoutMs ? { timeoutMs } : {}),
+          ...(mcpTransport === "stdio"
+            ? {
+                command: mcpCommand,
+                args: mcpArgs.split(/\s+/u).filter(Boolean),
+                ...(env ? { env } : {}),
+              }
+            : { url: mcpUrl, ...(headers ? { headers } : {}) }),
+        };
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+        return;
+      }
+    }
+    const saved = await mutate(editing ? "updateMcpServer" : "createMcpServer", {
+        name,
         config,
-        enabled: true,
-      })
-    )
-      setDialog(null);
+        enabled,
+      });
+    if (!saved) return;
+    if (editing && editing.enabled !== enabled) {
+      if (!(await mutate("setMcpServerEnabled", { name, enabled }))) return;
+    }
+    setDialog(null);
+  };
+  const switchMcpToForm = () => {
+    try {
+      const parsed: unknown = JSON.parse(mcpJson);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+        throw new Error("JSON 配置必须是对象");
+      const root = parsed as Row;
+      const servers =
+        root.mcpServers && typeof root.mcpServers === "object" && !Array.isArray(root.mcpServers)
+          ? (root.mcpServers as Row)
+          : root;
+      let name = mcpName.trim();
+      let config: Row;
+      if (typeof servers.transport === "string") {
+        config = servers;
+        if (typeof servers.name === "string") name = servers.name;
+      }
+      else {
+        const entries = Object.entries(servers);
+        const entry = entries[0];
+        if (
+          entries.length !== 1 ||
+          !entry ||
+          !entry[1] ||
+          typeof entry[1] !== "object" ||
+          Array.isArray(entry[1])
+        )
+          throw new Error("表单模式一次只能编辑一个 server");
+        name = entry[0];
+        config = entry[1] as Row;
+      }
+      setMcpName(name);
+      setMcpTransport(read(config, "transport", "type") || "stdio");
+      setMcpCommand(read(config, "command"));
+      setMcpArgs(Array.isArray(config.args) ? config.args.join(" ") : "");
+      setMcpUrl(read(config, "url"));
+      setMcpDescription(read(config, "description"));
+      setMcpEnabled(config.enabled !== false);
+      setMcpEnv(JSON.stringify(config.env ?? {}, null, 2));
+      setMcpHeaders(JSON.stringify(config.headers ?? {}, null, 2));
+      setMcpTimeoutMs(typeof config.timeoutMs === "number" ? String(config.timeoutMs) : "");
+      setMcpJsonMode(false);
+      setError("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
   };
   const beginAgent = (item?: Row) => {
     setEditing(item);
@@ -877,24 +1050,20 @@ export function PluginManagement({
                     >
                       删除
                     </button>
-                    <button
-                      role="switch"
-                      aria-checked={isOn}
-                      aria-label={`启用 ${name}`}
-                      onClick={() =>
+                    <ToggleSwitch
+                      checked={isOn}
+                      label={`启用 ${name}`}
+                      onChange={() =>
                         void mutate(action, { name, enabled: !isOn })
                       }
-                    >
-                      <span />
-                    </button>
+                    />
                   </div>
                 ) : (
                   <div className="webui-plugin-actions">
-                    <button
-                      role="switch"
-                      aria-checked={isOn}
-                      aria-label={`启用 ${name}`}
-                      onClick={() =>
+                    <ToggleSwitch
+                      checked={isOn}
+                      label={`启用 ${name}`}
+                      onChange={() =>
                         void mutate(
                           action,
                           area === "plugins"
@@ -908,9 +1077,7 @@ export function PluginManagement({
                               },
                         )
                       }
-                    >
-                      <span />
-                    </button>
+                    />
                     {area === "plugins" ? (
                       <button
                         onClick={() =>
@@ -965,7 +1132,7 @@ export function PluginManagement({
           }}
         >
           <section
-            className="webui-plugin-dialog"
+            className={`webui-plugin-dialog${dialog === "mcp" ? " webui-mcp-dialog" : ""}`}
             role="dialog"
             aria-modal="true"
             aria-labelledby="plugin-dialog-title"
@@ -983,7 +1150,7 @@ export function PluginManagement({
                         ? "编辑 Agent"
                         : "创建 Agent"}
                 </h2>
-                <p>配置 MiniMax Code 如何连接到该项</p>
+                <p>{dialog === "mcp" ? "配置 MiniMax Code 如何连接到这个 server" : "配置 MiniMax Code 如何连接到该项"}</p>
               </div>
               <button onClick={() => setDialog(null)} aria-label="关闭">
                 ×
@@ -993,32 +1160,38 @@ export function PluginManagement({
               <>
                 <div className="webui-plugin-header-tabs">
                   <button
+                    type="button"
                     aria-pressed={!mcpJsonMode}
-                    onClick={() => setMcpJsonMode(false)}
+                    onClick={switchMcpToForm}
                   >
                     表单
                   </button>
                   <button
+                    type="button"
                     aria-pressed={mcpJsonMode}
-                    onClick={() => setMcpJsonMode(true)}
+                    onClick={() => {
+                      setMcpJsonMode(true);
+                      setError("");
+                    }}
                   >
                     JSON
                   </button>
                 </div>
                 {mcpJsonMode ? (
-                  <label className="wide">
-                    MCP 配置 JSON
+                  <div className="webui-mcp-json-panel">
+                    <p>粘贴单个服务器配置或 <code>mcpServers</code> 对象。</p>
                     <textarea
-                      className="webui-plugin-json"
+                      className="webui-plugin-json webui-mcp-json-editor"
+                      aria-label="MCP 配置 JSON"
                       value={mcpJson}
                       onChange={(event) =>
                         setMcpJson(event.currentTarget.value)
                       }
                       spellCheck={false}
                     />
-                  </label>
+                  </div>
                 ) : (
-                  <div className="webui-plugin-form">
+                  <div className="webui-plugin-form webui-mcp-form">
                     <label>
                       Server 名称
                       <input
@@ -1084,8 +1257,62 @@ export function PluginManagement({
                         onChange={(event) =>
                           setMcpDescription(event.currentTarget.value)
                         }
+                        placeholder="这个 server 提供什么能力？"
                       />
                     </label>
+                    <div className="webui-mcp-enabled wide">
+                      <div>
+                        <strong>启用</strong>
+                        <span>允许 MiniMax Code 使用此服务。</span>
+                      </div>
+                      <ToggleSwitch checked={mcpEnabled} label="启用 MCP server" onChange={setMcpEnabled} />
+                    </div>
+                    <div className="webui-mcp-advanced wide">
+                      <button
+                        type="button"
+                        aria-expanded={mcpAdvancedOpen}
+                        onClick={() => setMcpAdvancedOpen((value) => !value)}
+                      >
+                        <strong>高级选项</strong>
+                        <span aria-hidden="true">{mcpAdvancedOpen ? "⌃" : "⌄"}</span>
+                      </button>
+                      {mcpAdvancedOpen ? (
+                        <div className="webui-plugin-form webui-mcp-advanced-fields">
+                          <label>
+                            超时（毫秒）
+                            <input
+                              type="number"
+                              min="1"
+                              step="1"
+                              value={mcpTimeoutMs}
+                              onChange={(event) => setMcpTimeoutMs(event.currentTarget.value)}
+                              placeholder="使用默认值"
+                            />
+                          </label>
+                          {mcpTransport === "stdio" ? (
+                            <label className="wide">
+                              环境变量（JSON）
+                              <textarea
+                                value={mcpEnv}
+                                onChange={(event) => setMcpEnv(event.currentTarget.value)}
+                                spellCheck={false}
+                                placeholder={'{\n  "API_KEY": "your-key"\n}'}
+                              />
+                            </label>
+                          ) : (
+                            <label className="wide">
+                              请求头（JSON）
+                              <textarea
+                                value={mcpHeaders}
+                                onChange={(event) => setMcpHeaders(event.currentTarget.value)}
+                                spellCheck={false}
+                                placeholder={'{\n  "Authorization": "Bearer ..."\n}'}
+                              />
+                            </label>
+                          )}
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
                 )}
               </>
@@ -1172,8 +1399,8 @@ export function PluginManagement({
                 disabled={
                   busy ||
                   (dialog === "mcp"
-                    ? !mcpName.trim() ||
-                      (!mcpJsonMode &&
+                    ? !mcpJsonMode &&
+                      (!mcpName.trim() ||
                         (mcpTransport === "stdio"
                           ? !mcpCommand.trim()
                           : !mcpUrl.trim()))
@@ -1189,7 +1416,7 @@ export function PluginManagement({
                       : saveAgent())
                 }
               >
-                保存
+                {dialog === "mcp" && !editing ? "添加服务器" : "保存"}
               </button>
             </footer>
           </section>

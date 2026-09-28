@@ -9,6 +9,7 @@ export type WebuiPluginManagementAction =
   | "enablePlugin"
   | "disablePlugin"
   | "listRuntimeSkills"
+  | "listManageableSkills"
   | "setSkillEnabled"
   | "deleteSkill"
   | "listSkillHub"

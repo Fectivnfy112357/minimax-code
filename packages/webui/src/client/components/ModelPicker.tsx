@@ -27,6 +27,7 @@ import {
 } from "react";
 
 import { WebuiIconChevronDown } from "../icons.js";
+import { ToggleSwitch } from "./ToggleSwitch.js";
 import type {
   WebuiModelPickerDraft,
   WebuiModelPickerEntry,
@@ -305,13 +306,12 @@ export function WebuiModelPicker({
                     focusedEffortOptions.includes("off") &&
                     focusedEffortOptions.includes("on") &&
                     resolveThinkingMode(focusedModel) === "switchable" ? (
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={focusedEffort === "on"}
+                      <ToggleSwitch
+                        checked={focusedEffort === "on"}
+                        label="推理等级"
                         data-webui-model-thinking-toggle="true"
-                        className={`webui-model-thinking-toggle ${focusedEffort === "on" ? "is-on" : "is-off"}`}
-                        onClick={() => {
+                        className="webui-model-thinking-toggle"
+                        onChange={() => {
                           if (!focusedModel) return;
                           const next = focusedEffort === "on" ? "off" : "on";
                           const variant = variantForEffort(focusedModel, next);
@@ -319,9 +319,7 @@ export function WebuiModelPicker({
                             ...(variant !== undefined ? { variant } : {}),
                           });
                         }}
-                      >
-                        <span className="webui-model-thinking-toggle-knob" />
-                      </button>
+                      />
                     ) : (
                       <div
                         role="radiogroup"

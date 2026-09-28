@@ -16,6 +16,7 @@ export type CliPluginManagementAction =
   | "enablePlugin"
   | "disablePlugin"
   | "listRuntimeSkills"
+  | "listManageableSkills"
   | "setSkillEnabled"
   | "deleteSkill"
   | "listSkillHub"
@@ -123,6 +124,14 @@ const inputShapes: Readonly<Record<CliPluginManagementAction, InputShape>> = {
       sessionId: "string",
       workspaceDir: "string",
       includePluginSkills: "boolean",
+    },
+  },
+  listManageableSkills: {
+    optional: {
+      limit: "number",
+      cursor: "string",
+      keyword: "string",
+      excludeBuiltin: "boolean",
     },
   },
   setSkillEnabled: {
@@ -287,6 +296,10 @@ function pluginManagement(
         input as Parameters<
           LocalRuntimeApplication["skills"]["listRuntimeSkills"]
         >[0],
+      );
+    case "listManageableSkills":
+      return options.application.skills.listSkills(
+        input as Parameters<LocalRuntimeApplication["skills"]["listSkills"]>[0],
       );
     case "setSkillEnabled":
       return options.application.skills.setSkillEnabled(

@@ -246,10 +246,6 @@
   .webui-settings-row strong { font-size: var(--size_14); font-weight: var(--weight_regular); }
   .webui-settings-row span { margin-top: var(--spacing_4); color: var(--text_default_tertiary); font-size: var(--size_12); }
   .webui-settings-row select { min-width: 150px; padding: var(--spacing_8); border: 1px solid var(--border_default); border-radius: var(--radius_8); background: var(--bg_default_primary); color: var(--text_default_primary); }
-  .webui-settings-toggle { width: 38px; height: 22px; padding: 2px; border: 0; border-radius: var(--radius_full); background: var(--bg_grouped_tertiary); }
-  .webui-settings-toggle span { display: block; width: 18px; height: 18px; border-radius: 50%; background: var(--bg_default_primary); transition: transform 140ms ease; }
-  .webui-settings-toggle.is-on { background: var(--bg_interaction_primary_default); }
-  .webui-settings-toggle.is-on span { transform: translateX(16px); }
   .webui-settings-action { margin: 0 var(--spacing_20) var(--spacing_16); padding: var(--spacing_8) var(--spacing_12); border: 1px solid var(--border_default); border-radius: var(--radius_8); background: transparent; color: var(--text_default_primary); }
   .webui-settings-error { margin: 0 var(--spacing_20) var(--spacing_16); color: var(--text_label_danger_secondary_default); font-size: var(--size_12); }
   .webui-settings-empty-panel { max-width: 760px; min-height: 220px; margin: 0 auto; }
@@ -300,11 +296,12 @@
   .mavis-settings-theme-preview.is-selected { outline-color: var(--icon_default_accent); }
   .mavis-settings-theme-preview > span { display: block; width: 100%; height: 100%; overflow: hidden; border-radius: 6px; outline: 1px solid var(--border_light); outline-offset: -1px; }
   .mavis-settings-theme-preview img { display: block; width: 100%; height: 100%; }
-  .webui-ant-switch { position: relative; display: inline-flex; width: 40px; height: 20px; align-items: center; border: 0; border-radius: 64px; background: var(--bg_interaction_tertiary_press); padding: 2px; }
-  .webui-ant-switch span { display: block; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .2s ease; }
-  .webui-ant-switch.is-checked { background: var(--icon_interaction_accent_accent); }
-  .webui-ant-switch.is-checked span { transform: translateX(20px); }
-  .webui-ant-switch:disabled { cursor: default; opacity: .6; }
+  .webui-toggle-switch { position: relative; display: inline-flex; width: 40px; height: 20px; flex: 0 0 40px; align-items: center; border: 0; border-radius: var(--radius_full); background: #e2e3e5; padding: 3px; cursor: pointer; transition: background-color 140ms ease; }
+  .webui-toggle-switch > span { display: block; width: 14px; height: 14px; border-radius: var(--radius_full); background: #fff; transition: transform 140ms ease; }
+  .webui-toggle-switch.is-checked { background: #0094fc; }
+  .webui-toggle-switch.is-checked > span { transform: translateX(20px); }
+  .webui-toggle-switch:focus-visible { outline: 2px solid var(--border_accent); outline-offset: 2px; }
+  .webui-toggle-switch:disabled { cursor: default; opacity: .6; }
   .webui-ant-select { position: relative; display: inline-flex; width: 96px; height: 36px; align-items: center; }
   .webui-ant-select.is-wide { width: 152px; }
   .webui-ant-select select { width: 100%; height: 36px; appearance: none; border: 1px solid var(--border_default); border-radius: var(--radius_8); background: transparent; padding: 0 32px 0 11px; color: var(--text_default_primary); font-size: var(--size_14); }
@@ -338,7 +335,7 @@
     .webui-settings-group h3 { padding-top: 12px; padding-bottom: 6px; }
     .webui-settings-nav-item { height: 30px; min-height: 30px; }
   }
-  @media (prefers-reduced-motion: reduce) { .webui-settings-content { animation: none; } .webui-settings-toggle span { transition: none; } }
+  @media (prefers-reduced-motion: reduce) { .webui-settings-content { animation: none; } .webui-toggle-switch, .webui-toggle-switch > span { transition: none; } }
 
   .webui-provider-dialog-backdrop { position: fixed; inset: 0; z-index: 110; display: flex; align-items: center; justify-content: center; background: rgb(10 10 10 / 24%); padding: 24px; }
   .webui-provider-form { display: flex; width: min(600px, 100%); max-height: 86vh; min-height: 0; flex-direction: column; overflow: hidden; border-radius: 20px; background: var(--bg_default_primary); padding: 24px; color: var(--text_default_primary); box-shadow: 0 0 48px -12px var(--shadow_default); }
@@ -1366,38 +1363,6 @@
     color: var(--text_default_tertiary);
     font-size: var(--size_12);
     line-height: var(--line_height_16);
-  }
-  .webui-model-thinking-toggle {
-    position: relative;
-    display: inline-flex;
-    align-self: flex-start;
-    width: 36px;
-    height: 20px;
-    flex-shrink: 0;
-    cursor: pointer;
-    border-radius: 999px;
-    border: none;
-    padding: 0;
-    transition: background-color 120ms ease;
-  }
-  .webui-model-thinking-toggle.is-on {
-    background-color: var(--bg_interaction_primary_default, #2f80ff);
-  }
-  .webui-model-thinking-toggle.is-off {
-    background-color: var(--bg_interaction_tertiary_default, #d4d4d8);
-  }
-  .webui-model-thinking-toggle-knob {
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 16px;
-    height: 16px;
-    border-radius: 999px;
-    background: var(--bg_default_primary, #fff);
-    transition: transform 120ms ease;
-  }
-  .webui-model-thinking-toggle.is-on .webui-model-thinking-toggle-knob {
-    transform: translateX(16px);
   }
   .webui-model-effort-group {
     display: flex;
@@ -4331,29 +4296,6 @@
   .webui-plugin-actions {
     gap: 8px;
   }
-  .webui-plugin-row [role="switch"] {
-    display: inline-flex;
-    width: 40px;
-    height: 22px;
-    align-items: center;
-    border: 0;
-    border-radius: 999px;
-    background: var(--bg_interaction_tertiary_default);
-    padding: 3px;
-  }
-  .webui-plugin-row [role="switch"][aria-checked="true"] {
-    background: #1687f8;
-  }
-  .webui-plugin-row [role="switch"] span {
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: white;
-    transition: transform 0.15s ease;
-  }
-  .webui-plugin-row [role="switch"][aria-checked="true"] span {
-    transform: translateX(18px);
-  }
   .webui-plugin-empty {
     margin: 72px auto;
     text-align: center;
@@ -4518,6 +4460,129 @@
   .webui-plugin-dialog footer button:disabled {
     opacity: 0.48;
   }
+  .webui-mcp-dialog {
+    width: min(800px, calc(100vw - 32px));
+    max-height: min(690px, calc(100vh - 32px));
+    border-radius: 18px;
+  }
+  .webui-mcp-dialog > header {
+    padding: 22px 30px 18px;
+  }
+  .webui-mcp-dialog > header p {
+    color: var(--text_default_tertiary);
+  }
+  .webui-mcp-dialog > .webui-plugin-header-tabs {
+    display: flex;
+    width: 200px;
+    height: 40px;
+    box-sizing: border-box;
+    align-self: flex-start;
+    flex: 0 0 auto;
+    margin: 22px 30px 0;
+    padding: 3px;
+    gap: 3px;
+    border-radius: 11px;
+  }
+  .webui-mcp-dialog > .webui-plugin-header-tabs button {
+    display: inline-flex;
+    min-width: 0;
+    flex: 1 1 0;
+    align-items: center;
+    justify-content: center;
+    padding: 0 10px;
+    border-radius: 8px;
+  }
+  .webui-mcp-json-panel {
+    display: flex;
+    min-height: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 14px;
+    overflow: hidden;
+    padding: 18px 30px 0;
+  }
+  .webui-mcp-json-panel > p {
+    flex: 0 0 auto;
+    margin: 0;
+    color: var(--text_default_secondary);
+    font-size: 13px;
+  }
+  .webui-mcp-json-panel code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .webui-mcp-json-editor {
+    width: 100%;
+    min-height: 300px;
+    flex: 1 1 auto;
+    margin: 0;
+    border-radius: 12px;
+    background: var(--bg_default_primary);
+    padding: 18px 20px;
+    line-height: 1.6;
+    resize: vertical;
+  }
+  .webui-mcp-form {
+    flex: 1 1 auto;
+    gap: 16px 20px;
+    padding: 24px 30px;
+  }
+  .webui-mcp-form > label {
+    font-size: 13px;
+  }
+  .webui-mcp-form input,
+  .webui-mcp-form select {
+    min-height: 44px;
+  }
+  .webui-mcp-enabled {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 66px;
+    box-sizing: border-box;
+    border: 1px solid var(--border_default);
+    border-radius: 14px;
+    padding: 10px 14px;
+  }
+  .webui-mcp-enabled > div {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .webui-mcp-enabled strong,
+  .webui-mcp-advanced strong {
+    color: var(--text_default_primary);
+    font-size: 15px;
+    font-weight: 500;
+  }
+  .webui-mcp-enabled > div > span {
+    color: var(--text_default_tertiary);
+    font-size: 13px;
+  }
+  .webui-mcp-advanced > button {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+    border: 0;
+    background: transparent;
+    padding: 2px 0;
+    cursor: pointer;
+  }
+  .webui-mcp-advanced > button > span {
+    color: var(--text_default_secondary);
+    font-size: 20px;
+    line-height: 1;
+  }
+  .webui-mcp-advanced-fields {
+    padding: 16px 0 0;
+  }
+  .webui-mcp-advanced-fields textarea {
+    min-height: 100px;
+    font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .webui-mcp-dialog footer {
+    padding: 16px 30px 24px;
+  }
   @media (max-width: 760px) {
     .webui-plugin-management {
       /* No top padding here either: the sticky header owns it, and a
@@ -4545,6 +4610,24 @@
     }
     .webui-plugin-form .wide {
       grid-column: auto;
+    }
+    .webui-mcp-dialog > header {
+      padding: 18px 20px 14px;
+    }
+    .webui-mcp-dialog > .webui-plugin-header-tabs {
+      margin: 16px 20px 0;
+    }
+    .webui-mcp-json-panel {
+      padding: 16px 20px 0;
+    }
+    .webui-mcp-json-editor {
+      min-height: 240px;
+    }
+    .webui-mcp-form {
+      padding: 18px 20px;
+    }
+    .webui-mcp-dialog footer {
+      padding: 14px 20px 18px;
     }
   }
 }

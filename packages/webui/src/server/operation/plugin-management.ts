@@ -17,6 +17,7 @@ const ACTIONS = new Set<WebuiPluginManagementRequest["action"]>([
   "enablePlugin",
   "disablePlugin",
   "listRuntimeSkills",
+  "listManageableSkills",
   "setSkillEnabled",
   "deleteSkill",
   "listSkillHub",
@@ -83,6 +84,14 @@ const INPUT_SHAPES: Readonly<Record<WebuiPluginManagementAction, InputShape>> =
         sessionId: "string",
         workspaceDir: "string",
         includePluginSkills: "boolean",
+      },
+    },
+    listManageableSkills: {
+      optional: {
+        limit: "number",
+        cursor: "string",
+        keyword: "string",
+        excludeBuiltin: "boolean",
       },
     },
     setSkillEnabled: {

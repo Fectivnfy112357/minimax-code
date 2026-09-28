@@ -5,6 +5,7 @@ import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalList
 import { CSS } from "@dnd-kit/utilities";
 import type { WebuiUsageQuotaResult } from "../../../server/port.js";
 import type { WebuiSettingsModalCapabilities } from "../SettingsModal.js";
+import { ToggleSwitch } from "../ToggleSwitch.js";
 import { reorderModelIds } from "../../projection/model-reorder.js";
 import { formatResetLabel, getActiveSourceBadge, projectProviderHeaders, type ProviderHeaderDraft } from "../../projection/usage-settings.js";
 
@@ -266,7 +267,7 @@ export function UsageModelSettings({ capabilities, sessionId }: Props): ReactEle
           </div>
         </section>
         {quotaData ? <section className="flex w-full flex-col gap-2" data-testid="settings-usage-limits"><h3 className="px-4 text-[14px] font-medium leading-5">用量</h3><div className="flex w-full flex-col rounded-[16px] bg-bg_grouped_tertiary p-1">{([["5 小时限额", quotaData.fiveHour], ["周限额", quotaData.weekly], ...(quotaData.video ? [["视频限额", quotaData.video] as const] : [])] as const).map(([label, window]) => { const value = record(window); const usedPercent = typeof value.usedPercent === "number" ? value.usedPercent : undefined; const usedCount = typeof value.usedCount === "number" ? value.usedCount : undefined; const totalCount = typeof value.totalCount === "number" ? value.totalCount : undefined; const percent = Math.round(usedPercent ?? (totalCount ? (usedCount ?? 0) / totalCount * 100 : 0)); const resetAtMs = typeof value.resetAtMs === "number" ? value.resetAtMs : undefined; const reset = resetLabel(resetAtMs); return <div key={label} className="flex min-h-[72px] flex-col justify-center gap-2 overflow-hidden rounded-[12px] py-2 pl-3 pr-2"><div className="flex items-center justify-between gap-3"><span className="text-[14px] font-normal leading-5 text-text_default_primary">{label}</span><span className="shrink-0 text-[13px] leading-5 text-text_default_secondary">{window.unlimited ? "无限制" : usedCount !== undefined ? `${usedCount}/${totalCount ?? 0}` : `${usedPercent ?? 0}% / 100%`}</span></div><div className="h-1 w-full overflow-hidden rounded-full bg-bg_interaction_tertiary_press"><div className="h-full rounded-full bg-text_default_primary" style={{ width: `${Math.max(0, Math.min(100, percent))}%` }} /></div>{reset ? <span className="text-[12px] font-normal leading-4 text-text_default_secondary">{reset}</span> : null}</div>; })}</div></section> : null}
-        <section className="flex w-full flex-col gap-2" data-testid="settings-usage-points"><h3 className="flex items-center gap-2 px-4 text-[14px] font-medium leading-5">积分 <InfoIcon /></h3><div className="flex min-h-[48px] w-full items-center justify-between gap-4 rounded-[16px] bg-bg_grouped_tertiary px-4 py-2"><span className="text-[14px] leading-5">开启后，可以在对话中消耗你的积分（含赠予积分）。</span><button type="button" role="switch" aria-label="消耗积分" aria-checked="false" aria-disabled="true" disabled title="Disabled (not yet wired)" className="webui-ant-switch shrink-0 disabled:opacity-60"><span /></button></div></section>
+        <section className="flex w-full flex-col gap-2" data-testid="settings-usage-points"><h3 className="flex items-center gap-2 px-4 text-[14px] font-medium leading-5">积分 <InfoIcon /></h3><div className="flex min-h-[48px] w-full items-center justify-between gap-4 rounded-[16px] bg-bg_grouped_tertiary px-4 py-2"><span>开启后，可以在对话中消耗你的积分（含赠予积分）。</span><ToggleSwitch checked={false} label="消耗积分" disabled title="Disabled (not yet wired)" className="shrink-0 disabled:opacity-60" /></div></section>
       </>}
     </section> : null}
 
@@ -337,7 +338,7 @@ export function DisabledBillingActions(): ReactElement {
       <DesktopGrayAction label="去充值" {...disabledProps} />
       <DesktopGrayAction label="管理" dropdown {...disabledProps} />
       <DesktopGrayAction label="明细" {...disabledProps} />
-      <button type="button" role="switch" aria-checked="false" className="webui-ant-switch disabled:opacity-60" {...disabledProps}><span /></button>
+      <ToggleSwitch checked={false} label={unavailable} className="disabled:opacity-60" {...disabledProps} />
     </div>
     <div className="flex w-full items-center justify-center px-3 py-1.5"><div className="h-px w-full bg-border_light" /></div>
     <div className="flex w-full items-center justify-end gap-2 overflow-hidden rounded-[12px] py-2 pl-3 pr-2"><DesktopGrayAction label="申请" external {...disabledProps} /></div>
@@ -387,7 +388,7 @@ function SortableModelRow({ id, model, onTest, onToggle }: { readonly id: string
       <button type="button" aria-label={`调整 ${text(model.displayName) || text(model.modelId)} 顺序`} className="flex size-4 shrink-0 touch-none cursor-grab items-center justify-center text-icon_default_tertiary hover:text-icon_interaction_tertiary_hover active:cursor-grabbing" {...attributes} {...listeners}><svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M3.3335 9C3.88552 9.00018 4.33332 9.44797 4.3335 10C4.3335 10.5522 3.88563 10.9998 3.3335 11C2.78121 11 2.3335 10.5523 2.3335 10C2.33367 9.44786 2.78132 9 3.3335 9ZM7.99951 9C8.55169 9 8.99934 9.44786 8.99951 10C8.99951 10.5523 8.5518 11 7.99951 11C7.44738 10.9998 6.99951 10.5522 6.99951 10C6.99968 9.44797 7.44749 9.00018 7.99951 9ZM12.6665 9C13.2187 9 13.6663 9.44786 13.6665 10C13.6665 10.5523 13.2188 11 12.6665 11C12.1142 11 11.6665 10.5523 11.6665 10C11.6667 9.44786 12.1143 9 12.6665 9ZM3.3335 5C3.88552 5.00018 4.33332 5.44797 4.3335 6C4.3335 6.55217 3.88563 6.99982 3.3335 7C2.78121 7 2.3335 6.55228 2.3335 6C2.33367 5.44786 2.78132 5 3.3335 5ZM7.99951 5C8.55169 5 8.99934 5.44786 8.99951 6C8.99951 6.55228 8.5518 7 7.99951 7C7.44738 6.99982 6.99951 6.55217 6.99951 6C6.99968 5.44797 7.44749 5.00018 7.99951 5ZM12.6665 5C13.2187 5 13.6663 5.44786 13.6665 6C13.6665 6.55228 13.2188 7 12.6665 7C12.1142 7 11.6665 6.55228 11.6665 6C11.6667 5.44786 12.1143 5 12.6665 5Z" fill="currentColor" /></svg></button>
       <span className={`min-w-0 flex-1 truncate text-[14px] leading-5 text-text_default_primary ${enabled ? "" : "opacity-50"}`}>{text(model.displayName) || text(model.modelId)}</span>
       <IconButton label="测试模型连通性" onClick={onTest} viewBox="0 0 20 20" svgFill="none"><RefreshIcon /></IconButton>
-      <button type="button" role="switch" aria-checked={enabled} aria-label={`${enabled ? "禁用" : "启用"} ${text(model.displayName) || text(model.modelId)}`} className={`webui-ant-switch${enabled ? " is-checked" : ""}`} onClick={() => onToggle(!enabled)}><span /></button>
+      <ToggleSwitch checked={enabled} label={`${enabled ? "禁用" : "启用"} ${text(model.displayName) || text(model.modelId)}`} onChange={onToggle} />
     </div>
   </div>;
 }
