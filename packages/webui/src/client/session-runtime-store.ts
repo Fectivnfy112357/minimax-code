@@ -28,6 +28,29 @@ interface WebuiSessionRuntimeState {
 
 export const HOME_SESSION_RUNTIME_KEY = "__webui-home__";
 
+export interface SessionTurnRuntimeWriter<SessionId extends string = string> {
+  readonly kind: "session";
+  readonly setStream: (
+    update: (current: WebuiStreamState) => WebuiStreamState,
+  ) => void;
+  readonly setSending: (sending: boolean) => void;
+}
+
+export interface HomeTurnRuntimeWriter {
+  readonly kind: "home";
+  readonly setStream: (
+    update: (current: WebuiStreamState) => WebuiStreamState,
+  ) => void;
+  readonly setSending: (sending: boolean) => void;
+  readonly migrateToSession: <SessionId extends string>(
+    sessionId: SessionId,
+  ) => SessionTurnRuntimeWriter<SessionId>;
+}
+
+export type SessionRuntimeWriterOwner<SessionId extends string = string> =
+  | { readonly kind: "home" }
+  | { readonly kind: "session"; readonly sessionId: SessionId };
+
 const sessionRuntimeStates = new Map<string, WebuiSessionRuntimeState>();
 const sessionRuntimeListeners = new Map<
   string,
@@ -60,27 +83,62 @@ export function updateSessionRuntimeState(
  * The only time its key changes is when a first message creates the session
  * that owns a stream which began on the home screen.
  */
-export function createSessionRuntimeWriter(initialSessionKey: string): {
-  readonly setStream: (
-    update: (current: WebuiStreamState) => WebuiStreamState,
-  ) => void;
-  readonly setSending: (sending: boolean) => void;
-  readonly moveTo: (sessionKey: string) => void;
-} {
-  let sessionKey = initialSessionKey;
-  return {
+export function createSessionRuntimeWriter<SessionId extends string>(
+  owner: { readonly kind: "session"; readonly sessionId: SessionId },
+): SessionTurnRuntimeWriter<SessionId>;
+export function createSessionRuntimeWriter(
+  owner: { readonly kind: "home" },
+): HomeTurnRuntimeWriter;
+export function createSessionRuntimeWriter<SessionId extends string>(
+  owner: SessionRuntimeWriterOwner<SessionId>,
+): SessionTurnRuntimeWriter<SessionId> | HomeTurnRuntimeWriter {
+  let sessionKey = owner.kind === "home"
+    ? HOME_SESSION_RUNTIME_KEY
+    : owner.sessionId;
+  const createSessionWriter = <Id extends string>(
+    sessionId: Id,
+  ): SessionTurnRuntimeWriter<Id> => ({
+    kind: "session",
     setStream: (update) =>
-      updateSessionRuntimeState(sessionKey, (current) => ({
+      updateSessionRuntimeState(sessionId, (current) => ({
         ...current,
         stream: update(current.stream),
       })),
     setSending: (sending) =>
-      updateSessionRuntimeState(sessionKey, (current) => ({
+      updateSessionRuntimeState(sessionId, (current) => ({
         ...current,
         sending,
       })),
-    moveTo: (nextSessionKey) => {
-      sessionKey = nextSessionKey;
+  });
+
+  if (owner.kind === "session") return createSessionWriter(owner.sessionId);
+
+  let migrated = false;
+  const writeStream = (update: (current: WebuiStreamState) => WebuiStreamState) =>
+    updateSessionRuntimeState(sessionKey, (current) => ({
+      ...current,
+      stream: update(current.stream),
+    }));
+  const writeSending = (sending: boolean) =>
+    updateSessionRuntimeState(sessionKey, (current) => ({
+      ...current,
+      sending,
+    }));
+  return {
+    kind: "home",
+    setStream: writeStream,
+    setSending: writeSending,
+    migrateToSession: <Id extends string>(sessionId: Id) => {
+      if (migrated) {
+        throw new Error("Home turn runtime writer already migrated");
+      }
+      migrated = true;
+      sessionKey = sessionId;
+      return {
+        ...createSessionWriter(sessionId),
+        setStream: writeStream,
+        setSending: writeSending,
+      };
     },
   };
 }

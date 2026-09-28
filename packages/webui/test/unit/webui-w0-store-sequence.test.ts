@@ -41,6 +41,7 @@ function initialState(): {
 function resetStore(): void {
   migrateSessionRuntimeState(SESSION_KEY, HOME_KEY);
   updateSessionRuntimeState(HOME_KEY, () => initialState());
+  updateSessionRuntimeState("w0-other-session", () => initialState());
 }
 
 afterEach(resetStore);
@@ -120,8 +121,20 @@ describe("W0 · session runtime store transition sequence", () => {
     expect(readSessionRuntimeState("w0-other-session")).toEqual(initialState());
   });
 
-  it("keeps an in-flight turn on its owner when another session is selected", () => {
-    const writer = createSessionRuntimeWriter(SESSION_KEY);
+  it("keeps a session writer fixed to its owner when another session is selected", () => {
+    const writer = createSessionRuntimeWriter({
+      kind: "session",
+      sessionId: SESSION_KEY,
+    });
+    expect(writer.kind).toBe("session");
+    expect("migrateToSession" in writer).toBe(false);
+    type AssertFalse<T extends false> = T;
+    type SessionWriterHasNoMigration = AssertFalse<
+      "migrateToSession" extends keyof typeof writer ? true : false
+    >;
+    const typeContract: SessionWriterHasNoMigration = false;
+    expect(typeContract).toBe(false);
+
     updateSessionRuntimeState("w0-other-session", (current) => ({
       ...current,
       stream: { ...current.stream, phase: "streaming" },
@@ -137,15 +150,35 @@ describe("W0 · session runtime store transition sequence", () => {
     expect(readSessionRuntimeState("w0-other-session").stream.phase).toBe("streaming");
   });
 
-  it("moves a home-screen writer only when its new session is created", () => {
-    const writer = createSessionRuntimeWriter(HOME_KEY);
-    writer.setStream((current) => ({ ...current, phase: "streaming" }));
+  it("migrates a home writer once and keeps subsequent writes on that session", () => {
+    const homeWriter = createSessionRuntimeWriter({ kind: "home" });
+    expect(homeWriter.kind).toBe("home");
+    homeWriter.setStream((current) => ({ ...current, phase: "streaming" }));
     migrateSessionRuntimeState(HOME_KEY, SESSION_KEY);
-    writer.moveTo(SESSION_KEY);
+    const sessionWriter = homeWriter.migrateToSession(SESSION_KEY);
+    expect(sessionWriter.kind).toBe("session");
+    expect("migrateToSession" in sessionWriter).toBe(false);
+    sessionWriter.setStream((current) => ({ ...current, phase: "done" }));
+    sessionWriter.setSending(false);
 
-    writer.setStream((current) => ({ ...current, phase: "done" }));
+    expect(readSessionRuntimeState(HOME_KEY)).toEqual(initialState());
+    expect(readSessionRuntimeState(SESSION_KEY)).toEqual({
+      stream: { ...initialWebuiStreamState, phase: "done" },
+      sending: false,
+    });
+    expect(readSessionRuntimeState("w0-other-session")).toEqual(initialState());
+  });
 
-    expect(readSessionRuntimeState(HOME_KEY).stream.phase).toBe("idle");
-    expect(readSessionRuntimeState(SESSION_KEY).stream.phase).toBe("done");
+  it("rejects a second home writer migration at runtime", () => {
+    const homeWriter = createSessionRuntimeWriter({ kind: "home" });
+
+    homeWriter.migrateToSession(SESSION_KEY);
+
+    expect(() => homeWriter.migrateToSession("w0-other-session")).toThrow(
+      "Home turn runtime writer already migrated",
+    );
+    expect(readSessionRuntimeState(HOME_KEY)).toEqual(initialState());
+    expect(readSessionRuntimeState(SESSION_KEY)).toEqual(initialState());
+    expect(readSessionRuntimeState("w0-other-session")).toEqual(initialState());
   });
 });
