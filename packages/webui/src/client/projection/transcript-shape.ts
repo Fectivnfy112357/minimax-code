@@ -275,8 +275,11 @@ export type WebuiTurnView = WebuiHistoricalTurnView | WebuiLiveTurnView;
 export function projectHistoricalTurnView(
   message: WebuiClientMessage,
   sessionId: string,
+  projectedItems?: readonly WebuiTranscriptItem[],
+  projectMessage: typeof projectWebuiMessage = projectWebuiMessage,
 ): WebuiHistoricalTurnView {
-  const items: WebuiTranscriptItem[] = projectWebuiMessage(message);
+  const items: readonly WebuiTranscriptItem[] =
+    projectedItems ?? projectMessage(message);
   const userItems = items.filter(
     (item): item is Extract<WebuiTranscriptItem, { text: string }> =>
       item.kind === "user",

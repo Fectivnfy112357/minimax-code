@@ -9,7 +9,10 @@ import {
 } from "../../src/client/projection/transcript-shape.js";
 import type { WebuiClientMessage } from "../../src/client/contracts.js";
 import type { WebuiStreamMessage } from "../../src/client/stream.js";
-import { projectWebuiMessage } from "../../src/client/projection/message-projection.js";
+import {
+  projectWebuiMessage,
+  projectWebuiTranscriptMessage,
+} from "../../src/client/projection/message-projection.js";
 import {
   groupWebuiTranscriptItems,
   projectWebuiTranscriptMessages,
@@ -491,6 +494,79 @@ describe("projectHistoricalTurnView — direct execution on the six content cate
     const view = projectHistoricalTurnView(HISTORICAL_ASSISTANT, "sess");
     // Source discriminator is `historical`.
     expect(view.source).toBe("historical");
+  });
+});
+
+describe("single historical message projection", () => {
+  it("projects every history message once and preserves items, views, and grouping", () => {
+    const history: WebuiClientMessage[] = [
+      { msgId: "plain", role: "user", msgContent: "hello" },
+      {
+        ...HISTORICAL_ASSISTANT,
+        msgId: "review-tools",
+        turnId: "turn-review",
+        thinkingContent: "check the change",
+        toolCalls: [{ id: "tool-1", name: "read_file", args: { path: "a.ts" } }],
+        actions: { fork: true, rewind: true, edit: false },
+        fileChanges: [{ file: "a.ts", additions: 2, deletions: 1, status: "modified" }],
+        attachments: [{ id: "attachment-1", type: "file", file_name: "a.ts" }],
+      },
+      { msgId: "group-answer", turnId: "turn-review", role: "assistant", msgContent: "done" },
+    ];
+    let projectionCalls = 0;
+    const projectOnce = (message: WebuiClientMessage) => {
+      projectionCalls += 1;
+      return projectWebuiMessage(message);
+    };
+
+    const oldItemsByMessage = history.map(projectOnce);
+    const oldItems = oldItemsByMessage.flat();
+    const oldViews = history.map((message) =>
+      projectHistoricalTurnView(message, "session-a", undefined, projectOnce),
+    );
+    expect(projectionCalls).toBe(history.length * 2);
+    projectionCalls = 0;
+
+    const projected = history.map((message) =>
+      projectWebuiTranscriptMessage(message, projectOnce),
+    );
+    const nextViews = projected.map(({ message, items }) =>
+      projectHistoricalTurnView(message, "session-a", items, projectOnce),
+    );
+
+    expect(projected.flatMap(({ items }) => items)).toEqual(oldItems);
+    expect(nextViews).toEqual(oldViews);
+    expect(groupWebuiTranscriptItems(projected.flatMap(({ items }) => items))).toEqual(
+      groupWebuiTranscriptItems(oldItems),
+    );
+    expect(nextViews[1]).toMatchObject({
+      source: "historical",
+      messageId: "review-tools",
+      thinking: "check the change",
+      tools: [{ id: "tool-1", name: "read_file", args: { path: "a.ts" } }],
+      actions: { fork: true, rewind: true, edit: false },
+      attachments: [{ id: "attachment-1", type: "file", file_name: "a.ts" }],
+    });
+
+    // 旧流程每条消息调用两次；共享投影结果后每条消息只调用一次。
+    expect(projectionCalls).toBe(history.length);
+
+    const intersectingMessages = projectWebuiTranscriptMessages(
+      { messages: history },
+      [{ id: "review-tools", role: "assistant", answer: "live update" }],
+    );
+    const oldIntersectingItems = intersectingMessages.flatMap(projectWebuiMessage);
+    const oldIntersectingViews = intersectingMessages.map((message) =>
+      projectHistoricalTurnView(message, "session-a"),
+    );
+    const nextIntersecting = intersectingMessages.map((message) =>
+      projectWebuiTranscriptMessage(message),
+    );
+    const nextIntersectingViews = nextIntersecting.map(({ message, items }) =>
+      projectHistoricalTurnView(message, "session-a", items),
+    );
+    expect(nextIntersecting.flatMap(({ items }) => items)).toEqual(oldIntersectingItems);
+    expect(nextIntersectingViews).toEqual(oldIntersectingViews);
   });
 });
 

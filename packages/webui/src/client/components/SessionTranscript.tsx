@@ -47,7 +47,7 @@ import {
   projectWebuiQueryDurations,
   projectWebuiProcessSegments,
 } from "../projection/transcript-projection.js";
-import { projectWebuiMessage } from "../projection/message-projection.js";
+import { projectWebuiTranscriptMessage } from "../projection/message-projection.js";
 import {
   projectHistoricalTurnView,
   projectLiveTurnView,
@@ -451,21 +451,27 @@ export function WebuiSessionTranscript({
     () => projectWebuiTranscriptMessages(visiblePage, stream.messages, streamPhase !== "done"),
     [visiblePage, stream.messages, streamPhase],
   );
-  const items = useMemo(
-    () => messages.flatMap(projectWebuiMessage),
-    [messages],
-  );
+  const transcriptProjection = useMemo(() => {
+    const messageProjections = messages.map((message) =>
+      projectWebuiTranscriptMessage(message),
+    );
+    return {
+      messageProjections,
+      items: messageProjections.flatMap((projection) => projection.items),
+    };
+  }, [messages]);
+  const { messageProjections, items } = transcriptProjection;
   // 每条消息使用统一视图；历史适配器提供持久化字段，实时适配器提供流式标记。
   // MessageItem 只通过 view 属性读取这些值。
   const turnViewsByMessageId = useMemo(
     () =>
       new Map<string, WebuiTurnView>(
-        messages.map((message) => [
+        messageProjections.map(({ message, items: projectedItems }) => [
           message.msgId,
-          projectHistoricalTurnView(message, sessionId),
+          projectHistoricalTurnView(message, sessionId, projectedItems),
         ]),
       ),
-    [messages, sessionId],
+    [messageProjections, sessionId],
   );
   // Group by message so one turn renders as one block, the way the desktop
   // does: a process disclosure carrying the thinking and the tool steps, then

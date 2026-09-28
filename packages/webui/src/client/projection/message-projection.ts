@@ -308,6 +308,17 @@ export function projectWebuiMessage(
   return output;
 }
 
+/**
+ * 对一条历史 transcript message 只做一次 projection，并保留原 message，
+ * 供 historical turn adapter 消费同一份结果。
+ */
+export function projectWebuiTranscriptMessage(
+  message: WebuiClientMessage,
+  projectMessage: typeof projectWebuiMessage = projectWebuiMessage,
+): { readonly message: WebuiClientMessage; readonly items: WebuiTranscriptItem[] } {
+  return { message, items: projectMessage(message) };
+}
+
 /** Normalize flattened and persisted raw message shapes at the projection seam. */
 function normalizeWebuiClientMessage(
   message: WebuiClientMessage,
