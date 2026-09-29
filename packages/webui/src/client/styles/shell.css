@@ -2603,12 +2603,9 @@
     text-align: left;
     white-space: nowrap;
   }
-  .webui-user-menu-item:hover:not([aria-disabled="true"]),
+  .webui-user-menu-item:hover,
   .webui-user-menu-item[data-active="true"] {
     background-color: var(--bg_interaction_tertiary_hover);
-  }
-  .webui-user-menu-item[aria-disabled="true"] {
-    cursor: default;
   }
   .webui-user-menu-item > svg {
     width: 18px;

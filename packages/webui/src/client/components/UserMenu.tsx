@@ -146,16 +146,10 @@ export function formatUsageResetLabel(
   return `${time}后重置`;
 }
 
-function UsageGlyph({ kind }: { readonly kind: "settings" | "upgrade" | "signin" | "feedback" | "logout" }): ReactElement {
+function UsageGlyph({ kind }: { readonly kind: "settings" | "signin" }): ReactElement {
   const path = kind === "settings"
     ? "M10 2.5 11.2 4.1 13.1 3.8 13.8 5.6 15.6 6.3 15.3 8.2 16.9 9.4 15.8 11 16.2 12.9 14.4 13.6 13.7 15.4 11.8 15.1 10.6 16.7 9 15.6 7.1 16 6.4 14.2 4.6 13.5 4.9 11.6 3.3 10.4 4.4 8.8 4 6.9 5.8 6.2 6.5 4.4 8.4 4.7 9.6 3.1Z M10.1 8.1A1.9 1.9 0 1 0 10.1 11.9A1.9 1.9 0 0 0 10.1 8.1Z"
-    : kind === "upgrade"
-      ? "M10 2.6 15.3 8h-3.2v5.1H7.9V8H4.7L10 2.6ZM4.6 14.2h10.8v1.2H4.6v-1.2Z"
-      : kind === "signin"
-        ? "M10 2.8 11.1 5.6 14 6.7 11.1 7.8 10 10.6 8.9 7.8 6 6.7 8.9 5.6 10 2.8ZM15.1 10.7 15.8 12.4 17.5 13.1 15.8 13.8 15.1 15.5 14.4 13.8 12.7 13.1 14.4 12.4 15.1 10.7ZM5 11.2 5.7 12.9 7.4 13.6 5.7 14.3 5 16 4.3 14.3 2.6 13.6 4.3 12.9 5 11.2Z"
-        : kind === "feedback"
-          ? "M3.3 4.2h13.4v8.5H9.4l-3.2 3v-3H3.3V4.2ZM5 5.8v5.3h2.8v1.1l1.2-1.1H15V5.8H5Z"
-          : "M5.1 4.4h1.6v7.9h6.1l-1.9-1.9 1.1-1.1 3.8 3.8-3.8 3.8-1.1-1.1 1.9-1.9H6.7v-7.9Z";
+    : "M10 2.8 11.1 5.6 14 6.7 11.1 7.8 10 10.6 8.9 7.8 6 6.7 8.9 5.6 10 2.8ZM15.1 10.7 15.8 12.4 17.5 13.1 15.8 13.8 15.1 15.5 14.4 13.8 12.7 13.1 14.4 12.4 15.1 10.7ZM5 11.2 5.7 12.9 7.4 13.6 5.7 14.3 5 16 4.3 14.3 2.6 13.6 4.3 12.9 5 11.2Z";
   return <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d={path} fill="currentColor" fillRule="evenodd" clipRule="evenodd" /></svg>;
 }
 
@@ -829,7 +823,6 @@ export function UserMenu({
         <div className="webui-user-menu-uid" aria-label="用户 ID">UID : {uid ?? "—"}</div>
         <div className="webui-user-menu-list">
           <button type="button" className="webui-user-menu-item" role="menuitem" data-testid="user-menu-settings" onClick={() => { setOpen(false); setSettingsOpen(true); }}><UsageGlyph kind="settings" /><span>设置</span><span className="webui-user-menu-shortcut">Ctrl+,</span></button>
-          <button type="button" className="webui-user-menu-item" role="menuitem" aria-disabled="true" tabIndex={-1}><UsageGlyph kind="upgrade" /><span>升级</span></button>
           <MenuDivider />
           <div className="webui-user-menu-signin-anchor" onMouseEnter={() => loadSignin()} onFocus={() => loadSignin()} onClick={(event) => { event.stopPropagation(); if (!signinOpen) loadSignin(); }}>
             <button type="button" className="webui-user-menu-item" role="menuitem" aria-haspopup="dialog" aria-expanded={signinOpen} data-testid="user-menu-signin"><UsageGlyph kind="signin" /><span>每日签到</span><Chevron /></button>
@@ -855,9 +848,6 @@ export function UserMenu({
             <button type="button" className="webui-user-menu-item" role="menuitem" aria-haspopup="dialog" aria-expanded={usageOpen} data-testid="user-menu-usage" onClick={() => loadUsage()}><WebuiIconCommandUsage /><span>用量</span><Chevron /></button>
             {usageOpen ? <UsagePanel state={usage} onRetry={() => loadUsage(true)} /> : null}
           </div>
-          <MenuDivider />
-          <button type="button" className="webui-user-menu-item" role="menuitem" aria-disabled="true" tabIndex={-1}><UsageGlyph kind="feedback" /><span>反馈与帮助</span><Chevron /></button>
-          <button type="button" className="webui-user-menu-item" role="menuitem" aria-disabled="true" tabIndex={-1}><UsageGlyph kind="logout" /><span>退出登录</span></button>
         </div>
       </div> : null}
     </div>
