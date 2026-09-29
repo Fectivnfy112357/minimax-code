@@ -927,6 +927,19 @@
   .webui-project-session-row,
   .webui-project-child-session-row { position: relative; min-width: 0; }
   .webui-project-row { display: flex; }
+  .webui-project-session-row {
+    z-index: 1;
+    display: flex;
+    min-height: 30px;
+    align-items: center;
+    border-radius: var(--radius_8);
+    transition: background-color 120ms ease;
+  }
+  .webui-project-session-row:hover,
+  .webui-project-session-row:focus-within,
+  .webui-project-session-row[data-webui-session-active="true"] {
+    background-color: var(--bg_interaction_tertiary_hover);
+  }
   .webui-project-card {
     display: flex;
     min-width: 0;
@@ -992,7 +1005,43 @@
     display: flex;
     flex-direction: column;
     gap: 1px;
-    padding: 1px 0 var(--spacing_4) var(--spacing_20);
+    padding: 1px 0 var(--spacing_4) 2px;
+  }
+  .webui-session-leading-marker {
+    display: flex;
+    width: 18px;
+    height: 30px;
+    flex: 0 0 18px;
+    align-items: center;
+    justify-content: center;
+    color: var(--icon_default_tertiary);
+  }
+  .webui-session-leading-line {
+    display: block;
+    height: 30px;
+    border-left: 0.5px solid var(--border_default);
+  }
+  .webui-session-disclosure {
+    display: flex;
+    width: 18px;
+    height: 30px;
+    flex: 0 0 18px;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: var(--radius_4);
+    background: transparent;
+    color: var(--icon_default_tertiary);
+  }
+  .webui-session-disclosure:hover,
+  .webui-session-disclosure:focus-visible {
+    color: var(--icon_default_secondary);
+  }
+  .webui-session-disclosure svg {
+    transition: transform 160ms ease;
+  }
+  .webui-session-disclosure svg.is-expanded {
+    transform: rotate(90deg);
   }
   .webui-project-session-card,
   .webui-project-child-session-card {
@@ -1001,18 +1050,14 @@
   }
   .webui-project-session-card {
     display: flex;
-    width: 100%;
+    width: auto;
+    min-width: 0;
+    flex: 1;
     height: 30px;
     align-items: center;
     gap: var(--spacing_4);
     border-radius: var(--radius_8);
     padding: 0 94px 0 var(--spacing_8);
-    transition: background-color 120ms ease;
-  }
-  .webui-project-session-card:hover,
-  .webui-project-session-row:hover .webui-project-session-card,
-  .webui-project-session-card[data-webui-session-active="true"] {
-    background-color: var(--bg_interaction_tertiary_hover);
   }
 
   /* Subagent rows retain the desktop's nested-session geometry: a compact

@@ -28,6 +28,7 @@ import {
   WebuiIconMore,
   WebuiIconProjectAdd,
   WebuiIconSessionPin,
+  WebuiIconSessionDisclosure,
 } from "../icons.js";
 import { WebuiContextMenu, type WebuiContextMenuItem } from "./ContextMenu.js";
 import { RailRow } from "./RailRow.js";
@@ -209,6 +210,9 @@ export function WebuiProjectList({
     [page.sessions, pinnedProjects, projectRecords],
   );
   const [expandedProjects, setExpandedProjects] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const [expandedSessions, setExpandedSessions] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
   const [contextMenu, setContextMenu] = useState<
@@ -413,6 +417,19 @@ export function WebuiProjectList({
     });
   }, [projects, selectedSessionId]);
 
+  useEffect(() => {
+    if (!selectedSessionId || !treePage) return;
+    const parent = treePage.sessions.find((node) =>
+      node.childSessions.some((child) => child.sessionId === selectedSessionId),
+    );
+    if (!parent) return;
+    setExpandedSessions((current) =>
+      current.has(parent.session.sessionId)
+        ? current
+        : new Set(current).add(parent.session.sessionId),
+    );
+  }, [selectedSessionId, treePage]);
+
   return (
     <section data-webui-project-list="true">
       <div
@@ -510,17 +527,41 @@ export function WebuiProjectList({
                       const session = sessionsById.get(sessionId);
                       if (!session) return null;
                       const children = childrenByParentId.get(session.sessionId) ?? [];
+                      const childrenExpanded = expandedSessions.has(session.sessionId);
+                      const sessionActive = session.sessionId === selectedSessionId;
                       return (
                         <li key={session.sessionId}>
-                          <div className="webui-project-session-row group/session">
+                          <div
+                            className="webui-project-session-row group/session"
+                            data-webui-session-active={sessionActive ? "true" : "false"}
+                          >
+                            <span className="webui-session-leading-marker">
+                            {children.length > 0 ? (
+                              <button
+                                type="button"
+                                className="webui-session-disclosure"
+                                aria-label={`${childrenExpanded ? "收起" : "展开"}子会话：${sessionLabel(session)}`}
+                                aria-expanded={childrenExpanded}
+                                title={childrenExpanded ? "收起子会话" : "展开子会话"}
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  setExpandedSessions((current) => {
+                                    const next = new Set(current);
+                                    if (next.has(session.sessionId)) next.delete(session.sessionId);
+                                    else next.add(session.sessionId);
+                                    return next;
+                                  });
+                                }}
+                              >
+                                <WebuiIconSessionDisclosure className={childrenExpanded ? "is-expanded" : undefined} />
+                              </button>
+                            ) : <span aria-hidden="true" className="webui-session-leading-line" />}
+                            </span>
                             <a
                               href={sessionHash(session.sessionId)}
                               data-webui-session-link={session.sessionId}
-                              data-webui-session-active={
-                                session.sessionId === selectedSessionId
-                                  ? "true"
-                                  : "false"
-                              }
+                              data-webui-session-active={sessionActive ? "true" : "false"}
                               onContextMenu={(event) => openSessionMenu(event, session)}
                               className="webui-project-session-card text-text_default_primary"
                             >
@@ -570,7 +611,7 @@ export function WebuiProjectList({
                               </button>
                             </div>
                           </div>
-                          {children.length > 0 ? (
+                          {children.length > 0 && childrenExpanded ? (
                             <ul
                               className="webui-project-child-session-list"
                               data-webui-project-child-sessions={session.sessionId}

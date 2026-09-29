@@ -120,6 +120,11 @@ export function WebuiIconChevronDown({ className }: WebuiIconProps): ReactElemen
   );
 }
 
+/** Filled disclosure arrow used by expandable rows in the Desktop sidebar. */
+export function WebuiIconSessionDisclosure({ className }: WebuiIconProps): ReactElement {
+  return <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true" className={className}><path d="M4.25 2.75 8 6l-3.75 3.25v-6.5Z" fill="currentColor" /></svg>;
+}
+
 /** approval mode `请求批准` — a raised open hand, drawn on the 20-unit grid the
  *  rest of the composer toolbar uses. */
 export function WebuiIconPermissionRequest({ className }: WebuiIconProps): ReactElement {

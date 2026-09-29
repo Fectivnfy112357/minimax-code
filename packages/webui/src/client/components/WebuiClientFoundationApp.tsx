@@ -874,22 +874,23 @@ export function WebuiClientFoundationApp(
               <div
                 className={
                   homeMode
-                    ? "flex h-full w-full flex-col items-center relative overflow-y-auto pt-[240px] pb-spacing_40"
+                    ? "flex h-full min-h-0 w-full flex-col items-center relative overflow-hidden"
                     : `flex h-full min-h-0 w-full flex-col items-center relative overflow-hidden pt-spacing_24 ${progressPanelOpen ? "webui-session-has-progress-panel" : ""}`
                 }
                 data-webui-home-content={homeMode ? "true" : "false"}
                 data-webui-session-layout={!homeMode ? "true" : undefined}
               >
+                {homeMode ? <div aria-hidden="true" className="h-[240px] w-full shrink" /> : null}
                 <div
                   className={homeMode
-                    ? "flex w-full max-w-[743px] flex-col items-center gap-2 px-4"
+                    ? "flex w-full max-w-[743px] shrink-0 flex-col items-center gap-2 px-4"
                     : "webui-session-layout relative flex h-full min-h-0 w-full flex-col items-center gap-2"}
                 >
                   {homeMode ? (
                     homeGreetingPending ? (
                       <GreetingSkeleton />
                     ) : (
-                    <div className="flex flex-col items-center gap-2 text-center">
+                    <div className="flex flex-col items-center gap-2 text-center [@media(max-height:300px)]:hidden">
                       <div className="group/avatar relative size-16 flex-shrink-0">
                         <div className="webui-hero-avatar relative h-full w-full overflow-visible rounded-full bg-bg_grouped_tertiary">
                           <span className="absolute inset-0 flex items-center justify-center overflow-hidden rounded-full">
