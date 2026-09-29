@@ -37,7 +37,7 @@ import {
   type WebuiWorkspaceSubagent,
   type WebuiWorkspaceTodo,
 } from "../projection/workspace-progress.js";
-import { WebuiIconCheck, WebuiIconChevronDown, WebuiIconChevronLeft, WebuiIconClose, WebuiIconDiffFile, WebuiIconFile, WebuiIconFolder, WebuiIconRunLocation, WebuiIconSearch, WebuiIconSidebarToggle, WebuiIconWorkspaceCanvas, WebuiIconWorkspaceExpand, WebuiIconWorkspaceReview, WebuiIconWorkspaceTerminal } from "../icons.js";
+import { WebuiIconAgent, WebuiIconCheck, WebuiIconChevronDown, WebuiIconChevronLeft, WebuiIconClose, WebuiIconDiffFile, WebuiIconFile, WebuiIconFolder, WebuiIconRunLocation, WebuiIconSearch, WebuiIconSidebarToggle, WebuiIconWorkspaceCanvas, WebuiIconWorkspaceExpand, WebuiIconWorkspaceReview, WebuiIconWorkspaceTerminal } from "../icons.js";
 
 export type WebuiTodo = WebuiWorkspaceTodo;
 const DESKTOP_COPY = { environment: "环境信息", progress: "进度", progressEmpty: "跟踪较长任务的进度", newTerminal: "新建终端", terminalLimit: "最多可以打开 5 个终端", terminalLabel: "终端", terminalExited: "已退出", terminalEmptyTitle: "还没有终端", terminalEmptyDescription: "可直接在右侧面板中启动当前工作区的 Shell。", canvasEmptyTitle: "把文件放到画布上", canvasEmptyDescription: "添加图片或其他工作区文件，然后自由排列和调整大小。", fileClose: "关闭", changes: "变更", commit: "提交或推送", openTerminal: "打开终端", unsupported: "WebUI 尚未接入此操作" } as const;
@@ -236,7 +236,7 @@ export function WebuiSubagentsPanel({ subagents, collapsed = false, onToggle, on
         {subagents.map((subagent) => {
           const label = subagent.title?.trim() || subagent.agentName;
           return <button type="button" className="webui-subagent-row" key={subagent.sessionId} onClick={() => onMemberClick?.(subagent)}>
-            <span className="webui-subagent-avatar" aria-hidden="true">🤖</span>
+            <WebuiIconAgent className="webui-subagent-avatar" />
             <span className="min-w-0 flex-1 truncate text-left">{label}</span>
             <span className={`webui-subagent-status webui-subagent-status--${subagent.status}`} aria-label={subagent.status}>
               {subagent.status === "completed" ? <WebuiIconCheck className="size-3" /> : subagent.status === "error" ? "!" : "·"}

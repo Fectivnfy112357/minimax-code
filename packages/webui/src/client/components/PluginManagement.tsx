@@ -5,6 +5,7 @@ import {
 } from "@mavis/protocol/local";
 import type { WebuiPluginManagementAction } from "../../shared/plugin-management.js";
 import type { WebuiTransport } from "../contracts.js";
+import { WebuiIconAgent } from "../icons.js";
 import { ToggleSwitch } from "./ToggleSwitch.js";
 
 type Row = Record<string, unknown>;
@@ -985,7 +986,7 @@ export function PluginManagement({
                   {read(item, "avatarDataUrl").startsWith("data:image/") ? (
                     <img src={read(item, "avatarDataUrl")} alt="" />
                   ) : (
-                    <span aria-hidden="true">🤖</span>
+                    <WebuiIconAgent className="webui-agent-avatar-icon webui-agent-avatar-icon--small" />
                   )}
                 </span>
                 <span>{read(item, "displayName", "display_name") || nameOf(item)}</span>
@@ -1007,7 +1008,7 @@ export function PluginManagement({
                   {read(selectedAgent ?? {}, "avatarDataUrl").startsWith("data:image/") ? (
                     <img src={read(selectedAgent ?? {}, "avatarDataUrl")} alt="Agent 头像" />
                   ) : (
-                    <span aria-hidden="true">🤖</span>
+                    <WebuiIconAgent className="webui-agent-avatar-icon webui-agent-avatar-icon--large" />
                   )}
                 </span>
               </label>

@@ -48,6 +48,11 @@ export function WebuiIconBrand({ className }: WebuiIconProps): ReactElement {
   );
 }
 
+/** Desktop browser-tab product mark used as the default agent/subagent avatar. */
+export function WebuiIconAgent({ className }: WebuiIconProps): ReactElement {
+  return <img src="/assets/img/minimax-code-agent-icon.png" alt="" aria-hidden="true" className={className} />;
+}
+
 /** circle-plus, the rail's fixed new-task row — the desktop's `新建任务` glyph. */
 export function WebuiIconNewTask({ className }: WebuiIconProps): ReactElement {
   return (

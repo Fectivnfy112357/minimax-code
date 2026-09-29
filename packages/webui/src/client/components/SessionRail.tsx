@@ -29,6 +29,7 @@ import {
   WebuiIconProjectAdd,
   WebuiIconSessionPin,
   WebuiIconSessionDisclosure,
+  WebuiIconAgent,
 } from "../icons.js";
 import { WebuiContextMenu, type WebuiContextMenuItem } from "./ContextMenu.js";
 import { RailRow } from "./RailRow.js";
@@ -631,6 +632,7 @@ export function WebuiProjectList({
                                       onContextMenu={(event) => openSessionMenu(event, child, true)}
                                       className="webui-project-child-session-card text-text_default_primary"
                                     >
+                                      <WebuiIconAgent className="size-4 shrink-0" />
                                       <span className="min-w-0 flex-1 truncate">
                                         {sessionLabel(child)}
                                       </span>
