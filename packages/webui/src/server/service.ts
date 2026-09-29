@@ -304,8 +304,6 @@ export class WebuiService {
     const name =
       url.pathname === "/" ||
       url.pathname === "/index.html" ||
-      url.pathname === "/login" ||
-      url.pathname === "/onboarding" ||
       url.pathname === "/archon"
         ? "index.html"
         : url.pathname === "/client.js"

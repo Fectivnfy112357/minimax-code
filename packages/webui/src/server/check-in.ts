@@ -184,7 +184,7 @@ export class DailyCheckinClient {
         response = await this.fetch(path, method, auth, controller.signal);
         if (response.status === 401) {
           throw new CheckInAuthError(
-            "MiniMax Code sign-in is required. Run /login, then retry.",
+            "MiniMax Code sign-in is required. Run mcode login in the TUI, then retry.",
           );
         }
       }
@@ -246,7 +246,7 @@ export class DailyCheckinClient {
     const realUserID = auth?.realUserID?.trim();
     if (!accessToken || !realUserID) {
       throw new CheckInAuthError(
-        "MiniMax Code sign-in is required. Run /login, then retry.",
+        "MiniMax Code sign-in is required. Run mcode login in the TUI, then retry.",
       );
     }
     return { accessToken, realUserID };

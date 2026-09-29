@@ -1,14 +1,9 @@
 // Slash palette for the composer hinting model.
 //
-// Mirrors the desktop's `app/out/_next/static/chunks/10118-*` palette exactly:
-// the data layer is split into three pools (built-in commands, the plugin
-// registry, and the skills resolver), the sectioning logic mirrors the
-// desktop's `eR` + memory splice, and the filter is the same four-rank
-// scoring the desktop uses. Behaviour fields (`composerMode` / `sendIntent`
-// / `directAction`) are kept verbatim so a future harness port can wire
-// them without renaming; the WebUI handles the local goal composer mode and
-// the runCommand-backed built-ins, while the remaining entries render in the
-// desktop's row shape with `aria-disabled` so the visual stays 1:1.
+// Uses the desktop palette's three data pools (built-in commands, the plugin
+// registry, and the skills resolver), sectioning, and four-rank filtering.
+// The built-in list is intentionally scoped to the composer modes supported
+// here; behavior fields remain compatible with the desktop record shape.
 //
 // Source attribution: `docs/webui-visual-language.md` (visual language),
 // ADR 0009 (reuse the desktop's vocabulary), `chunks/10118-*` (palette
@@ -16,12 +11,8 @@
 
 import type { ReactElement } from "react";
 import {
-  WebuiIconCommandCompact,
-  WebuiIconCommandFork,
   WebuiIconCommandGoal,
-  WebuiIconCommandMemory,
   WebuiIconCommandPlan,
-  WebuiIconNewTask,
   WebuiIconSites,
   WebuiIconSkillAskMatt,
   WebuiIconSkillCodebaseDesign,
@@ -104,10 +95,8 @@ export interface SlashCommandEntry {
 }
 
 /**
- * Built-in commands. Order is the desktop's natural order; the sectioning
- * pass pulls `memory` out and splices it after `deploy-website` so the
- * default section reads: new → compact → goal → plan → fork → deploy-website
- * → memory, then the skills section.
+ * Built-in commands. The sectioning pass places registered plugin commands
+ * after these entries, then the dynamically resolved skills.
  *
  * Capability gating today is the static `supported` flag. Goal is backed by
  * the goal operations, and plan entry is backed by the send-message
@@ -115,24 +104,6 @@ export interface SlashCommandEntry {
  * transport is wired.
  */
 export const WEBUI_BUILTIN_COMMANDS: readonly SlashCommandEntry[] = [
-  {
-    name: "new",
-    displayName: "new",
-    label: "新建会话",
-    description: "新建会话",
-    source_type: -1,
-    icon: WebuiIconNewTask,
-    supported: true,
-  },
-  {
-    name: "compact",
-    displayName: "compact",
-    label: "总结",
-    description: "总结上下文，继续当前对话",
-    source_type: -1,
-    icon: WebuiIconCommandCompact,
-    supported: true,
-  },
   {
     name: "goal",
     displayName: "goal",
@@ -152,26 +123,6 @@ export const WEBUI_BUILTIN_COMMANDS: readonly SlashCommandEntry[] = [
     composerMode: "plan",
     icon: WebuiIconCommandPlan,
     supported: true,
-  },
-  {
-    name: "fork",
-    displayName: "fork",
-    label: "复制为新会话",
-    description: "保留当前上下文，在新会话中继续",
-    source_type: -1,
-    directAction: "fork",
-    icon: WebuiIconCommandFork,
-    supported: false,
-  },
-  {
-    name: "memory",
-    displayName: "memory",
-    label: "记忆",
-    description: "在本次会话中使用和引用记忆",
-    source_type: -1,
-    directAction: "memory",
-    icon: WebuiIconCommandMemory,
-    supported: false,
   },
 ];
 
@@ -413,10 +364,7 @@ function iconForSkillName(name: string): WebuiIconComponent {
 }
 
 /**
- * Sectioning pass. Mirrors the desktop's `eR` predicate and the memory
- * splice that pulls `memory` out of the built-in order and inserts it after
- * `deploy-website` in the default section. The default section ends up
- * holding built-ins (sans memory) plus all entries whose `paletteSection` is
+ * The default section holds built-ins plus entries whose `paletteSection` is
  * `"special"` (currently `deploy-website`); the skills section holds
  * everything else. The order is preserved within each section.
  */
@@ -427,25 +375,11 @@ export function sectionWebuiSlashPalette(
   const isInDefault = (entry: SlashCommandEntry): boolean =>
     entry.source_type === -1 || entry.paletteSection === "special";
 
-  const memoryItem = builtins.filter((entry) => entry.name === "memory");
-  const others = builtins.filter((entry) => entry.name !== "memory");
-
   const inDefault: SlashCommandEntry[] = [];
   const inSkills: SlashCommandEntry[] = [];
   for (const skill of skills) {
     if (isInDefault(skill)) inDefault.push(skill);
     else inSkills.push(skill);
-  }
-
-  const deployIdx = inDefault.findIndex(
-    (entry) => entry.name === "deploy-website",
-  );
-  if (memoryItem.length > 0) {
-    inDefault.splice(
-      deployIdx >= 0 ? deployIdx + 1 : inDefault.length,
-      0,
-      ...memoryItem,
-    );
   }
 
   // Tag every skills-section entry so the popover can render the `技能`
@@ -456,7 +390,7 @@ export function sectionWebuiSlashPalette(
     paletteSection: entry.paletteSection ?? "skills",
   }));
 
-  return [...others, ...inDefault, ...taggedSkills];
+  return [...builtins, ...inDefault, ...taggedSkills];
 }
 
 /**

@@ -430,7 +430,7 @@ export class UsageQuotaAuthError extends Error {
   override readonly name = "UsageQuotaAuthError";
 
   constructor(readonly status: 401 | 403) {
-    super("MiniMax sign-in expired. Run /login, then retry.");
+    super("MiniMax sign-in expired. Run mcode login in the TUI, then retry.");
   }
 }
 

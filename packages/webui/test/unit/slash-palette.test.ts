@@ -13,25 +13,15 @@ import {
   WEBUI_SKILL_FIXTURES,
 } from "../../src/client/slash-palette.js";
 
-// The desktop's slash palette (`chunks/10118-*`) is the source of truth for
-// these tests: sectioning, memory splice, four-rank filter, lite-mode filter,
+// These tests cover sectioning, four-rank filtering, lite-mode filtering,
 // and the `isWebuiRunnableCommand` narrowing.
 
 describe("WebUI slash palette — sectioning", () => {
-  it("preserves built-in order for everything except memory", () => {
+  it("shows goal and plan before plugin entries", () => {
     const skills = Object.values(WEBUI_PLUGIN_REGISTRY);
     const palette = buildWebuiSlashPalette({ skills });
     const names = palette.map((entry) => entry.name);
-    // Built-in order, with `memory` spliced after `deploy-website`.
-    expect(names).toEqual([
-      "new",
-      "compact",
-      "goal",
-      "plan",
-      "fork",
-      "deploy-website",
-      "memory",
-    ]);
+    expect(names).toEqual(["goal", "plan", "deploy-website"]);
   });
 
   it("splits built-ins and plugin entries by `paletteSection === \"special\"`", () => {
@@ -41,24 +31,12 @@ describe("WebUI slash palette — sectioning", () => {
       (entry) => entry.source_type === -1 || entry.paletteSection === "special",
     );
     const names = defaultSection.map((entry) => entry.name);
-    // `memory` is spliced after the special plugin; everything else keeps
-    // its built-in order.
-    expect(names).toEqual([
-      "new",
-      "compact",
-      "goal",
-      "plan",
-      "fork",
-      "deploy-website",
-      "memory",
-    ]);
+    expect(names).toEqual(["goal", "plan", "deploy-website"]);
   });
 
-  it("falls back to appending memory when no deploy-website is present", () => {
+  it("contains only the composer mode built-ins", () => {
     const palette = sectionWebuiSlashPalette(WEBUI_BUILTIN_COMMANDS, []);
-    const memoryIdx = palette.findIndex((entry) => entry.name === "memory");
-    const lastIdx = palette.length - 1;
-    expect(memoryIdx).toBe(lastIdx);
+    expect(palette.map((entry) => entry.name)).toEqual(["goal", "plan"]);
   });
 });
 
@@ -121,8 +99,9 @@ describe("WebUI slash palette — runtime narrowing", () => {
     });
     const runnable = palette.filter(isWebuiRunnableCommand);
     const names = runnable.map((entry) => entry.name).sort();
-    // Only `new` and `compact` are wired through the harness port today.
-    expect(names).toEqual(["compact", "new"]);
+    // Runtime support remains available, but those commands are hidden from
+    // this palette; only the goal and plan composer modes remain.
+    expect(names).toEqual([]);
   });
 
   it("WEBUI_RUN_COMMAND_NAMES matches the server-side validation list", () => {

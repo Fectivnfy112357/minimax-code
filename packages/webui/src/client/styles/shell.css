@@ -166,9 +166,6 @@
   .webui-environment-action small .webui-diff-deletions { color: var(--text_label_danger_secondary_default); }
   .webui-environment-action:not(:disabled):hover { background: var(--bg_interaction_tertiary_hover); }
   .webui-environment-action:disabled { cursor: default; color: var(--text_default_tertiary); opacity: .72; }
-  .webui-onboarding-copy,
-  .webui-onboarding-visual { width: 50%; }
-  .webui-onboarding-copy { padding: var(--spacing_64); }
   .webui-commit-dialog { position: fixed; top: 50%; left: 50%; z-index: 100; display: flex; width: min(420px, calc(100vw - 32px)); transform: translate(-50%, -50%); flex-direction: column; gap: var(--spacing_12); border: 1px solid var(--border_default); border-radius: var(--radius_12); background: var(--bg_grouped_secondary_elevated); padding: var(--spacing_16); box-shadow: 0 12px 40px rgb(0 0 0 / 18%); color: var(--text_default_primary); }
   .webui-commit-dialog-header, .webui-commit-dialog-actions { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing_8); }
   .webui-commit-dialog-header button { border: 0; background: transparent; color: var(--icon_default_tertiary); }
@@ -5545,29 +5542,6 @@
       width: min(560px, calc(100vw - 32px));
       grid-template-columns: minmax(0, 1fr);
       grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
-    }
-  }
-
-  @media (max-width: 900px) {
-    .webui-onboarding-layout {
-      min-height: 100dvh;
-      flex-direction: column;
-    }
-
-    .webui-onboarding-copy,
-    .webui-onboarding-visual {
-      width: 100%;
-      min-width: 0;
-    }
-
-    .webui-onboarding-copy {
-      min-height: 52dvh;
-      padding: clamp(24px, 6vw, 64px);
-    }
-
-    .webui-onboarding-visual {
-      min-height: 32dvh;
-      flex: 1 1 auto;
     }
   }
 

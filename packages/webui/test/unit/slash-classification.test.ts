@@ -19,11 +19,9 @@ import { resolveWebuiSubmissionIntent } from "../../src/client/projection/compos
  * `resolveWebuiSubmissionIntent` resolver reuses; both stay byte-identical
  * to the existing code — these tests pin the contract.
  *
- * Also covers the sectioning-pass order (memory splices after
- * deploy-website) and the disabled-doesn't-dispatch promise: a
- * `supported: false` entry must never reach the run-command intent path
- * even when its name is in WEBUI_RUN_COMMAND_NAMES (e.g. `plan`/`fork`/
- * `memory` are inert today; `compact` is wired).
+ * Also covers the sectioning-pass order and the disabled-doesn't-dispatch
+ * promise: a `supported: false` entry must never reach the run-command
+ * intent path even when its name is in WEBUI_RUN_COMMAND_NAMES.
  */
 
 const ICON: SlashCommandEntry["icon"] = () => null;
@@ -104,24 +102,14 @@ describe("isWebuiRunnableCommand — boolean narrowing predicate (unchanged cont
 });
 
 describe("sectionWebuiSlashPalette — order snapshot (default + skills sections)", () => {
-  it("places `memory` after `deploy-website` in the default section", () => {
+  it("keeps only goal and plan as default built-ins", () => {
     const builtins = WEBUI_BUILTIN_COMMANDS;
     const skills: SlashCommandEntry[] = [];
     const sectioned = sectionWebuiSlashPalette(builtins, skills);
-    // Default section ends up: new → compact → goal → plan → fork → memory.
-    // (deploy-website is absent from builtins; the splice still puts
-    // memory at the end of the default section.)
     const defaultNames = sectioned
       .filter((entry) => entry.source_type === -1)
       .map((entry) => entry.name);
-    expect(defaultNames).toEqual([
-      "new",
-      "compact",
-      "goal",
-      "plan",
-      "fork",
-      "memory",
-    ]);
+    expect(defaultNames).toEqual(["goal", "plan"]);
   });
 
   it("places the `skills` section after the default section, with the `技能` divider tag", () => {
@@ -146,7 +134,7 @@ describe("sectionWebuiSlashPalette — order snapshot (default + skills sections
     );
   });
 
-  it("splices `memory` after `deploy-website` when a deploy-website plugin entry exists", () => {
+  it("places the plugin entry after the default built-ins", () => {
     const builtins = WEBUI_BUILTIN_COMMANDS;
     const deployEntry: SlashCommandEntry = {
       name: "deploy-website",
@@ -162,10 +150,7 @@ describe("sectionWebuiSlashPalette — order snapshot (default + skills sections
     const defaultNames = sectioned
       .filter((entry) => entry.source_type === -1)
       .map((entry) => entry.name);
-    // memory appears AFTER deploy-website, not at the end of builtins.
-    expect(defaultNames.indexOf("memory")).toBe(
-      defaultNames.indexOf("deploy-website") + 1,
-    );
+    expect(defaultNames).toEqual(["goal", "plan", "deploy-website"]);
   });
 });
 
@@ -177,8 +162,8 @@ describe("resolveWebuiSubmissionIntent — operational consequence: disabled / i
   // the slash command match, the resolver must never produce a
   // `{ kind: "run-command", ... }` intent for entries whose
   // classification is not `runnable`. The set is the full registry — no
-  // "spot check" on plan / fork / memory only — so a future addition of
-  // a runnable entry is visible (new runnable → new run-command intent)
+  // "spot check" on one command only — so a future addition of a runnable
+  // entry is visible (new runnable → new run-command intent)
   // and a future regression (e.g. a supported:false entry sneaking into
   // run-command) is captured.
   const allEntries: SlashCommandEntry[] = [
@@ -240,13 +225,8 @@ describe("resolveWebuiSubmissionIntent — operational consequence: disabled / i
         });
       }
     }
-    // Two built-ins (`compact`, `new`) are runnable; the rest of the
-    // registry — `plan`, `fork`, `memory`, `goal`, and every skill
-    // fixture — must NOT appear here.
-    expect(runCommandIntents.map((row) => row.name).sort()).toEqual([
-      "compact",
-      "new",
-    ]);
+    // The remaining built-ins are composer modes, not run-command entries.
+    expect(runCommandIntents).toEqual([]);
   });
 });
 
@@ -292,19 +272,17 @@ describe("host `runCommand` stub counter — disabled entries trigger zero host 
     }
   }
 
-  it("zero calls for `supported: false` built-ins (plan / fork / memory)", async () => {
+  it("zero calls for the plan composer mode", async () => {
     const calls: { command: string; input?: string }[] = [];
     const stub = async (args: { command: string; input?: string }) => {
       calls.push(args);
       return { output: "ok" };
     };
-    for (const name of ["plan", "fork", "memory"] as const) {
-      const entry = WEBUI_BUILTIN_COMMANDS.find(
-        (candidate) => candidate.name === name,
-      );
-      expect(entry).toBeDefined();
-      await dispatchEntry(entry as SlashCommandEntry, stub);
-    }
+    const entry = WEBUI_BUILTIN_COMMANDS.find(
+      (candidate) => candidate.name === "plan",
+    );
+    expect(entry).toBeDefined();
+    await dispatchEntry(entry as SlashCommandEntry, stub);
     expect(calls).toEqual([]);
   });
 
@@ -334,7 +312,7 @@ describe("host `runCommand` stub counter — disabled entries trigger zero host 
     expect(calls).toEqual([]);
   });
 
-  it("registry-wide — only `compact` and `new` reach the runCommand stub (counter)", async () => {
+  it("registry-wide — composer modes do not reach the runCommand stub", async () => {
     const calls: { command: string; input?: string }[] = [];
     const stub = async (args: { command: string; input?: string }) => {
       calls.push(args);
@@ -343,16 +321,7 @@ describe("host `runCommand` stub counter — disabled entries trigger zero host 
     for (const entry of allEntries) {
       await dispatchEntry(entry, stub);
     }
-    // Two expected hits — `compact` and `new`. Every other entry in the
-    // registry must NOT increment the counter. The pin: a regression
-    // that lets inert-wired (skills, `goal`) or inert-unsupported
-    // (`plan`, `fork`, `memory`) rows through path 3 would surface here
-    // as the counter growing past 2.
-    expect(calls.length).toBe(2);
-    expect(calls.map((row) => row.command).sort()).toEqual(["compact", "new"]);
-    for (const call of calls) {
-      expect(call.input).toBe("payload");
-    }
+    expect(calls).toEqual([]);
   });
 });
 

@@ -317,7 +317,7 @@ describe("UsagePanel states", () => {
   });
 
   it("distinguishes auth errors from generic failures and offers retry", () => {
-    const authHtml = render({ status: "error", errorMessage: "Run /login, then retry." });
+    const authHtml = render({ status: "error", errorMessage: "Run mcode login in the TUI, then retry." });
     expect(authHtml).toContain("请重新登录");
     expect(authHtml).toContain("重试");
     expect(authHtml).toContain('data-testid="usage-popover-error"');

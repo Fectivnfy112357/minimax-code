@@ -9,8 +9,6 @@ export {
 } from "./components/WebuiClientFoundationApp.js";
 import { createWebuiTransport } from "./transport.js";
 import { route } from "./router.js";
-import { LoginCard } from "./components/LoginCard.js";
-import { OnboardingSteps } from "./components/OnboardingSteps.js";
 import { NotFound } from "./components/NotFound.js";
 import { ArchonPage } from "./components/ArchonPage.js";
 
@@ -46,7 +44,5 @@ const app = <WebuiClientFoundationApp
   />;
 const currentRoute = route(location.pathname);
 root.render(
-  currentRoute === "login" ? <LoginCard onContinue={() => { location.href = "/onboarding"; }} /> :
-  currentRoute === "onboarding" ? <OnboardingSteps onComplete={() => { location.href = "/archon"; }} /> :
   currentRoute === "404" ? <NotFound /> : <ArchonPage>{app}</ArchonPage>,
 );
