@@ -222,3 +222,190 @@ test("switching away and back keeps a live turn attached to its own session", as
   await expect(liveIndicator(page)).toHaveCount(0);
   await expect(page.getByText("A late message")).toBeVisible();
 });
+
+test("a goal continuation keeps one activity indicator at the tail of the transcript", async ({ page }) => {
+  await openApp(page, "#session=A");
+  await startTurn(page, "A", "Run the goal turn");
+
+  await emitAgentMessage(page, "A", {
+    msg_id: "a-round-1",
+    thinking_content: "First round reasoning",
+    msg_content: "First round answer",
+  });
+  const first = assistantBody(page, "a-round-1");
+  await expect(first).toBeVisible();
+  await expect(livePulse(page)).toHaveCount(1);
+
+  // Goal mode auto-continuation arrives as a SYNTHETIC USER message. A user
+  // item opens a new group inside the still-live turn, so from here on one turn
+  // owns two assistant groups.
+  await emitAgentMessage(page, "A", {
+    msg_id: "msg-user-goal-continuation-1",
+    msg_content: "Continue working toward the active thread goal.",
+  });
+  await expect(page.getByText("Continue working toward the active thread goal.")).toBeVisible();
+
+  // The previous round has settled and no message body is left to host the
+  // row, so the indicator must hand off to the transcript-level status instead
+  // of stranding itself above the continuation bubble.
+  await expect(livePulse(page)).toHaveCount(0);
+  await expect(liveIndicator(page)).toHaveCount(1);
+  await expect(first.getByText("First round reasoning")).toHaveCount(1);
+  // The settled round must not carry the next round's streamed content.
+  await expect(first.getByText("Second round reasoning")).toHaveCount(0);
+
+  await emitAgentMessage(page, "A", {
+    msg_id: "a-round-2",
+    thinking_content: "Second round reasoning",
+  });
+  const second = assistantBody(page, "a-round-2");
+  await expect(second).toBeVisible();
+
+  // The invariant: exactly one activity row in the whole transcript, hosted by
+  // the trailing group.
+  await expect(livePulse(page)).toHaveCount(1);
+  await expect(liveIndicator(page)).toHaveCount(0);
+  await expect(second.locator('[data-webui-thinking-live-status="true"]')).toHaveCount(1);
+  await expect(first.locator('[data-webui-thinking-live-status="true"]')).toHaveCount(0);
+
+  // Each round shows its own content once — the turn-wide live view used to be
+  // broadcast into every live group, duplicating the stream across the thread.
+  await expect(first.getByText("First round reasoning")).toHaveCount(1);
+  await expect(second.getByText("Second round reasoning")).toHaveCount(1);
+  await expect(page.getByText("First round answer")).toHaveCount(1);
+
+  await emitStream(page, "A", { dataJson: "[DONE]" });
+  await expect(livePulse(page)).toHaveCount(0);
+  await expect(liveIndicator(page)).toHaveCount(0);
+});
+
+test("assistant messages merged into one group keep a single activity indicator", async ({ page }) => {
+  await openApp(page, "#session=A");
+  await startTurn(page, "A", "Run the merged turn");
+
+  await emitAgentMessage(page, "A", {
+    msg_id: "a-merged-1",
+    thinking_content: "Alpha reasoning",
+    msg_content: "Alpha answer",
+  });
+  await expect(livePulse(page)).toHaveCount(1);
+
+  // Consecutive assistant messages merge into the same group, so the group tail
+  // — not the transcript tail — is what hosts the row.
+  await emitAgentMessage(page, "A", {
+    msg_id: "a-merged-2",
+    thinking_content: "Beta reasoning",
+  });
+  const body = assistantBody(page, "a-merged-1");
+  await expect(body.getByText("Beta reasoning")).toBeVisible();
+
+  await expect(page.locator('[data-webui-assistant-body]')).toHaveCount(1);
+  await expect(livePulse(page)).toHaveCount(1);
+  await expect(liveIndicator(page)).toHaveCount(0);
+  await expect(body.locator('[data-webui-thinking-live-status="true"]')).toHaveCount(1);
+  // The merged group keeps both of its own messages, each exactly once.
+  await expect(body.getByText("Alpha reasoning")).toHaveCount(1);
+  await expect(body.getByText("Alpha answer")).toHaveCount(1);
+});
+
+test("a queued user message hands the activity indicator to the transcript tail", async ({ page }) => {
+  await openApp(page, "#session=A");
+  await startTurn(page, "A", "Run the queued turn");
+
+  await emitAgentMessage(page, "A", {
+    msg_id: "a-queued-1",
+    thinking_content: "Gamma reasoning",
+    msg_content: "Gamma answer",
+  });
+  await expect(livePulse(page)).toHaveCount(1);
+  await emitAgentMessage(page, "A", {
+    msg_id: "a-queued-2",
+    thinking_content: "Delta reasoning",
+  });
+  await expect(livePulse(page)).toHaveCount(1);
+
+  // A queued follow-up opens a trailing USER group. The assistant group that
+  // was hosting the row is no longer the transcript tail, so the row has to
+  // move down rather than strand itself above the bubble.
+  await emitAgentMessage(page, "A", {
+    msg_id: "msg-user-queued-1",
+    msg_content: "Queued follow-up",
+  });
+  await expect(page.getByText("Queued follow-up")).toBeVisible();
+
+  await expect(livePulse(page)).toHaveCount(0);
+  await expect(liveIndicator(page)).toHaveCount(1);
+  await expect(page.getByText("Delta reasoning")).toHaveCount(1);
+
+  await emitStream(page, "A", { dataJson: "[DONE]" });
+  await expect(liveIndicator(page)).toHaveCount(0);
+});
+
+/** Ordered `ANSWER` / `PULSE` markers as rendered inside the assistant body. */
+async function assistantRowOrder(page) {
+  return page.evaluate(() => {
+    const body = document.querySelector("[data-webui-assistant-body]");
+    if (!body) return [];
+    const kinds = [];
+    const walk = (element) => {
+      for (const child of element.children) {
+        if (child.hasAttribute("data-webui-thinking-live-status")) kinds.push("PULSE");
+        else if (child.classList.contains("webui-assistant-answer")) kinds.push("ANSWER");
+        walk(child);
+      }
+    };
+    walk(body);
+    return kinds;
+  });
+}
+
+test("a reply delivered as its own text-only message still renders above the pulse", async ({ page }) => {
+  await openApp(page, "#session=A");
+  await startTurn(page, "A", "Run the split turn");
+
+  // The tool round lands in its own message.
+  await emitAgentMessage(page, "A", {
+    msg_id: "a-split-1",
+    thinking_content: "Let me check the goal first.",
+    tool_calls: [{ id: "call-1", function: { name: "update_goal", arguments: JSON.stringify({ status: "waiting" }) } }],
+  });
+  await expect(livePulse(page)).toHaveCount(1);
+
+  // The reply arrives as a SEPARATE message carrying text only. The live
+  // projection used to drop that segment, so the answer lost its text part,
+  // `primaryAnswerPart` went undefined, and the answer rendered AFTER the
+  // whole process block — below the activity row instead of above it.
+  await emitAgentMessage(page, "A", { msg_id: "a-split-2", msg_content: "Split reply" });
+  await expect(page.getByText("Split reply")).toBeVisible();
+
+  const order = await assistantRowOrder(page);
+  expect(order).toContain("ANSWER");
+  expect(order.indexOf("ANSWER")).toBeLessThan(order.indexOf("PULSE"));
+  expect(order[order.length - 1]).toBe("PULSE");
+  await expect(livePulse(page)).toHaveCount(1);
+
+  await emitStream(page, "A", { dataJson: "[DONE]" });
+  await expect(livePulse(page)).toHaveCount(0);
+  await expect(page.getByText("Split reply")).toHaveCount(1);
+});
+
+test("a plain text-only turn keeps its reply free of any process disclosure", async ({ page }) => {
+  await openApp(page, "#session=A");
+  await startTurn(page, "A", "Run the plain turn");
+
+  // No thinking, no tool call: the per-view guard must keep the turn from
+  // growing a disclosure just because text parts now survive the projection.
+  await emitAgentMessage(page, "A", { msg_id: "a-plain-1", msg_content: "Plain reply" });
+  await expect(page.getByText("Plain reply")).toBeVisible();
+  await expect(livePulse(page)).toHaveCount(0);
+
+  const body = page.locator("[data-webui-assistant-body]").first();
+  await expect(body.locator("summary")).toHaveCount(0);
+  await expect(body.locator("details")).toHaveCount(0);
+  await expect(body.locator('[data-webui-message-kind="assistant"]')).toHaveCount(1);
+
+  await emitStream(page, "A", { dataJson: "[DONE]" });
+  await expect(body.locator("summary")).toHaveCount(0);
+  await expect(body.locator("details")).toHaveCount(0);
+  await expect(page.getByText("Plain reply")).toHaveCount(1);
+});

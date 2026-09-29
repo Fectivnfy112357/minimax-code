@@ -2185,6 +2185,7 @@
   .webui-user-goal-label {
     display: inline-flex;
     align-items: center;
+    vertical-align: middle;
     gap: 4px;
     margin-right: 6px;
     color: var(--icon_default_accent);

@@ -423,7 +423,14 @@ export function projectLiveTurnView(
         messageId: message.id,
         ...(message.thinking.trim() ? { thinking: message.thinking } : {}),
         ...(message.toolCalls?.length ? { tools: message.toolCalls } : {}),
-        ...(activityParts.some((part) => part.type !== "text") ? { activityParts } : {}),
+        // Keep text parts on their own segment too. A reply that arrives as its
+        // own text-only message used to drop out of `processSegments` here, and
+        // then out of the per-turn filter below, which left the answer with no
+        // text part in the process block: `primaryAnswerPart` went undefined and
+        // the answer rendered AFTER the block — below the live activity row.
+        // Whether the turn shows a process block at all stays the decision of
+        // the per-turn guard below, which still keys on non-text activity.
+        ...(activityParts.length ? { activityParts } : {}),
       };
     });
   const processSegments = projectedProcessSegments.some((segment) =>

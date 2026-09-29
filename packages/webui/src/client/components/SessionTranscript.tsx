@@ -8,7 +8,7 @@
 // existing consumers (`webui-shell.test.ts`, importers via `app.tsx`)
 // keep their current import path during the W3 wave.
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { ChatSkeleton } from "./TranscriptSkeletons.js";
 import { ActivityIndicator, MessageAfterQueryStreamingPlaceholder, MessagePassiveLoadingPlaceholder } from "./ActivityIndicator.js";
 import { TurnNavigator, type TurnSummary } from "./TurnNavigator.js";
@@ -61,6 +61,7 @@ import { projectWebuiTranscriptMessage } from "../projection/message-projection.
 import {
   projectHistoricalTurnView,
   projectLiveTurnView,
+  type WebuiLiveTurnView,
   type WebuiTurnView,
 } from "../projection/transcript-shape.js";
 import {
@@ -463,10 +464,6 @@ export function WebuiSessionTranscript({
     () => groupWebuiTranscriptItems(items, queryDurationByMessageId),
     [items, queryDurationByMessageId],
   );
-  const liveMessageIds = useMemo(
-    () => new Set(stream.messages.map((message) => message.id)),
-    [stream.messages],
-  );
   const liveAssistantMessages = useMemo(
     () => stream.messages.filter((message) => message.role !== "user"),
     [stream.messages],
@@ -479,6 +476,67 @@ export function WebuiSessionTranscript({
     }),
     [sessionId, stream.messages, stream.processingStartedAtMs, streamPhase],
   );
+  /**
+   * A goal run injects a synthetic user continuation between model calls, and
+   * a user item always opens a NEW group — so one live turn can own several
+   * assistant groups. Broadcasting the turn-wide `liveAssistantView` into every
+   * one of them duplicated the streamed content across the transcript and left
+   * a second activity pulse stranded mid-thread.
+   *
+   * Project each group's live view from its OWN messages instead. A group's
+   * items carry every message id merged into it, so this stays exact whether the
+   * group holds one assistant message or several. Groups with no live message
+   * (pure history, and the user-only continuation bubble) get no entry and keep
+   * the historical branch below.
+   */
+  const liveGroupViews = useMemo(() => {
+    if (!turnLive) return undefined;
+    const views = new Map<string, WebuiLiveTurnView>();
+    for (const group of groups) {
+      const owned = new Set(group.items.map((item) => item.messageId));
+      const own = stream.messages.filter((message) => owned.has(message.id));
+      if (own.length === 0) continue;
+      const view = projectLiveTurnView(own, {
+        sessionId,
+        streaming: streamPhase === "streaming",
+        processingStartedAtMs: stream.processingStartedAtMs,
+      });
+      if (view) views.set(group.messageId, view);
+    }
+    return views.size > 0 ? views : undefined;
+  }, [groups, sessionId, stream.messages, stream.processingStartedAtMs, streamPhase, turnLive]);
+  /**
+   * The trailing live assistant group owns the live activity row, so the
+   * `推理中…` indicator is rendered exactly once and always trails the
+   * transcript. Earlier live groups still render their own live content, but as
+   * settled history: a second pulse earlier in the thread is exactly the state
+   * this guards against.
+   */
+  const trailingLiveGroupId = useMemo(() => {
+    for (let index = groups.length - 1; index >= 0; index -= 1) {
+      const group = groups[index];
+      if (!group) continue;
+      const owned = new Set(group.items.map((item) => item.messageId));
+      if (stream.messages.some((message) => owned.has(message.id))) {
+        return group.messageId;
+      }
+    }
+    return undefined;
+  }, [groups, stream.messages]);
+  const liveActivityGroupId = useMemo(() => {
+    if (!trailingLiveGroupId) return undefined;
+    return liveGroupViews?.has(trailingLiveGroupId)
+      ? trailingLiveGroupId
+      : undefined;
+  }, [liveGroupViews, trailingLiveGroupId]);
+  /**
+   * The activity indicator falls back to transcript level when the last live
+   * group is the goal continuation BUBBLE rather than an assistant group: no
+   * message body is left to host the row, the previous round has settled, and
+   * the next model call has not started thinking yet.
+   */
+  const liveActivityAtTranscriptLevel =
+    trailingLiveGroupId !== undefined && liveActivityGroupId === undefined;
   useLayoutEffect(() => {
     if (!turnLive) return undefined;
     const transcript = transcriptRef.current;
@@ -806,14 +864,18 @@ export function WebuiSessionTranscript({
             projectedAssistantView?.source === "historical"
               ? projectedAssistantView
               : undefined;
-          const liveAssistantGroup = turnLive && group.items.some(
-            (item) => liveMessageIds.has(item.messageId),
-          );
-          const assistantView = liveAssistantGroup && liveAssistantView
+          const groupLiveView = liveGroupViews?.get(group.messageId);
+          const assistantView = groupLiveView
             ? {
-                ...liveAssistantView,
+                ...groupLiveView,
                 messageId: group.messageId,
                 ...(group.turnId ? { turnId: group.turnId } : {}),
+                // Only the trailing live assistant group is still in flight; the
+                // ones before it rendered their row as done so the activity
+                // pulse stays unique.
+                ...(group.messageId === liveActivityGroupId
+                  ? {}
+                  : { streaming: false }),
               }
             : {
                 ...(historicalAssistantView ?? {
@@ -845,9 +907,8 @@ export function WebuiSessionTranscript({
                 processSegments: projectWebuiProcessSegments(group.items),
               };
           return (
-            <>
+            <Fragment key={group.messageId}>
               <MessageItem
-                key={group.messageId}
                 view={assistantView}
                 wallClockDurationMs={group.wallClockDurationMs}
                 getTurnDiff={getTurnDiff}
@@ -879,7 +940,7 @@ export function WebuiSessionTranscript({
                   ) : null}
                 </div>
               ) : null}
-            </>
+            </Fragment>
           );
         })}
         {streamPhase === "reconnecting" ? (
@@ -902,7 +963,7 @@ export function WebuiSessionTranscript({
         ) : null}
         {turnLive && liveAssistantView &&
         (streamPhase === "streaming" || streamPhase === "waiting") &&
-        !liveAssistantView.thinking?.trim() ? (
+        (!liveAssistantView.thinking?.trim() || liveActivityAtTranscriptLevel) ? (
           <div className="webui-session-stream-status" data-webui-live-thinking="true">
             <ActivityIndicator showLabel labelOverride="思考中…" />
           </div>
