@@ -72,6 +72,10 @@ import {
   type WebuiOwnedTranscriptState,
   type WebuiTranscriptRequestToken,
 } from "../projection/transcript-request-ownership.js";
+import {
+  webuiScrollBottomTop,
+  webuiScrollFollowsBottom,
+} from "../projection/transcript-scroll.js";
 
 const EMPTY_TRANSCRIPT_PAGE: WebuiClientMessagePage = {};
 
@@ -491,11 +495,10 @@ export function WebuiSessionTranscript({
     }
     const followBottom = () => {
       if (autoFollowRef.current)
-        viewport.scrollTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
+        viewport.scrollTop = webuiScrollBottomTop(viewport);
     };
     const onScroll = () => {
-      const distance = viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop;
-      if (distance <= 150) {
+      if (webuiScrollFollowsBottom(viewport)) {
         autoFollowRef.current = true;
         manualScrollIntentRef.current = false;
       } else if (manualScrollIntentRef.current) {
@@ -520,8 +523,46 @@ export function WebuiSessionTranscript({
       '[data-webui-session-scroll="true"]',
     );
     if (viewport && autoFollowRef.current)
-      viewport.scrollTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
+      viewport.scrollTop = webuiScrollBottomTop(viewport);
   }, [items, turnLive]);
+  // 进入会话时落在最后一条消息上，和桌面端一致。上面那套跟随只在回合 live 时
+  // 装配，所以非 live 的会话会保留上一个会话留下的 scrollTop（新挂载的视口就是 0，
+  // 即顶部）。
+  //
+  // 这里不能只跳一次：首屏消息落地后内容还会继续撑开高度（代码高亮、图片、
+  // markdown 表格），一次性跳转按当帧高度算出的"底部"会停在倒数几条消息上，实测
+  // 差出近一屏。所以进入会话期间用 ResizeObserver 持续贴底，直到用户自己滚动，
+  // 或者主动去翻更早的历史为止。骨架屏期间视口不足一屏，贴底等价于不动，无副作用。
+  const openScrollFollowRef = useRef(false);
+  useLayoutEffect(() => {
+    openScrollFollowRef.current = true;
+  }, [sessionId]);
+  useLayoutEffect(() => {
+    const transcript = transcriptRef.current;
+    const viewport = transcript?.closest<HTMLElement>(
+      '[data-webui-session-scroll="true"]',
+    );
+    if (!transcript || !viewport) return undefined;
+    const followBottom = () => {
+      if (openScrollFollowRef.current)
+        viewport.scrollTop = webuiScrollBottomTop(viewport);
+    };
+    // 用户开始滚动即交还控制权。程序化设置 scrollTop 不产生 wheel/touchmove，
+    // 所以跟随自己的写入不会把自己关掉。
+    const releaseControl = () => { openScrollFollowRef.current = false; };
+    viewport.addEventListener("wheel", releaseControl, { passive: true });
+    viewport.addEventListener("touchmove", releaseControl, { passive: true });
+    const observer = typeof ResizeObserver === "undefined"
+      ? undefined
+      : new ResizeObserver(followBottom);
+    observer?.observe(transcript);
+    followBottom();
+    return () => {
+      observer?.disconnect();
+      viewport.removeEventListener("wheel", releaseControl);
+      viewport.removeEventListener("touchmove", releaseControl);
+    };
+  }, [sessionId]);
   const showEmptyState = !turnLive && !error && !loading && items.length === 0;
   // The right-rail navigator's tick list mirrors the assistant turns visible
   // on the page. A user turn isn't a tick — only the assistant block that
@@ -548,6 +589,9 @@ export function WebuiSessionTranscript({
         if (loading) return;
         const requestedCursor = visibleState.page.nextCursor;
         if (!requestedCursor) return;
+        // 翻历史是用户主动往上走：交还控制权，否则更早消息并进来之后
+        // 贴底跟随会把他从正在读的位置拽回末尾。
+        openScrollFollowRef.current = false;
         const token = coordinator.beginRequest(sessionId);
         if (!token) return;
         const loadingLifecycleId = beginLoadingLifecycle();

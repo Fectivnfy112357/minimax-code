@@ -244,7 +244,8 @@
       "packages/webui/test/unit/slash-classification.test.ts",
       "packages/webui/test/unit/outside-close.test.ts",
       "packages/webui/test/unit/plugin-market-catalogue.test.tsx",
-      "packages/webui/test/unit/webui-plan-mode.test.ts"
+      "packages/webui/test/unit/webui-plan-mode.test.ts",
+      "packages/webui/test/unit/transcript-scroll.test.ts"
     ]
   }
 }

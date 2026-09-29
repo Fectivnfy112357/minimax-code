@@ -37,6 +37,17 @@ import {
 import { WebuiSessionTranscript } from "../../src/client/components/SessionTranscript.js";
 import { WebuiWorkspaceDirectoryBrowser } from "../../src/client/components/SessionComposer.js";
 import {
+  WebuiIconContextArchive,
+  WebuiIconContextCopy,
+  WebuiIconContextChevron,
+  WebuiIconContextFeedback,
+  WebuiIconContextFork,
+  WebuiIconContextPin,
+  WebuiIconContextRename,
+  WebuiIconContextTrash,
+  WebuiIconFolder,
+} from "../../src/client/icons.js";
+import {
   TurnElapsedRow,
   WebuiThinkingBlock,
   WebuiToolResults,
@@ -706,6 +717,32 @@ describe("WebUI shell", () => {
     expect(html).toContain("删除");
     expect(html).toContain('aria-disabled="true"');
     expect(html).toContain("webui-context-menu-divider");
+  });
+
+  it("uses Desktop-sized SVGs and separate pinned and unpinned pin glyphs", () => {
+    const glyphs = [
+      WebuiIconContextRename,
+      WebuiIconContextArchive,
+      WebuiIconContextFork,
+      WebuiIconContextCopy,
+      WebuiIconContextFeedback,
+      WebuiIconContextTrash,
+      WebuiIconFolder,
+    ];
+    for (const Glyph of glyphs) {
+      const markup = renderToStaticMarkup(createElement(Glyph));
+      expect(markup).toContain('width="18" height="18" viewBox="0 0 20 20"');
+      expect(markup).toContain('fill="currentColor"');
+    }
+
+    const pinned = renderToStaticMarkup(createElement(WebuiIconContextPin, { pinned: true }));
+    const unpinned = renderToStaticMarkup(createElement(WebuiIconContextPin, { pinned: false }));
+    expect(pinned).toContain('width="18" height="18" viewBox="0 0 20 20"');
+    expect(unpinned).toContain('width="18" height="18" viewBox="0 0 20 20"');
+    expect(pinned).not.toBe(unpinned);
+
+    const submenuChevron = renderToStaticMarkup(createElement(WebuiIconContextChevron));
+    expect(submenuChevron).toContain('width="16" height="16" viewBox="0 0 16 16"');
   });
 
   it("moves a pinned session ahead of newer unpinned sessions", () => {
