@@ -500,7 +500,11 @@ describe("W0 · stacking order", () => {
       // and the composer overlay (20) and the workspace panel controls (50),
       // and it stays under the model/workspace menus (70) and the dialog
       // bands (100+).
-      1, 2, 4, 20, 45, 50, 60, 70, 80, 100, 110, 111, 120, 121,
+      // 1400 is `.webui-message-dialog`, the portal-rendered modal shared by
+      // the fork, rewind-preview and goal-clear dialogs. It mounts outside the
+      // shell's stacking context, so it cannot join the 100-121 in-shell
+      // dialog band and has to clear all of it.
+      1, 2, 4, 20, 45, 50, 60, 70, 80, 100, 110, 111, 120, 121, 1400,
     ]);
   });
 });

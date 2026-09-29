@@ -2,6 +2,7 @@ import type { WebuiStreamFrame } from "../server/port.js";
 import {
   initialWebuiWorkspaceProgress,
   reduceWebuiWorkspaceProgressEvent,
+  reduceWebuiWorkspaceProgressMessage,
   type WebuiWorkspaceProgressState,
 } from "./projection/workspace-progress.js";
 
@@ -590,20 +591,42 @@ export function applyFrameData(
   if (type === 2 || type === "agent_message") {
     const message = record(event.agent_message) ?? record(event.agentMessage);
     if (!message) return next;
-    const messages = Array.isArray(message.messages)
-      ? message.messages.reduce(
+    const nestedMessages = Array.isArray(message.messages) ? message.messages : undefined;
+    const messages = nestedMessages
+      ? nestedMessages.reduce(
           (all, item) =>
             record(item) ? upsertMessage(all, record(item)!, false) : all,
           next.messages,
         )
       : upsertMessage(next.messages, message, false);
-    const contextUsage = Array.isArray(message.messages)
-      ? [...message.messages].reverse().map(record).find((item) => item ? contextUsageRecord(item) : undefined)
+    const contextUsage = nestedMessages
+      ? [...nestedMessages].reverse().map(record).find((item) => item ? contextUsageRecord(item) : undefined)
       : contextUsageRecord(message);
+    // Todo progress and subagent bookkeeping ride inside the message itself
+    // rather than on the global bus, so the frame has to be unwrapped here or
+    // the panel keeps showing the start-of-session snapshot.
+    //
+    // A batched frame is owned by its nested messages: the transcript upsert
+    // just above replaces the outer message with the `messages[]` entries
+    // rather than merging both, so reducing the outer snapshot as well would
+    // let the panel show a subagent the transcript never accepted. Follow the
+    // same authority, in array order.
+    const workspaceProgress = nestedMessages
+      ? nestedMessages.reduce(
+          (progress, item) => {
+            const nested = record(item);
+            return nested
+              ? reduceWebuiWorkspaceProgressMessage(progress, nested)
+              : progress;
+          },
+          next.workspaceProgress,
+        )
+      : reduceWebuiWorkspaceProgressMessage(next.workspaceProgress, message);
     return {
       ...next,
       phase: "streaming",
       messages,
+      workspaceProgress,
       ...(contextUsage ? { contextUsage } : {}),
     };
   }

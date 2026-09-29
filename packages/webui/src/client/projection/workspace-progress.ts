@@ -195,17 +195,47 @@ function subagentFromEvent(
  * projection. The input is deliberately structural because stream frames
  * contain both protocol-shaped and legacy event-shaped payloads.
  */
+/**
+ * Event groups the progress reducer dispatches on. They are the single source
+ * of truth: `PROGRESS_EVENT_TYPES` below is BUILT from them, so adding a
+ * dispatch branch without admitting the name (or admitting a name nothing
+ * dispatches on) is not expressible.
+ */
+const SUBAGENT_SPAWN_EVENT_TYPES = ["session.spawned"] as const;
+const SUBAGENT_STATUS_EVENT_TYPES = [
+  "session.status_updated",
+  "session.finish",
+  "session.error",
+  "session.abort",
+  "session.aborted",
+] as const;
+const SUBAGENT_REPORTED_EVENT_TYPES = [
+  "session_status",
+  "session.status",
+] as const;
+const TODO_EVENT_TYPES = ["todo_updated"] as const;
+
+function terminalSubagentStatus(
+  type: string,
+  data: Record<string, unknown>,
+): WebuiWorkspaceSubagent["status"] {
+  if (type === "session.finish") return "completed";
+  if (type === "session.error" || type === "session.abort" || type === "session.aborted")
+    return "error";
+  return eventStatus(data);
+}
+
 export function reduceWebuiWorkspaceProgressEvent(
   state: WebuiWorkspaceProgressState,
   value: Record<string, unknown>,
   sessionId?: string,
 ): WebuiWorkspaceProgressState {
   const type = eventType(value);
-  if (type === "todo_updated") {
+  if (TODO_EVENT_TYPES.includes(type)) {
     const todos = normalizeTodos(value.todos ?? eventData(value).todos);
     return todos ? { ...state, todos, hasTodoSnapshot: true } : state;
   }
-  if (type === "session.spawned") {
+  if (SUBAGENT_SPAWN_EVENT_TYPES.includes(type)) {
     const subagent = subagentFromEvent(value, sessionId);
     return subagent
       ? {
@@ -215,13 +245,7 @@ export function reduceWebuiWorkspaceProgressEvent(
         }
       : state;
   }
-  if (
-    type === "session.status_updated" ||
-    type === "session.finish" ||
-    type === "session.error" ||
-    type === "session.abort" ||
-    type === "session.aborted"
-  ) {
+  if (SUBAGENT_STATUS_EVENT_TYPES.includes(type)) {
     const data = eventData(value);
     const childSessionId = stringValue(data, ["sessionId", "session_id"]);
     if (!childSessionId) return state;
@@ -233,17 +257,12 @@ export function reduceWebuiWorkspaceProgressEvent(
         ...state,
         subagents: upsertSubagent(state.subagents, {
         ...existing,
-        status:
-          type === "session.finish"
-            ? "completed"
-            : type === "session.error" || type === "session.abort" || type === "session.aborted"
-              ? "error"
-              : eventStatus(data),
+        status: terminalSubagentStatus(type, data),
         }),
         hasSubagentSnapshot: true,
       };
   }
-  if (type === "session_status" || type === "session.status") {
+  if (SUBAGENT_REPORTED_EVENT_TYPES.includes(type)) {
     const data = eventData(value);
     const childSessionId = stringValue(data, ["sessionId", "session_id"]);
     const existing = childSessionId
@@ -272,6 +291,21 @@ function parseHistoryEvent(value: unknown): Record<string, unknown> | undefined 
   }
 }
 
+/**
+ * The only event names the progress projection knows how to act on. Message
+ * content is free-form assistant text, so "parses as JSON and has an
+ * `eventType`" is far too loose a test: an assistant that pastes
+ * `{"eventType":"todo_updated","todos":[]}` as part of an answer would
+ * otherwise be able to rewrite the panel. Only these names are honoured, and
+ * only in the shapes `reduceWebuiWorkspaceProgressEvent` actually reads.
+ */
+export const PROGRESS_EVENT_TYPES: ReadonlySet<string> = new Set<string>([
+  ...TODO_EVENT_TYPES,
+  ...SUBAGENT_SPAWN_EVENT_TYPES,
+  ...SUBAGENT_STATUS_EVENT_TYPES,
+  ...SUBAGENT_REPORTED_EVENT_TYPES,
+]);
+
 function historyEvents(message: WebuiClientMessage): Record<string, unknown>[] {
   const result: Record<string, unknown>[] = [];
   for (const candidate of [
@@ -280,9 +314,62 @@ function historyEvents(message: WebuiClientMessage): Record<string, unknown>[] {
     (message as unknown as Record<string, unknown>).content,
   ]) {
     const parsed = parseHistoryEvent(candidate);
-    if (parsed && eventType(parsed)) result.push(parsed);
+    if (!parsed) continue;
+    const type = eventType(parsed);
+    if (type && PROGRESS_EVENT_TYPES.has(type)) result.push(parsed);
   }
   return result;
+}
+
+/** A `todowrite` call carries the full todo list in its input, so it is the
+ * most direct carrier of progress state. Both the history rebuild and the
+ * live path read it, which is why they can not drift apart. */
+function applyTodoToolCalls(
+  state: WebuiWorkspaceProgressState,
+  message: WebuiClientMessage | Record<string, unknown>,
+): WebuiWorkspaceProgressState {
+  const loose = message as Record<string, unknown>;
+  const calls = [
+    ...(message.toolCalls ?? []),
+    ...(Array.isArray(loose.tool_calls) ? loose.tool_calls : []),
+  ];
+  let next = state;
+  for (const raw of calls) {
+    const call = record(raw);
+    if (!call) continue;
+    // History carries the normalised `{ name, arguments }`; the live wire frame
+    // still nests them under `function`, so read both shapes.
+    const fn = record(call.function);
+    const name = String(call.name ?? call.toolName ?? fn?.name ?? "").toLowerCase();
+    if (name !== "todowrite" && name !== "todo_write") continue;
+    const input = record(call.input) ?? parseHistoryEvent(fn?.arguments) ?? parseHistoryEvent(call.arguments);
+    const todos = normalizeTodos(input?.todos);
+    if (todos) next = { ...next, todos, hasTodoSnapshot: true };
+  }
+  return next;
+}
+
+/**
+ * Reduce the Desktop-compatible events a LIVE stream message carries in its
+ * serialized content.
+ *
+ * The runtime delivers `todo_updated` and friends as a system event inside
+ * `msg_content` rather than on the global event bus, so the live path has to
+ * dig them out itself. Without this the progress panel only ever showed the
+ * start-of-session snapshot: `reduceWebuiWorkspaceProgressEvent` was handed
+ * the whole frame, whose `type` is `agent_message`, so `eventType()` matched
+ * nothing. The history rebuild above has understood this shape all along,
+ * which is exactly why a refresh "fixed" it.
+ */
+export function reduceWebuiWorkspaceProgressMessage(
+  state: WebuiWorkspaceProgressState,
+  message: WebuiClientMessage | Record<string, unknown>,
+  sessionId?: string,
+): WebuiWorkspaceProgressState {
+  let next = applyTodoToolCalls(state, message);
+  for (const event of historyEvents(message as WebuiClientMessage))
+    next = reduceWebuiWorkspaceProgressEvent(next, event, sessionId);
+  return next;
 }
 
 /** Rebuild the last known Desktop-compatible state when opening a session. */
@@ -292,13 +379,7 @@ export function projectWebuiWorkspaceHistory(
 ): WebuiWorkspaceProgressState {
   let state = initialWebuiWorkspaceProgress;
   for (const message of messages) {
-    for (const call of message.toolCalls ?? []) {
-      const name = String(call.name ?? call.toolName ?? "").toLowerCase();
-      if (name !== "todowrite" && name !== "todo_write") continue;
-      const input = record(call.input ?? call.arguments);
-      const todos = normalizeTodos(input?.todos);
-      if (todos) state = { ...state, todos, hasTodoSnapshot: true };
-    }
+    state = applyTodoToolCalls(state, message);
     for (const event of historyEvents(message))
       state = reduceWebuiWorkspaceProgressEvent(state, event, sessionId);
   }

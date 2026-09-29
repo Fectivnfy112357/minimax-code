@@ -88,6 +88,7 @@ export interface WebuiEffectState {
  *  call (or, for `refresh-pending`, a `void` async kick). */
 export type WebuiEffectCommand =
   | { readonly type: "refresh-pending" }
+  | { readonly type: "refresh-goal" }
   | {
       readonly type: "set-sending";
       readonly sending: boolean;
@@ -318,6 +319,22 @@ export function reduceWebuiEffect(
       }
       break;
     }
+    case "thread_goal.objective_updated_steering": {
+      // Steering announces that the objective moved on, but it carries only
+      // `{ sessionId, goalId }` — no goal object — so there is nothing here to
+      // project. The published name also did not match any case above, which
+      // is why the old handler never fired for it at all.
+      //
+      // Re-read the goal instead of guessing a patch: steering is rare and the
+      // read is authoritative. Publishing the full goal on this event would be
+      // the alternative, but the event contract is shared with the TUI and
+      // Desktop, so the repair belongs in the consumer that is broken.
+      commands.push({ type: "refresh-goal" });
+      break;
+    }
+    // Alternate spellings of the steering event. Nothing in this checkout
+    // publishes them, but one unreachable branch is cheaper than a silently
+    // stale banner against a version-skewed runtime.
     case "thread_goal.objective_updated":
     case "thread_goal.objective_steering":
     case "thread_goal.updated": {
@@ -461,6 +478,16 @@ export interface WebuiEffectHandlers {
   ) => void;
   readonly setGoal: (goal: WebuiGoal | undefined) => void;
   /**
+   * Re-read the session goal from the server. Used for goal events that
+   * announce a change without carrying the new goal, so the banner cannot be
+   * projected from the event itself.
+   *
+   * Required on purpose: the reducer emits `refresh-goal` unconditionally, so
+   * an optional handler would turn a missing wiring into a silent no-op — the
+   * exact failure this repair exists to remove.
+   */
+  readonly refreshGoal: () => void | Promise<unknown>;
+  /**
    * Open a stream for a turn the server started without this client. The
    * handler is responsible for claiming the subscription before it does, so
    * a second `session.start` for the same turn cannot open another.
@@ -488,6 +515,9 @@ export function applyWebuiEffectCommands(
         // Promise<unknown>`; if it returns a promise we attach the
         // catch, otherwise we drop it on the floor.
         Promise.resolve(handlers.refreshPending()).catch(() => undefined);
+        break;
+      case "refresh-goal":
+        Promise.resolve(handlers.refreshGoal()).catch(() => undefined);
         break;
       case "set-sending":
         if (cmd.when && readStream && !cmd.when(readStream())) break;

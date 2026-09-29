@@ -443,6 +443,7 @@ describe("W2 · stream subscription ownership · one stream per turn", () => {
     };
     applyWebuiEffectCommands(terminal.commands, {
       refreshPending: () => undefined,
+      refreshGoal: () => undefined,
       setSending,
       setStream,
       setPermissions: vi.fn(),
@@ -1045,6 +1046,7 @@ describe("D3 · watchEvents reduces each event against the latest stream", () =>
       }),
       {
         refreshPending: () => undefined,
+        refreshGoal: () => undefined,
         setSending: () => undefined,
         setStream: (patch) => { store = { ...store, stream: patch(store.stream) }; },
         setPermissions: (patch) => { store = { ...store, permissions: patch(store.permissions) }; },
@@ -1092,6 +1094,7 @@ describe("W2.9 · executor · applyWebuiEffectCommands walks commands in order",
     return {
       calls,
       refreshPending: record("refreshPending") as () => void,
+      refreshGoal: record("refreshGoal") as () => void,
       setSending: record("setSending") as (sending: boolean) => void,
       setStream: record("setStream") as (
         patch: (current: WebuiStreamState) => WebuiStreamState,
@@ -1147,6 +1150,12 @@ describe("W2.9 · executor · applyWebuiEffectCommands walks commands in order",
     expect(typeof handlers.calls[0]?.payload).toBe("function");
   });
 
+  it("refresh-goal is executed like any other handler", () => {
+    const handlers = makeCapturingHandlers();
+    applyWebuiEffectCommands([{ type: "refresh-goal" }], handlers);
+    expect(handlers.calls.map((call) => call.type)).toEqual(["refreshGoal"]);
+  });
+
   it("refresh-pending is called even when it returns a rejecting promise", async () => {
     let calls = 0;
     const handlers: WebuiEffectHandlers = {
@@ -1154,6 +1163,7 @@ describe("W2.9 · executor · applyWebuiEffectCommands walks commands in order",
         calls += 1;
         return Promise.reject(new Error("boom"));
       },
+      refreshGoal: () => undefined,
       setSending: () => undefined,
       setStream: () => undefined,
       setPermissions: () => undefined,

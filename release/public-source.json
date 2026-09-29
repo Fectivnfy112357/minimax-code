@@ -3702,6 +3702,7 @@
     "test/webui-browser/server.mjs",
     "test/webui-browser/transcript.spec.mjs",
     "test/webui-browser/turn-lifecycle.spec.mjs",
+    "test/webui-browser/workspace-progress-live.spec.mjs",
     "test/windows-contract.test.mjs",
     "third_party/pi-mono/.minimax-vendor.json",
     "third_party/pi-mono/LICENSE",

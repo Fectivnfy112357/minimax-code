@@ -14,6 +14,7 @@
 import { describe, it, expect } from "vitest";
 import {
   initialWebuiWorkspaceProgress,
+  PROGRESS_EVENT_TYPES,
   projectWebuiWorkspaceHistory,
   reduceWebuiWorkspaceProgressEvent,
   webuiWorkspaceSubagentStatus,
@@ -64,6 +65,59 @@ describe("W0 · workspace progress · subagent status mapping", () => {
 });
 
 describe("W0 · workspace progress · event reducer", () => {
+  it("allows only names that actually dispatch", () => {
+    // Message content is free-form assistant text, so embedded events are
+    // filtered through PROGRESS_EVENT_TYPES — an excess entry would let prose
+    // rewrite the panel, an omission would drop a real event. The allowlist is
+    // built from the same constants the reducer dispatches on, so this asserts
+    // the behaviour rather than the source text: every allowed name must move
+    // the state, given the payload shape that branch reads.
+    const cases: Record<string, Record<string, unknown>> = {
+      todo_updated: { todos: [{ content: "a", status: "pending" }] },
+      "session.spawned": { data: { sessionId: "child-1", agentName: "explore" } },
+      "session.status_updated": { data: { sessionId: "child-1", status: "failed" } },
+      "session.finish": { data: { sessionId: "child-1" } },
+      "session.error": { data: { sessionId: "child-1" } },
+      "session.abort": { data: { sessionId: "child-1" } },
+      "session.aborted": { data: { sessionId: "child-1" } },
+      session_status: { data: { sessionId: "child-1", status: "blocked" } },
+      "session.status": { data: { sessionId: "child-1", status: "queued" } },
+    };
+
+    // Every allowed name must have a case, so a newly added branch cannot slip
+    // in unproven.
+    expect([...PROGRESS_EVENT_TYPES].sort()).toEqual(Object.keys(cases).sort());
+
+    const empty = initialWebuiWorkspaceProgress;
+    // Status events only act on a subagent that already exists, and the
+    // terminal ones only register a change from a non-terminal status, so seed
+    // a child that is still running.
+    const withRunningChild = reduceWebuiWorkspaceProgressEvent(
+      reduceWebuiWorkspaceProgressEvent(
+        empty,
+        { eventType: "session.spawned", data: { sessionId: "child-1", agentName: "explore" } },
+        "root",
+      ),
+      { eventType: "session_status", data: { sessionId: "child-1", status: "running" } },
+      "root",
+    );
+    const needsChild = new Set([
+      "session.status_updated",
+      "session.finish",
+      "session.error",
+      "session.abort",
+      "session.aborted",
+      "session_status",
+      "session.status",
+    ]);
+
+    for (const [type, payload] of Object.entries(cases)) {
+      const seeded = needsChild.has(type) ? withRunningChild : empty;
+      const next = reduceWebuiWorkspaceProgressEvent(seeded, { eventType: type, ...payload }, "root");
+      expect(next, `${type} dispatched without moving the state`).not.toEqual(seeded);
+    }
+  });
+
   it("keeps only the todo entries with a content and a known status", () => {
     const next = reduceWebuiWorkspaceProgressEvent(
       initialWebuiWorkspaceProgress,
@@ -243,6 +297,54 @@ describe("W0 · workspace progress · history projection", () => {
 
     expect(state.todos).toEqual([{ content: "写测试", status: "in_progress" }]);
     expect(state.hasTodoSnapshot).toBe(true);
+  });
+
+  it("rebuilds todos from a todowrite call whose arguments are still a JSON string", () => {
+    // The shared reader now serves both the history rebuild and the live
+    // stream. History used to expect an already-parsed `input`, so a stored
+    // call that still carries the wire shape contributed nothing; pin the
+    // widened behaviour so it is a decision rather than an accident.
+    const state = projectWebuiWorkspaceHistory(
+      [
+        message({
+          toolCalls: [
+            {
+              function: {
+                name: "todowrite",
+                arguments: JSON.stringify({
+                  todos: [{ content: "字符串入参", status: "pending" }],
+                }),
+              },
+            },
+          ],
+        }),
+      ],
+      "root-session",
+    );
+
+    expect(state.todos).toEqual([{ content: "字符串入参", status: "pending" }]);
+    expect(state.hasTodoSnapshot).toBe(true);
+  });
+
+  it("lets an embedded todo_updated win over a todowrite call in the same message", () => {
+    // Ordering is load-bearing: the tool call is read first, then the
+    // embedded event, so the later event still decides the snapshot.
+    const state = projectWebuiWorkspaceHistory(
+      [
+        message({
+          toolCalls: [
+            { name: "todowrite", input: { todos: [{ content: "工具调用版本", status: "pending" }] } },
+          ],
+          msgContent: JSON.stringify({
+            eventType: "todo_updated",
+            todos: [{ content: "事件版本", status: "completed" }],
+          }),
+        }),
+      ],
+      "root-session",
+    );
+
+    expect(state.todos).toEqual([{ content: "事件版本", status: "completed" }]);
   });
 
   it("rebuilds the subagent list from persisted event payloads", () => {

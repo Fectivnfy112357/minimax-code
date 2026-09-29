@@ -589,6 +589,17 @@ export function WebuiComposer({
   const [questionnaire, setQuestionnaire] =
     useState<WebuiQuestionnaireRequest>();
   const [goal, setGoal] = useState<WebuiGoal>();
+  // Bumped by every write to the goal, so a steering re-read that lands after
+  // a newer update can tell it is stale and stand down. EVERY writer must go
+  // through `applyGoal` — a direct `setGoal` here would let an in-flight read
+  // resurrect the state it was meant to replace.
+  const goalVersionRef = useRef(0);
+  const sessionIdRef = useRef(sessionId);
+  sessionIdRef.current = sessionId;
+  const applyGoal = useCallback((next: WebuiGoal | undefined) => {
+    goalVersionRef.current += 1;
+    setGoal(next);
+  }, []);
   const [goalEnabled, setGoalEnabled] = useState(true);
   const [goalMode, setGoalMode] = useState(false);
   const [planMode, setPlanMode] = useState(false);
@@ -785,7 +796,26 @@ export function WebuiComposer({
         setStream,
         setPermissions,
         setQuestionnaire,
-        setGoal,
+        // A goal-bearing event landing here invalidates any steering re-read
+        // still in flight: that read is older than what we just applied.
+        // `applyGoal` performs the version bump the re-read guard checks, so
+        // the event path needs no writer of its own.
+        setGoal: applyGoal,
+        // Goal steering events announce that the objective moved without
+        // carrying the new goal, so the banner is re-read rather than patched.
+        // The read is eventually consistent, so a late answer must not undo a
+        // newer goal that arrived while it was in flight.
+        refreshGoal: () => {
+          if (!sessionId || !getGoal) return undefined;
+          const readFor = sessionId;
+          const versionAtRequest = goalVersionRef.current;
+          return getGoal({ sessionId: readFor }).then((nextGoal) => {
+            if (readFor !== sessionIdRef.current) return;
+            if (goalVersionRef.current !== versionAtRequest) return;
+            applyGoal(nextGoal);
+            if (nextGoal) setGoalMode(nextGoal.status !== "complete");
+          });
+        },
         attachStream: (turnId, mode) => {
           // `recheck` means we already hold a different turn's lease. The
           // event alone cannot say whether that lease is stale or genuinely
@@ -938,21 +968,29 @@ export function WebuiComposer({
 
   useEffect(() => {
     if (!sessionId || !getGoal || !goalEnabled) {
-      setGoal(undefined);
+      applyGoal(undefined);
       setGoalMode(false);
       return undefined;
     }
-    setGoal(undefined);
+    applyGoal(undefined);
     setGoalMode(false);
     let cancelled = false;
+    // Same stale-window as the steering re-read: this request can be overtaken
+    // by a `thread_goal.*` event while it is in flight, and answering with the
+    // older snapshot would resurrect what the event just replaced.
+    const versionAtRequest = goalVersionRef.current;
     void getGoal({ sessionId })
       .then((nextGoal) => {
         if (cancelled) return;
-        setGoal(nextGoal);
+        if (goalVersionRef.current !== versionAtRequest) return;
+        applyGoal(nextGoal);
         if (nextGoal) setGoalMode(nextGoal.status !== "complete");
       })
       .catch(() => {
-        if (!cancelled) setGoal(undefined);
+        // Same guard on the error path: a rejection must not erase a goal that
+        // a newer event installed while this request was in flight.
+        if (!cancelled && goalVersionRef.current === versionAtRequest)
+          applyGoal(undefined);
       });
     return () => {
       cancelled = true;
@@ -1625,7 +1663,7 @@ export function WebuiComposer({
           },
           onSessionCreated,
         );
-        setGoal(nextGoal);
+        applyGoal(nextGoal);
         setGoalMode(nextGoal.status !== "complete");
         onDraftChange("");
         editingGoalDraftRef.current = false;
@@ -1719,7 +1757,7 @@ export function WebuiComposer({
     );
   };
   const clearLocalGoal = () => {
-    setGoal(undefined);
+    applyGoal(undefined);
     setGoalMode(false);
   };
   // A request that sets `replaceComposer` owns the composer's slot: the

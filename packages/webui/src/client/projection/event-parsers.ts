@@ -11,9 +11,29 @@ import type {
  * and snake_case spellings. The effect protocol uses this to filter out
  * events that belong to a different session before they reach the state
  * mutators.
+ *
+ * `thread_goal.updated` nests its id (`payload.goal.sessionId`) instead of
+ * declaring it at the payload top level, so a top-level-only read made the
+ * effect guard drop every goal update and left the banner showing whatever
+ * `getGoal()` last returned — a start-of-session snapshot that only a page
+ * refresh could replace. Fall back to the nested goal id, for goal events
+ * ONLY: a general "dig into any nested payload" rule would let an unrelated
+ * event that happens to carry a goal-shaped field through the session
+ * boundary. The fix stays in this consumer on purpose: the wire contract is
+ * shared with the TUI and Desktop, so the runtime is the better place to add a
+ * top-level id, but that is a contract change every frontend has to agree to.
  */
 export function eventSessionId(event: WebuiRuntimeEvent): string | undefined {
-  const value = event.payload.sessionId ?? event.payload.session_id;
+  const payload = event.payload as Record<string, unknown>;
+  const value = payload.sessionId ?? payload.session_id ?? nestedGoalSessionId(event);
+  return typeof value === "string" ? value : undefined;
+}
+
+function nestedGoalSessionId(event: WebuiRuntimeEvent): string | undefined {
+  if (!event.type.startsWith("thread_goal.")) return undefined;
+  const goal = event.payload.goal;
+  if (!goal || typeof goal !== "object" || Array.isArray(goal)) return undefined;
+  const value = (goal as Record<string, unknown>).sessionId;
   return typeof value === "string" ? value : undefined;
 }
 

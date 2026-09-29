@@ -134,6 +134,73 @@ describe("WebUI mixed stream reducer", () => {
     ]);
   });
 
+  it("takes progress from a batched frame's nested messages, not its outer envelope", () => {
+    // A batched frame is owned by its `messages[]` entries: the transcript
+    // upsert replaces the outer message with the nested ones instead of
+    // merging both, so the progress fold has to pick the same source.
+    //
+    // The outer envelope therefore carries a `session.spawned` for
+    // `child-outer` that the nested entries never mention, and it must
+    // vanish. The subagent assertion is what pins the rule: a todo snapshot
+    // cannot witness it, because the nested `todo_updated` always overwrites
+    // the list whatever order the two run in.
+    const event = (value: Record<string, unknown>) => JSON.stringify(value);
+    const state = reduceWebuiStreamFrame(
+      initialWebuiStreamState,
+      frame(JSON.stringify({
+        type: 2,
+        agent_message: {
+          msg_id: "batch-1",
+          msg_content: event({
+            eventType: "session.spawned",
+            sessionId: "child-outer",
+            agentName: "outer-only-agent",
+            status: "running",
+          }),
+          messages: [
+            {
+              id: "batch-1",
+              msg_content: event({
+                eventType: "todo_updated",
+                todos: [{ content: "nested-first", status: "in_progress", priority: "medium" }],
+              }),
+            },
+            {
+              id: "batch-1",
+              msg_content: event({
+                eventType: "todo_updated",
+                todos: [{ content: "nested-last", status: "completed", priority: "high" }],
+              }),
+            },
+            {
+              id: "batch-1",
+              msg_content: event({
+                eventType: "session.spawned",
+                sessionId: "child-batch",
+                agentName: "goal-runner",
+                // Pinned so the assertion does not depend on the status
+                // fallthrough for an event that carries no status at all.
+                status: "running",
+              }),
+            },
+          ],
+        },
+      })),
+    );
+    // Last nested entry wins, so a fold that stopped at the first one fails.
+    expect(state.workspaceProgress.todos).toEqual([
+      { content: "nested-last", status: "completed", priority: "high" },
+    ]);
+    // And the outer envelope contributes nothing at all.
+    expect(state.workspaceProgress.subagents).toEqual([
+      {
+        sessionId: "child-batch",
+        agentName: "goal-runner",
+        status: "running",
+      },
+    ]);
+  });
+
   it("keeps committed tool calls and their results in the live transcript", () => {
     let state = reduceWebuiStreamFrame(
       initialWebuiStreamState,
