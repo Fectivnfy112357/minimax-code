@@ -48,8 +48,9 @@
 // Invalidation: the runtime reports a rejected token, which is then withheld
 // until the store carries a different one.
 
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { createAuthNamespace } from "@mavis/oauth-core";
 
 /** The subset of `LocalRuntimeAuthContext` this adapter can supply. */
 export interface WebuiAuthContext {
@@ -69,6 +70,8 @@ export interface WebuiAuthContextReader {
     rejectedAccessToken?: string,
     loginEpoch?: string,
   ) => void;
+  /** Updates the in-memory projection from the shared OAuth lease. */
+  readonly setOAuthAuthContext: (auth: WebuiAuthContext | undefined) => void;
 }
 
 export interface WebuiAuthContextReaderOptions {
@@ -143,7 +146,41 @@ function adoptScope(dataDir: string): AdoptedScope | undefined {
  * and the `MAVIS_REGION` / `MAVIS_BUILD_ENV` the harness picks up.
  */
 export function resolveAuthScope(dataDir: string): AuthScope | undefined {
-  return adoptScope(dataDir)?.scope;
+  return adoptScope(dataDir)?.scope ?? resolveOAuthAuthScope(dataDir);
+}
+
+/**
+ * Finds the most recently active OAuth namespace when the legacy CLI
+ * projection is absent. The OAuth state file carries only scope and status;
+ * credentials remain inside oauth-core's credential store.
+ */
+function resolveOAuthAuthScope(dataDir: string): AuthScope | undefined {
+  const candidates: Array<{ readonly scope: AuthScope; readonly modifiedAtMs: number }> = [];
+  for (const buildEnv of ["dev", "test", "staging", "prod"] as const) {
+    for (const region of ["cn", "en"] as const) {
+      const namespace = createAuthNamespace({ dataDir, buildEnv, region });
+      const statePath = join(namespace.namespaceHome, "auth-state.json");
+      const state = readJsonObject(statePath);
+      if (
+        !state ||
+        state.clientId !== "mcode-public" ||
+        state.buildEnv !== buildEnv ||
+        state.region !== region ||
+        (state.status !== "authenticated" &&
+          state.status !== "expired" &&
+          state.status !== "refreshing")
+      ) {
+        continue;
+      }
+      try {
+        candidates.push({ scope: { buildEnv, region }, modifiedAtMs: statSync(statePath).mtimeMs });
+      } catch {
+        // A state file removed during discovery is not a usable scope.
+      }
+    }
+  }
+  candidates.sort((left, right) => right.modifiedAtMs - left.modifiedAtMs);
+  return candidates[0]?.scope;
 }
 
 function optionalString(value: unknown): string | undefined {
@@ -301,8 +338,16 @@ export function createWebuiAuthContextReader(
   // different token the rejected one is stale by definition, and a rejected
   // token is not a reason to distrust an unrelated renewal.
   let rejectedAccessToken: string | undefined;
+  let oauthAuthContext: WebuiAuthContext | undefined;
 
   const read = (): WebuiAuthContext | undefined => {
+    const oauthAccessToken = oauthAuthContext?.accessToken;
+    if (oauthAccessToken && oauthAccessToken !== rejectedAccessToken) {
+      const stored = readWebuiAuthContext(dataDir);
+      return stored?.accessToken === oauthAccessToken
+        ? { ...stored, ...oauthAuthContext }
+        : oauthAuthContext;
+    }
     const auth = readWebuiAuthContext(dataDir);
     const accessToken = auth?.accessToken;
     if (!accessToken || accessToken === rejectedAccessToken) return undefined;
@@ -320,6 +365,13 @@ export function createWebuiAuthContextReader(
     invalidator(nextRejectedAccessToken) {
       const token = optionalString(nextRejectedAccessToken);
       if (token) rejectedAccessToken = token;
+      cached = undefined;
+    },
+    setOAuthAuthContext(auth) {
+      oauthAuthContext = auth;
+      if (auth?.accessToken && auth.accessToken !== rejectedAccessToken) {
+        rejectedAccessToken = undefined;
+      }
       cached = undefined;
     },
   };

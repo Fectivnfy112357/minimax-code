@@ -224,6 +224,101 @@ export async function createWebuiRuntimeHost(
   // `isManagedRuntime()=false` — exactly as before this step existed.
   const baseConfig = getDefaultLocalRuntimeConfig();
   const scope = configureWebuiRuntimeEnvironment({ dataDir: options.dataDir });
+  const quotaRegion = (scope?.region ?? process.env.MAVIS_REGION ?? "en") as
+    | "cn"
+    | "en";
+  const quotaBuildEnv = (
+    scope?.buildEnv ?? process.env.MAVIS_BUILD_ENV ?? "dev"
+  ) as "dev" | "test" | "staging" | "prod";
+  const quotaNamespace = createAuthNamespace({
+    dataDir: options.dataDir,
+    buildEnv: quotaBuildEnv,
+    region: quotaRegion,
+  });
+  const quotaOauthCore = new MCodeOAuthCore({
+    namespace: quotaNamespace,
+    credentialStore: createCredentialStore({
+      authHome: quotaNamespace.namespaceHome,
+    }),
+    oauthClient: new HttpOAuthClient(
+      resolveMCodeOAuthEndpointConfig(process.env, {
+        buildEnv: quotaBuildEnv,
+        region: quotaRegion,
+      }),
+    ),
+    initialize: () => migrateLegacyAuthNamespace(quotaNamespace),
+  });
+  const usageQuota = new UsageQuotaClient({
+    tokenProvider: async () => {
+      try {
+        const lease = await quotaOauthCore.getAccessToken({
+          requiredScopes: MCODE_OAUTH_SCOPES,
+          minValidityMs: 30_000,
+        });
+        return {
+          accessToken: lease.accessToken,
+          realUserID: authContext.getter()?.realUserID,
+        };
+      } catch {
+        return undefined;
+      }
+    },
+    region: quotaRegion,
+    buildEnv: quotaBuildEnv,
+  });
+  let activeLease: Awaited<ReturnType<typeof quotaOauthCore.getAccessToken>> | undefined;
+  let authRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+  let stopAuthWatch: (() => void) | undefined;
+  const scheduleAuthRefresh = (lease: NonNullable<typeof activeLease>) => {
+    if (authRefreshTimer) clearTimeout(authRefreshTimer);
+    const delay = Math.max(1_000, lease.expiresAtMs - Date.now() - 60_000);
+    authRefreshTimer = setTimeout(() => {
+      void refreshOAuthAuthContext().catch(() => undefined);
+    }, delay);
+    authRefreshTimer.unref?.();
+  };
+  const refreshOAuthAuthContext = async (
+    rejectedAccessToken?: string,
+    loginEpoch?: string,
+  ): Promise<void> => {
+    if (rejectedAccessToken && activeLease?.accessToken === rejectedAccessToken) {
+      try {
+        await quotaOauthCore.handleUnauthorized({
+          generation: activeLease.generation,
+          ...(loginEpoch ?? activeLease.loginEpoch
+            ? { loginEpoch: loginEpoch ?? activeLease.loginEpoch }
+            : {}),
+        });
+      } catch {
+        // A concurrent TUI login may have already replaced the lease.
+      }
+    }
+    const lease = await quotaOauthCore.getAccessToken({
+      requiredScopes: MCODE_OAUTH_SCOPES,
+      minValidityMs: 60_000,
+    });
+    activeLease = lease;
+    const identity = await usageQuota
+      .resolveAccountIdentity(lease.accessToken)
+      .catch(() => undefined);
+    if (activeLease?.accessToken !== lease.accessToken) return;
+    authContext.setOAuthAuthContext({
+      accessToken: lease.accessToken,
+      ...(lease.loginEpoch ? { loginEpoch: lease.loginEpoch } : {}),
+      ...(identity ?? {}),
+    });
+    scheduleAuthRefresh(lease);
+  };
+  const invalidateAuth = (
+    rejectedAccessToken?: string,
+    loginEpoch?: string,
+  ): void => {
+    authContext.invalidator(rejectedAccessToken, loginEpoch);
+    void refreshOAuthAuthContext(rejectedAccessToken, loginEpoch).catch(() => undefined);
+  };
+  // OAuth is the canonical login store shared with `mcode login`; the
+  // cli-auth projection is only an optional source of additional identity data.
+  await refreshOAuthAuthContext().catch(() => undefined);
   const requestedMcodeTools =
     options.mcodeToolsRequested ?? baseConfig.beta?.mcodeTools === true;
   const mcodeTools = await (
@@ -236,7 +331,7 @@ export async function createWebuiRuntimeHost(
     region: (scope?.region ?? process.env.MAVIS_REGION ?? "en") as "cn" | "en",
     session: createWebuiAuthLeaseSession(
       authContext.getter,
-      authContext.invalidator,
+      invalidateAuth,
     ),
     entryUrl: import.meta.url,
   });
@@ -277,7 +372,7 @@ export async function createWebuiRuntimeHost(
       };
     },
     authContextGetter: authContext.getter,
-    authContextInvalidator: authContext.invalidator,
+    authContextInvalidator: invalidateAuth,
     ...(options.browserProvider
       ? { browserAdapter: options.browserProvider.adapter }
       : {}),
@@ -324,12 +419,29 @@ export async function createWebuiRuntimeHost(
     if (failures.length === 1) throw failures[0];
     throw new AggregateError(failures, "WebUI runtime startup failed");
   }
+  stopAuthWatch = quotaOauthCore.watch((status) => {
+    if (
+      status.status === "anonymous" ||
+      status.status === "logging_out" ||
+      status.status === "logout_pending"
+    ) {
+      activeLease = undefined;
+      authContext.setOAuthAuthContext(undefined);
+      if (authRefreshTimer) clearTimeout(authRefreshTimer);
+      authRefreshTimer = undefined;
+      return;
+    }
+    void refreshOAuthAuthContext().catch(() => undefined);
+  });
+  void refreshOAuthAuthContext().catch(() => undefined);
   const runtimeClose = host.apiHost.close.bind(host.apiHost);
   let closed = false;
   host.apiHost.close = async () => {
     if (closed) return;
     closed = true;
     const failures: unknown[] = [];
+    stopAuthWatch?.();
+    if (authRefreshTimer) clearTimeout(authRefreshTimer);
     try {
       await runtimeClose();
     } catch (error) {
@@ -363,55 +475,6 @@ export async function createWebuiRuntimeHost(
     if (failures.length === 1) throw failures[0];
     throw new AggregateError(failures, "WebUI runtime startup failed");
   }
-  // The usage panel's cloud quota APIs need a fresh oauth-core lease; the
-  // cli-auth projection's harness bearer is rejected there (401 / "cookie is
-  // missing", probe-verified 2026-09-22). This composes oauth-core the way
-  // the terminal launcher does for its account client, directly rather than
-  // through `packages/tui` (ADR 0003).
-  const quotaRegion = (scope?.region ?? process.env.MAVIS_REGION ?? "en") as
-    | "cn"
-    | "en";
-  const quotaBuildEnv = (
-    scope?.buildEnv ?? process.env.MAVIS_BUILD_ENV ?? "dev"
-  ) as "dev" | "test" | "staging" | "prod";
-  const quotaNamespace = createAuthNamespace({
-    dataDir: options.dataDir,
-    buildEnv: quotaBuildEnv,
-    region: quotaRegion,
-  });
-  const quotaOauthCore = new MCodeOAuthCore({
-    namespace: quotaNamespace,
-    credentialStore: createCredentialStore({
-      authHome: quotaNamespace.namespaceHome,
-    }),
-    oauthClient: new HttpOAuthClient(
-      resolveMCodeOAuthEndpointConfig(process.env, {
-        buildEnv: quotaBuildEnv,
-        region: quotaRegion,
-      }),
-    ),
-    initialize: () => migrateLegacyAuthNamespace(quotaNamespace),
-  });
-  const usageQuota = new UsageQuotaClient({
-    tokenProvider: async () => {
-      try {
-        const lease = await quotaOauthCore.getAccessToken({
-          requiredScopes: MCODE_OAUTH_SCOPES,
-          minValidityMs: 30_000,
-        });
-        return {
-          accessToken: lease.accessToken,
-          realUserID: authContext.getter()?.realUserID,
-        };
-      } catch {
-        // Signed out (or the refresh failed): the panel renders its
-        // signed-out copy instead of an error.
-        return undefined;
-      }
-    },
-    region: quotaRegion,
-    buildEnv: quotaBuildEnv,
-  });
   const dailyCheckin = new DailyCheckinClient({
     tokenProvider: async () => {
       try {
@@ -440,7 +503,7 @@ export async function createWebuiRuntimeHost(
   const hostHandle = {
     ...host,
     appVersion: options.appVersion ?? host.appVersion ?? "webui",
-    invalidateAuth: authContext.invalidator,
+    invalidateAuth,
     getUsageQuota: (request?: { readonly forceRefresh?: boolean }) =>
       usageQuota.getUsageQuota(request),
     getSigninPanel: () => dailyCheckin.getSigninPanel(),
@@ -452,7 +515,7 @@ export async function createWebuiRuntimeHost(
     host: hostHandle,
     forwardedOptions,
     mcodeTools,
-    invalidateAuth: authContext.invalidator,
+    invalidateAuth,
   };
 }
 

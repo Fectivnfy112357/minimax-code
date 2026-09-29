@@ -49,6 +49,7 @@ declare module "@mavis/oauth-core" {
 
   export interface MCodeAccessTokenLease {
     readonly accessToken: string;
+    readonly loginEpoch?: string;
     readonly expiresAtMs: number;
     readonly generation: number;
     readonly scopes: readonly ["agent.default"];
@@ -66,5 +67,10 @@ declare module "@mavis/oauth-core" {
       readonly requiredScopes: typeof MCODE_OAUTH_SCOPES;
       readonly minValidityMs: number;
     }): Promise<MCodeAccessTokenLease>;
+    handleUnauthorized(context: {
+      readonly generation: number;
+      readonly loginEpoch?: string;
+    }): Promise<"retry" | "logout">;
+    watch(listener: (status: { readonly status: string }) => void): () => void;
   }
 }

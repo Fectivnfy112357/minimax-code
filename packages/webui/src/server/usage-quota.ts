@@ -66,6 +66,7 @@ const OPEN_PLATFORM_ORIGINS: Readonly<Record<string, Readonly<Record<string, str
 
 const USER_EXTRA_INFO_PATH = "/matrix/api/v1/user/get_user_extra_info";
 const MEMBERSHIP_INFO_PATH = "/matrix/api/v1/commerce/get_membership_info";
+const USER_INFO_PATH = "/v1/api/user/info";
 // The desktop popover's own quota endpoint: returns used/total percent per
 // window (`"96%"` / `"100%"`) plus count-based video rows. The sibling
 // `/v1/api/openplatform/coding_plan/remains` reports *remaining* percent and
@@ -79,6 +80,13 @@ const NEED_LOGIN_ERROR_CODE = 1_000_048;
 export interface UsageQuotaTokenContext {
   readonly accessToken: string;
   readonly realUserID?: string;
+}
+
+export interface UsageQuotaAccountIdentity {
+  readonly realUserID: string;
+  readonly userEmail?: string;
+  readonly userName?: string;
+  readonly subUserName?: string;
 }
 
 export interface UsageQuotaClientOptions {
@@ -129,6 +137,9 @@ export class UsageQuotaClient {
   private quotaCache: CacheEntry<WebuiUsageQuotaView | undefined> | undefined;
   private quotaInFlight: Promise<WebuiUsageQuotaView | undefined> | undefined;
   private quotaInFlightKey: string | undefined;
+  private identityCache: CacheEntry<UsageQuotaAccountIdentity> | undefined;
+  private identityInFlight: Promise<UsageQuotaAccountIdentity> | undefined;
+  private identityInFlightKey: string | undefined;
 
   constructor(private readonly options: UsageQuotaClientOptions) {
     this.fetchImpl = options.fetchImpl ?? fetch;
@@ -191,6 +202,38 @@ export class UsageQuotaClient {
       ...(billing.freeCredits !== undefined ? { freeCredits: billing.freeCredits } : {}),
       ...(quota ? { quota } : {}),
     };
+  }
+
+  /** Resolves the account identity required by the identity and check-in UI. */
+  async resolveAccountIdentity(accessToken: string): Promise<UsageQuotaAccountIdentity> {
+    const key = accessToken;
+    const cached = this.identityCache;
+    if (cached?.key === key && cached.expiresAtMs > this.now()) return cached.value;
+    if (this.identityInFlightKey === key && this.identityInFlight) return this.identityInFlight;
+
+    const request = this.fetchAccountIdentity(accessToken);
+    this.identityInFlight = request;
+    this.identityInFlightKey = key;
+    const settle = () => {
+      if (this.identityInFlight === request) {
+        this.identityInFlight = undefined;
+        this.identityInFlightKey = undefined;
+      }
+    };
+    void request.then(
+      (value) => {
+        if (this.identityInFlight === request) {
+          this.identityCache = {
+            key,
+            expiresAtMs: this.now() + this.membershipCacheTtlMs,
+            value,
+          };
+        }
+        settle();
+      },
+      () => settle(),
+    );
+    return request;
   }
 
   private async resolveBillingContext(
@@ -423,6 +466,55 @@ export class UsageQuotaClient {
     if (!responseBody) throw new Error(`Usage quota ${operation} returned an invalid response`);
     assertSuccessfulResponse(responseBody, operation);
     return responseBody;
+  }
+
+  private async fetchAccountIdentity(accessToken: string): Promise<UsageQuotaAccountIdentity> {
+    const origin = MATRIX_ORIGINS[this.options.region]?.[this.options.buildEnv];
+    if (!origin) throw new Error("Account identity unavailable outside configured Matrix origins");
+    const requestTime = this.now();
+    const url = buildMatrixUrl(USER_INFO_PATH, origin, requestTime, undefined, {
+      region: this.options.region,
+      timezoneOffsetSeconds: this.timezoneOffsetSeconds(),
+    });
+    const pathWithSearch = `${url.pathname}${url.search}`;
+    const second = Math.floor(requestTime / 1_000);
+    const signal = AbortSignal.timeout(this.timeoutMs);
+    const response = await this.fetchImpl(url, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "User-Agent": "MiniMaxCode",
+        Authorization: `Bearer ${accessToken}`,
+        yy: md5(`${encodeURIComponent(pathWithSearch)}_{}${md5(String(requestTime))}ooui`),
+        "x-timestamp": String(second),
+        "x-signature": md5(`${second}I*7Cf%WZ#S&%1RlZJ&C2`),
+      },
+      signal,
+    });
+    if (response.status === 401 || response.status === 403) {
+      throw new UsageQuotaAuthError(response.status);
+    }
+    if (!response.ok) throw new Error(`Account identity request failed with HTTP ${response.status}`);
+    const body = asRecord(await response.json());
+    if (!body) throw new Error("Account identity request returned an invalid response");
+    assertSuccessfulResponse(body, "account identity request");
+    const data = asRecord(body.data);
+    const userInfo =
+      asRecord(data?.userInfo) ??
+      asRecord(data?.user_info) ??
+      asRecord(body.userInfo) ??
+      asRecord(body.user_info);
+    const realUserID =
+      readString(userInfo, undefined, "realUserID") ??
+      readString(userInfo, undefined, "real_user_id");
+    if (!realUserID) throw new Error("Account identity response did not include a user ID");
+    return {
+      realUserID,
+      ...optionalIdentityField(userInfo, "userEmail", "email", "userMail", "user_email"),
+      ...optionalIdentityField(userInfo, "userName", "name", "user_name"),
+      ...optionalIdentityField(userInfo, "subUserName", "sub_user_name"),
+    };
   }
 }
 
@@ -678,6 +770,20 @@ function readString(
 ): string | undefined {
   const value = primary?.[key] ?? fallback?.[key];
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function optionalIdentityField(
+  source: Record<string, unknown> | undefined,
+  outputKey: "userEmail" | "userName" | "subUserName",
+  ...keys: string[]
+): Partial<UsageQuotaAccountIdentity> {
+  for (const key of keys) {
+    const value = source?.[key];
+    if (typeof value === "string" && value.trim()) {
+      return { [outputKey]: value.trim() };
+    }
+  }
+  return {};
 }
 
 function readNumberishString(
