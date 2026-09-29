@@ -335,6 +335,24 @@ describe("W0 · structural declarations W5 must preserve", () => {
       "auto",
     );
   });
+
+  it("keeps the model picker switch on its 40x20 track", () => {
+    // The base rule sizes the track with `flex: 0 0 40px`, which is the width
+    // in a row container. The model detail column is `flex-direction: column`,
+    // so that basis lands on the main axis and turns the 20px track into a
+    // 40px circle. The column-scoped override is what keeps it a pill; the base
+    // rule stays untouched for the settings switches.
+    const base = winning(".webui-toggle-switch");
+    expect(declaration(base.body, "width")).toBe("40px");
+    expect(declaration(base.body, "height")).toBe("20px");
+    expect(declaration(base.body, "flex")).toBe("0 0 40px");
+
+    const inColumn = winning(
+      ".webui-model-detail-row .webui-toggle-switch",
+    );
+    expect(declaration(inColumn.body, "flex")).toBe("0 0 auto");
+    expect(declaration(inColumn.body, "align-self")).toBe("flex-start");
+  });
 });
 
 describe("W0 · at-rules and animations W5/W6 must not remove", () => {

@@ -13,6 +13,10 @@
  * model closes the menu; changing thinking or context immediately commits the
  * focused model's draft through the same `selectModel` operation.
  *
+ * The model column is grouped by provider: each group renders a plain provider
+ * name above its rows — no nested menu, no second level. Grouping follows the
+ * catalog's own order, so the first provider listed stays on top.
+ *
  * Drafts live in a `useState` map keyed by `providerId/modelId/variant` so a
  * setting remains responsive while the runtime refreshes its model catalog.
  * The runtime projection is the source of truth after the menu is reopened.
@@ -53,6 +57,34 @@ export interface ModelPickerProps {
 
 function modelKey(model: WebuiModelPickerEntry): string {
   return `${model.providerId}/${model.modelId}/${model.variant ?? ""}`;
+}
+
+export interface WebuiModelProviderGroup {
+  readonly label: string;
+  readonly models: readonly WebuiModelPickerEntry[];
+}
+
+/** 分组标题优先用供应商显示名，缺失时退回 providerId。 */
+function providerGroupLabel(model: WebuiModelPickerEntry): string {
+  const name = model.providerName?.trim();
+  return name || model.providerId;
+}
+
+/**
+ * 按供应商分组，保持目录里原有的出现顺序——与 TUI 侧 `groupModels` 的分组
+ * 口径一致（见 `packages/tui/src/tui/features/model/picker.ts`）。
+ */
+export function groupModelsByProvider(
+  models: readonly WebuiModelPickerEntry[],
+): readonly WebuiModelProviderGroup[] {
+  const groups = new Map<string, WebuiModelPickerEntry[]>();
+  for (const model of models) {
+    const label = providerGroupLabel(model);
+    const group = groups.get(label);
+    if (group) group.push(model);
+    else groups.set(label, [model]);
+  }
+  return [...groups].map(([label, entries]) => ({ label, models: entries }));
 }
 
 function formatContextWindow(value: number): string {
@@ -119,6 +151,72 @@ function variantForEffort(
   // Multi-level efforts (low/high/max, …) are not part of the wire variant;
   // their value is carried by the thinking.effort selection instead.
   return undefined;
+}
+
+/**
+ * 模型列。分组标题只是一行文字，不是可选项——它落在 `role="group"` 内，
+ * 由该组的 `aria-label` 承担语义，可见文本因此对辅助技术隐藏。
+ */
+export function WebuiModelMenuList({
+  groups,
+  selected,
+  focusedKey,
+  onFocus,
+  onSelect,
+}: {
+  readonly groups: readonly WebuiModelProviderGroup[];
+  readonly selected: WebuiModelPickerEntry | undefined;
+  readonly focusedKey: string | undefined;
+  readonly onFocus: (key: string) => void;
+  readonly onSelect: (model: WebuiModelPickerEntry) => void;
+}): ReactElement {
+  return (
+    <div role="listbox" aria-label="Model" className="webui-model-menu-list">
+      {groups.map((group) => (
+        <div
+          key={group.label}
+          role="group"
+          aria-label={group.label}
+          className="webui-model-menu-group"
+        >
+          <div className="webui-model-group-header" aria-hidden="true">
+            {group.label}
+          </div>
+          {group.models.map((model) => {
+            const key = modelKey(model);
+            const isSelected = selected ? modelKey(selected) === key : false;
+            const isFocused = focusedKey === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                data-focused={isFocused ? "true" : "false"}
+                className="webui-model-option"
+                onMouseEnter={() => onFocus(key)}
+                onFocus={() => onFocus(key)}
+                onClick={() => onSelect(model)}
+              >
+                <span className="min-w-0 flex-1 truncate text-left">
+                  {model.displayName ??
+                    `${model.providerId}/${model.modelId}`}
+                </span>
+                {isSelected ? (
+                  <span
+                    aria-hidden="true"
+                    className="webui-model-option-tick"
+                  >
+                    ✓
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export function WebuiModelPicker({
@@ -197,6 +295,8 @@ export function WebuiModelPicker({
     onSelect(model, draft);
   };
 
+  const groupedModels = useMemo(() => groupModelsByProvider(models), [models]);
+
   const triggerText =
     selected?.displayName ??
     (selected ? `${selected.providerId}/${selected.modelId}` : undefined) ??
@@ -258,44 +358,13 @@ export function WebuiModelPicker({
           data-webui-model-menu="true"
           className="webui-model-menu webui-model-menu--two-column"
         >
-          <div
-            role="listbox"
-            aria-label="Model"
-            className="webui-model-menu-list"
-          >
-            {models.map((model) => {
-              const key = modelKey(model);
-              const isSelected = selected
-                ? modelKey(selected) === key
-                : false;
-              const isFocused = focusedModel
-                ? modelKey(focusedModel) === key
-                : false;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  role="option"
-                  aria-selected={isSelected}
-                  data-focused={isFocused ? "true" : "false"}
-                  className="webui-model-option"
-                  onMouseEnter={() => setFocusedKey(key)}
-                  onFocus={() => setFocusedKey(key)}
-                  onClick={() => handleSelectModel(model)}
-                >
-                  <span className="min-w-0 flex-1 truncate text-left">
-                    {model.displayName ??
-                      `${model.providerId}/${model.modelId}`}
-                  </span>
-                  {isSelected ? (
-                    <span aria-hidden="true" className="webui-model-option-tick">
-                      ✓
-                    </span>
-                  ) : null}
-                </button>
-              );
-            })}
-          </div>
+          <WebuiModelMenuList
+            groups={groupedModels}
+            selected={selected}
+            focusedKey={focusedKeyString || undefined}
+            onFocus={setFocusedKey}
+            onSelect={handleSelectModel}
+          />
           <div className="webui-model-menu-detail" aria-live="polite">
             {focusedModel ? (
               <>

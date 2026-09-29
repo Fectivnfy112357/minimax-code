@@ -94,6 +94,8 @@ export interface WebuiMessageAttachment {
 
 export interface WebuiModelPickerEntry {
   readonly providerId: string;
+  /** Human-facing provider label; the picker groups rows by it. */
+  readonly providerName?: string;
   readonly modelId: string;
   readonly displayName?: string;
   readonly variant?: string;

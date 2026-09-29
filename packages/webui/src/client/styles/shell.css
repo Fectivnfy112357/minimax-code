@@ -19,14 +19,11 @@
  */
 
 @layer components {
-  /* Opt out of the base layer's `scrollbar-gutter: stable`. That policy
-   * reserves the gutter so no container re-lays-out when its bar appears; it
-   * only means anything for a container that scrolls *vertically*. These four
-   * scroll sideways only, so the reservation would put a permanent 6px dead
-   * strip under a row for a vertical bar that can never appear. Components
-   * outrank base, so this wins over the `*` rule. */
+  /* Opt out of the base layer's stable scrollbar gutter for horizontal-only
+   * rows and for the plugin page, whose vertical scrollbar is hidden below. */
   .webui-table-shell,
   .signin-progress-scroll,
+  .webui-plugin-management,
   .webui-plugin-category-filter,
   .webui-plugin-categories {
     scrollbar-gutter: auto;
@@ -450,6 +447,74 @@
     max-height: min(420px, calc(100dvh - 112px));
     overflow-y: auto;
     overscroll-behavior: contain;
+  }
+
+  /* Keep the root menu mounted beside its active flyout, matching Desktop's
+   * hover navigation. The stack is also the shared pointer/focus surface, so
+   * moving between the root and submenu does not collapse the flyout. */
+  .webui-composer-menu-stack {
+    position: absolute;
+    z-index: 80;
+    bottom: calc(100% + var(--spacing_8));
+    left: 0;
+    width: max-content;
+  }
+
+  .webui-composer-menu-stack > .webui-composer-menu[data-webui-composer-menu="root"] {
+    position: relative;
+    inset: auto;
+    max-height: min(420px, calc(100dvh - 112px));
+    width: max-content;
+  }
+
+  .webui-composer-menu-stack > .webui-composer-menu[data-webui-composer-submenu] {
+    position: absolute;
+    top: 0;
+    right: auto;
+    bottom: auto;
+    left: calc(100% - 1px);
+    width: max-content;
+    min-width: 240px;
+    max-width: min(320px, calc(100vw - 244px));
+    max-height: min(420px, calc(100dvh - 112px));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .webui-composer-menu-stack[data-webui-open-submenu] > .webui-composer-menu[data-webui-composer-submenu] {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+  }
+
+  .webui-composer-menu-stack[data-webui-open-submenu] > .webui-composer-menu[data-webui-composer-menu="root"] {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+
+  @media (max-width: 600px) {
+    .webui-composer-menu-stack {
+      max-width: calc(100vw - 24px);
+    }
+
+    .webui-composer-menu-stack > .webui-composer-menu[data-webui-composer-submenu] {
+      top: calc(100% - 1px);
+      right: auto;
+      bottom: auto;
+      left: 0;
+      max-height: min(320px, calc(100dvh - 180px));
+      min-width: 220px;
+      max-width: min(360px, calc(100vw - 32px));
+    }
+
+    .webui-composer-menu-stack[data-webui-open-submenu] > .webui-composer-menu[data-webui-composer-submenu] {
+      border-top-left-radius: 0;
+      border-bottom-left-radius: 14px;
+    }
+
+    .webui-composer-menu-stack[data-webui-open-submenu] > .webui-composer-menu[data-webui-composer-menu="root"] {
+      border-bottom-left-radius: 0;
+      border-bottom-right-radius: 0;
+    }
   }
 
   .webui-composer-menu button,
@@ -1462,6 +1527,22 @@
     border-radius: var(--radius_8);
     background: var(--bg_grouped_secondary);
   }
+  /* 供应商分组：容器保持列表原有的 2px 行距，标题只占一行，不参与选择。 */
+  .webui-model-menu-group {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .webui-model-group-header {
+    padding: var(--spacing_4) var(--spacing_12) var(--spacing_2);
+    color: var(--text_default_tertiary);
+    font-size: var(--size_12);
+    line-height: var(--line_height_16);
+  }
+  /* 首组紧贴列表内边距，其余组之间才留出标题的上间距。 */
+  .webui-model-menu-group:first-child .webui-model-group-header {
+    padding-top: var(--spacing_2);
+  }
   .webui-model-menu-detail {
     display: flex;
     min-width: 0;
@@ -1482,6 +1563,13 @@
   .webui-model-setting-effort {
     order: 1;
     border-top: 1px solid var(--border_default);
+  }
+  /* 详情列是 column flex 容器：`.webui-toggle-switch` 的 `flex: 0 0 40px` 在这里
+   * 落在主轴（高度）上，把 20px 的轨道撑成 40px 的圆。这里按内容尺寸收缩，轨道
+   * 回到 40x20；横向容器里的其他开关不受影响。 */
+  .webui-model-detail-row .webui-toggle-switch {
+    flex: 0 0 auto;
+    align-self: flex-start;
   }
   .webui-model-detail-label {
     color: var(--text_default_tertiary);
@@ -4049,10 +4137,15 @@
     width: 100%;
     height: 100%;
     overflow: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
     /* The top padding moved onto the sticky header below. Left here it would
      * open an unpainted band above the pinned bar for rows to scroll through. */
     padding: 0 24px 48px;
     color: var(--text_default_primary);
+  }
+  .webui-plugin-management::-webkit-scrollbar {
+    display: none;
   }
   .webui-plugin-management.is-marketplace {
     padding: 0 0 48px;
@@ -4131,6 +4224,34 @@
     > button:first-child {
     width: 30px;
     padding: 0;
+  }
+  .webui-plugin-management.is-marketplace .webui-plugin-manage-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: 92px;
+    border-radius: 10px;
+    background: var(--bg_grouped_tertiary);
+    color: var(--text_default_secondary);
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+  .webui-plugin-management.is-marketplace .webui-plugin-manage-trigger:hover {
+    background: var(--bg_interaction_tertiary_press);
+    color: var(--text_default_primary);
+  }
+  .webui-plugin-management.is-marketplace .webui-plugin-manage-trigger:focus-visible {
+    outline: 2px solid var(--border_default);
+    outline-offset: 2px;
+  }
+  .webui-plugin-management.is-marketplace .webui-plugin-manage-trigger svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.35;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
 
   .webui-plugin-create-anchor {

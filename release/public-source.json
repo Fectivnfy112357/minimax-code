@@ -3601,6 +3601,7 @@
     "packages/webui/test/unit/fork-session-operation.test.ts",
     "packages/webui/test/unit/message-attachments.test.tsx",
     "packages/webui/test/unit/message-parts.test.ts",
+    "packages/webui/test/unit/model-picker-groups.test.tsx",
     "packages/webui/test/unit/output-error.test.tsx",
     "packages/webui/test/unit/outside-close.test.ts",
     "packages/webui/test/unit/plugin-market-catalogue.test.tsx",

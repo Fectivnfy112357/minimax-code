@@ -2065,26 +2065,50 @@ export function WebuiComposer({
          * also the surface's container for outside-close, which is why a click
          * inside the composer could not dismiss it. */}
         {composerMenu ? (
-          <div className="webui-composer-menu" role="menu" aria-label={composerMenu === "root" ? "添加附件或技能" : composerMenu === "skills" ? "技能" : "插件"} data-webui-composer-menu={composerMenu} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); setComposerMenu(undefined); } }}>
-            {composerMenu === "root" ? <>
-              <button type="button" role="menuitem" onClick={() => { setComposerMenu(undefined); fileInputRef.current?.click(); }}><WebuiIconAttach className="webui-composer-menu-icon" />添加文件或图片</button>
-              <button type="button" role="menuitem" onClick={() => setComposerMenu("skills")}><WebuiIconSkillGeneric className="webui-composer-menu-icon" />技能 <span aria-hidden="true">›</span></button>
-              <button type="button" role="menuitem" onClick={() => setComposerMenu("plugins")}><WebuiIconPlugins className="webui-composer-menu-icon" />插件 <span aria-hidden="true">›</span></button>
+          <div
+            className="webui-composer-menu-stack"
+            data-webui-composer-menu-stack="true"
+            data-webui-open-submenu={composerMenu === "root" ? undefined : composerMenu}
+            onMouseLeave={() => { if (composerMenu !== "root") setComposerMenu("root"); }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                setComposerMenu(undefined);
+              } else if (event.key === "ArrowRight" && event.target instanceof Element && event.target.closest<HTMLElement>("[data-webui-composer-submenu-trigger]")) {
+                event.preventDefault();
+                const submenu = event.target.closest<HTMLElement>("[data-webui-composer-submenu-trigger]")?.dataset.webuiComposerSubmenuTrigger;
+                const stack = event.currentTarget;
+                if (submenu) window.requestAnimationFrame(() => stack.querySelector<HTMLElement>(`[data-webui-composer-submenu="${submenu}"] [role="menuitem"]`)?.focus());
+              } else if (event.key === "ArrowLeft" && event.target instanceof Element && event.target.closest("[data-webui-composer-submenu]")) {
+                event.preventDefault();
+                const submenu = event.target.closest<HTMLElement>("[data-webui-composer-submenu]")?.dataset.webuiComposerSubmenu;
+                setComposerMenu("root");
+                if (submenu) event.currentTarget.querySelector<HTMLElement>(`[data-webui-composer-submenu-trigger="${submenu}"]`)?.focus();
+              }
+            }}
+          >
+            <div className="webui-composer-menu" role="menu" aria-label="添加附件或技能" data-webui-composer-menu="root">
+              <button type="button" role="menuitem" onMouseEnter={() => { if (composerMenu !== "root") setComposerMenu("root"); }} onFocus={() => { if (composerMenu !== "root") setComposerMenu("root"); }} onClick={() => { setComposerMenu(undefined); fileInputRef.current?.click(); }}><WebuiIconAttach className="webui-composer-menu-icon" />添加文件或图片</button>
+              <button type="button" role="menuitem" aria-haspopup="menu" aria-expanded={composerMenu === "skills"} data-webui-composer-submenu-trigger="skills" onMouseEnter={() => setComposerMenu("skills")} onFocus={() => setComposerMenu("skills")} onClick={() => setComposerMenu("skills")}><WebuiIconSkillGeneric className="webui-composer-menu-icon" />技能 <span aria-hidden="true">›</span></button>
+              <button type="button" role="menuitem" aria-haspopup="menu" aria-expanded={composerMenu === "plugins"} data-webui-composer-submenu-trigger="plugins" onMouseEnter={() => setComposerMenu("plugins")} onFocus={() => setComposerMenu("plugins")} onClick={() => setComposerMenu("plugins")}><WebuiIconPlugins className="webui-composer-menu-icon" />插件 <span aria-hidden="true">›</span></button>
               <div role="separator" />
-              <button type="button" role="menuitem" onClick={() => { setComposerMenu(undefined); activateGoalMode(); }}><WebuiIconCommandGoal className="webui-composer-menu-icon" />目标</button>
-              <button type="button" role="menuitem" onClick={() => { setComposerMenu(undefined); chooseCommand("plan"); }}><WebuiIconCommandPlan className="webui-composer-menu-icon" />计划</button>
-            </> : composerMenu === "skills" ? <>
-              <button type="button" role="menuitem" className="webui-composer-menu-back" onClick={() => setComposerMenu("root")}>‹ 技能</button>
-              {skillsMenuLoading ? <div className="webui-composer-menu-empty">正在加载技能…</div> : skillsMenuError ? <div className="webui-composer-menu-empty" role="alert">{skillsMenuError}</div> : slashSkills.length ? slashSkills.map((skill) => <button key={skill.name} type="button" role="menuitem" onClick={() => { setComposerMenu(undefined); insertAtCaret(`/${skill.name}`); textareaRef.current?.focus(); }}>{skill.displayName ?? skill.name}</button>) : <div className="webui-composer-menu-empty">没有已安装的技能</div>}
-              <div role="separator" />
-              <button type="button" role="menuitem" onClick={() => { setComposerMenu(undefined); onOpenPluginManagement?.("skills"); }}>管理技能</button>
-              <button type="button" role="menuitem" onClick={() => { setComposerMenu(undefined); onOpenPluginManagement?.("skills"); }}>添加技能</button>
-            </> : <>
-              <button type="button" role="menuitem" className="webui-composer-menu-back" onClick={() => setComposerMenu("root")}>‹ 插件</button>
-              {pluginsLoading ? <div className="webui-composer-menu-empty">正在加载插件…</div> : pluginsError ? <div className="webui-composer-menu-empty" role="alert">{pluginsError}</div> : installedPlugins.length ? installedPlugins.map((plugin) => <button key={plugin.name} type="button" role="menuitem" title={plugin.description} onClick={() => { setComposerMenu(undefined); insertAtCaret(`@${plugin.name}`); textareaRef.current?.focus(); }}>{plugin.displayName}</button>) : <div className="webui-composer-menu-empty">{pluginManagement ? "没有已安装的插件" : "插件目录暂不可用"}</div>}
-              <div role="separator" />
-              <button type="button" role="menuitem" onClick={() => { setComposerMenu(undefined); onOpenPluginManagement?.("plugins"); }}>添加插件</button>
-            </>}
+              <button type="button" role="menuitem" onMouseEnter={() => { if (composerMenu !== "root") setComposerMenu("root"); }} onFocus={() => { if (composerMenu !== "root") setComposerMenu("root"); }} onClick={() => { setComposerMenu(undefined); activateGoalMode(); }}><WebuiIconCommandGoal className="webui-composer-menu-icon" />目标</button>
+              <button type="button" role="menuitem" onMouseEnter={() => { if (composerMenu !== "root") setComposerMenu("root"); }} onFocus={() => { if (composerMenu !== "root") setComposerMenu("root"); }} onClick={() => { setComposerMenu(undefined); chooseCommand("plan"); }}><WebuiIconCommandPlan className="webui-composer-menu-icon" />计划</button>
+            </div>
+            {composerMenu === "skills" ? (
+              <div className="webui-composer-menu" role="menu" aria-label="技能" data-webui-composer-menu="skills" data-webui-composer-submenu="skills">
+                {skillsMenuLoading ? <div className="webui-composer-menu-empty">正在加载技能…</div> : skillsMenuError ? <div className="webui-composer-menu-empty" role="alert">{skillsMenuError}</div> : slashSkills.length ? slashSkills.map((skill) => <button key={skill.name} type="button" role="menuitem" onClick={() => { setComposerMenu(undefined); insertAtCaret(`/${skill.name}`); textareaRef.current?.focus(); }}>{skill.displayName ?? skill.name}</button>) : <div className="webui-composer-menu-empty">没有已安装的技能</div>}
+                <div role="separator" />
+                <button type="button" role="menuitem" onClick={() => { setComposerMenu(undefined); onOpenPluginManagement?.("skills"); }}>管理技能</button>
+                <button type="button" role="menuitem" onClick={() => { setComposerMenu(undefined); onOpenPluginManagement?.("skills"); }}>添加技能</button>
+              </div>
+            ) : composerMenu === "plugins" ? (
+              <div className="webui-composer-menu" role="menu" aria-label="插件" data-webui-composer-menu="plugins" data-webui-composer-submenu="plugins">
+                {pluginsLoading ? <div className="webui-composer-menu-empty">正在加载插件…</div> : pluginsError ? <div className="webui-composer-menu-empty" role="alert">{pluginsError}</div> : installedPlugins.length ? installedPlugins.map((plugin) => <button key={plugin.name} type="button" role="menuitem" title={plugin.description} onClick={() => { setComposerMenu(undefined); insertAtCaret(`@${plugin.name}`); textareaRef.current?.focus(); }}>{plugin.displayName}</button>) : <div className="webui-composer-menu-empty">{pluginManagement ? "没有已安装的插件" : "插件目录暂不可用"}</div>}
+                <div role="separator" />
+                <button type="button" role="menuitem" onClick={() => { setComposerMenu(undefined); onOpenPluginManagement?.("plugins"); }}>添加插件</button>
+              </div>
+            ) : null}
           </div>
         ) : null}
                 </div>

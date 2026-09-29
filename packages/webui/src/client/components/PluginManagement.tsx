@@ -866,11 +866,16 @@ export function PluginManagement({
               </button>
               <button
                 type="button"
+                className="webui-plugin-manage-trigger"
                 onClick={() => {
                   setManagementOpen(true);
                   setView("personal");
                 }}
               >
+                <svg viewBox="0 0 20 20" aria-hidden="true">
+                  <path d="M7.1 2.8h5.8l4.3 4.3v5.8l-4.3 4.3H7.1l-4.3-4.3V7.1z" />
+                  <circle cx="10" cy="10" r="2.2" />
+                </svg>
                 管理
               </button>
             </div>
