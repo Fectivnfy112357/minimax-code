@@ -415,11 +415,12 @@ describe("W0 · stacking order", () => {
       ...shellCss.matchAll(/z-index:\s*(-?[0-9]+)/gu),
     ].map((match) => Number(match[1]));
     expect([...new Set(values)].sort((left, right) => left - right)).toEqual([
+      // 1 is used by the project/session row action controls.
       // 60 is `.webui-context-usage-popover`: it has to clear the transcript
       // and the composer overlay (20) and the workspace panel controls (50),
       // and it stays under the model/workspace menus (70) and the dialog
       // bands (100+).
-      2, 4, 20, 45, 50, 60, 70, 80, 100, 110, 111, 120, 121,
+      1, 2, 4, 20, 45, 50, 60, 70, 80, 100, 110, 111, 120, 121,
     ]);
   });
 });
