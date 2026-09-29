@@ -343,10 +343,11 @@ describe("W0 · at-rules and animations W5/W6 must not remove", () => {
       rule.context.some((entry) => entry.includes("prefers-reduced-motion")),
     );
 
-    // Four blocks in shell.css, five rules inside them. Deleting one of these
-    // is the failure mode this assertion exists for: the base rule would keep
-    // animating for a user who asked for reduced motion.
-    expect(reducedMotion).toHaveLength(5);
+    // Five blocks in shell.css, six rules inside them (the settings block
+    // disables two selectors). Deleting one of these is the failure mode this
+    // assertion exists for: the base rule would keep animating for a user who
+    // asked for reduced motion.
+    expect(reducedMotion).toHaveLength(6);
     for (const rule of reducedMotion)
       expect(rule.body).toMatch(/(?:animation|transition):\s*none/u);
 
@@ -354,6 +355,9 @@ describe("W0 · at-rules and animations W5/W6 must not remove", () => {
     expect(selectors).toEqual([
       ".message-animate-in",
       ".signin-card-collapsing, .signin-day-claimed-animation",
+      // Added with the context-usage indicator: the popover, the bar fill and
+      // the quota bar fill all transition in their base rules.
+      ".webui-context-usage-popover, .webui-context-usage-bar span, .webui-context-usage-quota-bar span",
       ".webui-message-actions",
       ".webui-settings-content",
       // Renamed from `.webui-settings-toggle span` when the toggle became the
@@ -411,7 +415,11 @@ describe("W0 · stacking order", () => {
       ...shellCss.matchAll(/z-index:\s*(-?[0-9]+)/gu),
     ].map((match) => Number(match[1]));
     expect([...new Set(values)].sort((left, right) => left - right)).toEqual([
-      2, 4, 20, 45, 50, 70, 80, 100, 110, 111, 120, 121,
+      // 60 is `.webui-context-usage-popover`: it has to clear the transcript
+      // and the composer overlay (20) and the workspace panel controls (50),
+      // and it stays under the model/workspace menus (70) and the dialog
+      // bands (100+).
+      2, 4, 20, 45, 50, 60, 70, 80, 100, 110, 111, 120, 121,
     ]);
   });
 });
