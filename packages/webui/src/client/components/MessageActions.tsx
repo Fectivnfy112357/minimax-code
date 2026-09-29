@@ -21,6 +21,7 @@
 //       `formatWebuiMessageTimestamp`
 
 import { useState, type ReactElement } from "react";
+import { createPortal } from "react-dom";
 import {
   WebuiIconMessageCopy,
   WebuiIconMessageCopied,
@@ -262,7 +263,7 @@ export function WebuiRewindDialog({
 }): ReactElement {
   const files = preview?.turns.flatMap((turn) => turn.files) ?? [];
   const turns = preview?.turns.length ?? 1;
-  return (
+  const dialog = (
     <div className="webui-message-dialog" role="dialog" aria-modal="true" data-testid="rewind-preview-dialog" data-message-id={messageId}>
       <div className="webui-message-dialog-surface">
         <h3>{"回退"}</h3>
@@ -277,9 +278,10 @@ export function WebuiRewindDialog({
         <div className="webui-message-dialog-actions">
           <button type="button" onClick={onClose} disabled={busy}>取消</button>
           <button type="button" onClick={() => onConfirm(false)} disabled={busy} data-testid="rewind-confirm-only">仅回退对话</button>
-          {files.length > 0 ? <button type="button" onClick={() => onConfirm(true)} disabled={busy} data-testid="rewind-confirm-with-files">回退对话和文件</button> : null}
+          {files.length > 0 ? <button type="button" onClick={() => onConfirm(true)} disabled={busy} data-testid="rewind-confirm-with-files" data-action-variant="danger">回退对话和文件</button> : null}
         </div>
       </div>
     </div>
   );
+  return typeof document !== "undefined" ? createPortal(dialog, document.body) : dialog;
 }

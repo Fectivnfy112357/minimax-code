@@ -1748,15 +1748,6 @@ export function WebuiComposer({
           interactionError={interactionError}
         />
       ) : null}
-      {stream.phase === "waiting" ? (
-        <p
-          role="status"
-          data-webui-turn-waiting="true"
-          className="mt-3 text-text_default_secondary text-size_14 leading-line_height_20"
-        >
-          等待你的回答…
-        </p>
-      ) : null}
       {queuePaused && sessionId ? (
         <span
           role="status"

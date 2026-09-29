@@ -2036,6 +2036,19 @@
     min-width: 0;
     width: 100%;
   }
+  .webui-session-title-row {
+    min-height: 24px;
+    padding-left: var(--spacing_12);
+  }
+  .webui-session-title-row[data-webui-rail-collapsed] {
+    padding-left: 142px;
+  }
+  .webui-session-title {
+    color: var(--text_default_primary);
+    font-size: var(--size_14);
+    font-weight: var(--weight_medium);
+    line-height: var(--line_height_20);
+  }
   .webui-session-scroll-viewport {
     min-height: 0;
     min-width: 0;
@@ -3354,6 +3367,13 @@
     gap: 8px;
   }
 
+  .webui-questionnaire-content {
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
   .webui-questionnaire-close {
     display: inline-flex;
     width: 22px;
@@ -3780,9 +3800,17 @@
     color: inherit;
     font-size: 12px;
     cursor: pointer;
+    transition: background-color 120ms ease, color 120ms ease;
   }
 
   .webui-message-action:hover:not(:disabled) {
+    background: var(--bg_interaction_tertiary_hover);
+    color: var(--text_default_primary);
+  }
+
+  .webui-message-action:focus-visible {
+    outline: 2px solid var(--border_accent);
+    outline-offset: 2px;
     background: var(--bg_interaction_tertiary_hover);
     color: var(--text_default_primary);
   }
@@ -3803,15 +3831,14 @@
   .webui-user-inline-editor, .webui-message-dialog-surface {
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    padding: 12px;
-    border: 0.5px solid var(--border_default);
-    border-radius: 12px;
+    gap: 12px;
+    padding: 16px;
+    border: 1px solid var(--border_default);
+    border-radius: 16px;
     background: var(--bg_default_secondary);
     color: var(--text_default_primary);
   }
 
-  .webui-user-inline-editor textarea,
   .webui-message-dialog input {
     width: 100%;
     min-height: 36px;
@@ -3824,26 +3851,113 @@
     resize: vertical;
   }
 
+  .webui-user-inline-editor textarea {
+    width: 100%;
+    min-height: 80px;
+    padding: 12px;
+    border: 1px solid var(--border_default);
+    border-radius: 12px;
+    background: var(--bg_default_primary);
+    color: var(--text_default_primary);
+    font: inherit;
+    line-height: 24px;
+    resize: vertical;
+    transition: border-color 120ms ease, box-shadow 120ms ease;
+  }
+
+  .webui-user-inline-editor textarea:focus-visible {
+    border-color: var(--border_accent);
+    outline: 2px solid var(--border_accent);
+    outline-offset: 1px;
+  }
+
   .webui-inline-editor-actions, .webui-message-dialog-actions {
     display: flex;
+    align-items: center;
     justify-content: flex-end;
     gap: 8px;
+  }
+
+  .webui-inline-editor-actions button,
+  .webui-message-dialog-actions button {
+    display: inline-flex;
+    min-height: 34px;
+    align-items: center;
+    justify-content: center;
+    padding: 0 12px;
+    border: 1px solid var(--border_default);
+    border-radius: var(--radius_8);
+    background: var(--bg_default_primary);
+    color: var(--text_default_secondary);
+    font: inherit;
+    font-size: var(--size_14);
+    line-height: var(--line_height_20);
+    cursor: pointer;
+    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+  }
+
+  .webui-inline-editor-actions button:hover:not(:disabled),
+  .webui-message-dialog-actions button:hover:not(:disabled) {
+    border-color: var(--border_heavy);
+    background: var(--bg_interaction_tertiary_hover);
+    color: var(--text_default_primary);
+  }
+
+  .webui-inline-editor-actions button:last-child,
+  .webui-message-dialog-actions button:last-child {
+    border-color: transparent;
+    background: var(--bg_interaction_primary_default);
+    color: var(--text_default_inverted);
+    font-weight: var(--weight_medium);
+  }
+
+  .webui-inline-editor-actions button:last-child:hover:not(:disabled),
+  .webui-message-dialog-actions button:last-child:hover:not(:disabled) {
+    border-color: transparent;
+    background: var(--bg_interaction_primary_hover);
+    color: var(--text_default_inverted);
+  }
+
+  .webui-message-dialog-actions button[data-action-variant="danger"] {
+    background: var(--bg_interaction_danger_primary_default);
+    color: var(--text_label_danger_primary_default);
+  }
+
+  .webui-message-dialog-actions button[data-action-variant="danger"]:hover:not(:disabled) {
+    background: var(--bg_interaction_danger_primary_hover);
+    color: var(--text_label_danger_primary_hover);
+  }
+
+  .webui-inline-editor-actions button:focus-visible,
+  .webui-message-dialog-actions button:focus-visible {
+    outline: 2px solid var(--border_accent);
+    outline-offset: 2px;
+  }
+
+  .webui-inline-editor-actions button:disabled,
+  .webui-message-dialog-actions button:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
   }
 
   .webui-message-dialog {
     position: fixed;
     inset: 0;
-    z-index: 80;
+    z-index: 1400;
     display: grid;
     place-items: center;
     padding: 24px;
-    background: rgb(0 0 0 / 28%);
+    background: var(--utility_overlay);
   }
 
   .webui-message-dialog-surface {
     width: min(520px, 100%);
     max-height: min(640px, 90vh);
     overflow: auto;
+    border: 0;
+    border-radius: var(--radius_24);
+    background: var(--bg_default_primary);
+    box-shadow: 0 8px 32px rgb(0 0 0 / 12%);
   }
 
   .webui-rewind-file-row {
@@ -4196,6 +4310,15 @@
   .webui-questionnaire-progress button:disabled {
     cursor: default;
     opacity: 0.45;
+  }
+
+  .webui-questionnaire-actions .webui-button-primary:disabled {
+    color: var(--text_default_primary);
+  }
+
+  .webui-questionnaire-actions {
+    flex: 0 0 auto;
+    padding-top: var(--spacing_8);
   }
 
   .webui-questionnaire-countdown {

@@ -904,8 +904,11 @@ export function WebuiClientFoundationApp(
                     </div>
                     )
                   ) : (
-                    <div className={`flex w-full items-center gap-2 ${railCollapsed ? "pl-[142px]" : ""}`}>
-                      <span className="text-text_default_secondary text-size_12 leading-line_height_16">
+                    <div
+                      className="webui-session-title-row flex w-full items-center gap-2"
+                      data-webui-rail-collapsed={railCollapsed || undefined}
+                    >
+                      <span className="webui-session-title" data-webui-session-title="true">
                         {selectedSession?.title ?? ""}
                       </span>
                     </div>

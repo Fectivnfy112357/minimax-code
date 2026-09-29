@@ -12,6 +12,7 @@
 // composer while active), but the DOM for either role is produced here.
 
 import { useState, type ReactElement } from "react";
+import { createPortal } from "react-dom";
 import type {
   WebuiGetSessionForkOptionsResult,
   WebuiGetSessionRewindPreviewResult,
@@ -192,6 +193,22 @@ export function MessageItem({
     onFork: role === "assistant" ? openFork : undefined,
     timestamp,
   };
+  const forkDialog = forkOpen ? (
+    <div className="webui-message-dialog" role="dialog" aria-modal="true" data-testid="fork-dialog">
+      <div className="webui-message-dialog-surface">
+        <h3>复制为新会话</h3>
+        <p>{forkOptions?.unavailableReason ?? "保留当前上下文，在新会话中继续"}</p>
+        <input aria-label="会话名称" value={forkTitle} onChange={(event) => setForkTitle(event.target.value)} placeholder="使用简短且不同的名称，便于识别" disabled={forkOptions?.canFork === false} />
+        <div className="webui-message-dialog-actions">
+          <button type="button" onClick={() => setForkOpen(false)} disabled={mutationBusy}>取消</button>
+          <button type="button" onClick={confirmFork} disabled={mutationBusy || forkOptions?.canFork === false}>复制并进入</button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+  const renderedForkDialog = forkDialog && typeof document !== "undefined"
+    ? createPortal(forkDialog, document.body)
+    : forkDialog;
   if (role === "user") {
     return (
       <div
@@ -279,7 +296,7 @@ export function MessageItem({
         processForceExpanded={processForceExpanded}
       />
       <WebuiMessageActions {...actionProps} />
-      {forkOpen ? <div className="webui-message-dialog" role="dialog" aria-modal="true" data-testid="fork-dialog"><div className="webui-message-dialog-surface"><h3>复制为新会话</h3><p>{forkOptions?.unavailableReason ?? "保留当前上下文，在新会话中继续"}</p><input aria-label="会话名称" value={forkTitle} onChange={(event) => setForkTitle(event.target.value)} placeholder="使用简短且不同的名称，便于识别" disabled={forkOptions?.canFork === false} /><div className="webui-message-dialog-actions"><button type="button" onClick={() => setForkOpen(false)} disabled={mutationBusy}>取消</button><button type="button" onClick={confirmFork} disabled={mutationBusy || forkOptions?.canFork === false}>复制并进入</button></div></div></div> : null}
+      {renderedForkDialog}
       {mutationError && !rewindOpen && !forkOpen ? <p role="alert" className="webui-message-mutation-error">{mutationError}</p> : null}
     </div>
   );
