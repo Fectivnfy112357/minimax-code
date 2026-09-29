@@ -639,14 +639,13 @@ export function WebuiClientFoundationApp(
         `${window.location.pathname}${window.location.search}${sessionHash(id)}`,
       );
   };
-  const startNewTask = () => {
-    // Desktop's "new task without a project" action clears the pending
-    // workspace choice. A project selected again on the home surface is still
-    // passed to createSession; once a session exists, its workspace belongs to
-    // the session and must not be cleared just because the picker is hidden.
-    userClearedWorkspaceRef.current = true;
-    writeNoProjectFlag(true);
-    setNewTaskWorkspaceDir(undefined);
+  const startNewTask = (workspaceDir?: string) => {
+    // A project row's plus action opens a fresh home composer preselected to
+    // that workspace; the global new-task action still clears the workspace.
+    const clearedWorkspace = workspaceDir === undefined;
+    userClearedWorkspaceRef.current = clearedWorkspace;
+    writeNoProjectFlag(clearedWorkspace);
+    setNewTaskWorkspaceDir(workspaceDir);
     setWorkspaceMenuOpen(false);
     setDraft("");
     // 「新建任务」 is the one navigation that does not change the selected
@@ -804,6 +803,7 @@ export function WebuiClientFoundationApp(
                         onLoadMore={loadMore}
                         selectedSessionId={selectedSessionId}
                         onProjectSelect={setNewTaskWorkspaceDir}
+                        onCreateTaskInProject={(project) => startNewTask(project.workspaceDir)}
                         error={pageError}
                         pinnedSessions={pinnedSessions}
                         pinnedProjects={pinnedProjects}

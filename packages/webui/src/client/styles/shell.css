@@ -923,19 +923,68 @@
   /* The desktop home rail is project-first. A project row uses the same quiet
    * navigation treatment as the fixed rows, but keeps the folder glyph and
    * label aligned as one navigation target. */
+  .webui-project-row,
+  .webui-project-session-row,
+  .webui-project-child-session-row { position: relative; min-width: 0; }
+  .webui-project-row { display: flex; }
   .webui-project-card {
     display: flex;
-    width: 100%;
+    min-width: 0;
+    flex: 1;
     height: 36px;
     align-items: center;
     gap: var(--spacing_12);
     border-radius: var(--radius_8);
-    padding: 0 var(--spacing_8);
+    padding: 0 68px 0 var(--spacing_8);
     transition: background-color 120ms ease, color 120ms ease;
   }
   .webui-project-card:hover {
     background-color: var(--bg_interaction_tertiary_hover);
     color: var(--text_default_primary);
+  }
+  .webui-project-row:hover .webui-project-card {
+    background-color: var(--bg_interaction_tertiary_hover);
+    color: var(--text_default_primary);
+  }
+  .webui-project-row-actions,
+  .webui-session-row-actions {
+    position: absolute;
+    top: 50%;
+    right: 2px;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    transform: translateY(-50%);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms ease;
+  }
+  .webui-project-row:hover .webui-project-row-actions,
+  .webui-project-row:focus-within .webui-project-row-actions,
+  .webui-project-session-row:hover .webui-session-row-actions,
+  .webui-project-session-row:focus-within .webui-session-row-actions,
+  .webui-project-child-session-row:hover .webui-session-row-actions,
+  .webui-project-child-session-row:focus-within .webui-session-row-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .webui-rail-action {
+    display: flex;
+    width: 30px;
+    height: 30px;
+    flex: 0 0 30px;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: var(--radius_8);
+    background: transparent;
+    color: var(--icon_default_tertiary);
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+  .webui-rail-action:hover,
+  .webui-rail-action:focus-visible {
+    background: var(--bg_interaction_tertiary_hover);
+    color: var(--icon_default_secondary);
   }
 
   .webui-project-session-list {
@@ -956,10 +1005,11 @@
     align-items: center;
     gap: var(--spacing_4);
     border-radius: var(--radius_8);
-    padding: 0 var(--spacing_8);
+    padding: 0 64px 0 var(--spacing_8);
     transition: background-color 120ms ease;
   }
   .webui-project-session-card:hover,
+  .webui-project-session-row:hover .webui-project-session-card,
   .webui-project-session-card[data-webui-session-active="true"] {
     background-color: var(--bg_interaction_tertiary_hover);
   }
@@ -982,11 +1032,12 @@
     gap: var(--spacing_8);
     border-radius: var(--radius_8);
     padding-left: 34px;
-    padding-right: 2px;
+    padding-right: 64px;
     text-align: left;
     transition: background-color 120ms ease;
   }
   .webui-project-child-session-card:hover,
+  .webui-project-child-session-row:hover .webui-project-child-session-card,
   .webui-project-child-session-card[data-webui-session-active="true"] {
     background-color: var(--bg_interaction_tertiary_hover);
   }

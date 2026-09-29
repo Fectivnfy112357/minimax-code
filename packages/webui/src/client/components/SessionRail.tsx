@@ -25,6 +25,8 @@ import {
   WebuiIconContextRename,
   WebuiIconContextTrash,
   WebuiIconFolder,
+  WebuiIconMore,
+  WebuiIconProjectAdd,
 } from "../icons.js";
 import { WebuiContextMenu, type WebuiContextMenuItem } from "./ContextMenu.js";
 import { RailRow } from "./RailRow.js";
@@ -120,6 +122,7 @@ export function WebuiProjectList({
   onLoadMore,
   selectedSessionId,
   onProjectSelect,
+  onCreateTaskInProject,
   error,
   pinnedSessions,
   pinnedProjects,
@@ -141,6 +144,7 @@ export function WebuiProjectList({
   readonly onLoadMore?: () => void;
   readonly selectedSessionId?: string;
   readonly onProjectSelect?: (workspaceDir?: string) => void;
+  readonly onCreateTaskInProject?: (project: WebuiProjectGroup) => void;
   readonly error?: string;
   readonly pinnedSessions?: Readonly<Record<string, boolean>>;
   readonly pinnedProjects?: Readonly<Record<string, boolean>>;
@@ -215,13 +219,48 @@ export function WebuiProjectList({
     [page.sessions],
   );
 
-  const openSessionMenu = (event: MouseEvent<HTMLElement>, session: WebuiClientSession) => {
+  const showContextMenu = (event: MouseEvent<HTMLElement>, items: readonly WebuiContextMenuItem[]) => {
     event.preventDefault();
     event.stopPropagation();
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const fromContextMenu = event.type === "contextmenu";
     setContextMenu({
-      x: event.clientX,
-      y: event.clientY,
-      items: [
+      x: fromContextMenu ? event.clientX : bounds.right - 220,
+      y: fromContextMenu ? event.clientY : bounds.bottom,
+      items,
+    });
+  };
+
+  const openSessionMenu = (event: MouseEvent<HTMLElement>, session: WebuiClientSession, isChild = false) => {
+    const items: readonly WebuiContextMenuItem[] = isChild
+      ? [
+        {
+          kind: "item",
+          key: "rename",
+          label: "重命名",
+          icon: <WebuiIconContextRename />,
+          disabled: !onRenameSession,
+          onSelect: () => onRenameSession?.(session),
+        },
+        {
+          kind: "item",
+          key: "copy-session-id",
+          label: "复制会话 ID",
+          icon: <WebuiIconContextCopy />,
+          disabled: !onCopySession,
+          onSelect: () => onCopySession?.(session, "sessionId"),
+        },
+        {
+          kind: "item",
+          key: "delete",
+          label: "删除",
+          icon: <WebuiIconContextTrash />,
+          danger: true,
+          disabled: !onDeleteSession,
+          onSelect: () => onDeleteSession?.(session),
+        },
+      ]
+      : [
         {
           kind: "item",
           key: "pin",
@@ -312,8 +351,53 @@ export function WebuiProjectList({
           disabled: !onDeleteSession,
           onSelect: () => onDeleteSession?.(session),
         },
-      ],
-    });
+      ];
+    showContextMenu(event, items);
+  };
+
+  const openProjectMenu = (event: MouseEvent<HTMLElement>, project: WebuiProjectGroup) => {
+    if (!project.workspaceDir) return;
+    showContextMenu(event, [
+      {
+        kind: "item",
+        key: "rename-project",
+        label: "重命名项目",
+        icon: <WebuiIconContextRename />,
+        disabled: !onRenameProject,
+        onSelect: () => onRenameProject?.(project),
+      },
+      {
+        kind: "item",
+        key: "toggle-pin-project",
+        label: pinnedProjects?.[project.key] ? "取消置顶项目" : "置顶项目",
+        icon: <WebuiIconContextPin />,
+        disabled: !onToggleProjectPin,
+        onSelect: () => onToggleProjectPin?.(project),
+      },
+      {
+        kind: "item",
+        key: "show-project-in-folder",
+        label: "在文件夹中显示",
+        icon: <WebuiIconFolder />,
+        disabled: true,
+      },
+      {
+        kind: "item",
+        key: "archive-project-sessions",
+        label: "归档对话",
+        icon: <WebuiIconContextArchive />,
+        disabled: !onArchiveProject,
+        onSelect: () => onArchiveProject?.(project),
+      },
+      {
+        kind: "item",
+        key: "remove-project",
+        label: "移除",
+        icon: <WebuiIconContextTrash />,
+        danger: true,
+        disabled: true,
+      },
+    ]);
   };
 
   useEffect(() => {
@@ -360,77 +444,58 @@ export function WebuiProjectList({
             );
             return (
               <li key={project.key}>
-                <button
-                  type="button"
-                  aria-expanded={expanded}
-                  onClick={() => {
-                    onProjectSelect?.(project.workspaceDir);
-                    setExpandedProjects((current) => {
-                      const next = new Set(current);
-                      if (next.has(project.key)) next.delete(project.key);
-                      else next.add(project.key);
-                      return next;
-                    });
-                  }}
-                  onContextMenu={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    if (!project.workspaceDir) return;
-                    setContextMenu({
-                      x: event.clientX,
-                      y: event.clientY,
-                      items: [
-                        {
-                          kind: "item",
-                          key: "rename-project",
-                          label: "重命名项目",
-                          icon: <WebuiIconContextRename />,
-                          disabled: !onRenameProject,
-                          onSelect: () => onRenameProject?.(project),
-                        },
-                        {
-                          kind: "item",
-                          key: "toggle-pin-project",
-                          label: pinnedProjects?.[project.key] ? "取消置顶项目" : "置顶项目",
-                          icon: <WebuiIconContextPin />,
-                          disabled: !onToggleProjectPin,
-                          onSelect: () => onToggleProjectPin?.(project),
-                        },
-                        {
-                          kind: "item",
-                          key: "show-project-in-folder",
-                          label: "在文件夹中显示",
-                          icon: <WebuiIconFolder />,
-                          disabled: true,
-                        },
-                        {
-                          kind: "item",
-                          key: "archive-project-sessions",
-                          label: "归档对话",
-                          icon: <WebuiIconContextArchive />,
-                          disabled: !onArchiveProject,
-                          onSelect: () => onArchiveProject?.(project),
-                        },
-                        {
-                          kind: "item",
-                          key: "remove-project",
-                          label: "移除",
-                          icon: <WebuiIconContextTrash />,
-                          danger: true,
-                          disabled: true,
-                        },
-                      ],
-                    });
-                  }}
-                  data-webui-project-link={project.key}
-                  title={project.workspaceDir}
-                  className="webui-project-card text-left text-text_default_secondary"
-                >
-                  <WebuiIconFolder className="flex-shrink-0" />
-                  <span className="min-w-0 flex-1 truncate text-sm leading-5">
-                    {projectName}
-                  </span>
-                </button>
+                <div className="webui-project-row group/project">
+                  <button
+                    type="button"
+                    aria-expanded={expanded}
+                    onClick={() => {
+                      onProjectSelect?.(project.workspaceDir);
+                      setExpandedProjects((current) => {
+                        const next = new Set(current);
+                        if (next.has(project.key)) next.delete(project.key);
+                        else next.add(project.key);
+                        return next;
+                      });
+                    }}
+                    onContextMenu={(event) => openProjectMenu(event, project)}
+                    data-webui-project-link={project.key}
+                    title={project.workspaceDir}
+                    className="webui-project-card text-left text-text_default_secondary"
+                  >
+                    <WebuiIconFolder className="flex-shrink-0" />
+                    <span className="min-w-0 flex-1 truncate text-sm leading-5">
+                      {projectName}
+                    </span>
+                  </button>
+                  <div className="webui-project-row-actions" aria-hidden="false">
+                    {project.workspaceDir && (onRenameProject || onToggleProjectPin || onArchiveProject) ? (
+                      <button
+                        type="button"
+                        aria-label={`${projectName} 项目操作`}
+                        title="项目操作"
+                        className="webui-rail-action"
+                        onClick={(event) => openProjectMenu(event, project)}
+                      >
+                        <WebuiIconMore />
+                      </button>
+                    ) : null}
+                    {onCreateTaskInProject ? (
+                      <button
+                        type="button"
+                        aria-label={`在 ${projectName} 中新建任务`}
+                        title="新建任务"
+                        className="webui-rail-action"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          onCreateTaskInProject(project);
+                        }}
+                      >
+                        <WebuiIconProjectAdd />
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
                 <div
                   className={`webui-expandable-motion${expanded ? " is-open" : ""}`}
                   aria-hidden={!expanded}
@@ -446,21 +511,49 @@ export function WebuiProjectList({
                       const children = childrenByParentId.get(session.sessionId) ?? [];
                       return (
                         <li key={session.sessionId}>
-                          <a
-                            href={sessionHash(session.sessionId)}
-                            data-webui-session-link={session.sessionId}
-                            data-webui-session-active={
-                              session.sessionId === selectedSessionId
-                                ? "true"
-                                : "false"
-                            }
-                            onContextMenu={(event) => openSessionMenu(event, session)}
-                            className="webui-project-session-card text-text_default_primary"
-                          >
-                            <span className="min-w-0 flex-1 truncate">
-                              {sessionLabel(session)}
-                            </span>
-                          </a>
+                          <div className="webui-project-session-row group/session">
+                            <a
+                              href={sessionHash(session.sessionId)}
+                              data-webui-session-link={session.sessionId}
+                              data-webui-session-active={
+                                session.sessionId === selectedSessionId
+                                  ? "true"
+                                  : "false"
+                              }
+                              onContextMenu={(event) => openSessionMenu(event, session)}
+                              className="webui-project-session-card text-text_default_primary"
+                            >
+                              <span className="min-w-0 flex-1 truncate">
+                                {sessionLabel(session)}
+                              </span>
+                            </a>
+                            <div className="webui-session-row-actions">
+                              {pinnedSessions?.[session.sessionId] && onToggleSessionPin ? (
+                                <button
+                                  type="button"
+                                  aria-label={`取消置顶：${sessionLabel(session)}`}
+                                  title="取消置顶"
+                                  className="webui-rail-action"
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    onToggleSessionPin(session);
+                                  }}
+                                >
+                                  <WebuiIconContextPin />
+                                </button>
+                              ) : null}
+                              <button
+                                type="button"
+                                aria-label={`${sessionLabel(session)} 更多操作`}
+                                title="更多操作"
+                                className="webui-rail-action"
+                                onClick={(event) => openSessionMenu(event, session)}
+                              >
+                                <WebuiIconMore />
+                              </button>
+                            </div>
+                          </div>
                           {children.length > 0 ? (
                             <ul
                               className="webui-project-child-session-list"
@@ -468,22 +561,35 @@ export function WebuiProjectList({
                             >
                               {children.map((child) => (
                                 <li key={child.sessionId}>
-                                  <a
-                                    href={sessionHash(child.sessionId)}
-                                    data-webui-session-link={child.sessionId}
-                                    data-webui-session-child-of={session.sessionId}
-                                    data-webui-session-active={
-                                      child.sessionId === selectedSessionId
-                                        ? "true"
-                                        : "false"
-                                    }
-                                    onContextMenu={(event) => openSessionMenu(event, child)}
-                                    className="webui-project-child-session-card text-text_default_primary"
-                                  >
-                                    <span className="min-w-0 flex-1 truncate">
-                                      {sessionLabel(child)}
-                                    </span>
-                                  </a>
+                                  <div className="webui-project-child-session-row group/session">
+                                    <a
+                                      href={sessionHash(child.sessionId)}
+                                      data-webui-session-link={child.sessionId}
+                                      data-webui-session-child-of={session.sessionId}
+                                      data-webui-session-active={
+                                        child.sessionId === selectedSessionId
+                                          ? "true"
+                                          : "false"
+                                      }
+                                      onContextMenu={(event) => openSessionMenu(event, child, true)}
+                                      className="webui-project-child-session-card text-text_default_primary"
+                                    >
+                                      <span className="min-w-0 flex-1 truncate">
+                                        {sessionLabel(child)}
+                                      </span>
+                                    </a>
+                                    <div className="webui-session-row-actions">
+                                      <button
+                                        type="button"
+                                        aria-label={`${sessionLabel(child)} 更多操作`}
+                                        title="更多操作"
+                                        className="webui-rail-action"
+                                        onClick={(event) => openSessionMenu(event, child, true)}
+                                      >
+                                        <WebuiIconMore />
+                                      </button>
+                                    </div>
+                                  </div>
                                 </li>
                               ))}
                             </ul>

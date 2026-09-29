@@ -227,6 +227,16 @@ export function WebuiIconFolder({ className }: WebuiIconProps): ReactElement {
   );
 }
 
+/** Project/session row action — the Desktop's horizontal more-actions glyph. */
+export function WebuiIconMore({ className }: WebuiIconProps): ReactElement {
+  return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true" className={className}><path d="M2.90039 6.75C3.53534 6.75021 4.0498 7.26539 4.0498 7.90039C4.04959 8.53521 3.53521 9.04959 2.90039 9.0498C2.26539 9.0498 1.75021 8.53534 1.75 7.90039C1.75 7.26526 2.26526 6.75 2.90039 6.75ZM7.90039 6.75C8.53534 6.75021 9.0498 7.26539 9.0498 7.90039C9.04959 8.53521 8.53521 9.04959 7.90039 9.0498C7.26539 9.0498 6.75021 8.53534 6.75 7.90039C6.75 7.26526 7.26526 6.75 7.90039 6.75ZM12.9004 6.75C13.5353 6.75021 14.0498 7.26539 14.0498 7.90039C14.0496 8.53521 13.5352 9.04959 12.9004 9.0498C12.2654 9.0498 11.7502 8.53534 11.75 7.90039C11.75 7.26526 12.2653 6.75 12.9004 6.75Z" fill="currentColor" /></svg>;
+}
+
+/** Project row action — the Desktop's create-task plus glyph. */
+export function WebuiIconProjectAdd({ className }: WebuiIconProps): ReactElement {
+  return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true" className={className}><path d="M8 3C8.27614 3 8.5 3.22386 8.5 3.5V7.5H12.5C12.7761 7.5 13 7.72386 13 8C13 8.27614 12.7761 8.5 12.5 8.5H8.5V12.5C8.5 12.7761 8.27614 13 8 13C7.72386 13 7.5 12.7761 7.5 12.5V8.5H3.5C3.22386 8.5 3 8.27614 3 8C3 7.72386 3.22386 7.5 3.5 7.5H7.5V3.5C7.5 3.22386 7.72386 3 8 3Z" fill="currentColor" /></svg>;
+}
+
 /** Context-menu glyphs used by the desktop session/project actions. */
 export function WebuiIconContextPin({ className }: WebuiIconProps): ReactElement {
   return <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}><path d="m6 3 8 8m-5-6 3-2 2 2-2 3m-6 6 5-5m-7 8 4-4" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round" /></svg>;
