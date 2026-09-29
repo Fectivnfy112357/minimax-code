@@ -41,6 +41,8 @@ import type {
 } from "../contracts.js";
 import { teamModeCopy, type TeamModeSessionChoices } from "../team-mode.js";
 
+const PROJECT_SESSION_BATCH_SIZE = 6;
+
 export interface WebuiProjectGroup {
   readonly key: string;
   readonly name: string;
@@ -216,6 +218,9 @@ export function WebuiProjectList({
   const [expandedSessions, setExpandedSessions] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
+  const [visibleProjectSessionCounts, setVisibleProjectSessionCounts] = useState<
+    Readonly<Record<string, number>>
+  >({});
   const [contextMenu, setContextMenu] = useState<
     | { readonly x: number; readonly y: number; readonly items: readonly WebuiContextMenuItem[] }
     | undefined
@@ -461,6 +466,9 @@ export function WebuiProjectList({
               pinnedSessions ?? {},
               project.sessionIds,
             );
+            const visibleSessionCount =
+              visibleProjectSessionCounts[project.key] ?? PROJECT_SESSION_BATCH_SIZE;
+            const visibleSessionIds = orderedSessionIds.slice(0, visibleSessionCount);
             return (
               <li key={project.key}>
                 <div className="webui-project-row group/project">
@@ -524,7 +532,7 @@ export function WebuiProjectList({
                     className="webui-project-session-list"
                     data-webui-project-sessions={project.key}
                   >
-                    {orderedSessionIds.map((sessionId) => {
+                    {visibleSessionIds.map((sessionId) => {
                       const session = sessionsById.get(sessionId);
                       if (!session) return null;
                       const children = childrenByParentId.get(session.sessionId) ?? [];
@@ -656,6 +664,24 @@ export function WebuiProjectList({
                         </li>
                       );
                     })}
+                    {orderedSessionIds.length > visibleSessionCount ? (
+                      <li key={`${project.key}-more`}>
+                        <button
+                          type="button"
+                          className="webui-project-session-more text-text_default_tertiary"
+                          onClick={() => {
+                            setVisibleProjectSessionCounts((current) => ({
+                              ...current,
+                              [project.key]:
+                                (current[project.key] ?? PROJECT_SESSION_BATCH_SIZE) +
+                                PROJECT_SESSION_BATCH_SIZE,
+                            }));
+                          }}
+                        >
+                          更多
+                        </button>
+                      </li>
+                    ) : null}
                   </ul>
                 </div>
               </li>

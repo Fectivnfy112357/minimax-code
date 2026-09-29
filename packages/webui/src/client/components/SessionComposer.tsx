@@ -1802,6 +1802,7 @@ export function WebuiComposer({
           {...({ webkitdirectory: "", directory: "" } as Record<string, string>)}
           onChange={(event) => { void addFiles(event.currentTarget.files); event.currentTarget.value = ""; }}
         />
+        <div className={sessionLayout && sessionId && goalEnabled && goal ? "webui-goal-composer-panel" : undefined}>
         {sessionId && goalEnabled && goal ? <WebuiGoalBanner goal={goal} patchGoal={patchGoal} clearGoal={clearGoal} onCleared={clearLocalGoal} interactionBlocked={Boolean(questionnaire || permissions.length > 0)} /> : null}
         {!composerReplaced ? (
         <form
@@ -2318,6 +2319,7 @@ export function WebuiComposer({
           </div>
         </form>
         ) : null}
+        </div>
           {credentialMessage ? (
           <p
             role="alert"

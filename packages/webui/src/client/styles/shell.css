@@ -1007,6 +1007,26 @@
     gap: 1px;
     padding: 1px 0 var(--spacing_4) 2px;
   }
+  .webui-project-session-more {
+    display: flex;
+    width: 100%;
+    height: 30px;
+    align-items: center;
+    border: 0;
+    border-radius: var(--radius_8);
+    background: transparent;
+    padding: 0 10px 0 32px;
+    text-align: left;
+    font-size: var(--size_14);
+    line-height: 20px;
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+  .webui-project-session-more:hover,
+  .webui-project-session-more:focus-visible {
+    background-color: var(--bg_interaction_tertiary_hover);
+    color: var(--text_default_secondary);
+    outline: none;
+  }
   .webui-session-leading-marker {
     display: flex;
     width: 18px;
@@ -1057,7 +1077,12 @@
     align-items: center;
     gap: var(--spacing_4);
     border-radius: var(--radius_8);
-    padding: 0 94px 0 var(--spacing_8);
+    padding: 0 var(--spacing_8);
+    transition: padding-right 120ms ease;
+  }
+  .webui-project-session-row:hover .webui-project-session-card,
+  .webui-project-session-row:focus-within .webui-project-session-card {
+    padding-right: 100px;
   }
 
   /* Subagent rows retain the desktop's nested-session geometry: a compact
@@ -1078,9 +1103,13 @@
     gap: var(--spacing_8);
     border-radius: var(--radius_8);
     padding-left: 34px;
-    padding-right: 64px;
+    padding-right: var(--spacing_8);
     text-align: left;
-    transition: background-color 120ms ease;
+    transition: background-color 120ms ease, padding-right 120ms ease;
+  }
+  .webui-project-child-session-row:hover .webui-project-child-session-card,
+  .webui-project-child-session-row:focus-within .webui-project-child-session-card {
+    padding-right: 38px;
   }
   .webui-project-child-session-card:hover,
   .webui-project-child-session-row:hover .webui-project-child-session-card,
@@ -1988,21 +2017,34 @@
     margin-right: auto;
     margin-left: auto;
   }
-  .webui-session-layout .webui-session-composer-overlay > .webui-goal-banner {
+  .webui-session-layout .webui-goal-composer-panel {
+    width: 100%;
+    max-width: 768px;
+    border-radius: 24px 24px 20px 20px;
+    background: var(--bg_grouped_primary);
+  }
+  .webui-session-layout .webui-goal-composer-panel > .webui-goal-banner {
     position: relative;
     z-index: 20;
-    margin-bottom: 10px;
-    padding: 12px 18px 10px;
-    border-radius: 22px;
-    background: var(--bg_grouped_secondary_elevated);
-    box-shadow: 0 8px 24px rgb(0 0 0 / 8%);
+    margin: 0;
+    padding: 0 12px 4px;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
   }
   .webui-session-layout
     .webui-session-composer-overlay
-    > form
+    > *
     .message-input-home-container {
     gap: 0;
     padding-bottom: 0;
+  }
+  .webui-session-layout .webui-goal-composer-panel .message-input-home-container {
+    border-radius: 0;
+    background: transparent;
+  }
+  .webui-session-layout .webui-goal-composer-panel .webui-composer-card {
+    box-shadow: 0 0 20px 0 var(--shadow_default);
   }
   .webui-session-layout .webui-session-bottom-padding {
     order: 3;
@@ -3710,46 +3752,79 @@
 
   .webui-goal-banner {
     display: flex;
-    flex-direction: column;
-    gap: 8px;
+    align-items: center;
+    gap: 0;
     width: 100%;
-    margin-bottom: 10px;
-    padding: 14px 18px;
+    margin: 0;
+    padding: 0 12px 4px;
     border: 0;
-    border-radius: 22px;
-    background: var(--bg_grouped_secondary_elevated);
-    box-shadow: 0 8px 24px rgb(0 0 0 / 8%);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
   }
 
   .webui-goal-banner-content-row,
+  .webui-goal-banner-leading,
   .webui-goal-banner-objective-group,
   .webui-goal-banner-actions-slot,
   .webui-goal-usage {
     display: flex;
     align-items: center;
-    gap: 8px;
+  }
+
+  .webui-goal-banner-leading {
+    flex: none;
+    gap: 6px;
+    padding: 8px 0 0 2px;
   }
 
   .webui-goal-banner-content-row {
-    justify-content: space-between;
+    flex: 1;
+    min-width: 0;
+    gap: 8px;
+    padding: 8px 0 0 8px;
   }
 
   .webui-goal-banner-objective-group {
     flex: 1;
     min-width: 0;
+    gap: 4px;
   }
 
   .webui-goal-banner-icon {
     display: inline-flex;
-    flex: 0 0 auto;
+    flex: none;
     width: 18px;
     height: 18px;
-    color: var(--icon_default_accent);
+    color: var(--text_status_blue);
   }
 
   .webui-goal-banner-icon svg {
     width: 18px;
     height: 18px;
+  }
+
+  .webui-goal-banner[data-goal-status="paused"] .webui-goal-banner-icon,
+  .webui-goal-banner[data-goal-status="paused"] .webui-goal-status {
+    color: var(--icon_default_secondary);
+  }
+  .webui-goal-banner[data-goal-status="blocked"] .webui-goal-banner-icon,
+  .webui-goal-banner[data-goal-status="blocked"] .webui-goal-status {
+    color: var(--text_status_error);
+  }
+  .webui-goal-banner[data-goal-status="complete"] .webui-goal-banner-icon,
+  .webui-goal-banner[data-goal-status="complete"] .webui-goal-status {
+    color: var(--text_status_success);
+  }
+  .webui-goal-banner[data-goal-status="budget_limited"] .webui-goal-banner-icon,
+  .webui-goal-banner[data-goal-status="budget_limited"] .webui-goal-status,
+  .webui-goal-banner[data-goal-status="usage_limited"] .webui-goal-banner-icon,
+  .webui-goal-banner[data-goal-status="usage_limited"] .webui-goal-status {
+    color: var(--text_status_warning);
+  }
+  .webui-goal-banner[data-goal-status="updated"] .webui-goal-banner-icon,
+  .webui-goal-banner[data-goal-status="updated"] .webui-goal-status {
+    color: var(--text_status_blue);
   }
 
   .webui-goal-banner-objective-group strong,
@@ -3766,31 +3841,60 @@
     padding: 0;
     border: 0;
     background: transparent;
-    color: var(--text_default_primary);
+    color: var(--text_default_secondary);
     font: inherit;
+    font-size: 14px;
+    line-height: 20px;
     text-align: left;
     text-overflow: ellipsis;
     white-space: nowrap;
     cursor: pointer;
   }
 
-  .webui-goal-status, .webui-goal-wait, .webui-goal-usage {
-    color: var(--text_default_secondary);
-    font-size: 12px;
+  .webui-goal-status {
+    flex: none;
+    color: var(--text_status_blue);
+    font-size: 14px;
+    line-height: 20px;
   }
 
-  .webui-goal-status {
-    flex: 0 0 auto;
-    color: var(--icon_default_accent);
-    font-weight: 500;
+  .webui-goal-usage,
+  .webui-goal-timer {
+    flex: none;
+    color: var(--text_default_tertiary);
+    font-size: 12px;
+    line-height: 20px;
+  }
+
+  .webui-goal-usage {
+    gap: 8px;
+    white-space: nowrap;
+  }
+
+  .webui-goal-budget-guide,
+  .webui-goal-usage-guide {
+    color: var(--text_status_warning);
+  }
+
+  .webui-goal-time-divider {
+    flex: none;
+    width: 1px;
+    height: 12px;
+    background: var(--border_default);
+  }
+
+  .webui-goal-banner-actions-slot {
+    flex: none;
+    gap: 4px;
+    padding: 8px 0 0 8px;
   }
 
   .webui-goal-action {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 28px;
-    height: 28px;
+    width: 24px;
+    height: 24px;
     padding: 0;
     border: 0;
     border-radius: 8px;
@@ -3811,8 +3915,8 @@
   }
 
   .webui-goal-action svg {
-    width: 18px;
-    height: 18px;
+    width: 16px;
+    height: 16px;
   }
 
   .webui-goal-wait {
@@ -3820,7 +3924,7 @@
   }
 
   .webui-goal-usage {
-    flex-wrap: wrap;
+    min-width: 0;
   }
 
   .webui-goal-editor {
@@ -3846,11 +3950,6 @@
     width: 100%;
     margin: 0;
     color: var(--text_default_secondary);
-    font-size: 12px;
-  }
-
-  .webui-goal-completion-marker {
-    color: var(--text_status_success);
     font-size: 12px;
   }
 
