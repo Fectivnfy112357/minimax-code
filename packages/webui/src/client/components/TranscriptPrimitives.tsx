@@ -67,16 +67,50 @@ function WebuiToolRow({
         {!resourcePath ? <WebuiIconChevronDown className="webui-tool-chevron" /> : null}
       </summary>
       {status === "running" && !input && !result && !error ? (
-        <div className="webui-tool-detail" data-webui-tool-result="true">运行中…</div>
+        <WebuiToolDetailShell title={toolCallLabel(tool)}>
+          <div className="webui-tool-detail-running">运行中…</div>
+        </WebuiToolDetailShell>
       ) : input || result || error ? (
-        <div className="webui-tool-detail" data-webui-tool-result="true">
-          {input !== undefined ? <WebuiToolDetailSection label="输入" value={input} /> : null}
+        <WebuiToolDetailShell title={toolCallLabel(tool)}>
+          {input !== undefined ? <WebuiToolDetailSection label="输入" value={formatToolInputForDisplay(input)} /> : null}
           {result !== undefined ? <WebuiToolDetailSection label="结果" value={result} /> : null}
           {error !== undefined ? <WebuiToolDetailSection label="错误" value={error} error /> : status === "error" ? <WebuiToolDetailSection label="错误" value="执行失败" error /> : null}
-        </div>
+        </WebuiToolDetailShell>
       ) : null}
     </details>
   );
+}
+
+function WebuiToolDetailShell({
+  title,
+  children,
+}: {
+  readonly title: string;
+  readonly children: ReactNode;
+}): ReactElement {
+  return (
+    <div className="webui-tool-detail" data-webui-tool-result="true">
+      <div className="webui-tool-detail-surface">
+        <div className="webui-tool-detail-body">
+          <div className="webui-tool-detail-title">{title}</div>
+          <div className="webui-tool-detail-divider" aria-hidden="true" />
+          <div className="webui-tool-detail-content">{children}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function formatToolInputForDisplay(value: string): string {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (parsed !== null && typeof parsed === "object") {
+      return JSON.stringify(parsed, null, 2) ?? value;
+    }
+  } catch {
+    // Non-JSON inputs such as shell commands remain unchanged.
+  }
+  return value;
 }
 
 function WebuiToolDetailSection({
