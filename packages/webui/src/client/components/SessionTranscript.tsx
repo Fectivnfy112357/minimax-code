@@ -92,67 +92,37 @@ export function WebuiQuestionnaireResponse({
   const { requestId, answers } = summary;
   return (
     <article
-      className="webui-questionnaire-history flex w-full max-w-[80%] flex-col gap-2 rounded-[16px] border border-border_default bg-bg_grouped_secondary_elevated p-3"
+      className="webui-questionnaire-history flex w-full max-w-[80%] min-w-0 flex-col gap-3 rounded-2xl border-[0.5px] border-border_default bg-bg_grouped_secondary_elevated p-4 text-text_default_primary"
       data-webui-questionnaire-history="true"
       data-message-id={messageId}
       data-webui-questionnaire-request={requestId}
       data-testid={`questionnaire-history-${requestId}`}
     >
-      <header className="flex flex-col gap-1">
+      <header className="flex min-w-0 items-center justify-between gap-3">
         <span
-          className="text-text_default_secondary text-size_12"
+          className="text-size_14 font-medium leading-line_height_20 text-text_default_primary"
           data-testid="questionnaire-history-label"
         >
           问卷回答
         </span>
-        <dl
-          className="webui-questionnaire-history-meta flex flex-wrap gap-x-3 gap-y-1 text-text_default_tertiary text-size_12"
-          data-testid="questionnaire-history-meta"
-        >
-          <div data-testid="questionnaire-history-meta-requestId">
-            <dt className="inline">requestId: </dt>
-            <dd className="inline font-mono">{requestId || "(未提供)"}</dd>
-          </div>
-          {summary.schemaVersion ? (
-            <div data-testid="questionnaire-history-meta-schema">
-              <dt className="inline">schemaVersion: </dt>
-              <dd className="inline font-mono">{summary.schemaVersion}</dd>
-            </div>
-          ) : null}
-          {summary.submittedAt ? (
-            <div data-testid="questionnaire-history-meta-submitted">
-              <dt className="inline">submittedAt: </dt>
-              <dd className="inline font-mono">{summary.submittedAt}</dd>
-            </div>
-          ) : null}
-          {summary.mode ? (
-            <div data-testid="questionnaire-history-meta-mode">
-              <dt className="inline">mode: </dt>
-              <dd className="inline font-mono">{summary.mode}</dd>
-            </div>
-          ) : null}
-          {summary.source ? (
-            <div data-testid="questionnaire-history-meta-source">
-              <dt className="inline">source: </dt>
-              <dd className="inline font-mono">{summary.source}</dd>
-            </div>
-          ) : null}
-          {summary.featureKey ? (
-            <div data-testid="questionnaire-history-meta-feature-key">
-              <dt className="inline">featureKey: </dt>
-              <dd className="inline font-mono">{summary.featureKey}</dd>
-            </div>
-          ) : null}
-        </dl>
+        {typeof timestamp === "number" ? (
+          <time
+            className="shrink-0 text-size_12 leading-line_height_16 text-text_default_tertiary"
+            dateTime={new Date(timestamp).toISOString()}
+            data-testid="questionnaire-history-timestamp"
+          >
+            {formatWebuiMessageTimestamp(timestamp)}
+          </time>
+        ) : null}
       </header>
       <ul
-        className="webui-questionnaire-history-answers flex flex-col gap-2"
+        className="webui-questionnaire-history-answers flex min-w-0 flex-col gap-3"
         data-testid="questionnaire-history-answers"
       >
         {answers.map((answer, index) => (
           <li
             key={`${requestId}-${index}`}
-            className="webui-questionnaire-history-answer flex flex-col gap-1 text-size_14"
+            className="webui-questionnaire-history-answer flex min-w-0 flex-col gap-1.5 text-size_14 leading-line_height_20"
             data-testid={`questionnaire-history-answer-${index}`}
           >
             <strong
@@ -161,11 +131,11 @@ export function WebuiQuestionnaireResponse({
             >
               {answer.question}
             </strong>
-            <ul className="flex flex-col gap-1 pl-4">
+            <ul className="flex min-w-0 flex-wrap gap-2">
               {answer.labels.map((label, labelIndex) => (
                 <li
                   key={`${requestId}-${index}-${labelIndex}`}
-                  className="webui-questionnaire-history-label flex items-start gap-2 list-disc text-text_default_secondary"
+                  className="webui-questionnaire-history-label max-w-full rounded-lg bg-bg_grouped_tertiary px-3 py-1.5 text-text_default_secondary [overflow-wrap:anywhere]"
                   data-testid={`questionnaire-history-answer-${index}-label-${labelIndex}`}
                 >
                   <span>{label}</span>
@@ -175,14 +145,50 @@ export function WebuiQuestionnaireResponse({
           </li>
         ))}
       </ul>
-      {typeof timestamp === "number" ? (
-        <span
-          className="text-text_default_tertiary text-size_12"
-          data-testid="questionnaire-history-timestamp"
+      <details className="webui-questionnaire-history-details border-t-[0.5px] border-border_default pt-2">
+        <summary className="w-fit cursor-pointer text-size_12 leading-line_height_16 text-text_default_tertiary hover:text-text_default_secondary">
+          查看回答信息
+        </summary>
+        <dl
+          className="webui-questionnaire-history-meta mt-2 grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-size_12 leading-line_height_16 text-text_default_tertiary"
+          data-testid="questionnaire-history-meta"
         >
-          {formatWebuiMessageTimestamp(timestamp)}
-        </span>
-      ) : null}
+          <div className="contents" data-testid="questionnaire-history-meta-requestId">
+            <dt>requestId</dt>
+            <dd className="min-w-0 break-all font-mono">{requestId || "(未提供)"}</dd>
+          </div>
+          {summary.schemaVersion ? (
+            <div className="contents" data-testid="questionnaire-history-meta-schema">
+              <dt>schemaVersion</dt>
+              <dd className="font-mono">{summary.schemaVersion}</dd>
+            </div>
+          ) : null}
+          {summary.submittedAt ? (
+            <div className="contents" data-testid="questionnaire-history-meta-submitted">
+              <dt>submittedAt</dt>
+              <dd className="min-w-0 break-all font-mono">{summary.submittedAt}</dd>
+            </div>
+          ) : null}
+          {summary.mode ? (
+            <div className="contents" data-testid="questionnaire-history-meta-mode">
+              <dt>mode</dt>
+              <dd className="break-all font-mono">{summary.mode}</dd>
+            </div>
+          ) : null}
+          {summary.source ? (
+            <div className="contents" data-testid="questionnaire-history-meta-source">
+              <dt>source</dt>
+              <dd className="break-all font-mono">{summary.source}</dd>
+            </div>
+          ) : null}
+          {summary.featureKey ? (
+            <div className="contents" data-testid="questionnaire-history-meta-feature-key">
+              <dt>featureKey</dt>
+              <dd className="break-all font-mono">{summary.featureKey}</dd>
+            </div>
+          ) : null}
+        </dl>
+      </details>
     </article>
   );
 }
