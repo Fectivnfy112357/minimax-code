@@ -14,6 +14,7 @@ export function installFixtureTransport() {
   const pending = [];
   const delayed = [];
   const held = [];
+  let activeTurn;
   const requests = [];
   const sockets = new Set();
 
@@ -30,6 +31,7 @@ export function installFixtureTransport() {
     if (operation === "version") return { version: "browser-fixture" };
     if (operation === "listSkills") return { skills: [] };
     if (operation === "listPendingPermissions") return { requests: [] };
+    if (operation === "getActiveTurn") return activeTurn;
     if (operation === "dismissQuestionnaire") return { ok: true };
     if (operation === "replyQuestionnaire") return { ok: true };
     if (operation === "listQueueMessages") return { items: [] };
@@ -64,10 +66,29 @@ export function installFixtureTransport() {
       requests.push({ operation: frame.operation, body: clone(frame.body ?? {}) });
       if (frame.operation === "watchEvents") {
         this.isWatcher = true;
+        // The real server registers its watcher when it *answers* the
+        // request, and the client treats that answer as the signal that it
+        // is safe to ask "is a turn running?". A fixture that accepted the
+        // request silently would make every readiness-gated recovery path
+        // untestable.
+        queueMicrotask(() =>
+          this.emit("message", {
+            data: JSON.stringify({
+              protocolVersion: 1,
+              kind: "response",
+              requestId: frame.requestId,
+              body: { ok: true },
+            }),
+          }),
+        );
         return;
       }
       if (["sendMessage", "resumeSession"].includes(frame.operation)) {
         this.isStream = true;
+        // The server acknowledges a stream before pumping it. Stream
+        // consumers ignore the acknowledgement and act on `event` frames,
+        // so the fixture sends it to keep the wire shape faithful.
+        this.respond(frame, { stream: true });
         this.streamFrame({ dataJson: JSON.stringify({ type: "heartbeat" }) });
         return;
       }
@@ -113,6 +134,9 @@ export function installFixtureTransport() {
     // blocking — the transcript's own request is the second of the three.
     delayEvery(operation, condition) { held.push({ operation, condition }); },
     setPage(sessionId, page) { pages[sessionId] = clone(page); },
+    // The server's authoritative view of what is running right now. A
+    // client whose `session.start` was missed reads this to recover.
+    setActiveTurn(turn) { activeTurn = turn ? clone(turn) : undefined; },
     resolve(operation, condition, result) {
       const index = pending.findIndex((entry) => entry.operation === operation && matches(entry.body, condition));
       if (index < 0) throw new Error(`No pending fixture request: ${operation} ${JSON.stringify(condition)}`);

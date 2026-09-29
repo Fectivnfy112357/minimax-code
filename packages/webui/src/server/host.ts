@@ -151,6 +151,9 @@ export interface WebuiRuntimeCliService {
     request: WebuiEditSessionMessageRequest,
     context?: Record<string, never>,
   ): Promise<WebuiEditSessionMessageResult>;
+  getActiveTurn(
+    sessionId: string,
+  ): Promise<import("./port.js").WebuiActiveTurn | undefined>;
   isGoalEnabled(): boolean;
   getGoal(sessionId: string): Promise<WebuiGoal | undefined>;
   createGoal(request: WebuiGoalCreateRequest): Promise<WebuiGoal>;
@@ -397,6 +400,9 @@ export function createHarnessPortFromHost(
     },
     async isGoalEnabled() {
       return { enabled: requireCliService(host).isGoalEnabled() };
+    },
+    async getActiveTurn(request) {
+      return requireCliService(host).getActiveTurn(request.id);
     },
     async getGoal(request) {
       return requireCliService(host).getGoal(request.sessionId);

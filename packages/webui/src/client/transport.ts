@@ -237,17 +237,33 @@ export function createWebuiTransport({
 
   function watchEvents(
     onEvent: (event: WebuiClientRuntimeEvent) => void,
+    /**
+     * Fires when the server accepts `watchEvents` and starts pumping it. Not
+     * when the socket is created, not when the request is written, and not
+     * a barrier: the runtime's subscription is established when the server
+     * first pulls the event iterator, which happens after the answer. Use it
+     * to re-read authoritative state and to re-probe for a running turn —
+     * the same probe that is correct on mount, run again once the stream is
+     * being established.
+     */
     onReconnect?: () => void,
   ): () => void {
     let stopped = false;
     let socket: WebuiSocket | undefined;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
-    let hasConnected = false;
     const connect = () => {
       if (stopped) return;
       const ws = new webSocket(websocketUrl());
       socket = ws;
       const requestId = crypto.randomUUID();
+      // Fires when the server *accepts* the `watchEvents` request, not when
+      // the socket is created and not when the request is written. It is an
+      // acceptance signal, **not** proof that the runtime's event bus has
+      // subscribed: `watchProcessEvents` is an async generator whose body —
+      // where `subscribe()` lives — does not run until the first `next()`,
+      // and the server pumps the iterator after answering. Do not read this
+      // as "no event can slip past from here".
+      let acknowledged = false;
       ws.addEventListener("open", () => {
         if (stopped) return;
         ws.send(
@@ -259,8 +275,6 @@ export function createWebuiTransport({
             body: {},
           }),
         );
-        if (hasConnected) onReconnect?.();
-        hasConnected = true;
       });
       ws.addEventListener("message", (event) => {
         if (stopped) return;
@@ -270,7 +284,17 @@ export function createWebuiTransport({
         } catch {
           return;
         }
-        if (frame.requestId !== requestId || frame.kind !== "event") return;
+        if (frame.requestId !== requestId) return;
+        if (frame.kind === "error") return;
+        if (frame.kind === "response") {
+          if (acknowledged) return;
+          acknowledged = true;
+          // Fires once per connection: the first ack is the initial
+          // watcher-ready signal, every later one follows a reconnect.
+          onReconnect?.();
+          return;
+        }
+        if (frame.kind !== "event") return;
         const body = frame.body;
         if (body && typeof body === "object" && !Array.isArray(body))
           onEvent(body as WebuiClientRuntimeEvent);
@@ -359,6 +383,7 @@ export function createWebuiTransport({
     rewindSession: (body) => request("rewindSession", body),
     editSessionMessage: (body) => request("editSessionMessage", body),
     isGoalEnabled: () => request("isGoalEnabled", undefined),
+    getActiveTurn: (body) => request("getActiveTurn", body),
     getGoal: (body) => request("getGoal", body),
     createGoal: (body) => request("createGoal", body),
     patchGoal: (body) => request("patchGoal", body),

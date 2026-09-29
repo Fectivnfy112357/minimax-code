@@ -196,6 +196,22 @@ export type WebuiClientSessionLoader = (
   cursor?: string,
 ) => Promise<WebuiClientSessionPage>;
 
+export interface WebuiActiveTurn {
+  readonly turnId: string;
+  /**
+   * `"compaction"` means the session is busy without producing an assistant
+   * transcript, so a transcript client must not attach a stream for it.
+   */
+  readonly busyReason: "turn" | "compaction";
+  readonly locallyOwned: boolean;
+}
+
+export interface WebuiActiveTurnRequest {
+  readonly id: string;
+}
+
+export type WebuiActiveTurnResult = WebuiActiveTurn | undefined;
+
 export interface WebuiClientMessagePage {
   readonly messages?: readonly WebuiClientMessage[];
   readonly contextSnapshot?: Record<string, unknown>;
@@ -264,6 +280,14 @@ export type WebuiClientSessionResumer = (
 
 export type WebuiClientEventWatcher = (
   onEvent: (event: WebuiRuntimeEvent) => void,
+  /**
+   * Fires when the server accepts `watchEvents` and starts pumping it — not
+   * when the socket is created and not when the request is written. The
+   * runtime's own subscription is established later still, when the server
+   * first pulls the event iterator, so this is the right moment to re-read
+   * authoritative state and re-probe for a running turn; it is not a
+   * barrier that no `session.start` can slip past.
+   */
   onReconnect?: () => void,
 ) => () => void;
 
@@ -402,6 +426,14 @@ export interface WebuiTransport {
     request: WebuiEditSessionMessageRequest,
   ) => Promise<WebuiEditSessionMessageResult>;
   readonly isGoalEnabled?: () => Promise<WebuiGoalEnabledResult>;
+  /**
+   * Authoritative active-turn read. Answers "is a turn running, and which
+   * one" when the `session.start` event was missed or arrived before the
+   * client finished subscribing.
+   */
+  readonly getActiveTurn?: (
+    request: WebuiActiveTurnRequest,
+  ) => Promise<WebuiActiveTurnResult>;
   readonly getGoal?: (
     request: WebuiGoalSessionRequest,
   ) => Promise<WebuiGoal | undefined>;

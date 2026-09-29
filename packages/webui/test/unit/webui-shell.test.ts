@@ -81,7 +81,10 @@ import {
 import { createSessionOperation } from "../../src/server/operation/operations.js";
 import {
   initialWebuiStreamState,
+  ownsWebuiStreamGeneration,
   reduceWebuiStreamFrame,
+  settleAbortedStream,
+  stopWebuiTurn,
   type WebuiStreamState,
 } from "../../src/client/stream.js";
 import { projectWebuiTodos, WebuiProgressOverviewPanel, WebuiProgressPanel, WebuiSubagentsPanel, WebuiWorkspacePanel, WebuiWorkspacePanelControls } from "../../src/client/components/WorkspacePanels.js";
@@ -2765,5 +2768,469 @@ describe("WebUI composer transcriptIncomplete", () => {
     expect(html).toContain("跳过");
     expect(html).toContain("自定义回答...");
     expect(html).toContain("data-webui-dismiss-questionnaire");
+  });
+});
+
+/**
+ * A `resumeSession` that stays open until the test lets it finish. Frames
+ * and the promise's resolution are separate: a real socket delivers a frame
+ * and then the iterable ends, so a test that only delivers `[DONE]` without
+ * ending the stream would wait forever.
+ */
+function parkedResume() {
+  const handle: {
+    deliver?: (frame: WebuiStreamFrame) => void;
+    finish?: () => void;
+  } = {};
+  const resumer: WebuiClientSessionResumer = vi.fn(
+    async (_req, onFrame) =>
+      new Promise<void>((resolve) => {
+        handle.deliver = onFrame;
+        handle.finish = () => {
+          resolve();
+        };
+      }),
+  );
+  return { resumer, handle };
+}
+
+/**
+ * The lease is the only thing standing between an ordinary turn and two
+ * streams writing the same state — chunks would append twice and the resume
+ * cursor would follow whichever stream reported last. These tests pin the
+ * claim/release discipline so deleting either call turns the suite red.
+ */
+describe("WebUI stream loop · subscription lease discipline", () => {
+  it("claims as local-send before the first frame of a locally sent turn", async () => {
+    const order: string[] = [];
+    const sink: WebuiStreamLoopSink = {
+      applyFrame: () => {
+        order.push("frame");
+      },
+      setPhase: (phase) => {
+        order.push(`phase:${phase}`);
+      },
+      setMessages: () => undefined,
+      claimSubscription: (owner) => {
+        order.push(`claim:${owner}`);
+      },
+      releaseSubscription: () => {
+        order.push("release");
+      },
+      refuse: () => undefined,
+    };
+    const sendMessage: WebuiClientMessageSender = vi.fn(async (_req, onFrame) => {
+      onFrame({ dataJson: JSON.stringify({ type: "agent_message", agent_message: { msg_id: "m1", msg_content: "hi" } }) });
+      onFrame({ dataJson: "[DONE]" });
+    });
+    await runWebuiStreamLoop({ sendMessage }, { sessionId: "lease-1", message: "hello" }, sink);
+
+    expect(order.indexOf("claim:local-send")).toBeGreaterThanOrEqual(0);
+    // The claim has to land before the turn's first frame reaches the
+    // reducer, otherwise a `session.start` racing the stream finds no lease.
+    expect(order.indexOf("claim:local-send")).toBeLessThan(order.indexOf("frame"));
+    // Release before the terminal phase is committed, so a `session.start`
+    // that lands right after cannot find a lease for the finished turn.
+    expect(order.indexOf("release")).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf("release")).toBeLessThan(order.indexOf("phase:done"));
+  });
+
+  it("claims as recovered with the turn id when attaching to a server-started turn", async () => {
+    const claims: { owner: string; turnId?: string }[] = [];
+    let released = 0;
+    const sink: WebuiStreamLoopSink = {
+      applyFrame: () => undefined,
+      setPhase: () => undefined,
+      setMessages: () => undefined,
+      claimSubscription: (owner, turnId) => {
+        claims.push({ owner, ...(turnId ? { turnId } : {}) });
+      },
+      releaseSubscription: () => {
+        released += 1;
+      },
+      refuse: () => undefined,
+    };
+    const resumeSession = vi.fn(async () => undefined);
+    // No `message`: the loop attaches to a turn it did not start.
+    await runWebuiStreamLoop({ resumeSession }, { sessionId: "lease-2", attachTurnId: "turn-9" }, sink);
+
+    expect(claims).toEqual([{ owner: "recovered", turnId: "turn-9" }]);
+    expect(released).toBe(1);
+  });
+
+  it("anchors an attachment with history so the runtime replays the turn", async () => {
+    const resumeSession = vi.fn(async () => undefined);
+    const loadMessages = vi.fn(async () => ({
+      messages: [
+        { msgId: "history-1", role: "user", msgContent: "earlier", timestamp: 1_700_000_000_001 },
+        { msgId: "history-2", role: "assistant", msgContent: "earlier answer", timestamp: 1_700_000_000_002 },
+      ],
+      hasMore: false,
+    }));
+    await runWebuiStreamLoop(
+      { resumeSession, loadMessages },
+      { sessionId: "lease-3", attachTurnId: "turn-10" },
+      {
+        applyFrame: () => undefined,
+        setPhase: () => undefined,
+        setMessages: () => undefined,
+        setStreamExtra: () => undefined,
+        claimSubscription: () => undefined,
+        releaseSubscription: () => undefined,
+        refuse: () => undefined,
+      },
+    );
+    // An unanchored resume makes the runtime skip every frame the turn
+    // produced before we subscribed, so the turn would render empty.
+    expect(resumeSession.mock.calls[0]?.[0]).toEqual({
+      id: "lease-3",
+      afterMsgId: "history-2",
+    });
+  });
+
+  it("releases the lease when the send fails without a cursor", async () => {
+    let released = 0;
+    const sendMessage: WebuiClientMessageSender = vi.fn(async () => {
+      throw new Error("dropped before any frame");
+    });
+    await runWebuiStreamLoop(
+      { sendMessage },
+      { sessionId: "lease-4", message: "hello" },
+      {
+        applyFrame: () => undefined,
+        setPhase: () => undefined,
+        setMessages: () => undefined,
+        claimSubscription: () => undefined,
+        releaseSubscription: () => {
+          released += 1;
+        },
+        refuse: () => undefined,
+      },
+    );
+    // A refusal is a terminal exit: leaving the lease behind would make every
+    // later `session.start` resolve to a `recheck` forever.
+    expect(released).toBe(1);
+  });
+
+  it("seeds the live turn state from history when attaching", async () => {
+    let state = initialWebuiStreamState;
+    const setStream = (update: (current: WebuiStreamState) => WebuiStreamState): void => {
+      state = update(state);
+    };
+    const loadMessages = vi.fn(async () => ({
+      messages: [
+        { msgId: "history-1", role: "user", msgContent: "earlier", timestamp: 1_700_000_000_001 },
+        {
+          msgId: "history-2",
+          role: "assistant",
+          msgContent: "earlier answer",
+          timestamp: 1_700_000_000_002,
+          contextUsage: { used: 1234, total: 100_000 },
+        },
+      ],
+      hasMore: false,
+    }));
+    // Park the stream so the state can be read while the turn is still live.
+    const parked = parkedResume();
+    const run = runWebuiStreamLoop(
+      { resumeSession: parked.resumer, loadMessages },
+      { sessionId: "lease-5", attachTurnId: "turn-11" },
+      buildWebuiStreamLoopSink(setStream),
+    );
+    for (let tick = 0; tick < 8 && state.processingStartedAtMs === undefined; tick += 1)
+      await Promise.resolve();
+    // The live elapsed counter and the context meter both read from these
+    // fields. An attachment that opened a stream without seeding them
+    // renders a live turn with no timer and no context reading, which is
+    // indistinguishable from the frozen UI this fix exists to remove.
+    // The clock starts at the *user* message, not the last message — that
+    // is the moment the turn began.
+    expect(state.phase).toBe("streaming");
+    expect(state.contextUsage).toEqual({ used: 1234, total: 100_000 });
+    expect(state.processingStartedAtMs).toBe(1_700_000_000_001);
+    parked.handle.deliver?.({ dataJson: "[DONE]" });
+    parked.handle.finish?.();
+    await run;
+  });
+});
+
+/**
+ * A stream the server never cancels stays open on its own. When a probe
+ * retargets us onto a different turn, the old loop keeps receiving frames and
+ * its `[DONE]` still arrives — so authority over the store cannot come from
+ * "do I hold the lease" alone. It comes from the generation stamped at claim
+ * time: a loop that has been superseded writes nothing.
+ */
+describe("WebUI stream loop · superseded loop fencing", () => {
+  const buildSharedStore = () => {
+    let state = initialWebuiStreamState;
+    const setStream = (update: (current: WebuiStreamState) => WebuiStreamState): void => {
+      state = update(state);
+    };
+    return { setStream, getState: () => state };
+  };
+
+
+  it("drops a superseded loop's frames, phase and terminal frame", async () => {
+    const { setStream, getState } = buildSharedStore();
+    const old = parkedResume();
+    // The old loop parks here and never comes back on its own.
+    runWebuiStreamLoop(
+      {
+        resumeSession: old.resumer,
+        loadMessages: vi.fn(async () => ({ messages: [], hasMore: false })),
+      },
+      { sessionId: "fence-1", attachTurnId: "turn-old" },
+      buildWebuiStreamLoopSink(setStream),
+    );
+    for (let tick = 0; tick < 8 && old.handle.deliver === undefined; tick += 1)
+      await Promise.resolve();
+
+    // A second loop claims the same session while the first is still parked.
+    const fresh = parkedResume();
+    const newRun = runWebuiStreamLoop(
+      { resumeSession: fresh.resumer },
+      { sessionId: "fence-1", attachTurnId: "turn-new" },
+      buildWebuiStreamLoopSink(setStream),
+    );
+    for (let tick = 0; tick < 8 && fresh.handle.deliver === undefined; tick += 1)
+      await Promise.resolve();
+    expect(getState().subscription?.turnId).toBe("turn-new");
+    const stateAfterNewClaim = getState();
+
+    // The old stream was never cancelled server-side, so its late chunk, its
+    // phase write and its `[DONE]` all still arrive.
+    old.handle.deliver?.({
+      dataJson: JSON.stringify({ type: "agent_message", agent_message: { msg_id: "m-old", msg_content: "stale" } }),
+    });
+    old.handle.deliver?.({ dataJson: "[DONE]" });
+    old.handle.finish?.();
+    await Promise.resolve();
+    expect(getState()).toEqual(stateAfterNewClaim);
+    // And the newer loop's lease is still the live one.
+    expect(getState().subscription?.turnId).toBe("turn-new");
+
+    fresh.handle.deliver?.({ dataJson: "[DONE]" });
+    fresh.handle.finish?.();
+    await newRun;
+    expect(getState().subscription).toBeUndefined();
+  });
+
+  it("keeps a superseded loop fenced after the newer lease is released", async () => {
+    const { setStream, getState } = buildSharedStore();
+    const old = parkedResume();
+    runWebuiStreamLoop(
+      {
+        resumeSession: old.resumer,
+        loadMessages: vi.fn(async () => ({ messages: [], hasMore: false })),
+      },
+      { sessionId: "fence-6", attachTurnId: "turn-old" },
+      buildWebuiStreamLoopSink(setStream),
+    );
+    for (let tick = 0; tick < 8 && old.handle.deliver === undefined; tick += 1)
+      await Promise.resolve();
+
+    const fresh = parkedResume();
+    const newRun = runWebuiStreamLoop(
+      { resumeSession: fresh.resumer },
+      { sessionId: "fence-6", attachTurnId: "turn-new" },
+      buildWebuiStreamLoopSink(setStream),
+    );
+    for (let tick = 0; tick < 8 && fresh.handle.deliver === undefined; tick += 1)
+      await Promise.resolve();
+    fresh.handle.deliver?.({ dataJson: "[DONE]" });
+    fresh.handle.finish?.();
+    await newRun;
+    // The newer turn is over and the lease is gone. Fencing that compared
+    // against the live lease would now readmit the superseded loop, and its
+    // late frames would land in a session that had already moved on.
+    expect(getState().subscription).toBeUndefined();
+    const settled = getState();
+
+    old.handle.deliver?.({
+      dataJson: JSON.stringify({ type: "agent_message", agent_message: { msg_id: "m-old", msg_content: "stale" } }),
+    });
+    old.handle.deliver?.({ dataJson: "[DONE]" });
+    old.handle.finish?.();
+    await Promise.resolve();
+    expect(getState()).toEqual(settled);
+  });
+
+  it("resolves rather than rejects when the attach claim throws", async () => {
+    // The claim sits at the top of the loop; a throw there used to escape
+    // the promise and break the never-reject contract callers depend on.
+    const resolveSession = vi.fn(async () => undefined);
+    await expect(
+      runWebuiStreamLoop(
+        { resumeSession: resolveSession, loadMessages: vi.fn(async () => ({ messages: [], hasMore: false })) },
+        { sessionId: "fence-7", attachTurnId: "turn-13" },
+        {
+          applyFrame: () => undefined,
+          setPhase: () => undefined,
+          setMessages: () => undefined,
+          claimSubscription: () => {
+            throw new Error("claim exploded");
+          },
+          refuse: () => undefined,
+        },
+      ),
+    ).resolves.toBeUndefined();
+    expect(resolveSession).not.toHaveBeenCalled();
+  });
+
+  it("releases the lease even when an earlier sink callback threw", async () => {
+    let released = 0;
+    // `safeSink` disables its wrapped callbacks after the first failure, so
+    // a release routed through the wrapper would silently become a no-op —
+    // leaving the session stuck in "thinking" with no owner to release it.
+    const sendMessage: WebuiClientMessageSender = vi.fn(async (_req, onFrame) => {
+      onFrame({ dataJson: "[DONE]" });
+    });
+    await runWebuiStreamLoop(
+      { sendMessage },
+      { sessionId: "fence-2", message: "hello" },
+      {
+        applyFrame: () => {
+          throw new Error("renderer exploded");
+        },
+        setPhase: () => undefined,
+        setMessages: () => undefined,
+        claimSubscription: () => undefined,
+        releaseSubscription: () => {
+          released += 1;
+        },
+        refuse: () => undefined,
+      },
+    );
+    expect(released).toBe(1);
+  });
+
+  it("keeps writing after its own [DONE] released the lease mid-loop", async () => {
+    // A `[DONE]` frame releases the lease, but a `resume_overflow` seen in
+    // the same batch still owes a resync. Fencing on "do I hold the lease"
+    // would drop that resync and leave the stale transcript on screen.
+    const { setStream, getState } = buildSharedStore();
+    const sendMessage: WebuiClientMessageSender = vi.fn(async (_req, onFrame) => {
+      onFrame({
+        dataJson: JSON.stringify({ type: "agent_message", agent_message: { msg_id: "m1", msg_content: "stale" } }),
+      });
+      onFrame({ dataJson: '{"type":"resume_overflow"}' });
+      onFrame({ dataJson: "[DONE]" });
+    });
+    const loadMessages = vi.fn(async () => ({ messages: [], hasMore: false }));
+    const resumeSession: WebuiClientSessionResumer = vi.fn(async (_req, onFrame) => {
+      onFrame({ dataJson: "[DONE]" });
+    });
+    await runWebuiStreamLoop(
+      { sendMessage, resumeSession, loadMessages },
+      { sessionId: "fence-3", message: "hello" },
+      buildWebuiStreamLoopSink(setStream),
+    );
+    expect(loadMessages).toHaveBeenCalled();
+    expect(getState().messages).toEqual([]);
+    expect(getState().phase).toBe("done");
+  });
+
+  it("keeps a superseded loop's refusal off the turn that replaced it", async () => {
+    // Refusal is a write to the same shared state as every frame, so it
+    // carries the same fence. A loop that was replaced must not stamp the
+    // new turn's phase as `refused` with the old turn's reason.
+    const { setStream, getState } = buildSharedStore();
+    let failOldLoop: (() => void) | undefined;
+    const oldResume: WebuiClientSessionResumer = vi.fn(
+      async (_req, _onFrame) =>
+        new Promise<void>((_resolve, reject) => {
+          failOldLoop = () => {
+            reject(new Error("old stream died"));
+          };
+        }),
+    );
+    runWebuiStreamLoop(
+      {
+        resumeSession: oldResume,
+        loadMessages: vi.fn(async () => ({ messages: [], hasMore: false })),
+      },
+      { sessionId: "fence-8", attachTurnId: "turn-old" },
+      buildWebuiStreamLoopSink(setStream),
+    );
+    for (let tick = 0; tick < 8 && failOldLoop === undefined; tick += 1)
+      await Promise.resolve();
+
+    const fresh = parkedResume();
+    const newRun = runWebuiStreamLoop(
+      { resumeSession: fresh.resumer },
+      { sessionId: "fence-8", attachTurnId: "turn-new" },
+      buildWebuiStreamLoopSink(setStream),
+    );
+    for (let tick = 0; tick < 8 && fresh.handle.deliver === undefined; tick += 1)
+      await Promise.resolve();
+    expect(getState().subscription?.turnId).toBe("turn-new");
+    const claimed = getState();
+
+    // The superseded loop's transport now fails, and its refusal must not
+    // land on the turn that replaced it.
+    failOldLoop?.();
+    for (let tick = 0; tick < 8; tick += 1) await Promise.resolve();
+    expect(getState()).toEqual(claimed);
+    expect(getState().phase).not.toBe("refused");
+
+    fresh.handle.deliver?.({ dataJson: "[DONE]" });
+    fresh.handle.finish?.();
+    await newRun;
+  });
+
+  it("reports the generation it claimed so callers can check ownership", async () => {
+    const { setStream, getState } = buildSharedStore();
+    const generation = await runWebuiStreamLoop(
+      { sendMessage: vi.fn(async () => undefined) },
+      { sessionId: "fence-9", message: "hello" },
+      buildWebuiStreamLoopSink(setStream),
+    );
+    expect(generation).toBeTypeOf("number");
+    expect(ownsWebuiStreamGeneration(getState(), generation)).toBe(true);
+
+    // A stop releases the lease and takes ownership away with it, so the
+    // stopped loop's queued frames can no longer pass the fence.
+    const stopped = settleAbortedStream(getState());
+    expect(ownsWebuiStreamGeneration(stopped, generation)).toBe(false);
+    expect(stopped.subscription).toBeUndefined();
+    expect(stopped.phase).toBe("done");
+    expect(stopped.status).toBe("aborted");
+  });
+
+  it("stops the turn and drops the lease when there is no abort event to do it", async () => {
+    let state: WebuiStreamState = {
+      ...initialWebuiStreamState,
+      phase: "streaming",
+      subscription: { owner: "recovered", turnId: "turn-12", generation: 7 },
+    };
+    const setStream = (update: (current: WebuiStreamState) => WebuiStreamState): void => {
+      state = update(state);
+    };
+    const setSending = vi.fn();
+    // The runtime reports the session as not running and sends no
+    // `session.abort`, so the stop button is the only thing that can
+    // release the lease.
+    const abortSession = vi.fn(async () => ({ success: true }));
+    await stopWebuiTurn({ abortSession, sessionId: "fence-4", setSending, setStream });
+    expect(abortSession).toHaveBeenCalledWith({ id: "fence-4" });
+    expect(setSending).toHaveBeenCalledWith(false);
+    expect(state.subscription).toBeUndefined();
+    expect(state.phase).toBe("done");
+    expect(state.status).toBe("aborted");
+  });
+
+  it("reports a refused stop instead of settling a turn that is still running", async () => {
+    const setStream = vi.fn();
+    const setSending = vi.fn();
+    await expect(
+      stopWebuiTurn({
+        abortSession: vi.fn(async () => ({ success: false })),
+        sessionId: "fence-5",
+        setSending,
+        setStream,
+      }),
+    ).rejects.toThrow("The running turn could not be stopped");
+    expect(setStream).not.toHaveBeenCalled();
   });
 });

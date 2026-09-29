@@ -22,7 +22,7 @@ import type {
 } from "../../server/port.js";
 import type { WebuiAttachmentInput } from "../../server/port.js";
 import { formatWebuiError } from "../value-readers.js";
-import { initialWebuiStreamState } from "../stream.js";
+import { initialWebuiStreamState, ownsWebuiStreamGeneration } from "../stream.js";
 import {
   buildWebuiStreamLoopSink,
   runWebuiStreamLoop,
@@ -284,6 +284,14 @@ export interface WebuiComposerSubmitHandlers {
   readonly setStream: (
     update: (current: WebuiStreamState) => WebuiStreamState,
   ) => void;
+  /**
+   * Read the current stream state. Needed to answer "does the loop I just
+   * started still own this session?" after it settles — a submit that
+   * finishes late must not clear the sending flag of a turn that started
+   * after it. Optional so the test layer can pass a stub bag without one;
+   * without it the submit assumes it still owns the stream.
+   */
+  readonly readStream?: () => WebuiStreamState;
   readonly setSending: (sending: boolean) => void;
   readonly onDraftChange: (next: string) => void;
   readonly onNeedsSession?: (draft: string) => void;
@@ -301,6 +309,7 @@ export interface WebuiComposerSubmitHandlers {
  */
 export function buildWebuiComposerHandlers(args: {
   readonly setStream: WebuiComposerSubmitHandlers["setStream"];
+  readonly readStream?: WebuiComposerSubmitHandlers["readStream"];
   readonly setSending: WebuiComposerSubmitHandlers["setSending"];
   readonly onDraftChange: WebuiComposerSubmitHandlers["onDraftChange"];
   readonly onNeedsSession?: WebuiComposerSubmitHandlers["onNeedsSession"];
@@ -309,6 +318,7 @@ export function buildWebuiComposerHandlers(args: {
 }): WebuiComposerSubmitHandlers {
   return {
     setStream: args.setStream,
+    ...(args.readStream ? { readStream: args.readStream } : {}),
     setSending: args.setSending,
     onDraftChange: args.onDraftChange,
     onNeedsSession: args.onNeedsSession,
@@ -433,14 +443,23 @@ export async function submitWebuiComposerTurn(
     phase: "streaming",
     processingStartedAtMs: Date.now(),
   }));
+  let claimed: number | undefined;
   try {
-    await runWebuiStreamLoop(
+    claimed = await runWebuiStreamLoop(
       args.deps,
       { sessionId, message, ...(args.clientIntent ? { clientIntent: args.clientIntent } : {}), ...(attachments.length ? { attachments } : {}) },
       buildWebuiStreamLoopSink(handlers.setStream),
     );
   } finally {
-    handlers.setSending(false);
+    // Only clear the indicator if this turn still owns the stream. A submit
+    // that settles after another turn started would otherwise make that
+    // turn look idle while it is still streaming.
+    const current = handlers.readStream?.();
+    // Without a reader we cannot tell whether a newer turn took over, so
+    // fall back to clearing. A stranded "thinking" indicator is worse than
+    // one cleared a moment early.
+    if (current === undefined || ownsWebuiStreamGeneration(current, claimed))
+      handlers.setSending(false);
   }
 }
 

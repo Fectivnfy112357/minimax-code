@@ -958,6 +958,7 @@ export function WebuiClientFoundationApp(
                     rewindSession={transport?.rewindSession}
                     editSessionMessage={transport?.editSessionMessage}
                     getGoal={transport?.getGoal}
+                    getActiveTurn={transport?.getActiveTurn}
                     createGoal={transport?.createGoal}
                     patchGoal={transport?.patchGoal}
                     clearGoal={transport?.clearGoal}

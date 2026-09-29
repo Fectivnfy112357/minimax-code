@@ -99,6 +99,23 @@ export interface WebuiSessionTreePage {
 export interface WebuiSessionLookupRequest {
   readonly id: string;
 }
+
+/**
+ * Authoritative active-turn probe. `busyReason: "compaction"` means the
+ * session is busy but is not producing an assistant transcript, so callers
+ * that need a message stream must not attach on that alone.
+ */
+export interface WebuiActiveTurn {
+  readonly turnId: string;
+  readonly busyReason: "turn" | "compaction";
+  readonly locallyOwned: boolean;
+}
+
+export type WebuiActiveTurnResult = WebuiActiveTurn | undefined;
+
+export interface WebuiActiveTurnRequest {
+  readonly id: string;
+}
 export interface WebuiSessionInfo {
   readonly sessionId?: string;
   readonly agentName?: string;
@@ -781,6 +798,7 @@ export interface WebuiHarnessPort {
   getSession(
     request: WebuiSessionLookupRequest,
   ): Promise<WebuiSessionLookupResult>;
+  getActiveTurn(request: WebuiSessionLookupRequest): Promise<WebuiActiveTurnResult>;
   getMessages(request: WebuiMessagesRequest): Promise<WebuiMessagesResult>;
   getSessionDiff(request: WebuiGetSessionDiffRequest): Promise<WebuiGetSessionDiffResult>;
   getTurnDiff(request: WebuiGetTurnDiffRequest): Promise<WebuiGetTurnDiffResult>;

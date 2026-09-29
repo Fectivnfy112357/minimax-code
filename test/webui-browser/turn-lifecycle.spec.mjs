@@ -64,6 +64,65 @@ test("an agent turn streams thinking and answer, then settles on DONE", async ({
   await expect(page.locator('[data-webui-message-kind="assistant"]')).toHaveCount(1);
 });
 
+test("a server-initiated turn attaches a stream instead of hanging on 思考中", async ({ page }) => {
+  await openApp(page, "#session=A");
+  // The goal flow posts a hidden continuation prompt, a queued message
+  // drains, another client sends — all of them start a turn without this
+  // client calling sendMessage. The runtime still publishes `session.start`,
+  // and that event is the only notice the client gets.
+  await page.evaluate(() => window.__fixture.emitEvent({
+    type: "session.start",
+    payload: { sessionId: "A", turnId: "external-turn-1" },
+    timestamp: 1_700_000_000_300,
+    source: "synthetic",
+  }));
+
+  // Without a stream the transcript stays empty for the whole turn: the
+  // composer shows 思考中 and nothing ever renders.
+  await expect.poll(() => page.evaluate(() => window.__fixture.requests.some(
+    (request) => request.operation === "resumeSession" && request.body.id === "A",
+  ))).toBe(true);
+
+  await emitAgentMessage(page, "A", { msg_id: "external-1", msg_content: "Externally started answer" });
+  await expect(page.getByText("Externally started answer")).toBeVisible();
+
+  await emitStream(page, "A", { dataJson: "[DONE]" });
+  await expect(liveIndicator(page)).toHaveCount(0);
+});
+
+test("a turn whose session.start was missed is recovered through the active-turn probe", async ({ page }) => {
+  // The event can land before the client finished subscribing, or be lost
+  // across a watchEvents reconnect. The session list cannot cover the gap —
+  // its status carries no turn id — so the client asks the server instead.
+  await configureFixture(page, () => window.__fixture.setActiveTurn({ turnId: "missed-turn", busyReason: "turn", locallyOwned: false }));
+  await openApp(page, "#session=A");
+
+  await expect.poll(() => page.evaluate(() => window.__fixture.requests.some(
+    (request) => request.operation === "getActiveTurn" && request.body.id === "A",
+  ))).toBe(true);
+  await expect.poll(() => page.evaluate(() => window.__fixture.requests.some(
+    (request) => request.operation === "resumeSession" && request.body.id === "A",
+  ))).toBe(true);
+
+  await emitAgentMessage(page, "A", { msg_id: "missed-1", msg_content: "Recovered answer" });
+  await expect(page.getByText("Recovered answer")).toBeVisible();
+  await emitStream(page, "A", { dataJson: "[DONE]" });
+  await expect(liveIndicator(page)).toHaveCount(0);
+});
+
+test("a compaction does not pull the transcript into a stream", async ({ page }) => {
+  // `busyReason: "compaction"` means the session is busy without producing an
+  // assistant transcript; attaching would leave a stream with nothing to show.
+  await configureFixture(page, () => window.__fixture.setActiveTurn({ turnId: "compacting-turn", busyReason: "compaction", locallyOwned: false }));
+  await openApp(page, "#session=A");
+  await expect.poll(() => page.evaluate(() => window.__fixture.requests.some(
+    (request) => request.operation === "getActiveTurn",
+  ))).toBe(true);
+  expect(await page.evaluate(() => window.__fixture.requests.filter(
+    (request) => request.operation === "resumeSession",
+  ).length)).toBe(0);
+});
+
 test("a mid-turn socket drop resumes from the last cursor and keeps the turn", async ({ page }) => {
   await openApp(page, "#session=A");
   await startTurn(page, "A", "Synthetic resume turn");

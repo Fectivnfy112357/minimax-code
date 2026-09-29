@@ -61,6 +61,7 @@ export type {
   WebuiCreateSessionResult,
   WebuiSessionLookupRequest,
   WebuiSessionInfo,
+  WebuiActiveTurnResult,
   WebuiSessionLookupResult,
   WebuiUpdateSessionRequest,
   WebuiUpdateSessionResult,

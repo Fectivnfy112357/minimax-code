@@ -95,6 +95,14 @@ export async function dispatchWebuiFrame(
         const signal = getSignal();
         const close = () => void iterator.return?.();
         signal?.addEventListener("abort", close, { once: true });
+        // Acknowledge before pumping, but only for the operations that opt
+        // in. The data streams keep their original wire shape so any
+        // consumer expecting only `event` frames is unaffected. "Accepted"
+        // is exactly what this means: the source is not pulled until the
+        // loop below, and whatever subscription the source performs on its
+        // first pull happens after this frame is on the wire.
+        if (entry.operation.acknowledgesStream)
+          sendFrame(ws, responseFrame(parsed.requestId, { stream: true }));
         try {
           while (!signal?.aborted) {
             const next = await iterator.next();

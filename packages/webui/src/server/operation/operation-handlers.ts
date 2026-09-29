@@ -47,6 +47,7 @@ export type WebuiOperationPort = Pick<
   | "editSessionMessage"
   | "isGoalEnabled"
   | "getGoal"
+  | "getActiveTurn"
   | "createGoal"
   | "patchGoal"
   | "clearGoal"
@@ -265,6 +266,7 @@ export function createOperationHandlers(
     editSessionMessage: async (_context, body) => ({ body: await port.editSessionMessage(body) }),
     isGoalEnabled: async () => ({ body: await port.isGoalEnabled() }),
     getGoal: async (_context, body) => ({ body: await port.getGoal(body) }),
+    getActiveTurn: async (_context, body) => ({ body: await port.getActiveTurn(body) }),
     createGoal: async (_context, body) => ({ body: await port.createGoal(body) }),
     patchGoal: async (_context, body) => ({ body: await port.patchGoal(body) }),
     clearGoal: async (_context, body) => ({ body: await port.clearGoal(body) }),

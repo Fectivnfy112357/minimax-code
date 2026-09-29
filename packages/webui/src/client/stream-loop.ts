@@ -19,12 +19,16 @@ import type {
   WebuiClientSessionResumer,
 } from "./contracts.js";
 import { projectWebuiMessageToStreamMessage } from "./projection/message-projection.js";
+import { latestContextUsage, readContextUsageSnapshot } from "./projection/context-usage.js";
 
 import {
   recogniseWebuiStreamPayload,
+  nextWebuiSubscriptionGeneration,
   reduceWebuiStreamFrame,
+  releaseWebuiSubscription,
   type WebuiStreamMessage,
   type WebuiStreamState,
+  type WebuiStreamSubscription,
 } from "./stream.js";
 import type { WebuiStreamFrame } from "../server/port.js";
 import type { WebuiAttachmentInput } from "../server/port.js";
@@ -37,9 +41,18 @@ export interface WebuiStreamLoopDeps {
 
 export interface WebuiStreamLoopArgs {
   readonly sessionId: string;
-  readonly message: string;
+  /**
+   * Omitted when attaching to a turn the server started on its own — the goal
+   * flow posts a hidden continuation prompt, a queued message drains, another
+   * client sends. Present for a locally sent turn.
+   */
+  readonly message?: string;
   readonly clientIntent?: string;
   readonly attachments?: readonly WebuiAttachmentInput[];
+  /** Turn this attachment belongs to, so the lease starts out identified. */
+  readonly attachTurnId?: string;
+  /** Resume point to reuse instead of re-anchoring from history. */
+  readonly afterCursor?: string;
 }
 
 export interface WebuiStreamLoopSink {
@@ -49,6 +62,34 @@ export interface WebuiStreamLoopSink {
   readonly setPhase: (phase: WebuiStreamState["phase"]) => void;
   /** Replace the transcript without touching the rest of the state. */
   readonly setMessages: (messages: readonly WebuiStreamMessage[]) => void;
+  /**
+   * Claim the session's live stream for this client before it opens, so a
+   * `session.start` event for our own turn adopts the lease instead of
+   * opening a second stream. Local sends claim as `local-send`; attachments
+   * claim as `recovered` because the turn was not ours.
+   *
+   * Optional: a caller that does not model subscription ownership (the
+   * throw-on-everything failure fixtures, for instance) simply has no lease to
+   * claim, and the `session.start` handler stays inert for it.
+   */
+  readonly claimSubscription?: (
+    owner: WebuiStreamSubscription["owner"],
+    turnId?: string,
+  ) => number | undefined;
+  /**
+   * Drop the lease. Every terminal exit releases it.
+   *
+   * The loop calls this one **raw**, never through `safeSink`: the wrapper
+   * disables itself after the first failure, which would strand the lease
+   * exactly when the store is least able to recover. Cleanup is not a render
+   * path, so it does not obey the failure-containment rule.
+   */
+  readonly releaseSubscription?: () => void;
+  /**
+   * Extra stream fields an attachment seeds while loading history — the
+   * context snapshot and the turn start the live elapsed counter reads.
+   */
+  readonly setStreamExtra?: (extra: Partial<WebuiStreamState>) => void;
   /**
    * Record an unrecoverable failure with a user-visible reason. The
    * second argument is set when the reducer had already accepted at
@@ -66,7 +107,13 @@ export interface WebuiStreamLoopSink {
  * is the throw value, normalised to an `Error`.
  */
 interface SinkFailure {
-  readonly label: "applyFrame" | "setPhase" | "setMessages" | "refuse";
+  readonly label:
+    | "applyFrame"
+    | "setPhase"
+    | "setMessages"
+    | "claimSubscription"
+    | "setStreamExtra"
+    | "refuse";
   readonly error: Error;
 }
 
@@ -111,6 +158,24 @@ function safeSink(
       applyFrame: wrap(sink.applyFrame, "applyFrame"),
       setPhase: wrap(sink.setPhase, "setPhase"),
       setMessages: wrap(sink.setMessages, "setMessages"),
+      claimSubscription: sink.claimSubscription
+        ? ((owner, turnId) => {
+            // `wrap` returns void; the claim's generation has to reach the
+            // loop so the caller can still recognise its own writes.
+            try {
+              return sink.claimSubscription?.(owner, turnId);
+            } catch (error) {
+              first = { label: "claimSubscription", error: describeError(error) };
+              return undefined;
+            }
+          })
+        : () => undefined,
+      // `releaseSubscription` is deliberately absent: cleanup must survive
+      // the disable rule, so the loop calls the raw sink through
+      // `releaseLease` instead.
+      setStreamExtra: sink.setStreamExtra
+        ? wrap(sink.setStreamExtra, "setStreamExtra")
+        : undefined,
       refuse: wrap(sink.refuse, "refuse"),
     },
     firstFailure: () => first,
@@ -161,19 +226,67 @@ export function buildWebuiStreamLoopSink(
     update: (current: WebuiStreamState) => WebuiStreamState,
   ) => void,
 ): WebuiStreamLoopSink {
+  // Set when this sink claims a lease. Everything a superseded loop writes —
+  // late chunks, a late `[DONE]`, a stray `phase: "streaming"` that would
+  // resurrect the "思考中" spinner — is dropped here rather than in the shared
+  // reducer, because the reducer cannot tell which loop a frame came from.
+  let generation: number | undefined;
+  // Fencing is about *other* loops, not about our own lease still being
+  // visible. A `[DONE]` frame releases the lease mid-loop and the loop keeps
+  // working (a `resume_overflow` may already be pending a resync), so the
+  // test is "am I still the newest claimer", not "do I still hold a lease".
+  // Comparing against the lease instead would re-admit a superseded loop the
+  // moment the newer turn's `[DONE]` cleared it.
+  const mine = (current: WebuiStreamState): boolean => {
+    if (generation === undefined) return current.subscription === undefined;
+    return current.lastClaimedGeneration === generation;
+  };
   return {
-    applyFrame: (frame) =>
-      setStream((current) => reduceWebuiStreamFrame(current, frame)),
-    setPhase: (phase) => setStream((current) => ({ ...current, phase })),
-    setMessages: (messages) =>
-      setStream((current) => ({ ...current, messages })),
-    refuse: (reason, options) =>
+    claimSubscription: (owner, turnId) => {
+      const next = nextWebuiSubscriptionGeneration();
+      generation = next;
       setStream((current) => ({
         ...current,
-        phase: "refused",
-        refusal: reason,
-        transcriptIncomplete: options?.transcriptIncomplete ?? false,
-      })),
+        lastClaimedGeneration: next,
+        subscription: {
+          owner,
+          generation: next,
+          ...(turnId ? { turnId } : {}),
+        },
+      }));
+      return next;
+    },
+    applyFrame: (frame) =>
+      setStream((current) =>
+        mine(current) ? reduceWebuiStreamFrame(current, frame) : current,
+      ),
+    setPhase: (phase) =>
+      setStream((current) => (mine(current) ? { ...current, phase } : current)),
+    setMessages: (messages) =>
+      setStream((current) => (mine(current) ? { ...current, messages } : current)),
+    setStreamExtra: (extra) =>
+      setStream((current) => (mine(current) ? { ...current, ...extra } : current)),
+    // Scoped by generation: if a newer loop already claimed, this clears
+    // nothing.
+    releaseSubscription: () => {
+      if (generation === undefined) return;
+      setStream((current) => releaseWebuiSubscription(current, { generation }));
+    },
+    // Refusal is a write to the same shared state as everything else, so it
+    // carries the same fence. A loop that was superseded must not stamp
+    // `refused` over the turn that replaced it — that would show the user
+    // the old turn's failure as the new turn's.
+    refuse: (reason, options) =>
+      setStream((current) =>
+        mine(current)
+          ? {
+              ...current,
+              phase: "refused",
+              refusal: reason,
+              transcriptIncomplete: options?.transcriptIncomplete ?? false,
+            }
+          : current,
+      ),
   };
 }
 
@@ -189,14 +302,41 @@ export function buildWebuiStreamLoopSink(
  * never rejects — sink callback failures are contained by `safeSink`
  * above, and transport/load errors are caught and surfaced through
  * `sink.refuse`.
+ *
+ * It resolves with the subscription generation this loop claimed, or
+ * `undefined` if it never claimed one. Callers need that to answer
+ * "is my post-loop cleanup still mine to do?": a loop that finished late
+ * must not clear the sending flag of a turn that started after it.
  */
-export async function runWebuiStreamLoop(
+export function runWebuiStreamLoop(
+  deps: WebuiStreamLoopDeps,
+  args: WebuiStreamLoopArgs,
+  sink: WebuiStreamLoopSink,
+): Promise<number | undefined> {
+  const claimed = { value: undefined as number | undefined };
+  const observed: WebuiStreamLoopSink = sink.claimSubscription
+    ? {
+        ...sink,
+        claimSubscription: (owner, turnId) => {
+          claimed.value = sink.claimSubscription?.(owner, turnId);
+          return claimed.value;
+        },
+      }
+    : sink;
+  return driveWebuiStreamLoop(deps, args, observed).then(() => claimed.value);
+}
+
+async function driveWebuiStreamLoop(
   deps: WebuiStreamLoopDeps,
   args: WebuiStreamLoopArgs,
   sink: WebuiStreamLoopSink,
 ): Promise<void> {
   const { sendMessage, resumeSession, loadMessages } = deps;
   const { sessionId, message } = args;
+  // No message means we are attaching to a turn the server started, not
+  // sending one. Both modes share this loop so there is exactly one place
+  // that owns the stream, its recovery and its lease.
+  const attaching = message === undefined;
   // Count frames the reducer accepted before any sink failure was
   // recorded. `transcriptIncomplete` is part of the R16 contract: when
   // a sink failure ends the turn, the visible transcript may be stale.
@@ -211,6 +351,31 @@ export async function runWebuiStreamLoop(
   let cursor: string | undefined;
   let nextAction: "resume" | "resync" | undefined;
   let sent = false;
+  let leaseReleased = false;
+
+  /**
+   * Releases the lease exactly once, through the raw sink, on every exit
+   * path — including the ones taken after a sink callback already threw.
+   * Idempotent so that a `finalizeOnExit` that runs before the transport
+   * error surfaces does not release twice.
+   */
+  const releaseLease = (): void => {
+    if (leaseReleased) return;
+    leaseReleased = true;
+    try {
+      sink.releaseSubscription?.();
+    } catch (error) {
+      // Cleanup is the last thing standing between a finished turn and a
+      // permanently stuck "thinking" indicator. Report and move on: the
+      // loop must still resolve.
+      try {
+        // eslint-disable-next-line no-console
+        console.error("[webui] lease release failed:", error);
+      } catch {
+        // Give up; console.error can throw in extreme environments.
+      }
+    }
+  };
 
   const captureFrame = (frame: WebuiStreamFrame): void => {
     if (frame.cursor !== undefined) cursor = frame.cursor;
@@ -245,6 +410,13 @@ export async function runWebuiStreamLoop(
    * raw sink via `guarded` or the `sink` parameter.
    */
   const finalizeOnExit = (reason: string): void => {
+    // The lease is released before anything else, and through the *raw*
+    // sink: `safeSink` disables every wrapped callback after the first
+    // failure, so a released-by-wrapper call would silently become a no-op
+    // exactly when the store is most likely to be wedged. A stuck lease is
+    // the "思考中" spinner that never goes away, so cleanup must not be
+    // governed by the failure rule that protects the render path.
+    releaseLease();
     if (guarded.firstFailure() !== undefined) {
       guarded.reportSinkFailure();
       return;
@@ -267,6 +439,12 @@ export async function runWebuiStreamLoop(
   };
 
   try {
+    // Claim before anything opens, inside the try: a claim that throws is a
+    // sink failure like any other, and letting it escape would reject the
+    // loop's promise, breaking the never-reject contract every caller
+    // relies on. An attachment knows its turn up front; a local send
+    // learns it from the `session.start` the runtime publishes.
+    if (attaching) sink.claimSubscription?.("recovered", args.attachTurnId);
     safe.setPhase("streaming");
     while (true) {
       if (nextAction === "resync") {
@@ -320,10 +498,82 @@ export async function runWebuiStreamLoop(
       }
       if (!sent) {
         sent = true;
+        if (attaching) {
+          // Attach to a turn the server started without us. An unanchored
+          // resume makes the runtime take its unanchored branch and skip
+          // every frame the turn produced before we subscribed, so anchor on
+          // the newest persisted message (or reuse the cursor we already hold).
+          if (!resumeSession) {
+            finalizeOnExit("resumeSession transport is unavailable");
+            return;
+          }
+          let anchor: { afterCursor?: string; afterMsgId?: string } = {};
+          if (args.afterCursor) anchor = { afterCursor: args.afterCursor };
+          else if (loadMessages) {
+            let page;
+            try {
+              page = await loadMessages({ id: sessionId });
+            } catch (error) {
+              finalizeOnExit(
+                error instanceof Error ? error.message : String(error),
+              );
+              return;
+            }
+            // Seed the transcript with the turn we are attaching to. Older
+            // history is already served by the transcript's own page, so
+            // only the latest user turn is projected here — mirroring what
+            // this path did before it became the single entry point.
+            const history = page.messages ?? [];
+            let latestUserIndex = -1;
+            for (let index = history.length - 1; index >= 0; index -= 1) {
+              const message = history[index];
+              if (message?.role === "user" || message?.msgId.startsWith("msg-user-")) {
+                latestUserIndex = index;
+                break;
+              }
+            }
+            const latestTurn = history.slice(
+              latestUserIndex >= 0 ? latestUserIndex : Math.max(0, history.length - 1),
+            );
+            const anchored = latestTurn.map(projectWebuiMessageToStreamMessage);
+            const startedAt = latestTurn.find((message) => message.role === "user")?.timestamp;
+            const contextUsage =
+              readContextUsageSnapshot(page.contextSnapshot) ?? latestContextUsage(anchored);
+            safe.setMessages(anchored);
+            safe.setPhase("streaming");
+            safe.setStreamExtra?.({
+              ...(contextUsage ? { contextUsage } : {}),
+              processingStartedAtMs:
+                typeof startedAt === "number" ? startedAt : Date.now(),
+              resumeRequired: false,
+              refusal: undefined,
+            });
+            const last = history.at(-1);
+            if (last) anchor = { afterMsgId: last.msgId };
+          }
+          try {
+            await resumeSession({ id: sessionId, ...anchor }, captureFrame);
+          } catch (error) {
+            const reason = error instanceof Error ? error.message : String(error);
+            if (!cursor) {
+              finalizeOnExit(reason);
+              return;
+            }
+            nextAction = "resume";
+            continue;
+          }
+          if (nextAction) continue;
+          break;
+        }
         if (!sendMessage) {
           finalizeOnExit("sendMessage transport is unavailable");
           return;
         }
+        // Claim the subscription before the stream opens. The runtime
+        // publishes `session.start` for every turn including locally sent
+        // ones, so without this lease the composer would attach a second
+        // stream to our own turn.
+        sink.claimSubscription?.("local-send");
         try {
           await sendMessage(
             {
@@ -363,6 +613,11 @@ export async function runWebuiStreamLoop(
     // through `guarded.reportSinkFailure`, which falls back to
     // `console.error` if every sink callback is broken. The never-
     // reject promise contract is preserved on every path.
+    // The lease is released before the phase settles, so a `session.start`
+    // for the next turn that lands in between sees no owner and attaches
+    // instead of colliding with a dead one. `releaseLease` is raw and
+    // idempotent, so this still holds when an earlier sink callback threw.
+    releaseLease();
     if (guarded.firstFailure() === undefined) {
       safe.setPhase("done");
     } else {
@@ -373,7 +628,9 @@ export async function runWebuiStreamLoop(
     // land here. The never-reject guarantee is honoured: the promise
     // resolves with `safe.refuse` called, not rejected. If a sink
     // callback already failed, prefer the recorded failure over the
-    // transport error so we don't lose the diagnostic.
+    // transport error so we don't lose the diagnostic. Either way the
+    // lease goes first — reporting the failure must not skip the cleanup.
+    releaseLease();
     if (guarded.firstFailure() === undefined) {
       const reason = error instanceof Error ? error.message : String(error);
       finalizeOnExit(reason);

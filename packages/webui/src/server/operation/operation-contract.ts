@@ -28,6 +28,16 @@ export type WebuiOperationHandler<Body, ResultBody = Body> = (
 export interface WebuiOperation<Body = unknown, ResultBody = Body> {
   readonly name: string;
   readonly validate: (body: unknown) => WebuiOperationValidation<Body>;
+  /**
+   * Opt this stream operation into the acknowledgement frame. Off by
+   * default: the data streams (`sendMessage`, `resumeSession`,
+   * `watchTerminal`) keep their original wire shape — a consumer that
+   * expects only `event` frames is unaffected. Only an operation that needs
+   * to tell "accepted" from "still connecting" sets this, which today is
+   * the event watcher: it is the one stream with no payload of its own to
+   * observe.
+   */
+  readonly acknowledgesStream?: boolean;
 }
 
 export type WebuiOperationValidation<Body> =

@@ -37,7 +37,17 @@ import {
 } from "../contracts.js";
 import { projectWebuiMessageToStreamMessage, readUsageNumber } from "../projection/message-projection.js";
 import { webuiAnswersEndTurn } from "../projection/questionnaire-state.js";
-import { reduceWebuiStreamFrame, webuiSessionStatusType } from "../stream.js";
+import { latestContextUsage, readContextUsageSnapshot } from "../projection/context-usage.js";
+import {
+  isWebuiSubscriptionProbeCurrent,
+  ownsWebuiStreamGeneration,
+  reduceWebuiStreamFrame,
+  releaseWebuiSubscription,
+  resolveWebuiSubscriptionRecheck,
+  stopWebuiTurn,
+  webuiSessionStatusType,
+} from "../stream.js";
+import { buildWebuiStreamLoopSink, runWebuiStreamLoop } from "../stream-loop.js";
 
 /** Capability subset the session composer consumes. Single source of truth
  *  lives in `WebuiTransport`; this alias keeps the prop block free of
@@ -58,6 +68,8 @@ type WebuiSessionComposerCapabilities = Pick<
 >;
 import type {
   WebuiGoal,
+  WebuiActiveTurnRequest,
+  WebuiActiveTurnResult,
   WebuiGoalCreateRequest,
   WebuiGoalEnabledResult,
   WebuiGoalSessionRequest,
@@ -471,6 +483,7 @@ export function WebuiComposer({
   rewindSession,
   editSessionMessage,
   getGoal,
+  getActiveTurn,
   createGoal,
   patchGoal,
   clearGoal,
@@ -526,6 +539,9 @@ export function WebuiComposer({
   readonly resumeSession?: WebuiClientSessionResumer;
 
   readonly getGoal?: (request: WebuiGoalSessionRequest) => Promise<WebuiGoal | undefined>;
+  /** Authoritative active-turn probe; resolves the `recheck` case and the
+   * missed-event gap that a reconnect or a slow subscribe can open. */
+  readonly getActiveTurn?: (request: WebuiActiveTurnRequest) => Promise<WebuiActiveTurnResult>;
   readonly createGoal?: (request: WebuiGoalCreateRequest) => Promise<WebuiGoal>;
 
   readonly isGoalEnabled?: () => Promise<WebuiGoalEnabledResult>;
@@ -617,86 +633,8 @@ export function WebuiComposer({
   // panel it has open (the 最近 list or the directory browser). The picker has
   // to be judged against THIS, not `composerRegionRef` — see the effect below.
   const workspacePickerRef = useRef<HTMLDivElement | null>(null);
-  const restorationKeyRef = useRef<string>();
   const fieldId = useId();
   const contextUsage = stream.contextUsage ?? stream.messages.at(-1)?.contextUsage;
-
-  useEffect(() => {
-    if (!sessionId) {
-      // New Task/home breaks the selected-session sequence too. Clear the
-      // Clear the per-selection restoration guard so returning to the same
-      // still-running conversation can resume its stream again.
-      restorationKeyRef.current = undefined;
-      return undefined;
-    }
-    if (!resumeSession) return undefined;
-    const statusType = webuiSessionStatusType(sessionStatus);
-    const restoreKey = `${sessionId}:${statusType}`;
-    if (restorationKeyRef.current === restoreKey) return undefined;
-    restorationKeyRef.current = restoreKey;
-    if (statusType !== "started" && !isTurnLive(stream.phase)) return undefined;
-    let cancelled = false;
-    const restore = async () => {
-      try {
-        const page = await loadMessages?.({ id: sessionId });
-        if (cancelled) return;
-        const history = page?.messages ?? [];
-        let latestUserIndex = -1;
-        for (let index = history.length - 1; index >= 0; index -= 1) {
-          const message = history[index];
-          if (message?.role === "user" || message?.msgId.startsWith("msg-user-")) {
-            latestUserIndex = index;
-            break;
-          }
-        }
-        const latestTurn = history.slice(latestUserIndex >= 0 ? latestUserIndex : Math.max(0, history.length - 1));
-        const existing = runtimeState.stream;
-        const anchoredMessages = existing.messages.length > 0
-          ? existing.messages
-          : latestTurn.map(projectWebuiMessageToStreamMessage);
-        const lastHistoryMessage = history.at(-1);
-        const startedAt = latestTurn.find((message) => message.role === "user")?.timestamp;
-        const contextUsage = readContextUsageSnapshot(page?.contextSnapshot) ?? latestContextUsage(anchoredMessages);
-        setStream((current) => ({
-          ...current,
-          phase: "streaming",
-          messages: anchoredMessages,
-          ...(contextUsage ? { contextUsage } : {}),
-          ...(current.processingStartedAtMs !== undefined
-            ? {}
-            : { processingStartedAtMs: typeof startedAt === "number" ? startedAt : Date.now() }),
-          resumeRequired: false,
-          refusal: undefined,
-        }));
-        await resumeSession(
-          {
-            id: sessionId,
-            ...(existing.cursor
-              ? { afterCursor: existing.cursor }
-              : lastHistoryMessage
-                ? { afterMsgId: lastHistoryMessage.msgId }
-                : {}),
-          },
-          (frame) => {
-            if (!cancelled) setStream((current) => reduceWebuiStreamFrame(current, frame));
-          },
-        );
-        if (!cancelled) setStream((current) => current.phase === "streaming" || current.phase === "reconnecting" ? { ...current, phase: "done" } : current);
-      } catch (error) {
-        if (!cancelled) setStream((current) => ({
-          ...current,
-          phase: "error",
-          refusal: error instanceof Error ? error.message : String(error),
-        }));
-      }
-    };
-    void restore();
-    return () => { cancelled = true; };
-  // Stream state changes are consumed by the frame callback, not a reason to
-  // restart restoration. This effect runs once for a selected session/status.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, sessionStatus, resumeSession, loadMessages]);
-
   useEffect(() => {
     if (!sessionId || webuiSessionStatusType(sessionStatus) === "started" || !loadMessages) return;
     let cancelled = false;
@@ -749,6 +687,84 @@ export function WebuiComposer({
           error instanceof Error ? error.message : String(error),
         );
     });
+    const readStream = () =>
+      readSessionRuntimeState(sessionId ?? HOME_SESSION_RUNTIME_KEY).stream;
+
+    /**
+     * The single entry point for following a turn this client did not start.
+     * It runs the same stream loop a local send uses, so history anchoring,
+     * cursor resume, `resume_overflow` resync, the lease and every terminal
+     * exit are handled in exactly one place.
+     */
+    const attachToTurn = (turnId: string | undefined) => {
+      if (!sessionId || !resumeSession) return;
+      const existing = readStream();
+      if (existing.subscription) return;
+      setSending(true);
+      void runWebuiStreamLoop(
+        { resumeSession, loadMessages },
+        {
+          sessionId,
+          attachTurnId: turnId,
+          ...(existing.cursor ? { afterCursor: existing.cursor } : {}),
+        },
+        buildWebuiStreamLoopSink(setStream),
+      ).then((generation) => {
+        // Only clear the indicator if this loop still owns the stream. A
+        // loop that finished after a newer turn started would otherwise
+        // make the new turn look idle while it is still streaming.
+        if (ownsWebuiStreamGeneration(readStream(), generation))
+          setSending(false);
+      });
+    };
+
+    /** `session.start` named a turn we do not hold while holding another. */
+    const recheckSubscription = (turnId: string | undefined) => {
+      if (!sessionId || !getActiveTurn) return;
+      // Read the lease *before* the probe leaves, not when it returns. A
+      // local send that claims during the round trip gets a lease with no
+      // turn id yet; reading only at resolution time would let this stale
+      // snapshot retarget the user's own turn away from them.
+      const probed = readStream().subscription;
+      if (!probed) return;
+      void getActiveTurn({ id: sessionId }).then((active) => {
+        const owned = readStream().subscription;
+        // The lease this probe was about is gone or has been replaced. The
+        // answer describes a turn that is no longer ours to act on.
+        if (!isWebuiSubscriptionProbeCurrent(probed, owned) || !owned) return;
+        const decision = resolveWebuiSubscriptionRecheck(owned, active);
+        if (decision === "hold") return;
+        // Scoped to the generation we decided is stale: a newer loop may
+        // have claimed while the probe was in flight, and that lease is
+        // the live one. The old stream is not cancelled server-side, so its
+        // late frames stay fenced out by the generation guard in the sink.
+        setStream((current) =>
+          releaseWebuiSubscription(current, { generation: owned.generation }),
+        );
+        // `release` means the turn the event announced is already over (or is
+        // a compaction, which produces no transcript); its own terminal event
+        // settles the phase.
+        if (decision === "retarget" && active) attachToTurn(active.turnId);
+      }).catch(() => undefined);
+    };
+
+    /**
+     * Gap recovery. A `session.start` can arrive before this client finished
+     * subscribing, or be missed entirely while `watchEvents` reconnects, and
+     * the session list cannot answer the question — its `status` carries no
+     * turn id and never refreshes on those events. Ask the server instead.
+     */
+    const recoverMissedTurn = () => {
+      if (!sessionId || !getActiveTurn) return;
+      void getActiveTurn({ id: sessionId }).then((active) => {
+        if (!active || active.busyReason !== "turn") return;
+        // Read the lease at resolution time, not at call time: a local send
+        // that started while the probe was in flight has already claimed it.
+        if (readStream().subscription) return;
+        attachToTurn(active.turnId);
+      }).catch(() => undefined);
+    };
+
     const onRuntimeEvent = createWebuiWatchEventCallback(
       sessionId,
       () => readSessionRuntimeState(sessionId ?? HOME_SESSION_RUNTIME_KEY).stream,
@@ -762,23 +778,47 @@ export function WebuiComposer({
         setPermissions,
         setQuestionnaire,
         setGoal,
+        attachStream: (turnId, mode) => {
+          // `recheck` means we already hold a different turn's lease. The
+          // event alone cannot say whether that lease is stale or genuinely
+          // concurrent, so ask the server which turn is actually running.
+          if (mode === "recheck") {
+            void recheckSubscription(turnId);
+            return;
+          }
+          attachToTurn(turnId);
+        },
       },
     );
     const unsubscribe = watchEvents?.(onRuntimeEvent, () => {
-      // A reconnect may have missed permission, questionnaire or queue events
-      // while the browser was suspended. Re-read the authoritative state once
-      // the replacement event stream is open.
+      // The server accepted `watchEvents` and is pumping it. Not a
+      // subscription barrier — the runtime subscribes on the server's first
+      // pull, just after this — so this is the same probe the mount path
+      // runs, repeated once the stream is being established rather than
+      // only requested. A reconnect may also have missed permission,
+      // questionnaire, queue or `session.start` events while the browser
+      // was suspended, so re-read the authoritative state too.
       void refreshPending().catch(() => undefined);
+      recoverMissedTurn();
     });
+    // Neither probe is gated on the watcher, and the two are not ordered
+    // against each other. A turn that started before a probe read the server
+    // is still running, so `getActiveTurn` returns it; a turn that starts
+    // after announces itself on the event stream. When there is no watcher
+    // there is no announcement to wait for, so the mount probe is the only
+    // recovery this client has.
+    if (unsubscribe === undefined) recoverMissedTurn();
     return () => {
       cancelled = true;
       unsubscribe?.();
     };
   }, [
     agentName,
+    getActiveTurn,
     getPendingQuestionnaire,
     listPendingPermissions,
     listQueueMessages,
+    resumeSession,
     sessionId,
     watchEvents,
   ]);
@@ -1017,15 +1057,7 @@ export function WebuiComposer({
     if (!sessionId || !abortSession) return;
     setInteractionError(undefined);
     try {
-      const result = await abortSession({ id: sessionId });
-      if (result.success === false)
-        throw new Error("The running turn could not be stopped");
-      setSending(false);
-      setStream((current) => ({
-        ...current,
-        phase: "done",
-        status: "aborted",
-      }));
+      await stopWebuiTurn({ abortSession, sessionId, setSending, setStream });
     } catch (error) {
       setInteractionError(
         error instanceof Error ? error.message : String(error),
@@ -1480,6 +1512,7 @@ export function WebuiComposer({
   // of this project's policy.
   const handlers = buildWebuiComposerHandlers({
     setStream,
+    readStream: () => readSessionRuntimeState(sessionId ?? HOME_SESSION_RUNTIME_KEY).stream,
     setSending,
     onDraftChange,
     onNeedsSession,
@@ -2299,24 +2332,7 @@ export function WebuiComposer({
   );
 }
 
-function latestContextUsage(
-  messages: readonly { readonly contextUsage?: Record<string, unknown> }[],
-): Record<string, unknown> | undefined {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const contextUsage = messages[index]?.contextUsage;
-    if (contextUsage) return contextUsage;
-  }
-  return undefined;
-}
 
-function readContextUsageSnapshot(
-  snapshot: Record<string, unknown> | undefined,
-): Record<string, unknown> | undefined {
-  const usage = snapshot?.usage;
-  return usage && typeof usage === "object" && !Array.isArray(usage)
-    ? usage as Record<string, unknown>
-    : undefined;
-}
 
 function ContextUsageIndicator({ usage, usageQuota }: {
   readonly usage?: Record<string, unknown>;

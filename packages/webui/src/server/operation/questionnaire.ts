@@ -9,6 +9,9 @@ import { validateOptionalObjectBody, validateNamedSessionBody, validatePermissio
 import { WATCH_EVENTS_OPERATION_NAME, LIST_PENDING_PERMISSIONS_OPERATION_NAME, GET_PENDING_QUESTIONNAIRE_OPERATION_NAME, REPLY_PERMISSION_OPERATION_NAME, REPLY_QUESTIONNAIRE_OPERATION_NAME, DISMISS_QUESTIONNAIRE_OPERATION_NAME } from "./names.js";
 export const watchEventsOperation: WebuiOperation<Record<string, unknown>> = {
   name: WATCH_EVENTS_OPERATION_NAME,
+  // The event watcher is the only stream the client has to reason about
+  // before any payload arrives, so it is the only one that acknowledges.
+  acknowledgesStream: true,
   validate: (body) =>
     validateOptionalObjectBody(WATCH_EVENTS_OPERATION_NAME, body),
 };

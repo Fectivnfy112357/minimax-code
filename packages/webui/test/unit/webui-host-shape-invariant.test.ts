@@ -98,6 +98,9 @@ class FullPort implements WebuiHarnessPort {
   async getSession() {
     return { session: { sessionId: "invariant" } };
   }
+  async getActiveTurn() {
+    return undefined;
+  }
   async getMessages() {
     return { messages: [], hasMore: false };
   }

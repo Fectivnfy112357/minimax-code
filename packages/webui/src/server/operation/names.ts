@@ -4,6 +4,7 @@ export const LIST_VISIBLE_PROJECTS_OPERATION_NAME = "listVisibleProjects" as con
 export const GET_SESSION_TREE_OPERATION_NAME = "getSessionTree" as const;
 export const CREATE_SESSION_OPERATION_NAME = "createSession" as const;
 export const GET_SESSION_OPERATION_NAME = "getSession" as const;
+export const GET_ACTIVE_TURN_OPERATION_NAME = "getActiveTurn" as const;
 export const GET_MESSAGES_OPERATION_NAME = "getMessages" as const;
 export const GET_SESSION_DIFF_OPERATION_NAME = "getSessionDiff" as const;
 export const GET_TURN_DIFF_OPERATION_NAME = "getTurnDiff" as const;

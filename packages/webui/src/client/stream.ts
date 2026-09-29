@@ -25,7 +25,67 @@ export interface WebuiStreamMessage {
   readonly role?: "user";
 }
 
+/**
+ * Which live stream this client currently holds for a session.
+ *
+ * A turn can start without this client sending anything — the goal flow posts
+ * a hidden continuation prompt, a queued message drains, another client sends
+ * — and those turns only reach the transcript if someone opens a stream. At
+ * the same time a locally sent turn already owns one, and opening a second
+ * would corrupt the state: chunks append in `applyFrameData`, so the answer
+ * would double, and `applyFrameCursor` overwrites the cursor without comparing
+ * order, so the resume point would follow whichever stream reported last.
+ *
+ * This field is deliberately independent of `phase`. `phase` answers "is a
+ * turn live"; this answers "is *this* client attached to it".
+ */
+export interface WebuiStreamSubscription {
+  /** `local-send` was opened by `sendMessage`; `recovered` was opened after
+   * the server started a turn we did not initiate. */
+  readonly owner: "local-send" | "recovered";
+  /**
+   * Turn this subscription belongs to. A local send does not know it yet —
+   * `runWebuiStreamLoop` opens the stream before the runtime publishes
+   * `session.start` — so it is adopted from the first matching event.
+   */
+  readonly turnId?: string;
+  /**
+   * Identifies the loop that opened this stream, so a loop that lost its lease
+   * can recognise its own stale writes. Frames carry no turn id on the wire
+   * (`WebuiStreamFrame` is cursor/event/data only), so turn id alone cannot
+   * tell a superseded loop apart from the current one — and the window before
+   * a local send learns its turn id is exactly when two loops are most
+   * likely to overlap. A superseded stream is not cancelled by the server
+   * (`resumeSession` exposes no handle), so without this field its late
+   * chunks and its `[DONE]` would land in the store the new loop owns.
+   */
+  readonly generation: number;
+}
+
+/**
+ * Monotonic client-side stream identity. Only the client can tell two
+ * concurrent loops apart, so the counter lives here rather than on the wire.
+ */
+let subscriptionGeneration = 0;
+
+export function nextWebuiSubscriptionGeneration(): number {
+  subscriptionGeneration += 1;
+  return subscriptionGeneration;
+}
+
 export interface WebuiStreamState {
+  /**
+   * Generation of the most recent claim, kept even after the lease is
+   * released. `subscription` answers "is a lease held right now"; this
+   * answers "which loop is the newest one" — and that answer has to outlive
+   * the release. If fencing only compared against the live subscription, a
+   * superseded loop would start writing again the instant the newer turn's
+   * `[DONE]` cleared the lease, and its late chunks would land in a session
+   * that had already moved on.
+   */
+  readonly lastClaimedGeneration?: number;
+  /** Live stream this client holds for the session, if any. */
+  readonly subscription?: WebuiStreamSubscription;
   /** Turn start for the live 已执行 N 秒 row and the thinking counter. */
   readonly processingStartedAtMs?: number;
   readonly phase:
@@ -84,6 +144,220 @@ export const initialWebuiStreamState: WebuiStreamState = {
   resumeRequired: false,
   transcriptIncomplete: false,
 };
+
+/**
+ * What a `session.start` event means for this client's stream.
+ *
+ * - `attach` — nobody owns a stream, so the server started a turn we did not
+ *   initiate (goal, queue drain, another client) and we have to open one.
+ * - `claim` — our own `sendMessage` stream is already open and has not yet
+ *   learned its turn id. Adopt it; opening a second stream would double the
+ *   answer text.
+ * - `hold` — we already track this exact turn.
+ * - `recheck` — we hold a stream for a *different* turn, so we cannot tell
+ *   from this event alone whether our stream is stale or whether the two are
+ *   genuinely concurrent. The caller must consult the authoritative active
+ *   turn before touching the subscription.
+ */
+export type WebuiSessionStartDecision = "attach" | "claim" | "hold" | "recheck";
+
+export function decideWebuiSessionStart(
+  state: WebuiStreamState,
+  turnId: string | undefined,
+): WebuiSessionStartDecision {
+  const owned = state.subscription;
+  if (!owned) return "attach";
+  if (owned.turnId === undefined) return turnId === undefined ? "hold" : "claim";
+  if (turnId === undefined || owned.turnId === turnId) return "hold";
+  return "recheck";
+}
+
+/** Adopts the turn id reported by `session.start` onto an open subscription. */
+export function claimWebuiSubscriptionTurn(
+  state: WebuiStreamState,
+  turnId: string | undefined,
+): WebuiStreamState {
+  const owned = state.subscription;
+  if (!owned || owned.turnId !== undefined || turnId === undefined) return state;
+  return { ...state, subscription: { ...owned, turnId } };
+}
+
+/**
+ * What a release is allowed to clear. An empty scope releases whatever is
+ * held; naming a `generation` or a `turnId` releases only a matching lease,
+ * so a superseded loop's late terminal frame and a late terminal *event*
+ * cannot strip the lease the current loop just took.
+ */
+export interface WebuiSubscriptionReleaseScope {
+  readonly generation?: number;
+  readonly turnId?: string;
+}
+
+/** Drops the subscription. Terminal frames and terminal lifecycle events both
+ * release it, so a later `session.start` attaches instead of colliding. */
+export function releaseWebuiSubscription(
+  state: WebuiStreamState,
+  scope?: WebuiSubscriptionReleaseScope,
+): WebuiStreamState {
+  const owned = state.subscription;
+  if (owned === undefined) return state;
+  if (scope?.generation !== undefined && owned.generation !== scope.generation)
+    return state;
+  if (scope?.turnId !== undefined && owned.turnId !== scope.turnId) return state;
+  return { ...state, subscription: undefined };
+}
+
+/** Minimal shape the recheck resolution needs from the active-turn probe. */
+export interface WebuiActiveTurnLike {
+  readonly turnId: string;
+  readonly busyReason: "turn" | "compaction";
+}
+
+/**
+ * What a successful stop has to do to the stream state. Split out of the
+ * composer so the release is reachable by a test: the stop button has no
+ * guaranteed `session.abort` event to clean up after it, so if this drops
+ * the lease the session stays wedged in "thinking" with no way out.
+ */
+export function settleAbortedStream(state: WebuiStreamState): WebuiStreamState {
+  return {
+    ...releaseWebuiSubscription({
+      ...state,
+      phase: "done",
+      status: "aborted",
+    }),
+    // The turn is over, so no loop owns the stream any more. Clearing the
+    // latest-claim marker is what actually silences the loop the user just
+    // stopped: releasing the lease alone left its generation standing, so
+    // frames still queued on the old stream would keep passing the fence
+    // and write themselves back over the stopped turn.
+    lastClaimedGeneration: undefined,
+  };
+}
+
+/**
+ * Whether a loop that claimed `generation` still owns the session's stream.
+ * Callers use it for cleanup that runs after the loop promise settles —
+ * clearing the sending flag, most visibly — so a loop that finished late
+ * does not settle a turn that started after it.
+ */
+export function ownsWebuiStreamGeneration(
+  state: WebuiStreamState,
+  generation: number | undefined,
+): boolean {
+  // A loop that never claimed one cannot be told apart from a live one, and
+  // skipping its cleanup would strand the "thinking" indicator forever. The
+  // never-strand case wins over the never-clobber case here.
+  if (generation === undefined) return true;
+  return state.lastClaimedGeneration === generation;
+}
+
+export interface WebuiStopTurnDeps {
+  readonly abortSession: (request: {
+    readonly id: string;
+  }) => Promise<{ readonly success?: boolean }>;
+  readonly sessionId: string;
+  readonly setSending: (sending: boolean) => void;
+  readonly setStream: (
+    update: (current: WebuiStreamState) => WebuiStreamState,
+  ) => void;
+}
+
+/**
+ * Stops the running turn and settles the local stream.
+ *
+ * `abortSession` reports success even when the runtime says the session is
+ * not running, so no `session.abort` event is guaranteed to arrive. The stop
+ * button is therefore the last chance to drop the lease, and it has to do so
+ * itself.
+ */
+export async function stopWebuiTurn(deps: WebuiStopTurnDeps): Promise<void> {
+  const result = await deps.abortSession({ id: deps.sessionId });
+  if (result.success === false)
+    throw new Error("The running turn could not be stopped");
+  deps.setSending(false);
+  deps.setStream(settleAbortedStream);
+}
+
+/**
+ * What to do when a `session.start` named a turn we do not hold and we hold
+ * one we were not told about. The event cannot tell a stale lease from a
+ * genuinely concurrent stream, so the authoritative active turn decides:
+ *
+ * - `hold` — the active turn is the one we already track.
+ * - `release` — nothing is running (or it is a compaction, which produces no
+ *   transcript), so our lease is stale and a future start must attach.
+ * - `retarget` — a different real turn is running. Drop the stale lease and
+ *   attach to it; two streams would otherwise double every chunk and fight
+ *   over the cursor.
+ */
+export type WebuiSubscriptionRecheck = "hold" | "release" | "retarget";
+
+export function resolveWebuiSubscriptionRecheck(
+  owned: WebuiStreamSubscription,
+  active: WebuiActiveTurnLike | undefined,
+): WebuiSubscriptionRecheck {
+  if (!active || active.busyReason !== "turn") return "release";
+  if (owned.turnId === undefined) {
+    // Distinguish by owner. A `local-send` claims before the runtime
+    // publishes `session.start`, so a turn-less lease of ours is a send in
+    // flight and the active turn is almost certainly that same send —
+    // retargeting would hand the user's own turn back as somebody else's.
+    // A `recovered` lease is the other way round: it was opened for a turn
+    // we were told about, so a turn-less one means we attached without an
+    // id and the active turn is the only thing that can say whose it is.
+    return owned.owner === "local-send" ? "hold" : "retarget";
+  }
+  if (owned.turnId === active.turnId) return "hold";
+  return "retarget";
+}
+
+/**
+ * Whether a terminal lifecycle event naming `turnId` still describes the
+ * turn this client is following. Terminal events ride the event socket
+ * while frames ride the recovered stream socket, so the two genuinely
+ * cross: a `session.finish` for an older turn can arrive after we already
+ * attached to a newer one. Settling the newer turn's phase and sending flag
+ * from the older turn's terminal is the same class of defect as the one
+ * this whole file exists to fix — the spinner, appearing or vanishing at
+ * the wrong moment.
+ */
+export function matchesWebuiTerminalTurn(
+  state: WebuiStreamState,
+  turnId: string | undefined,
+): boolean {
+  // No turn id to attribute the event to; it is the best signal we have.
+  if (turnId === undefined) return true;
+  const owned = state.subscription;
+  // No lease at all: the terminal is the only thing that can settle a turn
+  // we never attached to, and there is nobody newer to protect.
+  if (owned === undefined) return true;
+  // A lease that has not adopted its turn id yet has an owner still in
+  // flight — `runWebuiStreamLoop` claims before the runtime publishes
+  // `session.start`, so this is almost always the user's own send between
+  // those two moments. A terminal naming some *other* turn must leave it
+  // alone, or the answer the user is watching for stops streaming early.
+  // The runtime's lifecycle observer always publishes a turn id
+  // (`turn-lifecycle-event-observer.ts`), so a missing one is a
+  // compatibility gap, not licence to let any terminal through.
+  if (owned.turnId === undefined) return false;
+  return owned.turnId === turnId;
+}
+
+/**
+ * Whether an active-turn probe result still describes the lease the probe
+ * was asked about. `recheckSubscription` captures the lease *before* the
+ * round trip: a local send that claims while the probe is in flight holds a
+ * lease the snapshot knows nothing about, and acting on that snapshot would
+ * take the user's own turn away from them.
+ */
+export function isWebuiSubscriptionProbeCurrent(
+  captured: WebuiStreamSubscription | undefined,
+  current: WebuiStreamSubscription | undefined,
+): boolean {
+  if (captured === undefined || current === undefined) return false;
+  return current.generation === captured.generation;
+}
 
 /**
  * Session lists carry `SessionStatusInfoView.statusType` as a numeric enum
@@ -283,7 +557,13 @@ export function applyFrameData(
     next = { ...next, projection: frame.projection };
   const recognised = recogniseWebuiStreamPayload(frame.dataJson);
   if (recognised.kind === "empty") return next;
-  if (recognised.kind === "done") return { ...next, phase: "done" };
+  if (recognised.kind === "done")
+    // The subscription ends with the turn. Releasing it here is what lets a
+    // later `session.start` attach instead of colliding with a stale owner.
+    // A superseded loop never reaches this branch: its frames are dropped by
+    // the generation guard in `buildWebuiStreamLoopSink` before the reducer
+    // sees them, so an old `[DONE]` cannot clear the current loop's lease.
+    return releaseWebuiSubscription({ ...next, phase: "done" });
   if (recognised.kind === "resume_overflow") {
     // The harness signals that this client has fallen too far behind
     // the server's authoritative history. The shell observes

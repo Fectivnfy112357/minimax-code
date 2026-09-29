@@ -6,6 +6,7 @@ import {
 } from "./operation-contract.js";
 import type { WebuiOperation, WebuiOperationValidation } from "./operation-contract.js";
 import type {
+  WebuiActiveTurnResult,
   WebuiCreateSessionRequest,
   WebuiCreateSessionResult,
   WebuiSessionListRequest,
@@ -15,7 +16,7 @@ import type {
   WebuiSessionTreePage,
 } from "../port.js";
 import { validateAbsoluteDirectory, validateSessionIdBody } from "./common.js";
-import { VERSION_OPERATION_NAME, LIST_SESSIONS_OPERATION_NAME, LIST_VISIBLE_PROJECTS_OPERATION_NAME, GET_SESSION_TREE_OPERATION_NAME, CREATE_SESSION_OPERATION_NAME, GET_SESSION_OPERATION_NAME } from "./names.js";
+import { VERSION_OPERATION_NAME, LIST_SESSIONS_OPERATION_NAME, LIST_VISIBLE_PROJECTS_OPERATION_NAME, GET_SESSION_TREE_OPERATION_NAME, CREATE_SESSION_OPERATION_NAME, GET_SESSION_OPERATION_NAME, GET_ACTIVE_TURN_OPERATION_NAME } from "./names.js";
 type VersionRequestBody = undefined;
 
 interface VersionResponseBody {
@@ -234,4 +235,23 @@ export const getSessionOperation: WebuiOperation<
 > = {
   name: GET_SESSION_OPERATION_NAME,
   validate: (body) => validateSessionIdBody(GET_SESSION_OPERATION_NAME, body),
+};
+
+/**
+ * Authoritative "is a turn running, and which one" probe.
+ *
+ * `session.start` is the only notice a client gets when the server starts a
+ * turn it did not initiate (the goal flow posts a hidden continuation prompt,
+ * a queued message drains, another client sends). Events can also arrive
+ * before a client has finished subscribing, or be missed entirely across a
+ * `watchEvents` reconnect — and the session list cannot answer the question
+ * because its `status` carries no turn id and never refreshes on those events.
+ * This is the gap-recovery read.
+ */
+export const getActiveTurnOperation: WebuiOperation<
+  WebuiSessionLookupRequest,
+  WebuiActiveTurnResult
+> = {
+  name: GET_ACTIVE_TURN_OPERATION_NAME,
+  validate: (body) => validateSessionIdBody(GET_ACTIVE_TURN_OPERATION_NAME, body),
 };

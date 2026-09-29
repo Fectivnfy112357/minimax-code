@@ -62,7 +62,13 @@ import {
   reduceWebuiWorkspaceProgressEvent,
   type WebuiWorkspaceProgressState,
 } from "./workspace-progress.js";
-import type { WebuiStreamState } from "../stream.js";
+import {
+  claimWebuiSubscriptionTurn,
+  decideWebuiSessionStart,
+  matchesWebuiTerminalTurn,
+  releaseWebuiSubscription,
+  type WebuiStreamState,
+} from "../stream.js";
 import { projectWebuiThreadGoalMessage } from "./goal-state.js";
 
 /** The slice of component state the reducer mutates. Workspace progress
@@ -82,7 +88,17 @@ export interface WebuiEffectState {
  *  call (or, for `refresh-pending`, a `void` async kick). */
 export type WebuiEffectCommand =
   | { readonly type: "refresh-pending" }
-  | { readonly type: "set-sending"; readonly sending: boolean }
+  | {
+      readonly type: "set-sending";
+      readonly sending: boolean;
+      /**
+       * Optional live-state guard, evaluated when the command is applied
+       * rather than when it is built. A terminal event for an older turn
+       * must not clear the sending flag of the turn we have since attached
+       * to, and the reducer's snapshot is too old to decide that.
+       */
+      readonly when?: (current: WebuiStreamState) => boolean;
+    }
   | {
       readonly type: "set-stream";
       readonly patch: (current: WebuiStreamState) => WebuiStreamState;
@@ -99,7 +115,13 @@ export type WebuiEffectCommand =
         current: WebuiQuestionnaireRequest | undefined,
       ) => WebuiQuestionnaireRequest | undefined;
     }
-  | { readonly type: "set-goal"; readonly goal: WebuiGoal | undefined };
+  | { readonly type: "set-goal"; readonly goal: WebuiGoal | undefined }
+  | {
+      readonly type: "attach-stream";
+      readonly turnId: string | undefined;
+      /** "recheck" means we hold another turn's lease and the active-turn probe decides. */
+      readonly mode: "attach" | "recheck";
+    };
 
 export interface WebuiEffectResult {
   readonly state: WebuiEffectState;
@@ -168,12 +190,42 @@ export function reduceWebuiEffect(
         type: "set-stream",
         patch: (current) => ({ ...current, phase: "streaming" }),
       });
+      // The server starts turns this client did not initiate too — the goal
+      // flow posts a hidden continuation prompt, a queued message drains,
+      // another client sends. Those turns never reach the transcript unless
+      // somebody opens a stream, and the transcript is the only thing that
+      // renders them. Our own send already claimed the subscription, so the
+      // decision keeps the two paths apart.
+      const rawTurnId = event.payload.turnId;
+      const turnId = typeof rawTurnId === "string" ? rawTurnId : undefined;
+      const decision = decideWebuiSessionStart(state.stream, turnId);
+      if (decision === "attach")
+        commands.push({ type: "attach-stream", turnId, mode: "attach" });
+      else if (decision === "recheck")
+        commands.push({ type: "attach-stream", turnId, mode: "recheck" });
+      else if (decision === "claim")
+        commands.push({
+          type: "set-stream",
+          patch: (current) => claimWebuiSubscriptionTurn(current, turnId),
+        });
+      // `hold` already tracks this turn; `recheck` means we hold a stream for
+      // a different one and cannot tell stale from concurrent from the event
+      // alone — the active-turn probe owns that decision.
       break;
     }
     case "session.finish":
     case "session.abort":
     case "session.error": {
-      commands.push({ type: "set-sending", sending: false });
+      const rawTurnId = event.payload.turnId;
+      const turnId = typeof rawTurnId === "string" ? rawTurnId : undefined;
+      // The whole terminal settles behind one guard. Scoping only the lease
+      // release left the newer turn's phase and sending flag settled by the
+      // older turn's finish — the spinner vanishing early, which is the
+      // same defect class as the spinner that never leaves. Both patches and
+      // the sending command ask the same question, so they cannot disagree.
+      const isCurrentTurn = (current: WebuiStreamState) =>
+        matchesWebuiTerminalTurn(current, turnId);
+      commands.push({ type: "set-sending", sending: false, when: isCurrentTurn });
       const status =
         event.type === "session.finish"
           ? "finished"
@@ -185,14 +237,22 @@ export function reduceWebuiEffect(
       // conditional. Other shapes (object, number, undefined) leave
       // `refusal` untouched.
       const refusalPatch = (current: WebuiStreamState): WebuiStreamState => {
+        if (!isCurrentTurn(current)) return current;
         const nextState: WebuiStreamState = {
           ...current,
           phase: "done",
           status,
         };
+        // The turn is over, so this client holds no stream for it any more.
+        // Keeping the lease would make the next `session.start` collide with
+        // a dead owner instead of attaching.
+        const released = releaseWebuiSubscription(
+          nextState,
+          turnId === undefined ? undefined : { turnId },
+        );
         return typeof event.payload.error === "string"
-          ? { ...nextState, refusal: event.payload.error as string }
-          : nextState;
+          ? { ...released, refusal: event.payload.error as string }
+          : released;
       };
       commands.push({ type: "set-stream", patch: refusalPatch });
       break;
@@ -400,11 +460,24 @@ export interface WebuiEffectHandlers {
     ) => WebuiQuestionnaireRequest | undefined,
   ) => void;
   readonly setGoal: (goal: WebuiGoal | undefined) => void;
+  /**
+   * Open a stream for a turn the server started without this client. The
+   * handler is responsible for claiming the subscription before it does, so
+   * a second `session.start` for the same turn cannot open another.
+   *
+   * `mode: "recheck"` means we already hold a different turn's lease, so the
+   * handler must consult the authoritative active turn before attaching.
+   */
+  readonly attachStream?: (
+    turnId: string | undefined,
+    mode: "attach" | "recheck",
+  ) => void;
 }
 
 export function applyWebuiEffectCommands(
   commands: readonly WebuiEffectCommand[],
   handlers: WebuiEffectHandlers,
+  readStream?: () => WebuiStreamState,
 ): void {
   for (const cmd of commands) {
     switch (cmd.type) {
@@ -417,6 +490,7 @@ export function applyWebuiEffectCommands(
         Promise.resolve(handlers.refreshPending()).catch(() => undefined);
         break;
       case "set-sending":
+        if (cmd.when && readStream && !cmd.when(readStream())) break;
         handlers.setSending(cmd.sending);
         break;
       case "set-stream":
@@ -430,6 +504,9 @@ export function applyWebuiEffectCommands(
         break;
       case "set-goal":
         handlers.setGoal(cmd.goal);
+        break;
+      case "attach-stream":
+        handlers.attachStream?.(cmd.turnId, cmd.mode);
         break;
     }
   }
@@ -447,7 +524,7 @@ export function createWebuiWatchEventCallback(
       event,
       sessionId,
     ).commands;
-    applyWebuiEffectCommands(commands, handlers);
+    applyWebuiEffectCommands(commands, handlers, readStream);
   };
 }
 

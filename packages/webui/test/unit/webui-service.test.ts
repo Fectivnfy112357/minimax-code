@@ -33,6 +33,7 @@ import {
   type WebuiMessagesResult,
   type WebuiCreateSessionRequest,
   type WebuiSessionLookupRequest,
+  type WebuiActiveTurnResult,
   type WebuiSessionLookupResult,
   type WebuiSessionListRequest,
   type WebuiSessionListItem,
@@ -149,6 +150,10 @@ class ScriptedHarnessPort implements WebuiHarnessPort {
 
   async getSession(_request: WebuiSessionLookupRequest): Promise<WebuiSessionLookupResult> {
     return { session: { sessionId: "fixture-session" } };
+  }
+
+  async getActiveTurn(): Promise<WebuiActiveTurnResult> {
+    return undefined;
   }
 
   async getMessages(
@@ -479,7 +484,29 @@ class SilentOpenSocket {
     this.listeners.set(type, listeners);
   }
 
-  send(_data: string): void {}
+  // Answers `watchEvents` the way the server does — one `response` frame
+  // carrying the request's id — because the transport treats that
+  // acknowledgement, not the socket opening, as "the watcher is live". A
+  // stub that stays silent would make every readiness decision untestable.
+  send(data: string): void {
+    let request: { requestId?: unknown; operation?: unknown };
+    try {
+      request = JSON.parse(data) as { requestId?: unknown; operation?: unknown };
+    } catch {
+      return;
+    }
+    if (request.operation !== "watchEvents") return;
+    if (typeof request.requestId !== "string") return;
+    queueMicrotask(() =>
+      this.emit("message", {
+        data: JSON.stringify({
+          kind: "response",
+          requestId: request.requestId,
+          body: { ok: true },
+        }),
+      }),
+    );
+  }
 
   close(): void {}
 
@@ -728,6 +755,9 @@ describe("WebUI service", () => {
       }),
     );
     await completed;
+    // A data stream is `event` frames and nothing else. Only the event
+    // watcher acknowledges (it has no payload of its own to observe), so a
+    // consumer written against the original shape is unaffected.
     expect(frames).toHaveLength(5);
     expect(
       frames.every((frame) => (frame as { kind: string }).kind === "event"),
@@ -1031,6 +1061,82 @@ describe("WebUI service", () => {
     await expect(transport.loadSessions()).rejects.toThrow(
       "WebUI request timed out after 10ms (listSessions)",
     );
+  });
+
+  it("reports the watcher ready only after the server answers the request", async () => {
+    // The readiness callback is what gates the "is a turn running?" probe.
+    // Firing it when the request is merely written leaves a window where
+    // the probe reads "idle" and the `session.start` that follows has
+    // nowhere to land — the original frozen-stream defect. Only the
+    // server's response means the watcher is registered.
+    let socketsOpened = 0;
+    let readyCount = 0;
+    let sentPayload: { requestId?: unknown } | undefined;
+    let socketRef: { deliver: (frame: unknown) => void } | undefined;
+    class AckControlledSocket {
+      private readonly listeners = new Map<
+        "open" | "message" | "error" | "close",
+        Array<(event: { data?: unknown }) => void>
+      >();
+      constructor(_url: string) {
+        socketsOpened += 1;
+        queueMicrotask(() => this.emit("open", {}));
+        socketRef = {
+          deliver: (frame) => queueMicrotask(() => this.emit("message", { data: JSON.stringify(frame) })),
+        };
+      }
+      addEventListener(
+        type: "open" | "message" | "error" | "close",
+        listener: (event: { data?: unknown }) => void,
+      ): void {
+        this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
+      }
+      send(data: string): void {
+        sentPayload = JSON.parse(data) as { requestId?: unknown };
+      }
+      close(): void {}
+      private emit(
+        type: "open" | "message" | "error" | "close",
+        event: { data?: unknown },
+      ): void {
+        for (const listener of this.listeners.get(type) ?? []) listener(event);
+      }
+    }
+    const transport = createWebuiTransport({
+      websocketUrl: "ws://127.0.0.1:1",
+      token: "fixture-token",
+      webSocket: AckControlledSocket,
+    });
+    const unsubscribe = transport.watchEvents(
+      () => undefined,
+      () => {
+        readyCount += 1;
+      },
+    );
+    for (let tick = 0; tick < 8 && sentPayload === undefined; tick += 1)
+      await Promise.resolve();
+    // The socket is open and the request is written — still not ready.
+    expect(socketsOpened).toBe(1);
+    expect(sentPayload?.requestId).toBeTypeOf("string");
+    expect(readyCount).toBe(0);
+
+    socketRef?.deliver({
+      kind: "response",
+      requestId: sentPayload?.requestId,
+      body: { ok: true },
+    });
+    for (let tick = 0; tick < 8 && readyCount === 0; tick += 1) await Promise.resolve();
+    expect(readyCount).toBe(1);
+
+    // One signal per connection: a duplicate response must not re-probe.
+    socketRef?.deliver({
+      kind: "response",
+      requestId: sentPayload?.requestId,
+      body: { ok: true },
+    });
+    for (let tick = 0; tick < 4; tick += 1) await Promise.resolve();
+    expect(readyCount).toBe(1);
+    unsubscribe();
   });
 
   it("reopens the event subscription when a hidden tab becomes visible", async () => {
@@ -2783,6 +2889,9 @@ describe("WebUI shutdown order (criterion 7)", () => {
       async getSession() {
         return { session: { sessionId: "shutdown" } };
       },
+      async getActiveTurn() {
+        return undefined;
+      },
       async getMessages() {
         return { messages: [], hasMore: false };
       },
@@ -3137,6 +3246,9 @@ describe("WebUI shutdown order (criterion 7)", () => {
       },
       async getSession() {
         return { session: { sessionId: "shutdown" } };
+      },
+      async getActiveTurn() {
+        return undefined;
       },
       async getMessages() {
         return { messages: [], hasMore: false };
