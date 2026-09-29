@@ -27,6 +27,7 @@ import {
   WebuiIconFolder,
   WebuiIconMore,
   WebuiIconProjectAdd,
+  WebuiIconSessionPin,
 } from "../icons.js";
 import { WebuiContextMenu, type WebuiContextMenuItem } from "./ContextMenu.js";
 import { RailRow } from "./RailRow.js";
@@ -540,7 +541,7 @@ export function WebuiProjectList({
                                     onToggleSessionPin(session);
                                   }}
                                 >
-                                  <WebuiIconContextPin />
+                                  <WebuiIconSessionPin />
                                 </button>
                               ) : null}
                               {onArchiveSession ? (
