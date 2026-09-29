@@ -22,7 +22,7 @@ export function RailRow({
 }): ReactElement {
   return (
     <div
-      className="webui-nav-item group/nav flex h-8 w-full items-center rounded-lg text-sm text-text_default_primary transition-colors hover:bg-bg_interaction_tertiary_hover"
+      className={`webui-nav-item group/nav flex h-8 w-full items-center rounded-lg text-sm transition-colors ${inert ? "cursor-not-allowed text-text_default_tertiary opacity-60" : "text-text_default_primary hover:bg-bg_interaction_tertiary_hover"}`}
       data-webui-placeholder-chrome={inert ? "rail-nav" : undefined}
       data-webui-nav-item={label}
       data-webui-nav-active={active ? "true" : "false"}
