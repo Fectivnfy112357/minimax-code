@@ -44,9 +44,7 @@ const categories: readonly { id: string; label: string }[] = [
   { id: "education", label: "教育" },
   { id: "other", label: "其他" },
 ];
-/** Cards shown before the catalogue is expanded. Both marketplace pages
- * preview this many and then offer 「查看全部」, so the two pages are laid out
- * against the same height at rest. */
+/** Number of cards shown after the user explicitly collapses a catalogue. */
 const MARKET_PREVIEW_COUNT = 8;
 const MARKETPLACE_CATEGORY: Readonly<Record<string, number>> = {
   other: MarketplaceCategory.OTHER,
@@ -109,7 +107,7 @@ export function PluginManagement({
   const [marketSkillTotal, setMarketSkillTotal] = useState<number | null>(
     null,
   );
-  const [showAllCatalogue, setShowAllCatalogue] = useState(false);
+  const [showAllCatalogue, setShowAllCatalogue] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [dialog, setDialog] = useState<"mcp" | "agent" | "skill" | null>(null);
@@ -757,7 +755,7 @@ export function PluginManagement({
     setArea(catalog);
     setView("market");
     setCategory("");
-    setShowAllCatalogue(false);
+    setShowAllCatalogue(true);
   };
 
   const openCreate = (target: Area) => {
@@ -785,21 +783,55 @@ export function PluginManagement({
        * full-bleed, opaque surface, and the row inside it keeps the width the
        * content is laid out against. */}
       <header className="webui-plugin-header">
+        {managementOpen ? (
+          <button
+            type="button"
+            className="webui-plugin-management-back"
+            onClick={() => {
+              setManagementOpen(false);
+              setArea("plugins");
+              setView("market");
+            }}
+            aria-label="返回"
+          >
+            ‹ 插件
+          </button>
+        ) : null}
         <div className="webui-plugin-header-inner">
         {managementOpen ? (
           <>
-            <button
-              type="button"
-              onClick={() => {
-                setManagementOpen(false);
-                setArea("plugins");
-                setView("market");
-              }}
-              aria-label="返回"
-            >
-              ‹ 插件
-            </button>
             <h1>管理</h1>
+            <div className="webui-plugin-create-anchor webui-plugin-management-create-anchor">
+              <button
+                type="button"
+                className="webui-plugin-create-trigger"
+                aria-expanded={createMenuOpen}
+                onClick={() => setCreateMenuOpen((open) => !open)}
+              >
+                ＋ 创建
+              </button>
+              {createMenuOpen ? (
+                <div className="webui-plugin-create-menu">
+                  <button
+                    onClick={() => {
+                      setPluginImportDialog(true);
+                      setCreateMenuOpen(false);
+                      setPluginUrl("");
+                      setPluginPreview(undefined);
+                    }}
+                  >
+                    从 Git 仓库导入插件
+                  </button>
+                  <button onClick={() => openCreate("skills")}>录入技能</button>
+                  <button onClick={() => openCreate("mcp")}>
+                    添加 MCP server
+                  </button>
+                  <button onClick={() => openCreate("agents")}>
+                    创建 Agent
+                  </button>
+                </div>
+              ) : null}
+            </div>
           </>
         ) : (
           <>
@@ -841,101 +873,66 @@ export function PluginManagement({
               >
                 管理
               </button>
-              <button
-                type="button"
-                className="webui-plugin-create-trigger"
-                aria-expanded={createMenuOpen}
-                onClick={() => setCreateMenuOpen((open) => !open)}
-              >
-                ＋ 创建
-              </button>
-              {createMenuOpen ? (
-                <div className="webui-plugin-create-menu">
-                  <button
-                    onClick={() => {
-                      setPluginImportDialog(true);
-                      setCreateMenuOpen(false);
-                      setPluginUrl("");
-                      setPluginPreview(undefined);
-                    }}
-                  >
-                    从 Git 仓库导入插件
-                  </button>
-                  <button onClick={() => openCreate("skills")}>录入技能</button>
-                  <button onClick={() => openCreate("mcp")}>
-                    添加 MCP server
-                  </button>
-                  <button onClick={() => openCreate("agents")}>
-                    创建 Agent
-                  </button>
-                </div>
-              ) : null}
             </div>
           </>
         )}
         </div>
-      </header>
-      {managementOpen ? (
-        <nav className="webui-plugin-categories" aria-label="插件管理分类">
-          {CATEGORIES.map((item) => (
-            <button
-              key={item.id}
-              aria-pressed={area === item.id}
-              onClick={() => {
-                setData([]);
-                setBusy(true);
-                setError("");
-                setArea(item.id);
-                setView("personal");
-              }}
-            >
-              <span>{item.label}</span>
-              {area === item.id ? (
-                <span className="webui-plugin-count">{data.length}</span>
-              ) : null}
-            </button>
-          ))}
-          <input
-            aria-label="搜索"
-            placeholder={`搜索${area === "mcp" ? "MCP" : area === "skills" ? "技能" : area === "agents" ? "Agent" : area === "apps" ? "应用" : "插件"}`}
-            value={query}
-            onChange={(event) => setQuery(event.currentTarget.value)}
-          />
-        </nav>
-      ) : null}
-      {isMarketCatalogue ? (
-        <>
+        {isMarketCatalogue ? (
           <div className="webui-plugin-market-discovery">
             {/* Plugin categories do not apply to the skill hub, so the nav is
              * the plugin catalogue's alone. The search box is shared. */}
             {area === "plugins" ? (
-            <nav className="webui-plugin-category-filter" aria-label="市场分类">
-              {categories.map((item) => (
-                <button
-                  key={item.id}
-                  aria-pressed={category === item.id}
-                  onClick={() => {
-                    setShowAllCatalogue(false);
-                    setCategory(item.id);
-                  }}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </nav>
+              <nav className="webui-plugin-category-filter" aria-label="市场分类">
+                {categories.map((item) => (
+                  <button
+                    key={item.id}
+                    aria-pressed={category === item.id}
+                    onClick={() => setCategory(item.id)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </nav>
             ) : null}
             <input
               aria-label={area === "skills" ? "搜索技能" : "搜索插件"}
               placeholder={area === "skills" ? "搜索技能..." : "搜索插件..."}
               value={query}
-              onChange={(event) => {
-                setShowAllCatalogue(false);
-                setQuery(event.currentTarget.value);
-              }}
+              onChange={(event) => setQuery(event.currentTarget.value)}
             />
           </div>
-          <h2 className="webui-plugin-market-heading">{marketNoun}</h2>
-        </>
+        ) : null}
+        {managementOpen ? (
+          <nav className="webui-plugin-categories" aria-label="插件管理分类">
+            {CATEGORIES.map((item) => (
+              <button
+                key={item.id}
+                aria-pressed={area === item.id}
+                onClick={() => {
+                  setData([]);
+                  setBusy(true);
+                  setError("");
+                  setArea(item.id);
+                  setView("personal");
+                }}
+              >
+                <span>{item.label}</span>
+                {area === item.id ? (
+                  <span className="webui-plugin-count">{data.length}</span>
+                ) : null}
+              </button>
+            ))}
+            <input
+              aria-label="搜索"
+              placeholder={`搜索${area === "mcp" ? "MCP" : area === "skills" ? "技能" : area === "agents" ? "Agent" : area === "apps" ? "应用" : "插件"}`}
+              value={query}
+              onChange={(event) => setQuery(event.currentTarget.value)}
+            />
+          </nav>
+        ) : null}
+      </header>
+      {isMarketCatalogue ? (
+        <h2 className="webui-plugin-market-heading">{marketNoun}</h2>
       ) : null}
       {area === "plugins" && view === "personal" && !managementOpen ? (
         <h2 className="webui-plugin-market-heading">插件</h2>

@@ -12,6 +12,7 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
   type MouseEvent,
   type ReactElement,
@@ -119,6 +120,20 @@ export function sessionHash(sessionId: string): string {
   return `#${params.toString()}`;
 }
 
+/**
+ * 没有选中会话时默认展开的项目 key。
+ * 有选中会话、用户已手动切换过展开状态，或没有任何项目时返回 undefined。
+ */
+export function resolveDefaultExpandedProjectKey(
+  projects: readonly WebuiProjectGroup[],
+  selectedSessionId: string | undefined,
+  expansionTouched: boolean,
+): string | undefined {
+  if (selectedSessionId) return undefined;
+  if (expansionTouched) return undefined;
+  return projects[0]?.key;
+}
+
 export function WebuiProjectList({
   page,
   treePage,
@@ -215,6 +230,8 @@ export function WebuiProjectList({
   const [expandedProjects, setExpandedProjects] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
+  // 用户手动折叠过项目后，不再自动展开首个项目。
+  const projectExpansionTouched = useRef(false);
   const [expandedSessions, setExpandedSessions] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
@@ -412,6 +429,19 @@ export function WebuiProjectList({
   };
 
   useEffect(() => {
+    const key = resolveDefaultExpandedProjectKey(
+      projects,
+      selectedSessionId,
+      projectExpansionTouched.current,
+    );
+    if (!key) return;
+    setExpandedProjects((current) => {
+      if (current.has(key)) return current;
+      return new Set(current).add(key);
+    });
+  }, [projects, selectedSessionId]);
+
+  useEffect(() => {
     if (!selectedSessionId) return;
     const activeProject = projects.find((project) =>
       project.sessionIds.includes(selectedSessionId),
@@ -477,6 +507,7 @@ export function WebuiProjectList({
                     aria-expanded={expanded}
                     onClick={() => {
                       onProjectSelect?.(project.workspaceDir);
+                      projectExpansionTouched.current = true;
                       setExpandedProjects((current) => {
                         const next = new Set(current);
                         if (next.has(project.key)) next.delete(project.key);

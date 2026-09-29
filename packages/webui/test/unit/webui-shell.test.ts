@@ -30,6 +30,7 @@ import {
   WebuiProjectList,
   WebuiSessionList,
   groupWebuiSessionsByWorkspace,
+  resolveDefaultExpandedProjectKey,
   sessionHash,
   sortWebuiProjectSessionIds,
 } from "../../src/client/components/SessionRail.js";
@@ -663,6 +664,17 @@ describe("WebUI shell", () => {
     expect(html).toContain("未选项目");
     expect(html).not.toContain('data-webui-session-list="true"');
     expect(html).not.toContain("<time");
+  });
+
+  it("expands the first project only when no session is selected", () => {
+    const projects = [
+      { key: "/work/alpha", name: "alpha", sessionIds: ["a"], updatedAt: 20 },
+      { key: "/work/beta", name: "beta", sessionIds: ["b"], updatedAt: 10 },
+    ];
+    expect(resolveDefaultExpandedProjectKey(projects, undefined, false)).toBe("/work/alpha");
+    expect(resolveDefaultExpandedProjectKey(projects, "a", false)).toBeUndefined();
+    expect(resolveDefaultExpandedProjectKey(projects, undefined, true)).toBeUndefined();
+    expect(resolveDefaultExpandedProjectKey([], undefined, false)).toBeUndefined();
   });
 
   it("renders the desktop context-menu vocabulary and inert WebUI-only gaps", () => {

@@ -6,7 +6,6 @@
 
 import { useEffect, useState, type ReactElement } from "react";
 import {
-  buildWebuiGoalEditPatch,
   formatWebuiGoalDuration,
   WEBUI_GOAL_STATUS_COPY,
   WEBUI_GOAL_WAIT_COPY,
@@ -37,28 +36,26 @@ export function WebuiGoalBanner({
   goal,
   patchGoal,
   clearGoal,
+  onEditGoal,
   onCleared,
   interactionBlocked = false,
 }: {
   readonly goal?: WebuiGoal;
 
+  readonly onEditGoal: (objective: string) => void;
   readonly onCleared?: () => void;
   readonly interactionBlocked?: boolean;
 } & WebuiGoalBannerCapabilities): ReactElement | null {
-  const [editing, setEditing] = useState(false);
+  const [objectiveExpanded, setObjectiveExpanded] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
-  const [objective, setObjective] = useState(goal?.objective ?? "");
-  const [budget, setBudget] = useState(goal?.tokenBudget ? String(goal.tokenBudget) : "");
   const [updated, setUpdated] = useState(false);
   const [dismissedGoalKey, setDismissedGoalKey] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   useEffect(() => {
-    setObjective(goal?.objective ?? "");
-    setBudget(goal?.tokenBudget ? String(goal.tokenBudget) : "");
-    if (!goal) setEditing(false);
-  }, [goal?.goalId, goal?.objective, goal?.tokenBudget]);
+    setObjectiveExpanded(false);
+  }, [goal?.sessionId, goal?.goalId]);
   useEffect(() => {
     setDismissedGoalKey(undefined);
   }, [goal?.sessionId, goal?.goalId]);
@@ -76,7 +73,9 @@ export function WebuiGoalBanner({
   const goalKey = `${goal.sessionId}:${goal.goalId}`;
   if (dismissedGoalKey === goalKey) return null;
   const status = updated ? "updated" : goal.status;
-  const statusCopy = goal.status === "active" && goal.executionWait
+  const statusCopy = status === "updated"
+    ? WEBUI_GOAL_STATUS_COPY.updated
+    : goal.status === "active" && goal.executionWait
     ? WEBUI_GOAL_WAIT_COPY[goal.executionWait.reason] ?? WEBUI_GOAL_WAIT_COPY.unknown
     : WEBUI_GOAL_STATUS_COPY[status];
   const submitPatch = (patch: { status?: WebuiGoalStatus; objective?: string; tokenBudget?: number | null }) => {
@@ -84,14 +83,9 @@ export function WebuiGoalBanner({
     setBusy(true);
     setError(undefined);
     void patchGoal({ sessionId: goal.sessionId, ...patch })
-      .then(() => { setUpdated(true); setEditing(false); window.setTimeout(() => setUpdated(false), 2_400); })
+      .then(() => { setUpdated(true); window.setTimeout(() => setUpdated(false), 2_400); })
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)))
       .finally(() => setBusy(false));
-  };
-  const saveEdit = () => {
-    const result = buildWebuiGoalEditPatch(objective, budget);
-    if (!result.ok) { setError(result.error); return; }
-    submitPatch(result.patch);
   };
   const clear = () => {
     if (!clearGoal) return;
@@ -106,32 +100,34 @@ export function WebuiGoalBanner({
   };
   return (
     <section className="webui-goal-banner" data-testid="thread-goal-banner" data-goal-status={status} role="status" aria-live="polite">
-      <div className="webui-goal-banner-leading">
-        <span className="webui-goal-banner-icon" aria-hidden="true"><WebuiIconCommandGoal /></span>
-        <span className="webui-goal-status" data-testid="thread-goal-banner-status">{statusCopy}</span>
-      </div>
-      <div className="webui-goal-banner-content-row" data-testid="thread-goal-banner-content-row">
-        <div className="webui-goal-banner-objective-group" data-testid="thread-goal-banner-objective-group">
-          <button type="button" className="webui-goal-objective" data-testid="thread-goal-banner-objective" aria-expanded={editing} title={goal.objective} onClick={() => setEditing(true)}>{goal.objective}</button>
+      <div className="webui-goal-banner-row">
+        <div className="webui-goal-banner-leading">
+          <span className="webui-goal-banner-icon" aria-hidden="true"><WebuiIconCommandGoal /></span>
+          <span className="webui-goal-status" data-testid="thread-goal-banner-status">{statusCopy}</span>
         </div>
-        <div className="webui-goal-usage" data-testid="thread-goal-usage">
-          <span data-testid="thread-goal-tokens-used">{goal.tokensUsed} tokens</span>
-          <span data-testid="thread-goal-turns-used">{goal.turnsUsed} 轮</span>
-          {goal.status === "budget_limited" ? <span className="webui-goal-budget-guide" data-testid="thread-goal-banner-budget-guide">创建新目标后继续</span> : null}
-          {goal.status === "usage_limited" ? <span className="webui-goal-usage-guide" data-testid="thread-goal-usage-guide">服务商额度恢复后可继续</span> : null}
+        <div className="webui-goal-banner-content-row" data-testid="thread-goal-banner-content-row">
+          <div className="webui-goal-banner-objective-group" data-testid="thread-goal-banner-objective-group">
+            <button type="button" className="webui-goal-objective" data-testid="thread-goal-banner-objective" aria-expanded={objectiveExpanded} title={goal.objective} onClick={() => setObjectiveExpanded((value) => !value)}>{goal.objective}</button>
+          </div>
+          <div className="webui-goal-usage" data-testid="thread-goal-usage">
+            <span data-testid="thread-goal-tokens-used">{goal.tokensUsed} tokens</span>
+            <span data-testid="thread-goal-turns-used">{goal.turnsUsed} 轮</span>
+            {goal.status === "budget_limited" ? <span className="webui-goal-budget-guide" data-testid="thread-goal-banner-budget-guide">创建新目标后继续</span> : null}
+            {goal.status === "usage_limited" ? <span className="webui-goal-usage-guide" data-testid="thread-goal-usage-guide">服务商额度恢复后可继续</span> : null}
+          </div>
+          <span className="webui-goal-time-divider" data-testid="thread-goal-banner-time-divider" aria-hidden="true" />
+          <span className="webui-goal-timer" data-testid="thread-goal-timer">{formatWebuiGoalDuration(goal.timeUsedSeconds + elapsedSeconds)}</span>
         </div>
-        <span className="webui-goal-time-divider" data-testid="thread-goal-banner-time-divider" aria-hidden="true" />
-        <span className="webui-goal-timer" data-testid="thread-goal-timer">{formatWebuiGoalDuration(goal.timeUsedSeconds + elapsedSeconds)}</span>
-      </div>
-      <div className="webui-goal-banner-actions-slot" data-testid="thread-goal-banner-actions-slot">
+        <div className="webui-goal-banner-actions-slot" data-testid="thread-goal-banner-actions-slot">
           {goal.status === "blocked" || goal.status === "paused" || goal.status === "usage_limited" ? <button type="button" className="webui-goal-action" data-testid="thread-goal-banner-resume" aria-label="继续目标" title="继续目标" onClick={() => submitPatch({ status: "active" })} disabled={busy || interactionBlocked}><GoalResumeIcon /></button> : null}
           {goal.status === "active" && !goal.executionWait ? <button type="button" className="webui-goal-action" data-testid="thread-goal-banner-pause" aria-label="暂停目标" title="暂停目标" onClick={() => submitPatch({ status: "paused" })} disabled={busy || interactionBlocked}><GoalPauseIcon /></button> : null}
-          {goal.status === "active" || goal.status === "paused" || goal.status === "blocked" ? <button type="button" className="webui-goal-action" data-testid="thread-goal-banner-edit-button" aria-label="编辑目标" title="编辑目标" onClick={() => setEditing((value) => !value)} disabled={busy || interactionBlocked}><WebuiIconContextRename /></button> : null}
+          {goal.status === "active" || goal.status === "paused" || goal.status === "blocked" ? <button type="button" className="webui-goal-action" data-testid="thread-goal-banner-edit-button" aria-label="编辑目标" title="编辑目标" onClick={() => onEditGoal(goal.objective)} disabled={busy || interactionBlocked}><WebuiIconContextRename /></button> : null}
           {goal.status === "complete"
             ? <button type="button" className="webui-goal-action" data-testid="thread-goal-banner-close" aria-label="关闭完成标记" title="关闭完成标记" onClick={() => setDismissedGoalKey(goalKey)} disabled={busy}><WebuiIconClose /></button>
             : <button type="button" className="webui-goal-action" data-testid="thread-goal-banner-clear" aria-label="清除目标" title="清除目标" onClick={() => setConfirmClear(true)} disabled={busy || interactionBlocked}><WebuiIconContextTrash /></button>}
+        </div>
       </div>
-      {editing ? <div className="webui-goal-editor" data-testid="goal-editor"><textarea data-testid="thread-goal-banner-edit-input" value={objective} onChange={(event) => setObjective(event.target.value)} placeholder="更新目标内容" /><input data-testid="thread-goal-banner-budget-input" value={budget} onChange={(event) => setBudget(event.target.value)} placeholder="Token 预算 — 例如 50K、200000；留空表示取消" /><div><button type="button" data-testid="thread-goal-banner-cancel-edit" onClick={() => setEditing(false)} disabled={busy}>取消</button><button type="button" data-testid="thread-goal-banner-save" onClick={saveEdit} disabled={busy}>保存</button></div></div> : null}
+      {objectiveExpanded ? <div className="webui-goal-objective-expanded" data-testid="thread-goal-objective-expanded">{goal.objective}</div> : null}
       {confirmClear ? <div className="webui-goal-confirm" data-testid="goal-clear-confirm"><strong>删除目标？</strong><p>删除目标后，目标模式会关闭，转为普通模式继续。</p><button type="button" onClick={() => setConfirmClear(false)} disabled={busy}>取消</button><button type="button" data-testid="goal-clear-confirm-confirm" onClick={clear} disabled={busy}>删除</button></div> : null}
       {error ? <p role="alert" data-testid="thread-goal-error">{error}</p> : null}
     </section>

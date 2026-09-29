@@ -618,6 +618,7 @@ export function WebuiComposer({
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const mentionCaretRef = useRef<number>();
   const pendingMentionCaretRef = useRef<number>();
+  const editingGoalDraftRef = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const composerRegionRef = useRef<HTMLDivElement | null>(null);
   // The permission popover's own container: the trigger button plus the popover
@@ -1411,9 +1412,22 @@ export function WebuiComposer({
     onDraftChange("");
     textareaRef.current?.focus();
   };
+  const editGoalInComposer = (objective: string) => {
+    editingGoalDraftRef.current = true;
+    setGoalMode(true);
+    setPlanMode(false);
+    onDraftChange(objective);
+    window.requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(objective.length, objective.length);
+    });
+  };
   const cancelGoalMode = () => {
     setGoalMode(false);
-    if (!goal) onDraftChange("");
+    if (!goal || editingGoalDraftRef.current) onDraftChange("");
+    editingGoalDraftRef.current = false;
     textareaRef.current?.focus();
   };
   const activatePlanMode = () => {
@@ -1587,6 +1601,7 @@ export function WebuiComposer({
         setGoal(nextGoal);
         setGoalMode(nextGoal.status !== "complete");
         onDraftChange("");
+        editingGoalDraftRef.current = false;
       } catch (error) {
         setInteractionError(
           error instanceof Error ? error.message : String(error),
@@ -1803,7 +1818,7 @@ export function WebuiComposer({
           onChange={(event) => { void addFiles(event.currentTarget.files); event.currentTarget.value = ""; }}
         />
         <div className={sessionLayout && sessionId && goalEnabled && goal ? "webui-goal-composer-panel" : undefined}>
-        {sessionId && goalEnabled && goal ? <WebuiGoalBanner goal={goal} patchGoal={patchGoal} clearGoal={clearGoal} onCleared={clearLocalGoal} interactionBlocked={Boolean(questionnaire || permissions.length > 0)} /> : null}
+        {sessionId && goalEnabled && goal ? <WebuiGoalBanner goal={goal} patchGoal={patchGoal} clearGoal={clearGoal} onEditGoal={editGoalInComposer} onCleared={clearLocalGoal} interactionBlocked={Boolean(questionnaire || permissions.length > 0)} /> : null}
         {!composerReplaced ? (
         <form
           onSubmit={submit}
