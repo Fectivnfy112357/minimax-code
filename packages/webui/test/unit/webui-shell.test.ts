@@ -1150,6 +1150,21 @@ describe("WebUI shell — theme switching", () => {
   });
 });
 
+describe("WebUI rail row click wiring", () => {
+  it("does not pass React's click event to a no-argument selection callback", () => {
+    const source = readFileSync(
+      new URL("../../src/client/components/RailRow.tsx", import.meta.url),
+      "utf8",
+    );
+
+    // React supplies a MouseEvent to a directly assigned onClick handler even
+    // when the callback's TypeScript type takes no arguments. New Task accepts
+    // an optional workspace path, so forwarding that event makes the composer
+    // call `.trim()` on the event object and clears the whole React root.
+    expect(source).toContain("onClick={() => onSelect?.()}");
+  });
+});
+
 // Behaviour-level coverage of the composer's send/resume loop. The test
 // drives the same `runWebuiStreamLoop` the composer in
 // `components/SessionComposer.tsx` calls

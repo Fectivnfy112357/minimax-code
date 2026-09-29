@@ -29,7 +29,7 @@ export function RailRow({
     >
       <button
         type="button"
-        onClick={onSelect}
+        onClick={() => onSelect?.()}
         disabled={inert}
         aria-disabled={inert ? "true" : undefined}
         tabIndex={inert ? -1 : undefined}
