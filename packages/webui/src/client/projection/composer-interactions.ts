@@ -4,6 +4,12 @@ export interface WebuiMentionRange {
   readonly query: string;
 }
 
+export interface WebuiSlashRange {
+  readonly start: number;
+  readonly end: number;
+  readonly query: string;
+}
+
 export function findWebuiMentionRange(
   value: string,
   caret: number,
@@ -13,6 +19,54 @@ export function findWebuiMentionRange(
   if (!match) return undefined;
   const start = beforeCaret.length - match[1]!.length - 1;
   return { start, end: caret, query: match[1]! };
+}
+
+/**
+ * The slash token the caret currently sits in, mirroring `findWebuiMentionRange`.
+ * Any slash opens the palette — the token may start the draft or follow
+ * whitespace — so `帮我 /pl` ranks commands the same way `/pl` does. Requiring
+ * `(?:^|\s)` keeps a `/` glued to another character out: `http://x` is a URL,
+ * not a command. The `$` anchor means a space typed after the token (or a
+ * caret that has moved past it) closes the palette again.
+ */
+export function findWebuiSlashRange(
+  value: string,
+  caret: number,
+): WebuiSlashRange | undefined {
+  const beforeCaret = value.slice(0, caret);
+  const match = /(?:^|\s)\/([^\s/]*)$/u.exec(beforeCaret);
+  if (!match) return undefined;
+  const start = beforeCaret.length - match[1]!.length - 1;
+  return { start, end: caret, query: match[1]! };
+}
+
+/**
+ * Drops the slash token, keeping whatever surrounds it. Escape and the
+ * outside-pointerdown dismissal share this so both cancel an invocation the
+ * same way, wherever in the draft the token sits.
+ */
+export function removeWebuiSlashToken(
+  value: string,
+  range: WebuiSlashRange,
+): string {
+  return `${value.slice(0, range.start)}${value.slice(range.end)}`;
+}
+
+/**
+ * Swaps the slash token for `replacement` and reports where the caret lands.
+ * Picking from the palette rewrites only the token the caret is in: the draft
+ * may already hold an earlier "/skill" the user committed, and replacing the
+ * whole draft silently dropped it.
+ */
+export function replaceWebuiSlashToken(
+  value: string,
+  range: WebuiSlashRange,
+  replacement: string,
+): { readonly value: string; readonly caret: number } {
+  return {
+    value: `${value.slice(0, range.start)}${replacement}${value.slice(range.end)}`,
+    caret: range.start + replacement.length,
+  };
 }
 
 export function insertWebuiMention(

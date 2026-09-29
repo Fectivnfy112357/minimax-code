@@ -64,15 +64,15 @@ export interface WebuiModelProviderGroup {
   readonly models: readonly WebuiModelPickerEntry[];
 }
 
-/** 分组标题优先用供应商显示名，缺失时退回 providerId。 */
+/** Group label: the provider's display name, falling back to its id. */
 function providerGroupLabel(model: WebuiModelPickerEntry): string {
   const name = model.providerName?.trim();
   return name || model.providerId;
 }
 
 /**
- * 按供应商分组，保持目录里原有的出现顺序——与 TUI 侧 `groupModels` 的分组
- * 口径一致（见 `packages/tui/src/tui/features/model/picker.ts`）。
+ * Groups by provider, keeping the catalog's own order — the same grouping the
+ * TUI picker applies (see `packages/tui/src/tui/features/model/picker.ts`).
  */
 export function groupModelsByProvider(
   models: readonly WebuiModelPickerEntry[],
@@ -154,8 +154,9 @@ function variantForEffort(
 }
 
 /**
- * 模型列。分组标题只是一行文字，不是可选项——它落在 `role="group"` 内，
- * 由该组的 `aria-label` 承担语义，可见文本因此对辅助技术隐藏。
+ * The model column. A group header is a line of text, not an option: it lives
+ * inside a `role="group"`, which carries the name through `aria-label`, so the
+ * visible text is hidden from assistive technology.
  */
 export function WebuiModelMenuList({
   groups,

@@ -914,32 +914,40 @@ export function PluginManagement({
           </div>
         ) : null}
         {managementOpen ? (
-          <nav className="webui-plugin-categories" aria-label="插件管理分类">
-            {CATEGORIES.map((item) => (
-              <button
-                key={item.id}
-                aria-pressed={area === item.id}
-                onClick={() => {
-                  setData([]);
-                  setBusy(true);
-                  setError("");
-                  setArea(item.id);
-                  setView("personal");
-                }}
-              >
-                <span>{item.label}</span>
-                {area === item.id ? (
-                  <span className="webui-plugin-count">{data.length}</span>
-                ) : null}
-              </button>
-            ))}
-            <input
-              aria-label="搜索"
-              placeholder={`搜索${area === "mcp" ? "MCP" : area === "skills" ? "技能" : area === "agents" ? "Agent" : area === "apps" ? "应用" : "插件"}`}
-              value={query}
-              onChange={(event) => setQuery(event.currentTarget.value)}
-            />
-          </nav>
+          <div className="webui-plugin-market-discovery webui-plugin-management-discovery">
+            <nav className="webui-plugin-category-filter" aria-label="插件管理分类">
+              {CATEGORIES.map((item) => (
+                <button
+                  key={item.id}
+                  aria-pressed={area === item.id}
+                  onClick={() => {
+                    setData([]);
+                    setBusy(true);
+                    setError("");
+                    setArea(item.id);
+                    setView("personal");
+                  }}
+                >
+                  <span>{item.label}</span>
+                  {area === item.id ? (
+                    <span className="webui-plugin-count">{data.length}</span>
+                  ) : null}
+                </button>
+              ))}
+            </nav>
+            <label className="webui-plugin-market-search">
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <circle cx="8.8" cy="8.8" r="5.8" />
+                <path d="m13.2 13.2 4 4" />
+              </svg>
+              <input
+                aria-label={`搜索${area === "mcp" ? "MCP" : area === "skills" ? "技能" : area === "agents" ? "Agent" : area === "apps" ? "应用" : "插件"}`}
+                placeholder={`搜索${area === "mcp" ? "MCP" : area === "skills" ? "技能" : area === "agents" ? "Agent" : area === "apps" ? "应用" : "插件"}...`}
+                value={query}
+                onChange={(event) => setQuery(event.currentTarget.value)}
+              />
+            </label>
+          </div>
         ) : null}
       </header>
       {isMarketCatalogue ? (
@@ -947,29 +955,6 @@ export function PluginManagement({
       ) : null}
       {area === "plugins" && view === "personal" && !managementOpen ? (
         <h2 className="webui-plugin-market-heading">插件</h2>
-      ) : null}
-      {area === "mcp" ? (
-        <div className="webui-plugin-toolbar">
-          <button type="button" onClick={() => beginMcp()}>
-            ＋ 添加服务器
-          </button>
-        </div>
-      ) : null}
-      {area === "skills" && view === "personal" ? (
-        <div className="webui-plugin-toolbar">
-          <button
-            type="button"
-            onClick={() => {
-              setEditing(undefined);
-              setAgentName("");
-              setSkillDescription("");
-              setSkillContent("");
-              setDialog("skill");
-            }}
-          >
-            ＋ 录入技能
-          </button>
-        </div>
       ) : null}
       {error ? (
         <p role="alert" className="webui-plugin-error">
@@ -1113,8 +1098,19 @@ export function PluginManagement({
             const iconUrl = read(item, "iconUrl", "icon_url");
             return (
               <article className="webui-plugin-row" key={`${area}-${name}`}>
-                <div className="webui-plugin-icon" aria-hidden="true">
-                  {iconUrl ? (
+                <div
+                  className={`webui-plugin-icon${area === "skills" ? " webui-plugin-icon--skill" : ""}`}
+                  aria-hidden="true"
+                >
+                  {area === "skills" ? (
+                    <span className="webui-plugin-skill-icon-tile">
+                      <svg viewBox="0 0 24 24" focusable="false">
+                        <path d="M9 4.25h7.25L19.5 7.5v11.25A1.75 1.75 0 0 1 17.75 20.5H9A2 2 0 0 1 7 18.5v-12.25a2 2 0 0 1 2-2Z" />
+                        <path d="M16 4.5v3.25h3.25M11 11h5.5M11 14h5.5M11 17h3.25" />
+                        <path d="M7 7H5.75A1.75 1.75 0 0 0 4 8.75v9.5A1.75 1.75 0 0 0 5.75 20H9" />
+                      </svg>
+                    </span>
+                  ) : iconUrl ? (
                     <>
                       <img
                         src={iconUrl}
@@ -1131,8 +1127,6 @@ export function PluginManagement({
                     </>
                   ) : area === "plugins" ? (
                     "▦"
-                  ) : area === "skills" ? (
-                    "▤"
                   ) : (
                     "◇"
                   )}
@@ -1608,8 +1602,8 @@ export function PluginManagement({
                 ×
               </button>
             </header>
-            <div className="webui-plugin-import-body">
-              <label>
+            <div className="webui-plugin-form webui-plugin-import-body">
+              <label className="wide">
                 仓库 URL
                 <input
                   aria-label="仓库 URL"

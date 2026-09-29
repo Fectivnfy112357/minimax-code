@@ -13,7 +13,18 @@ function validateProviderId(name: string, body: unknown): WebuiOperationValidati
 }
 function providerRecordOperation(name: string): WebuiOperation<Record<string, unknown>, unknown> { return { name, validate: (body) => validateProviderRecord(name, body) }; }
 
-export const archiveSessionOperation: WebuiOperation<{ readonly id: string }, { readonly success?: boolean }> = { name: ARCHIVE_SESSION_OPERATION_NAME, validate: (body) => validateSessionIdBody(ARCHIVE_SESSION_OPERATION_NAME, body) };
+export const archiveSessionOperation: WebuiOperation<{ readonly id: string; readonly archived?: boolean }, { readonly success?: boolean }> = {
+  name: ARCHIVE_SESSION_OPERATION_NAME,
+  validate: (body) => {
+    const value = validateSessionIdBody(ARCHIVE_SESSION_OPERATION_NAME, body);
+    if (!value.ok) return value;
+    const candidate = body as Record<string, unknown>;
+    if (candidate.archived !== undefined && typeof candidate.archived !== "boolean") {
+      return { ok: false, code: WebuiErrorCode.invalidBody, message: "archiveSession archived must be a boolean" };
+    }
+    return { ok: true, body: { id: value.body.id, ...(candidate.archived !== undefined ? { archived: candidate.archived } : {}) } };
+  },
+};
 export const deleteSessionOperation: WebuiOperation<{ readonly id: string }, { readonly success?: boolean }> = { name: DELETE_SESSION_OPERATION_NAME, validate: (body) => validateSessionIdBody(DELETE_SESSION_OPERATION_NAME, body) };
 export const updateSessionOperation: WebuiOperation<import("../port.js").WebuiUpdateSessionRequest, import("../port.js").WebuiUpdateSessionResult> = {
   name: UPDATE_SESSION_OPERATION_NAME,

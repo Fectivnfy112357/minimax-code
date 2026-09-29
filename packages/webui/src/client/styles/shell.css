@@ -248,6 +248,33 @@
   .webui-settings-row span { margin-top: var(--spacing_4); color: var(--text_default_tertiary); font-size: var(--size_12); }
   .webui-settings-row select { min-width: 150px; padding: var(--spacing_8); border: 1px solid var(--border_default); border-radius: var(--radius_8); background: var(--bg_default_primary); color: var(--text_default_primary); }
 
+  .webui-settings-content-header:has(.webui-archived-delete-all) { align-items: center; margin-bottom: var(--spacing_40); }
+  .webui-archived-delete-all { display: inline-flex; height: 36px; align-items: center; gap: 6px; border: 0; border-radius: 12px; padding: 0 12px; background: rgba(255, 59, 48, .1); color: #e5484d; font: inherit; font-size: var(--size_14); cursor: pointer; }
+  .webui-archived-delete-all:hover { background: rgba(255, 59, 48, .16); }
+  .webui-archived-delete-all:disabled { opacity: .45; cursor: default; }
+  .webui-archived-page { width: 100%; max-width: 760px; margin: 0 auto; padding: 0 var(--spacing_20) var(--spacing_32); }
+  .webui-archived-filters { display: grid; grid-template-columns: minmax(0, 1fr); margin-bottom: var(--spacing_24); }
+  .webui-archived-search { display: flex; min-width: 0; height: 38px; align-items: center; gap: var(--spacing_8); border: 1px solid var(--border_default); border-radius: 12px; padding: 0 12px; background: var(--bg_default_primary); color: var(--text_default_secondary); }
+  .webui-archived-search:focus-within { border-color: var(--border_accent); }
+  .webui-archived-search input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text_default_primary); font: inherit; font-size: var(--size_14); }
+  .webui-archived-search input::placeholder { color: var(--text_default_tertiary); }
+  .webui-archived-groups { display: flex; flex-direction: column; gap: var(--spacing_20); }
+  .webui-archived-project-heading { display: flex; min-height: 38px; align-items: center; gap: var(--spacing_12); color: var(--text_default_tertiary); font-size: var(--size_14); }
+  .webui-archived-project-name { display: inline-flex; min-width: 0; flex: 1; align-items: center; gap: var(--spacing_8); overflow: hidden; color: var(--text_default_primary); font-size: var(--size_14); }
+  .webui-archived-project-name svg { flex: 0 0 auto; }
+  .webui-archived-list { overflow: hidden; border: 0; border-radius: 16px; background: var(--bg_grouped_tertiary); padding: 4px 20px; }
+  .webui-archived-row { display: flex; min-width: 0; min-height: 76px; align-items: center; gap: var(--spacing_12); border-bottom: 1px solid var(--border_default); }
+  .webui-archived-row:last-child { border-bottom: 0; }
+  .webui-archived-row-copy { min-width: 0; flex: 1; }
+  .webui-archived-title { overflow: hidden; color: var(--text_default_primary); font-size: var(--size_14); line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
+  .webui-archived-row time { display: block; margin-top: 2px; color: var(--text_default_tertiary); font-size: var(--size_12); line-height: 18px; }
+  .webui-archived-icon-button { display: grid; width: 32px; height: 32px; flex: 0 0 32px; place-items: center; border: 0; border-radius: 8px; background: transparent; color: var(--text_default_tertiary); cursor: pointer; }
+  .webui-archived-icon-button:hover { background: var(--bg_interaction_tertiary_press); color: var(--text_default_primary); }
+  .webui-archived-unarchive { height: 36px; flex: 0 0 auto; border: 0; border-radius: 12px; padding: 0 12px; background: var(--bg_grouped_tertiary); color: var(--text_default_primary); font: inherit; font-size: var(--size_14); cursor: pointer; }
+  .webui-archived-unarchive:hover { background: var(--bg_interaction_tertiary_press); }
+  .webui-archived-empty { display: grid; min-height: 180px; place-items: center; color: var(--text_default_tertiary); font-size: var(--size_14); }
+  @media (max-width: 760px) { .webui-archived-list { padding: 4px 12px; } .webui-archived-row { gap: 8px; } .webui-archived-unarchive { padding: 0 9px; } }
+
   .webui-settings-error { margin: 0 var(--spacing_20) var(--spacing_16); color: var(--text_label_danger_secondary_default); font-size: var(--size_12); }
   .webui-settings-empty-panel { max-width: 760px; min-height: 220px; margin: 0 auto; }
   .webui-settings-data-dir { max-width: 760px; margin: var(--spacing_32) auto 0; color: var(--text_default_tertiary); font-size: var(--size_12); word-break: break-all; }
@@ -256,7 +283,7 @@
   .mavis-settings-theme-preview img { border-radius: var(--radius_8); object-fit: cover; }
 
   .webui-settings-no-results { padding: var(--spacing_16); color: var(--text_default_secondary); font-size: var(--size_12); }
-  .webui-generic-page { display: flex; max-width: 840px; margin: 0 auto; flex-direction: column; gap: 32px; padding: 0 var(--spacing_16) var(--spacing_32); }
+  .webui-generic-page { display: flex; width: 100%; min-height: 0; max-width: 704px; flex: 1; margin: 0 auto; flex-direction: column; gap: var(--spacing_16); padding: 0 0 var(--spacing_32); }
   .webui-generic-section { display: flex; width: 100%; flex-direction: column; gap: var(--spacing_12); }
   .webui-generic-section > h3 { margin: 0; padding: 0 var(--spacing_16); color: var(--text_default_primary); font-size: var(--size_14); font-weight: var(--weight_medium); line-height: var(--line_height_20); }
   .webui-generic-card { display: flex; width: 100%; flex-direction: column; border-radius: var(--radius_16); background: var(--bg_grouped_tertiary); padding: var(--spacing_4); }
@@ -467,28 +494,21 @@
     width: max-content;
   }
 
+  /* The flyout is pinned with `top: 0`. A `max-height` instead of a second
+   * offset let a long skill list grow past the stack and off the viewport, so
+   * the trailing rows were unreachable; `top`+`bottom: 0` pins both ends to the
+   * stack, whose height is the root menu's. */
   .webui-composer-menu-stack > .webui-composer-menu[data-webui-composer-submenu] {
     position: absolute;
     top: 0;
     right: auto;
-    bottom: auto;
-    left: calc(100% - 1px);
+    bottom: 0;
+    left: calc(100% + var(--spacing_4));
     width: max-content;
     min-width: 240px;
     max-width: min(320px, calc(100vw - 244px));
-    max-height: min(420px, calc(100dvh - 112px));
     overflow-y: auto;
     overscroll-behavior: contain;
-  }
-
-  .webui-composer-menu-stack[data-webui-open-submenu] > .webui-composer-menu[data-webui-composer-submenu] {
-    border-top-left-radius: 0;
-    border-bottom-left-radius: 0;
-  }
-
-  .webui-composer-menu-stack[data-webui-open-submenu] > .webui-composer-menu[data-webui-composer-menu="root"] {
-    border-top-right-radius: 0;
-    border-bottom-right-radius: 0;
   }
 
   @media (max-width: 600px) {
@@ -504,16 +524,6 @@
       max-height: min(320px, calc(100dvh - 180px));
       min-width: 220px;
       max-width: min(360px, calc(100vw - 32px));
-    }
-
-    .webui-composer-menu-stack[data-webui-open-submenu] > .webui-composer-menu[data-webui-composer-submenu] {
-      border-top-left-radius: 0;
-      border-bottom-left-radius: 14px;
-    }
-
-    .webui-composer-menu-stack[data-webui-open-submenu] > .webui-composer-menu[data-webui-composer-menu="root"] {
-      border-bottom-left-radius: 0;
-      border-bottom-right-radius: 0;
     }
   }
 
@@ -1527,7 +1537,8 @@
     border-radius: var(--radius_8);
     background: var(--bg_grouped_secondary);
   }
-  /* 供应商分组：容器保持列表原有的 2px 行距，标题只占一行，不参与选择。 */
+  /* Provider groups: the wrapper keeps the list's 2px row gap, and the header
+   * is one line of text that never takes a hit area of its own. */
   .webui-model-menu-group {
     display: flex;
     flex-direction: column;
@@ -1539,7 +1550,8 @@
     font-size: var(--size_12);
     line-height: var(--line_height_16);
   }
-  /* 首组紧贴列表内边距，其余组之间才留出标题的上间距。 */
+  /* The first header sits flush against the list's own padding; only the
+   * groups after it need the top gap that separates them. */
   .webui-model-menu-group:first-child .webui-model-group-header {
     padding-top: var(--spacing_2);
   }
@@ -1553,6 +1565,18 @@
     padding: var(--spacing_4);
     overflow-y: auto;
   }
+  /* Both columns hide their scrollbar: the menu carries a rounded frame and
+   * group padding, and a bar cuts into it. Same recipe as the settings
+   * sidebar — `overflow-y: auto` stays, so the content still scrolls. */
+  .webui-model-menu-list,
+  .webui-model-menu-detail {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .webui-model-menu-list::-webkit-scrollbar,
+  .webui-model-menu-detail::-webkit-scrollbar {
+    display: none;
+  }
   .webui-model-detail-row {
     display: flex;
     flex-direction: column;
@@ -1564,9 +1588,10 @@
     order: 1;
     border-top: 1px solid var(--border_default);
   }
-  /* 详情列是 column flex 容器：`.webui-toggle-switch` 的 `flex: 0 0 40px` 在这里
-   * 落在主轴（高度）上，把 20px 的轨道撑成 40px 的圆。这里按内容尺寸收缩，轨道
-   * 回到 40x20；横向容器里的其他开关不受影响。 */
+  /* The detail column is a `flex-direction: column` container, so the base
+   * switch's `flex: 0 0 40px` lands on the main axis and stretches the 20px
+   * track into a 40px circle. Here it shrinks to its own size and the track is
+   * 40x20 again; the row-context switches elsewhere are untouched. */
   .webui-model-detail-row .webui-toggle-switch {
     flex: 0 0 auto;
     align-self: flex-start;
@@ -4412,6 +4437,35 @@
   .webui-plugin-management.is-marketplace .webui-plugin-category-filter button[aria-pressed="true"]:hover {
     background: var(--bg_interaction_tertiary_selected);
   }
+  .webui-plugin-management.is-managing .webui-plugin-management-discovery {
+    box-sizing: border-box;
+    max-width: 832px;
+    margin: 16px auto 0;
+    padding: 0 32px 4px;
+  }
+  .webui-plugin-management.is-managing .webui-plugin-management-discovery .webui-plugin-category-filter {
+    max-width: none;
+    justify-content: flex-start;
+    gap: 4px;
+    margin: 0 0 10px;
+  }
+  .webui-plugin-management.is-managing .webui-plugin-category-filter button {
+    min-height: 32px;
+    padding: 0 10px;
+    font-size: 14px;
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+  .webui-plugin-management.is-managing .webui-plugin-category-filter button:hover {
+    background: var(--bg_interaction_tertiary_hover);
+    color: var(--text_default_primary);
+  }
+  .webui-plugin-management.is-managing .webui-plugin-category-filter button[aria-pressed="true"] {
+    background: var(--bg_grouped_tertiary);
+    color: var(--text_default_primary);
+  }
+  .webui-plugin-management.is-managing .webui-plugin-category-filter button[aria-pressed="true"]:hover {
+    background: var(--bg_interaction_tertiary_selected);
+  }
   .webui-plugin-market-search {
     box-sizing: border-box;
     display: flex;
@@ -4586,11 +4640,22 @@
     max-width: 960px;
     margin: 0 auto;
   }
+  .webui-plugin-management.is-managing .webui-plugin-list,
+  .webui-plugin-management.is-managing .webui-plugin-toolbar,
+  .webui-plugin-management.is-managing .webui-plugin-error {
+    width: min(768px, calc(100% - 64px));
+    max-width: 768px;
+  }
   .webui-plugin-row {
     min-height: 84px;
     gap: 20px;
     border-bottom: 1px solid var(--border_default);
     padding: 12px 0;
+  }
+  .webui-plugin-management.is-managing .webui-plugin-row {
+    min-height: 64px;
+    gap: 12px;
+    padding: 8px 0;
   }
   .webui-plugin-grid {
     display: grid;
@@ -4612,6 +4677,38 @@
     font-size: 26px;
     color: var(--text_default_secondary);
   }
+  .webui-plugin-icon--skill {
+    box-sizing: border-box;
+    border: 0;
+    background: var(--bg_grouped_tertiary);
+    padding: 5px;
+  }
+  .webui-plugin-skill-icon-tile {
+    display: grid;
+    width: 100%;
+    height: 100%;
+    place-items: center;
+    border: 1px solid var(--border_default);
+    border-radius: 8px;
+    background: var(--bg_default_primary);
+    color: var(--text_default_secondary);
+  }
+  .webui-plugin-skill-icon-tile > svg {
+    width: 20px;
+    height: 20px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.45;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .webui-plugin-management.is-managing .webui-plugin-icon {
+    width: 40px;
+    height: 40px;
+    flex-basis: 40px;
+    border-radius: 10px;
+    font-size: 22px;
+  }
   .webui-plugin-copy {
     min-width: 0;
     flex: 1;
@@ -4621,6 +4718,10 @@
     font-size: 16px;
     font-weight: 500;
   }
+  .webui-plugin-management.is-managing .webui-plugin-copy h2 {
+    margin-bottom: 2px;
+    font-size: 14px;
+  }
   .webui-plugin-copy p {
     overflow: hidden;
     margin: 0;
@@ -4629,8 +4730,22 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .webui-plugin-management.is-managing .webui-plugin-copy p,
+  .webui-plugin-management.is-managing .webui-plugin-row > span {
+    font-size: 12px;
+  }
   .webui-plugin-actions {
     gap: 8px;
+  }
+  .webui-plugin-management.is-managing .webui-plugin-actions {
+    gap: 6px;
+  }
+  .webui-plugin-management.is-managing .webui-plugin-row > button,
+  .webui-plugin-management.is-managing .webui-plugin-actions > button:not([role="switch"]) {
+    min-height: 32px;
+    border-radius: 8px;
+    padding: 0 12px;
+    font-size: 13px;
   }
   .webui-plugin-empty {
     margin: 72px auto;
@@ -4649,6 +4764,19 @@
     grid-template-columns: 250px minmax(0, 1fr);
     gap: 32px;
     margin: 0 auto;
+  }
+  .webui-plugin-management.is-managing .webui-agent-editor {
+    width: min(768px, calc(100% - 64px));
+  }
+  .webui-plugin-management.is-managing > .webui-plugin-list,
+  .webui-plugin-management.is-managing > .webui-plugin-toolbar {
+    margin-top: 24px;
+  }
+  .webui-plugin-management.is-managing > .webui-agent-editor {
+    margin-top: 24px;
+  }
+  .webui-plugin-management.is-managing > .webui-plugin-error {
+    margin-top: 24px;
   }
   .webui-agent-list {
     display: flex;

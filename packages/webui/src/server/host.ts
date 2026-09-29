@@ -92,7 +92,7 @@ export interface WebuiRuntimeCliService {
     context?: Record<string, never>,
   ): Promise<WebuiSessionTreePage>;
   archiveSession(
-    request: { readonly id: string },
+    request: { readonly id: string; readonly archived?: boolean },
     context?: Record<string, never>,
   ): Promise<{ readonly success?: boolean }>;
   deleteSession(

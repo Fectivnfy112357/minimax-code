@@ -9,7 +9,10 @@ import {
 import type { SlashCommandEntry } from "../../src/client/slash-palette.js";
 import {
   findWebuiMentionRange,
+  findWebuiSlashRange,
   insertWebuiMention,
+  removeWebuiSlashToken,
+  replaceWebuiSlashToken,
   webuiAttachmentLimitError,
 } from "../../src/client/projection/composer-interactions.js";
 import { sendMessageOperation, enqueueMessageOperation } from "../../src/server/operation/operations.js";
@@ -408,6 +411,65 @@ describe("Desktop composer interaction contracts", () => {
       caret: 17,
     });
     expect(findWebuiMentionRange("email@host", 10)).toBeUndefined();
+  });
+
+  it("opens the slash palette from any slash, not just the first character", () => {
+    // The palette used to be anchored to the start of the draft, so only a
+    // leading "/" opened it. `帮我 /pl` is 6 UTF-16 units, not 8.
+    expect(findWebuiSlashRange("/pl", 3)).toEqual({ start: 0, end: 3, query: "pl" });
+    expect(findWebuiSlashRange("/", 1)).toEqual({ start: 0, end: 1, query: "" });
+    expect(findWebuiSlashRange("帮我 /pl", 6)).toEqual({
+      start: 3,
+      end: 6,
+      query: "pl",
+    });
+    // A second slash opens it too, once the caret moves into that token.
+    expect(findWebuiSlashRange("/a /b", 5)).toEqual({ start: 3, end: 5, query: "b" });
+  });
+
+  it("keeps the slash palette closed where a slash is not a command", () => {
+    // A `/` glued to another character belongs to a URL, not to a command.
+    expect(findWebuiSlashRange("http://example.com", 18)).toBeUndefined();
+    // Text after the token moves the caret out of it.
+    expect(findWebuiSlashRange("/plan rest of it", 13)).toBeUndefined();
+    expect(findWebuiSlashRange("/plan rest of it", 5)).toEqual({
+      start: 0,
+      end: 5,
+      query: "plan",
+    });
+    // No slash at all.
+    expect(findWebuiSlashRange("帮我看看", 4)).toBeUndefined();
+    expect(findWebuiSlashRange("", 0)).toBeUndefined();
+  });
+
+  it("drops only the slash token when the palette is dismissed", () => {
+    // Both the Escape key and the outside-pointerdown path cancel through this,
+    // so a token in the middle of a sentence leaves the rest of the draft alone.
+    const value = "帮我 /pl 谢谢";
+    const range = findWebuiSlashRange(value, 6)!;
+    expect(range).toEqual({ start: 3, end: 6, query: "pl" });
+    expect(removeWebuiSlashToken(value, range)).toBe("帮我  谢谢");
+    // The leading-token case still clears the whole draft, as before.
+    expect(removeWebuiSlashToken("/plan", findWebuiSlashRange("/plan", 5)!)).toBe("");
+  });
+
+  it("keeps an earlier slash token when the second one is chosen", () => {
+    // The reported bug: "/pptx /deep" + picking a skill from the second
+    // token's palette used to rewrite the whole draft, so the "/pptx" the
+    // user had already committed was wiped.
+    const value = "/pptx /deep";
+    const range = findWebuiSlashRange(value, 11)!;
+    expect(range).toEqual({ start: 6, end: 11, query: "deep" });
+    const result = replaceWebuiSlashToken(value, range, "/deep-research ");
+    expect(result.value).toBe("/pptx /deep-research ");
+    // The caret lands after the inserted text's trailing space, which is what
+    // closes the palette again.
+    expect(result.caret).toBe(result.value.length);
+    expect(findWebuiSlashRange(result.value, result.caret)).toBeUndefined();
+    // The leading-token case is unchanged: the draft *is* the token.
+    expect(
+      replaceWebuiSlashToken("/deep", findWebuiSlashRange("/deep", 5)!, "/deep-research "),
+    ).toEqual({ value: "/deep-research ", caret: 15 });
   });
 
   it("applies attachment count and WebSocket payload caps before reading files", () => {

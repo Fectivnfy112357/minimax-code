@@ -353,6 +353,68 @@ describe("W0 · structural declarations W5 must preserve", () => {
     expect(declaration(inColumn.body, "flex")).toBe("0 0 auto");
     expect(declaration(inColumn.body, "align-self")).toBe("flex-start");
   });
+
+  it("hides the scrollbar on both model picker panels without losing scroll", () => {
+    // Both columns overflow; a visible bar cuts into the menu's rounded frame.
+    // The rules only remove the bar — `overflow-y: auto` stays on both, so the
+    // content still scrolls.
+    for (const selector of [
+      ".webui-model-menu-list",
+      ".webui-model-menu-detail",
+    ]) {
+      const body = winning(selector).body;
+      expect(declaration(body, "overflow-y")).toBe("auto");
+    }
+
+    const hidden = winning(
+      ".webui-model-menu-list, .webui-model-menu-detail",
+    );
+    expect(declaration(hidden.body, "scrollbar-width")).toBe("none");
+
+    const webkit = shellRules.filter(
+      (rule) =>
+        rule.selector.includes("::-webkit-scrollbar") &&
+        rule.selector.includes(".webui-model-menu-list"),
+    );
+    expect(webkit).toHaveLength(1);
+    expect(webkit[0]?.selector).toContain(".webui-model-menu-detail");
+    expect(webkit[0]?.body).toMatch(/display:\s*none/u);
+  });
+
+  it("keeps the composer flyout inside the root menu's band", () => {
+    // The flyout is pinned with `top: 0`. A `max-height` instead of a second
+    // offset let a long skill list grow past the stack and off the viewport,
+    // so the trailing rows were unreachable. `top`+`bottom: 0` pins both ends
+    // to the stack, whose height is the root menu's.
+    const flyout = winning(
+      '.webui-composer-menu-stack > .webui-composer-menu[data-webui-composer-submenu]',
+    );
+    expect(declaration(flyout.body, "position")).toBe("absolute");
+    expect(declaration(flyout.body, "top")).toBe("0");
+    expect(declaration(flyout.body, "bottom")).toBe("0");
+    expect(declaration(flyout.body, "overflow-y")).toBe("auto");
+    // The root menu keeps its own placement: nothing in the flyout rule may
+    // move it, and it must not be given a max-height shorter than the flyout.
+    const root = winning(
+      '.webui-composer-menu-stack > .webui-composer-menu[data-webui-composer-menu="root"]',
+    );
+    expect(declaration(root.body, "position")).toBe("relative");
+    expect(declaration(root.body, "inset")).toBe("auto");
+  });
+
+  it("rounds both composer menus instead of squaring the touching corners", () => {
+    // Squaring the seam made the flyout a right-angle panel. Both menus now
+    // keep the base 14px radius, so the seam rules must stay gone.
+    const squaring = shellRules.filter((rule) =>
+      rule.selector.includes("[data-webui-open-submenu]"),
+    );
+    expect(squaring).toEqual([]);
+
+    const menu = winning(
+      ".webui-composer-menu, .webui-composer-permission-menu, .webui-composer-mention-menu",
+    );
+    expect(declaration(menu.body, "border-radius")).toBe("14px");
+  });
 });
 
 describe("W0 · at-rules and animations W5/W6 must not remove", () => {

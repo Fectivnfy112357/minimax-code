@@ -562,6 +562,7 @@ export interface WebuiTransport {
   readonly signOut?: () => Promise<{ readonly success?: boolean }>;
   readonly archiveSession?: (request: {
     readonly id: string;
+    readonly archived?: boolean;
   }) => Promise<{ readonly success?: boolean }>;
   readonly deleteSession?: (request: {
     readonly id: string;

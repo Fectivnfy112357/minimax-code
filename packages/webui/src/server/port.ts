@@ -787,7 +787,7 @@ export interface WebuiHarnessPort {
   listVisibleProjects?(request: { readonly limit?: number }): Promise<readonly WebuiProjectRecord[]>;
   listSessions(request: WebuiSessionListRequest): Promise<WebuiSessionPage>;
   getSessionTree(request: WebuiSessionTreeRequest): Promise<WebuiSessionTreePage>;
-  archiveSession(request: { readonly id: string }): Promise<{ readonly success?: boolean }>;
+  archiveSession(request: { readonly id: string; readonly archived?: boolean }): Promise<{ readonly success?: boolean }>;
   deleteSession(request: { readonly id: string }): Promise<{ readonly success?: boolean }>;
   updateSession(request: WebuiUpdateSessionRequest): Promise<WebuiUpdateSessionResult>;
   getSessionForkOptions(request: WebuiGetSessionForkOptionsRequest): Promise<WebuiGetSessionForkOptionsResult>;

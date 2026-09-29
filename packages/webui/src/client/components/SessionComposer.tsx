@@ -132,7 +132,10 @@ import { initialWebuiStreamState } from "../stream.js";
 import { workspaceProjectName } from "./SessionRail.js";
 import {
   findWebuiMentionRange,
+  findWebuiSlashRange,
   insertWebuiMention,
+  removeWebuiSlashToken,
+  replaceWebuiSlashToken,
   webuiAttachmentLimitError,
   type WebuiMentionRange,
 } from "../projection/composer-interactions.js";
@@ -618,6 +621,10 @@ export function WebuiComposer({
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const mentionCaretRef = useRef<number>();
   const pendingMentionCaretRef = useRef<number>();
+  // The slash palette follows the caret, so its position is state rather than a
+  // ref: a click or an arrow key that only moves the caret still has to
+  // re-derive whether a slash token is under it.
+  const [composerCaret, setComposerCaret] = useState(0);
   const editingGoalDraftRef = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const composerRegionRef = useRef<HTMLDivElement | null>(null);
@@ -908,6 +915,9 @@ export function WebuiComposer({
     textarea.focus();
     textarea.setSelectionRange(caret, caret);
     pendingMentionCaretRef.current = undefined;
+    // The slash palette derives its state from `composerCaret`, so a caret the
+    // composer moved itself has to be mirrored there — no input event follows.
+    setComposerCaret(caret);
   }, [draft]);
 
   useEffect(() => {
@@ -1106,12 +1116,15 @@ export function WebuiComposer({
 
   const selectedModel = models.find((model) => model.selected);
   const enabledModels = models.filter((model) => model.enabled !== false);
-  // Use the un-trimmed draft so the popover closes the moment the user types a
-  // trailing space (i.e. after choosing a command). Trimming would re-open it
-  // because "/name " trims to "/name" and matches again, leaving the palette
-  // pinned above the composer.
-  const commandMatch = /^\/([^\s/]*)$/u.exec(draft);
-  const commandQuery = commandMatch?.[1] ?? "";
+  // The slash token the caret sits in, found the same way as an `@` mention.
+  // Every slash opens the palette, not only one at the start of the draft:
+  // `findWebuiSlashRange` anchors on the caret and on `(?:^|\s)`, so `帮我 /pl`
+  // ranks commands exactly like `/pl` while `http://x` stays a URL. Reading the
+  // un-trimmed draft keeps the panel closed once the user types the trailing
+  // space after a command — trimming would re-open it, because "/name "
+  // trims to "/name" and matches again.
+  const commandRange = findWebuiSlashRange(draft, composerCaret);
+  const commandQuery = commandRange?.query ?? "";
   // Pull a fresh skill pool from the harness when `listSkills` is wired up.
   // The fallback (fixtures resolved at module init) keeps the popover
   // functional even if the RPC is unavailable or rejects; once the live
@@ -1149,7 +1162,7 @@ export function WebuiComposer({
         slashSkills.map(slashSkillSummaryToEntry),
       )
     : WEBUI_SLASH_FALLBACK_SECTIONED;
-  const commandSuggestions = commandMatch
+  const commandSuggestions = commandRange
     ? rankWebuiSlashPalette(slashSectioned, commandQuery)
     : [];
   const mentionQuery = mentionRange?.query.toLocaleLowerCase() ?? "";
@@ -1179,21 +1192,21 @@ export function WebuiComposer({
         ? 0
         : Math.min(current, commandSuggestions.length - 1),
     );
-  }, [commandMatch?.[1], commandSuggestions.length]);
+  }, [commandRange?.query, commandSuggestions.length]);
   // Mirror the desktop's TipTap suggestion plugin behaviour: while the slash
   // popover is open, a pointerdown outside the composer region cancels the
   // slash invocation. The Escape handler above already does the same thing
   // for the keyboard. Without this, the popover stays pinned above the
-  // composer until the user types a space or deletes the leading "/" by
-  // hand. We keep refs to `draft` and `commandMatch` so the listener always
-  // sees the latest values without re-attaching on every keystroke.
+  // composer until the user types a space or deletes the "/" by hand. We keep
+  // refs to `draft` and the current range so the listener always sees the
+  // latest values without re-attaching on every keystroke.
   const slashDraftRef = useRef(draft);
-  const slashMatchRef = useRef<RegExpExecArray | null>(commandMatch);
+  const slashRangeRef = useRef(commandRange);
   useEffect(() => {
     slashDraftRef.current = draft;
-    slashMatchRef.current = commandMatch;
+    slashRangeRef.current = commandRange;
   });
-  const slashPanelOpen = commandMatch !== null;
+  const slashPanelOpen = commandRange !== undefined;
   useEffect(() => {
     if (!composerMenu && !permissionMenuOpen && !mentionRange) return undefined;
     const onPointerDown = (event: PointerEvent) => {
@@ -1280,8 +1293,8 @@ export function WebuiComposer({
     const region = composerRegionRef.current;
     if (!region) return;
     const onPointerDown = (event: PointerEvent) => {
-      const match = slashMatchRef.current;
-      if (!match) return;
+      const range = slashRangeRef.current;
+      if (!range) return;
       if (!(event.target instanceof Node)) return;
       const insideContainer = region.contains(event.target);
       // Slash popover's per-surface variant subscribes to `pointerdown`
@@ -1298,9 +1311,9 @@ export function WebuiComposer({
       ) {
         return;
       }
-      // Same clear-and-close as Escape: drop the "/xxx" segment so the
-      // regex no longer matches and the popover disappears.
-      onDraftChange(slashDraftRef.current.slice(0, match.index));
+      // Same clear-and-close as Escape: drop the "/xxx" token so the
+      // palette no longer has a token under the caret and disappears.
+      onDraftChange(removeWebuiSlashToken(slashDraftRef.current, range));
     };
     document.addEventListener("pointerdown", onPointerDown);
     return () => {
@@ -1457,7 +1470,21 @@ export function WebuiComposer({
       activatePlanMode();
       return;
     }
-    onDraftChange(`/${command} `);
+    const insertion = `/${command} `;
+    // Rewrite only the token the caret sits in. The draft can already hold an
+    // earlier "/skill" the user picked; replacing the whole draft wiped it.
+    if (!commandRange) {
+      onDraftChange(insertion);
+      pendingMentionCaretRef.current = insertion.length;
+      textareaRef.current?.focus();
+      return;
+    }
+    const result = replaceWebuiSlashToken(draft, commandRange, insertion);
+    onDraftChange(result.value);
+    // The caret has to land after the trailing space: the palette is open for
+    // any token under the caret, so leaving it inside "/command" would pop the
+    // panel straight back open.
+    pendingMentionCaretRef.current = result.caret;
     textareaRef.current?.focus();
   };
   const commandInvocation = /^\/([^\s/]+)(?:\s+([\s\S]*))?$/u.exec(
@@ -1844,6 +1871,7 @@ export function WebuiComposer({
                     handleDraftChange(next);
                     const caret = event.target.selectionStart;
                     mentionCaretRef.current = caret;
+                    setComposerCaret(caret);
                     const nextMentionRange = findWebuiMentionRange(next, caret);
                     if (nextMentionRange) {
                       setComposerMenu(undefined);
@@ -1865,6 +1893,7 @@ export function WebuiComposer({
                     }
                   }}
                   onClick={(event) => {
+                    setComposerCaret(event.currentTarget.selectionStart);
                     const nextMentionRange = findWebuiMentionRange(event.currentTarget.value, event.currentTarget.selectionStart);
                     if (nextMentionRange) {
                       setComposerMenu(undefined);
@@ -1874,6 +1903,7 @@ export function WebuiComposer({
                   }}
                   onKeyUp={(event) => {
                     if (["ArrowDown", "ArrowUp", "Enter", "Escape"].includes(event.key)) return;
+                    setComposerCaret(event.currentTarget.selectionStart);
                     setMentionRange(findWebuiMentionRange(event.currentTarget.value, event.currentTarget.selectionStart));
                   }}
                   onKeyDown={(event) => {
@@ -1891,12 +1921,15 @@ export function WebuiComposer({
                       else cancelPlanMode();
                       return;
                     }
-                    if (event.key === "Escape" && commandMatch) {
-                      // 镜像桌面端 aD 的 Escape 处理：清掉 draft 中的 "/xxx" 段
-                      // 让 commandMatch 不再命中，popover 自动关闭。保留 / 之前的
-                      // 文本（用户可能已经输了前缀词），等价于取消本次 slash 选择。
+                    if (event.key === "Escape" && commandRange) {
+                      // Mirrors the desktop Escape handling: drop the "/xxx"
+                      // token under the caret so the palette closes. Text
+                      // before it survives — the user may have typed a
+                      // prefix word — which is what cancels this invocation.
                       event.preventDefault();
-                      onDraftChange(draft.slice(0, commandMatch.index));
+                      const next = removeWebuiSlashToken(draft, commandRange);
+                      onDraftChange(next);
+                      setComposerCaret(next.length);
                       return;
                     }
                     // Enter is claimed above by an open mention menu, and below by
