@@ -35,7 +35,7 @@ import {
   type WebuiTransport,
   type WebuiClientSession,
 } from "../contracts.js";
-import { projectWebuiMessageToStreamMessage } from "../projection/message-projection.js";
+import { projectWebuiMessageToStreamMessage, readUsageNumber } from "../projection/message-projection.js";
 import { reduceWebuiStreamFrame, webuiSessionStatusType } from "../stream.js";
 
 /** Capability subset the session composer consumes. Single source of truth
@@ -68,7 +68,9 @@ import type {
   WebuiQueueItem,
   WebuiWorkspaceDirectoryListing,
   WebuiWorkspaceFile,
+  WebuiUsageQuotaResult,
 } from "../../server/port.js";
+import { formatUsageResetLabel } from "./UserMenu.js";
 import { WebuiGoalBanner } from "./GoalBanner.js";
 import { WebuiInteractionPanel } from "./InteractionPanel.js";
 import {
@@ -447,6 +449,7 @@ export function WebuiComposer({
   sessionId,
   sessionStatus,
   sessionLayout = false,
+  usageQuota,
   agentName,
   createSession,
   createSessionWorkspaceDir,
@@ -503,6 +506,7 @@ export function WebuiComposer({
   readonly sessionId?: string;
   readonly sessionStatus?: unknown;
   readonly sessionLayout?: boolean;
+  readonly usageQuota?: WebuiUsageQuotaResult;
   readonly agentName: string;
   readonly createSession?: WebuiClientSessionCreator;
   readonly createSessionWorkspaceDir?: string;
@@ -614,6 +618,7 @@ export function WebuiComposer({
   const workspacePickerRef = useRef<HTMLDivElement | null>(null);
   const restorationKeyRef = useRef<string>();
   const fieldId = useId();
+  const contextUsage = stream.contextUsage ?? stream.messages.at(-1)?.contextUsage;
 
   useEffect(() => {
     if (!sessionId) {
@@ -650,10 +655,12 @@ export function WebuiComposer({
           : latestTurn.map(projectWebuiMessageToStreamMessage);
         const lastHistoryMessage = history.at(-1);
         const startedAt = latestTurn.find((message) => message.role === "user")?.timestamp;
+        const contextUsage = readContextUsageSnapshot(page?.contextSnapshot) ?? latestContextUsage(anchoredMessages);
         setStream((current) => ({
           ...current,
           phase: "streaming",
           messages: anchoredMessages,
+          ...(contextUsage ? { contextUsage } : {}),
           ...(current.processingStartedAtMs !== undefined
             ? {}
             : { processingStartedAtMs: typeof startedAt === "number" ? startedAt : Date.now() }),
@@ -688,6 +695,19 @@ export function WebuiComposer({
   // restart restoration. This effect runs once for a selected session/status.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, sessionStatus, resumeSession, loadMessages]);
+
+  useEffect(() => {
+    if (!sessionId || webuiSessionStatusType(sessionStatus) === "started" || !loadMessages) return;
+    let cancelled = false;
+    void loadMessages({ id: sessionId }).then((page) => {
+      if (cancelled) return;
+      const snapshot = readContextUsageSnapshot(page.contextSnapshot);
+      const fromMessages = latestContextUsage((page.messages ?? []).map(projectWebuiMessageToStreamMessage));
+      const contextUsage = snapshot ?? fromMessages;
+      if (contextUsage) setStream((current) => ({ ...current, contextUsage }));
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [sessionId, sessionStatus, loadMessages]);
 
   useEffect(() => {
     if (!sessionId) {
@@ -2085,6 +2105,7 @@ export function WebuiComposer({
                   </button>
                 ) : null}
                 <div className="ml-auto flex items-center gap-1">
+                  <ContextUsageIndicator usage={contextUsage} usageQuota={usageQuota} />
                   <WebuiModelPicker
                     models={enabledModels}
                     selected={selectedModel}
@@ -2254,4 +2275,183 @@ export function WebuiComposer({
       </div>
     </section>
   );
+}
+
+function latestContextUsage(
+  messages: readonly { readonly contextUsage?: Record<string, unknown> }[],
+): Record<string, unknown> | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const contextUsage = messages[index]?.contextUsage;
+    if (contextUsage) return contextUsage;
+  }
+  return undefined;
+}
+
+function readContextUsageSnapshot(
+  snapshot: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  const usage = snapshot?.usage;
+  return usage && typeof usage === "object" && !Array.isArray(usage)
+    ? usage as Record<string, unknown>
+    : undefined;
+}
+
+function ContextUsageIndicator({ usage, usageQuota }: {
+  readonly usage?: Record<string, unknown>;
+  readonly usageQuota?: WebuiUsageQuotaResult;
+}): ReactElement | null {
+  const [enabled, setEnabled] = useState(() => typeof window === "undefined" || window.localStorage?.getItem("webui-context-window-usage") !== "false");
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const refresh = () => setEnabled(window.localStorage?.getItem("webui-context-window-usage") !== "false");
+    window.addEventListener("storage", refresh);
+    window.addEventListener("webui-context-window-usage-change", refresh);
+    return () => {
+      window.removeEventListener("storage", refresh);
+      window.removeEventListener("webui-context-window-usage-change", refresh);
+    };
+  }, []);
+  if (!enabled || !usage) return null;
+  const used = readUsageNumber(usage, "usedTokens", "used_tokens");
+  const limit = readUsageNumber(usage, "contextWindowTokens", "context_window_tokens");
+  if (used === undefined || used < 0 || limit === undefined || limit <= 0) return null;
+  const percent = Math.min(100, Math.max(0, Math.round(used / limit * 100)));
+  const circumference = 2 * Math.PI * 7;
+  const label = `${percent}% · ${formatContextTokens(used)} / ${formatContextTokens(limit)} tokens`;
+  const componentNames: Readonly<Record<string, string>> = {
+    MESSAGES: "消息",
+    TOOLS: "工具",
+    SKILLS: "技能",
+    SYSTEM_PROMPT: "系统提示词",
+    OTHER: "其他",
+    MEMORY: "记忆",
+  };
+  const componentColors = [1, 0.82, 0.68, 0.54, 0.4, 0.26];
+  const rawComponents = Array.isArray(usage.components) ? usage.components : [];
+  const components = rawComponents.flatMap((component) => {
+    if (!component || typeof component !== "object" || Array.isArray(component)) return [];
+    const item = component as Record<string, unknown>;
+    const kind = typeof item.kind === "string" ? item.kind : "OTHER";
+    const tokens = typeof item.tokens === "number" && Number.isFinite(item.tokens) ? Math.max(0, item.tokens) : 0;
+    return [{ kind, label: componentNames[kind] ?? componentNames.OTHER, tokens }];
+  }).sort((left, right) => right.tokens - left.tokens);
+  const componentsTotal = components.reduce((total, component) => total + component.tokens, 0);
+  const quotaResult = usageQuota?.signedIn ? usageQuota : undefined;
+  const quota = quotaResult?.quota;
+  const planLabel = quotaResult?.tokenPlanTier ?? (quotaResult?.hasTokenPlan ? "Token Plan" : "未订阅 Token Plan");
+  const quotaRows = quota ? [
+    { label: "5 小时限额", window: quota.fiveHour },
+    { label: "周限额", window: quota.weekly },
+    ...(quota.video ? [{ label: "视频限额", window: quota.video }] : []),
+  ] : [];
+  return (
+    <div
+      className="webui-context-usage-anchor"
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+      onFocus={() => setOpen(true)}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") setOpen(false);
+      }}
+    >
+      <button
+        type="button"
+        className="webui-context-usage-trigger"
+        aria-label={`上下文窗口使用 ${label}`}
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        title={`上下文窗口 ${label}`}
+        data-testid="composer-context-usage"
+      >
+        <svg viewBox="0 0 18 18" aria-hidden="true">
+          <circle className="webui-context-usage-track" cx="9" cy="9" r="7" />
+          <circle
+            className="webui-context-usage-value"
+            cx="9"
+            cy="9"
+            r="7"
+            style={{
+              strokeDasharray: circumference,
+              strokeDashoffset: circumference * (1 - percent / 100),
+            }}
+          />
+        </svg>
+      </button>
+      <div
+        className={`webui-context-usage-popover${open ? " is-open" : ""}`}
+        role="dialog"
+        aria-label="上下文窗口使用情况"
+        aria-hidden={!open}
+      >
+          <div className="webui-context-usage-heading">
+            <span>上下文窗口</span><span>{percent}%</span>
+          </div>
+          <div
+            className="webui-context-usage-bar"
+            role="progressbar"
+            aria-label="上下文窗口使用量"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={percent}
+          >
+            {componentsTotal > 0 ? components.map((component, index) => (
+              <span
+                key={component.kind}
+                className="webui-context-usage-bar-segment"
+                style={{ width: `${component.tokens / componentsTotal * 100}%`, opacity: componentColors[index % componentColors.length] }}
+              />
+            )) : <span style={{ width: `${percent}%` }} />}
+          </div>
+          <div className="webui-context-usage-tokens">{formatContextTokens(used)} / {formatContextTokens(limit)} tokens</div>
+          {components.length > 0 ? (
+            <div className="webui-context-usage-components" aria-label="上下文构成">
+              {components.map((component, index) => (
+                <div className="webui-context-usage-component" key={component.kind}>
+                  <span className="webui-context-usage-component-label">
+                    <span className="webui-context-usage-swatch" style={{ opacity: componentColors[index % componentColors.length] }} />
+                    {component.label}
+                  </span>
+                  <span>{componentsTotal > 0 ? `${((component.tokens / componentsTotal) * 100).toFixed(1)}%` : "0.0%"}</span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {quotaResult ? (
+            <>
+              <div className="webui-context-usage-divider" />
+              <div className="webui-context-usage-plan">套餐用量 · {planLabel}</div>
+              {quotaRows.length > 0 ? quotaRows.map(({ label: quotaLabel, window }) => {
+                const usedPercent = "usedPercent" in window ? window.usedPercent : undefined;
+                const totalPercent = "totalPercent" in window ? window.totalPercent : undefined;
+                const videoUsed = "usedCount" in window ? window.usedCount : undefined;
+                const videoTotal = "totalCount" in window ? window.totalCount : undefined;
+                const progress = usedPercent ?? (videoUsed !== undefined && videoTotal ? videoUsed / videoTotal * 100 : undefined);
+                const value = window.unlimited
+                  ? "无限制"
+                  : usedPercent !== undefined
+                    ? `${usedPercent}% / ${totalPercent ?? 100}%`
+                    : videoUsed !== undefined && videoTotal !== undefined
+                      ? `${videoUsed} / ${videoTotal}`
+                      : "—";
+                const reset = formatUsageResetLabel(window.resetAtMs);
+                return (
+                  <div className="webui-context-usage-quota" key={quotaLabel}>
+                    <div className="webui-context-usage-heading"><span>{quotaLabel}</span><span>{value}</span></div>
+                    <div className="webui-context-usage-quota-bar"><span style={{ width: `${Math.max(0, Math.min(100, progress ?? 0))}%` }} /></div>
+                    {reset ? <div className="webui-context-usage-reset">{reset}</div> : null}
+                  </div>
+                );
+              }) : <div className="webui-context-usage-tokens">当前套餐没有可显示的限额</div>}
+            </>
+          ) : null}
+      </div>
+    </div>
+  );
+}
+
+function formatContextTokens(value: number): string {
+  return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 0 }).format(value);
 }

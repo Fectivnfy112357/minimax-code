@@ -936,6 +936,7 @@ export function WebuiClientFoundationApp(
                     sessionId={selectedSessionId}
                     sessionStatus={selectedSession?.status}
                     sessionLayout={!homeMode}
+                    usageQuota={usageQuota}
                     agentName={selectedAgentName}
                     createSession={transport?.createSession}
                     createSessionWorkspaceDir={newTaskWorkspaceDir}

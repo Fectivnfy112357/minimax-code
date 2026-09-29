@@ -526,6 +526,35 @@
     position: relative;
   }
 
+  .webui-context-usage-anchor { position: relative; display: inline-flex; flex: 0 0 auto; align-items: center; }
+  .webui-context-usage-trigger { display: inline-flex; width: 28px; height: 28px; align-items: center; justify-content: center; border: 0; border-radius: 50%; background: transparent; color: var(--icon_default_tertiary); }
+  .webui-context-usage-trigger:hover, .webui-context-usage-trigger[aria-expanded="true"] { background: var(--bg_interaction_tertiary_hover); color: var(--icon_default_secondary); }
+  .webui-context-usage-trigger:focus-visible { outline: 2px solid var(--border_accent); outline-offset: 1px; }
+  .webui-context-usage-trigger svg { display: block; width: 18px; height: 18px; transform: rotate(-90deg); }
+  .webui-context-usage-track, .webui-context-usage-value { fill: none; stroke-width: 2; }
+  .webui-context-usage-track { stroke: var(--border_light); }
+  .webui-context-usage-value { stroke: var(--text_default_accent); stroke-linecap: round; transition: stroke-dashoffset 180ms ease; }
+  .webui-context-usage-popover { position: absolute; z-index: 60; right: -4px; bottom: calc(100% + 8px); width: min(480px, calc(100vw - 32px)); max-height: min(70vh, 520px); overflow: auto; padding: 16px 18px; border: 1px solid var(--border_default); border-radius: 18px; background: var(--bg_grouped_secondary_elevated); box-shadow: 0 8px 24px rgb(0 0 0 / 10%); color: var(--text_default_primary); opacity: 0; pointer-events: none; transform: translateY(5px) scale(.99); transform-origin: bottom right; visibility: hidden; transition: opacity 150ms cubic-bezier(.2, .7, .2, 1), transform 150ms cubic-bezier(.2, .7, .2, 1), visibility 150ms step-end; }
+  .webui-context-usage-popover::before { position: absolute; top: -10px; right: 0; left: 0; height: 10px; content: ""; }
+  .webui-context-usage-popover.is-open { opacity: 1; pointer-events: auto; transform: translateY(0) scale(1); visibility: visible; transition: opacity 150ms cubic-bezier(.2, .7, .2, 1), transform 150ms cubic-bezier(.2, .7, .2, 1), visibility 0s; }
+  .webui-context-usage-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: var(--size_14); line-height: 20px; }
+  .webui-context-usage-bar { display: flex; height: 4px; margin-top: 12px; overflow: hidden; border-radius: 999px; background: var(--border_light); }
+  .webui-context-usage-bar span { display: block; height: 100%; flex: 0 0 auto; background: var(--text_default_accent); transition: width 180ms ease; }
+  .webui-context-usage-tokens { margin-top: 8px; color: var(--text_default_tertiary); font-size: var(--size_12); line-height: 16px; }
+  .webui-context-usage-components { display: flex; flex-direction: column; gap: 7px; margin-top: 12px; }
+  .webui-context-usage-component, .webui-context-usage-component-label { display: flex; align-items: center; }
+  .webui-context-usage-component { justify-content: space-between; gap: 12px; font-size: var(--size_14); line-height: 20px; }
+  .webui-context-usage-component-label { min-width: 0; gap: 7px; }
+  .webui-context-usage-swatch { width: 10px; height: 10px; flex: 0 0 auto; border-radius: 3px; background: var(--text_default_accent); }
+  .webui-context-usage-divider { height: 1px; margin: 16px 0; background: var(--border_default); }
+  .webui-context-usage-plan { margin-bottom: 8px; color: var(--text_default_secondary); font-size: var(--size_14); line-height: 20px; }
+  .webui-context-usage-quota { display: flex; flex-direction: column; gap: 6px; padding: 7px 0; }
+  .webui-context-usage-quota .webui-context-usage-heading { font-size: var(--size_14); }
+  .webui-context-usage-quota-bar { height: 4px; overflow: hidden; border-radius: 999px; background: var(--border_light); }
+  .webui-context-usage-quota-bar span { display: block; height: 100%; border-radius: inherit; background: var(--text_default_accent); transition: width 180ms ease; }
+  .webui-context-usage-reset { color: var(--text_default_tertiary); font-size: var(--size_12); line-height: 16px; }
+  @media (prefers-reduced-motion: reduce) { .webui-context-usage-popover, .webui-context-usage-bar span, .webui-context-usage-quota-bar span { transition: none; } }
+
   /* The approval trigger. A pill with the current mode's own glyph, its label,
    * and a chevron — the same three-part affordance the model picker uses, so
    * both read as dropdowns. The fill is a hover affordance, not a resting
@@ -1139,6 +1168,11 @@
   }
   .webui-workspace-menu--desktop .webui-workspace-option--desktop:hover {
     background: var(--bg_interaction_tertiary_hover, rgba(0, 0, 0, 0.06));
+  }
+  .webui-workspace-menu--desktop
+    [data-webui-workspace-action="add-new"]
+    + [data-webui-workspace-action="no-project"] {
+    margin-top: var(--spacing_2);
   }
 
   /* These rows carry no `:focus-visible`, so keyboard focus fell through to the

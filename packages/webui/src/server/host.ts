@@ -521,7 +521,27 @@ export function createHarnessPortFromHost(
       return requireCliService(host).listPendingPermissions();
     },
     async getPendingQuestionnaire(request) {
-      return requireCliService(host).getPendingQuestionnaire(request);
+      const service = requireCliService(host);
+      const first = await service.getPendingQuestionnaire(request);
+      if (first.request || !request.sessionId) return first;
+      // The runtime keys pending interactions by the agent that OWNS the
+      // session, but `listSessions` / `getSessionTree` echo back the `name`
+      // they were queried with rather than the session's real agent — so the
+      // same session lists under both "main" and "mavis" with whichever name
+      // was passed, and a client that trusts that echo asks the wrong agent's
+      // queue and reads a well-formed empty response as "nothing pending".
+      // That is exactly how the plan card went missing: plan mode is raised by
+      // the chat agent, and this client asks under the default agent name.
+      // Resolve the authoritative name through `getSession`, which does return
+      // it, and ask once more. Reached only on an empty result, and a second
+      // empty result is still reported as empty rather than papered over.
+      const resolved = await service.getSession({ id: request.sessionId }, {});
+      const agentName = resolved.session?.agentName;
+      if (!agentName || agentName === request.name) return first;
+      return service.getPendingQuestionnaire({
+        name: agentName,
+        sessionId: request.sessionId,
+      });
     },
     async replyPermission(request) {
       return requireCliService(host).replyPermission({

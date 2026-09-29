@@ -14,6 +14,14 @@ import {
   sortWebuiQuestionnaireOptions,
   toggleWebuiQuestionnaireOption,
 } from "../projection/questionnaire-state.js";
+import {
+  buildWebuiPlanApproveAnswers,
+  isWebuiPlanReviewRequest,
+} from "../projection/plan-mode.js";
+import {
+  WebuiPlanDeliveryCard,
+  WebuiPlanSurface,
+} from "./PlanModeCards.js";
 import type {
   WebuiPendingPermission,
   WebuiQuestionnaireAnswer,
@@ -135,7 +143,40 @@ export function WebuiInteractionPanel({
           </div>
         </article>
       ))}
-      {questionnaire ? (
+      {/* Plan mode arrives on the same questionnaire channel but renders its
+          own surfaces: the plan file card above the decision card, never the
+          generic step picker. */}
+      {questionnaire?.mode === "plan" ? (
+        <div
+          className="webui-plan-surface"
+          data-testid="plan-surface"
+          data-webui-plan-request={questionnaire.id}
+        >
+          {isWebuiPlanReviewRequest(questionnaire) ? (
+            <WebuiPlanDeliveryCard
+              request={questionnaire}
+              chrome={{ busy: submitting, error: interactionError }}
+              onBuild={() => {
+                setSubmitting(true);
+                void onQuestionnaire(questionnaire, buildWebuiPlanApproveAnswers()).finally(() =>
+                  setSubmitting(false),
+                );
+              }}
+            />
+          ) : null}
+          <WebuiPlanSurface
+            request={questionnaire}
+            chrome={{ busy: submitting, error: interactionError }}
+            onAnswers={(answers) => {
+              setSubmitting(true);
+              void onQuestionnaire(questionnaire, answers).finally(() =>
+                setSubmitting(false),
+              );
+            }}
+          />
+        </div>
+      ) : null}
+      {questionnaire && questionnaire.mode !== "plan" ? (
         <article
           className="webui-card flex max-h-[60vh] flex-col gap-3 overflow-hidden rounded-[20px] border-[0.5px] border-border_default bg-bg_grouped_secondary_elevated p-spacing_16"
           data-testid="questionnaire-composer"

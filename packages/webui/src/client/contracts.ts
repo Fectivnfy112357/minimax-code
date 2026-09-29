@@ -144,6 +144,7 @@ export interface WebuiClientMessage {
   readonly communicationInfosJson?: string;
   readonly parts?: readonly Record<string, unknown>[];
   readonly rawJson?: string;
+  readonly contextUsage?: Record<string, unknown>;
   readonly fileChanges?: readonly WebuiFileDiffInfoView[];
   readonly sourceMessageId?: string;
   readonly changeSetId?: string;
@@ -197,6 +198,7 @@ export type WebuiClientSessionLoader = (
 
 export interface WebuiClientMessagePage {
   readonly messages?: readonly WebuiClientMessage[];
+  readonly contextSnapshot?: Record<string, unknown>;
   readonly queryCollapseViews?: readonly WebuiQueryCollapseView[];
   readonly nextCursor?: string;
   readonly hasMore?: boolean;

@@ -607,6 +607,19 @@ export interface WebuiQuestionnaireRequest {
   readonly createdAt?: number;
   readonly mode?: string;
   readonly purpose?: number;
+  /**
+   * Mode-specific request body. The runtime attaches the plan file to a plan
+   * request so the plan card can render its own preview and decision UI
+   * instead of the generic questionnaire. `cli-service.ts` copies
+   * `planReview` through verbatim, so it is already on the wire.
+   */
+  readonly modePayload?: {
+    readonly featureKey?: string;
+    readonly planReview?: {
+      readonly markdown: string;
+      readonly path: string;
+    };
+  };
 }
 
 export interface WebuiQuestionnaireAnswer {

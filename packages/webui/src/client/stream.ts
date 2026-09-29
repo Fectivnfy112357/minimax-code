@@ -18,6 +18,8 @@ export interface WebuiStreamMessage {
    *  from the agent_message wire frame. The WebUI uses it to render the
    *  Desktop-style "共执行 N 分 M 秒 · {rate} token/s" row. */
   readonly usage?: Record<string, unknown>;
+  /** Runtime context-window snapshot attached to the assistant message. */
+  readonly contextUsage?: Record<string, unknown>;
   /** The server replays the user's own line as a `msg-user-*` frame; it
    * renders as the right-aligned bubble instead of an assistant body. */
   readonly role?: "user";
@@ -37,6 +39,8 @@ export interface WebuiStreamState {
   readonly messages: readonly WebuiStreamMessage[];
   readonly runtimeEvents: readonly Record<string, unknown>[];
   readonly actionDeltas: readonly Record<string, unknown>[];
+  /** Latest session context snapshot, restored from history and refreshed by live messages. */
+  readonly contextUsage?: Record<string, unknown>;
   /** The session-scoped Todo/Subagent projection fed by Desktop-compatible events. */
   readonly workspaceProgress: WebuiWorkspaceProgressState;
   /** The server-owned projection snapshot carried by the current stream. */
@@ -132,6 +136,13 @@ function usageRecord(value: Record<string, unknown>): Record<string, unknown> | 
   return undefined;
 }
 
+function contextUsageRecord(value: Record<string, unknown>): Record<string, unknown> | undefined {
+  const direct = value.context_usage ?? value.contextUsage;
+  return direct && typeof direct === "object" && !Array.isArray(direct)
+    ? direct as Record<string, unknown>
+    : undefined;
+}
+
 function upsertMessage(
   messages: readonly WebuiStreamMessage[],
   value: Record<string, unknown>,
@@ -152,6 +163,7 @@ function upsertMessage(
     ? value.parts.filter((item): item is Record<string, unknown> => !!record(item))
     : undefined;
   const usage = usageRecord(value);
+  const contextUsage = contextUsageRecord(value);
   const index = messages.findIndex((message) => message.id === id);
   if (index < 0)
     return [
@@ -163,6 +175,7 @@ function upsertMessage(
         ...(calls ? { toolCalls: calls } : {}),
         ...(parts ? { parts } : {}),
         ...(usage ? { usage } : {}),
+        ...(contextUsage ? { contextUsage } : {}),
         ...(id.startsWith("msg-user-") ? ({ role: "user" } as const) : {}),
       },
     ];
@@ -188,6 +201,7 @@ function upsertMessage(
       : {}),
     ...(parts || messages[index]!.parts ? { parts: parts ?? messages[index]!.parts } : {}),
     ...(usage || messages[index]!.usage ? { usage: usage ?? messages[index]!.usage } : {}),
+    ...(contextUsage || messages[index]!.contextUsage ? { contextUsage: contextUsage ?? messages[index]!.contextUsage } : {}),
     ...(messages[index]!.role ? { role: messages[index]!.role } : {}),
     ...(messages[index]!.timestamp !== undefined
       ? { timestamp: messages[index]!.timestamp }
@@ -303,7 +317,15 @@ export function applyFrameData(
           next.messages,
         )
       : upsertMessage(next.messages, message, false);
-    return { ...next, phase: "streaming", messages };
+    const contextUsage = Array.isArray(message.messages)
+      ? [...message.messages].reverse().map(record).find((item) => item ? contextUsageRecord(item) : undefined)
+      : contextUsageRecord(message);
+    return {
+      ...next,
+      phase: "streaming",
+      messages,
+      ...(contextUsage ? { contextUsage } : {}),
+    };
   }
   if (type === 6 || type === "agent_message_chunk") {
     const message =

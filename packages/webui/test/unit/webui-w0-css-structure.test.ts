@@ -156,7 +156,7 @@ beforeAll(() => {
 });
 
 describe("W0 · stylesheet composition", () => {
-  it("layers the three stylesheets in the documented order", () => {
+  it("layers the stylesheets in the documented order", () => {
     const imports = [...indexCss.matchAll(/@import\s+"([^"]+)"/gu)].map(
       (match) => match[1],
     );
@@ -164,6 +164,7 @@ describe("W0 · stylesheet composition", () => {
       "./tokens.css",
       "./shell.css",
       "./transcript-widgets.css",
+      "./plan-mode.css",
       "katex/dist/katex.min.css",
     ]);
   });

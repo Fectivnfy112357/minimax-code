@@ -364,6 +364,7 @@ function normalizeWebuiClientMessage(
   const toolCalls = read("toolCalls", "tool_calls");
   const parts = read("parts");
   const timestamp = read("timestamp");
+  const contextUsage = read("contextUsage", "context_usage");
   return {
     ...message,
     ...(typeof msgContent === "string" ? { msgContent } : {}),
@@ -375,6 +376,7 @@ function normalizeWebuiClientMessage(
     ...(typeof read("source") === "string" ? { source: read("source") as string } : {}),
     ...(typeof read("kind") === "string" ? { kind: read("kind") as string } : {}),
     ...(typeof timestamp === "number" ? { timestamp } : {}),
+    ...(recordValue(contextUsage) ? { contextUsage: recordValue(contextUsage)! } : {}),
   };
 }
 
@@ -426,6 +428,7 @@ export function projectWebuiMessageToStreamMessage(
     ? normalized.toolCalls
     : undefined;
   const usage = readMessageUsage(message);
+  const contextUsage = normalized.contextUsage;
   return {
     id,
     answer: normalized.msgContent ?? "",
@@ -437,6 +440,7 @@ export function projectWebuiMessageToStreamMessage(
     ...(toolCalls ? { toolCalls } : {}),
     ...(parts ? { parts } : {}),
     ...(usage ? { usage } : {}),
+    ...(contextUsage ? { contextUsage } : {}),
     ...(normalized.role === "user" || id.startsWith("msg-user-")
       ? { role: "user" as const }
       : {}),

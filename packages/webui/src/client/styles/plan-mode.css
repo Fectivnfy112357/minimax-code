@@ -1,0 +1,544 @@
+/*
+ * Plan mode cards.
+ *
+ * Structure, copy and `data-testid` values come from the desktop's plan chunk
+ * (`plan-delivery-card`, `plan-review-decision`, `plan-enter-confirmation`);
+ * this file is the CSS half of that parity. The desktop spells these out as
+ * Tailwind utilities in the component, and the classes it uses map 1:1 through
+ * this package's `tailwind.config.cjs` — except for three that do not survive
+ * the port and are written out here instead:
+ *
+ *   * the summary's bottom fade mask (`linear-gradient(… transparent)`), which
+ *     the desktop inlines as a `style` prop because no utility covers it;
+ *   * `.scrollbar-hide`, used by the expandable summary; this shell defines it
+ *     nowhere else;
+ *   * the `bg-opacity_black_1_2` / `bg-opacity_white_0_2` header hover. Those
+ *     two ramp tokens exist as custom properties but were never registered as
+ *     Tailwind colours, so the desktop's hover classes compile to nothing here
+ *     and the hover is expressed against the interaction ramp instead.
+ *
+ * Heights, radii and the 336px / 104px preview caps are the desktop's numbers.
+ *
+ * The placement block at the end is not plan-specific but had to be fixed with
+ * the plan cards: the interaction panel is a SIBLING of the composer overlay,
+ * and the composer section is `display: contents`, so the panel became a
+ * direct child of the scrolling message column and landed at its very top —
+ * roughly 1500px above the viewport on a loaded session. Pending permissions
+ * and questionnaires were invisible for the same reason. Anchoring the panel to
+ * the composer's measured inset puts every interaction back above the input,
+ * which is where the desktop draws them.
+ */
+
+.webui-plan-surface {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: var(--spacing_12);
+}
+
+/* ---------------------------------------------------------------- delivery */
+
+.webui-plan-delivery-card {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border: 0.5px solid var(--border_default);
+  border-radius: var(--radius_16);
+  background-color: var(--bg_grouped_secondary_elevated);
+}
+
+.webui-plan-delivery-header {
+  display: flex;
+  height: 56px;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing_8);
+  padding: var(--spacing_12);
+}
+
+.webui-plan-delivery-header:hover {
+  background-color: var(--bg_interaction_tertiary_hover);
+}
+
+.webui-plan-delivery-heading {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: var(--spacing_8);
+}
+
+.webui-plan-delivery-icon {
+  display: flex;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid var(--border_light);
+  border-radius: var(--radius_8);
+  color: var(--icon_default_secondary);
+}
+
+.webui-plan-delivery-heading-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.webui-plan-delivery-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text_default_primary);
+  font-size: 14px;
+  font-weight: var(--weight_medium);
+  line-height: var(--line_height_20);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.webui-plan-review-description {
+  color: var(--text_status_warning);
+  font-size: 12px;
+  line-height: var(--line_height_16);
+}
+
+.webui-plan-delivery-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--spacing_8);
+  margin-left: auto;
+}
+
+.webui-plan-build-button {
+  display: inline-flex;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius_8);
+  padding: var(--spacing_6) var(--spacing_8);
+  color: var(--text_default_primary);
+  font-size: 14px;
+  font-weight: var(--weight_regular);
+  line-height: var(--line_height_20);
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.webui-plan-build-button:hover:not(:disabled) {
+  background-color: var(--bg_interaction_tertiary_hover);
+}
+
+.webui-plan-build-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.webui-plan-view-button {
+  display: inline-flex;
+  width: 94px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing_6);
+  border: 1px solid var(--border_default);
+  border-radius: var(--radius_8);
+  background-color: var(--bg_default_primary);
+  color: var(--text_default_primary);
+  font-size: 14px;
+  line-height: var(--line_height_20);
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.webui-plan-view-button:hover:not(:disabled) {
+  background-color: var(--bg_grouped_primary);
+  border-color: var(--border_heavy);
+}
+
+.webui-plan-view-icon {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+/*
+ * The preview window. Collapsed it shows the plan's summary section up to the
+ * desktop's 336px cap; open it shows the whole file in a 104px window. The
+ * fade tells the user there is more without a scrollbar, which is what the
+ * desktop's inline mask does.
+ */
+.webui-plan-delivery-summary {
+  position: relative;
+  box-sizing: border-box;
+  min-height: 104px;
+  /* The desktop's 336px cap, relaxed on a short window. The desktop draws
+     this card inside the scrolling transcript, where a tall card is simply
+     scrolled to; here it stacks with the decision card above an overlaid
+     composer, so a fixed 336px cap pushed the approve row off the bottom of
+     the viewport. 30vh keeps both cards and the composer on screen together
+     while leaving the full 336px on a window tall enough to want it. */
+  max-height: min(336px, 30vh);
+  overflow: hidden;
+  border-top: 0.5px solid var(--border_default);
+  padding: var(--spacing_12);
+  color: var(--text_default_primary);
+  mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    black calc(100% - 48px),
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    black calc(100% - 48px),
+    transparent 100%
+  );
+}
+
+.webui-plan-delivery-summary[data-plan-preview-open="true"] {
+  max-height: 104px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.webui-plan-delivery-summary[data-plan-preview-open="true"]::-webkit-scrollbar {
+  display: none;
+}
+
+.webui-plan-delivery-summary-content > *:first-child {
+  margin-top: 0;
+}
+
+.webui-plan-delivery-summary-content > *:last-child {
+  margin-bottom: 0;
+}
+
+/* ----------------------------------------------------------------- review */
+
+.webui-plan-review-decision {
+  width: 100%;
+  max-width: 768px;
+  overflow: hidden;
+  border: 0.5px solid var(--border_default);
+  border-radius: var(--radius_20);
+  background-color: var(--bg_grouped_secondary_elevated);
+  box-shadow: 0 0 48px -12px var(--shadow_default);
+}
+
+.webui-plan-review-header {
+  display: flex;
+  height: 44px;
+  align-items: center;
+  gap: var(--spacing_16);
+  padding: 0 var(--spacing_12);
+}
+
+.webui-plan-review-title {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  padding-left: var(--spacing_8);
+  color: var(--text_default_primary);
+  font-size: 14px;
+  font-weight: var(--weight_medium);
+  line-height: var(--line_height_20);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.webui-plan-review-close {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius_8);
+  color: var(--icon_default_secondary);
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.webui-plan-review-close:hover:not(:disabled) {
+  background-color: var(--bg_interaction_tertiary_hover);
+}
+
+.webui-plan-review-close:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.webui-plan-review-body {
+  display: flex;
+  flex-direction: column;
+  padding: 0 var(--spacing_8) var(--spacing_12);
+}
+
+.webui-plan-review-approve {
+  display: flex;
+  width: 100%;
+  height: 42px;
+  align-items: center;
+  gap: var(--spacing_8);
+  border-radius: 10px;
+  padding: 0 var(--spacing_4) 0 var(--spacing_12);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.webui-plan-review-approve:hover:not(:disabled) {
+  background-color: var(--bg_interaction_tertiary_hover);
+}
+
+.webui-plan-review-approve:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.webui-plan-review-approve-badge {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  background-color: var(--bg_interaction_tertiary_hover);
+  color: var(--text_default_secondary);
+  font-size: 14px;
+  line-height: 24px;
+}
+
+.webui-plan-review-approve-label {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--text_default_primary);
+  font-size: 14px;
+  line-height: var(--line_height_20);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.webui-plan-review-feedback-option {
+  border-radius: 10px;
+  transition: background-color 120ms ease;
+}
+
+.webui-plan-review-feedback-option[data-selected="true"],
+.webui-plan-review-feedback-option:focus-within {
+  background-color: var(--bg_interaction_secondary_default);
+}
+
+.webui-plan-review-feedback-row {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  gap: var(--spacing_8);
+  padding: 0 10px 0 var(--spacing_12);
+}
+
+.webui-plan-review-feedback-icon {
+  display: inline-flex;
+  width: 24px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  color: var(--icon_default_tertiary);
+}
+
+.webui-plan-review-feedback-option[data-selected="true"] .webui-plan-review-feedback-icon {
+  color: var(--icon_default_primary);
+}
+
+.webui-plan-review-feedback-input {
+  min-width: 0;
+  flex: 1;
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text_default_primary);
+  font-size: 14px;
+  line-height: var(--line_height_20);
+}
+
+.webui-plan-review-feedback-input:focus {
+  outline: none;
+}
+
+.webui-plan-review-feedback-input::placeholder {
+  color: var(--text_default_tertiary);
+}
+
+.webui-plan-review-feedback-submit,
+.webui-plan-review-skip {
+  display: inline-flex;
+  min-width: 56px;
+  height: 32px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 0 var(--spacing_16);
+  border-radius: var(--radius_8);
+  font-size: 14px;
+  line-height: var(--line_height_20);
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.webui-plan-review-feedback-submit {
+  border: 1px solid transparent;
+  background-color: var(--bg_interaction_primary_default);
+  color: var(--text_default_inverted);
+}
+
+.webui-plan-review-feedback-submit:hover:not(:disabled) {
+  background-color: var(--bg_interaction_primary_hover);
+}
+
+.webui-plan-review-skip {
+  border: 1px solid var(--border_default);
+  background-color: var(--bg_default_primary);
+  color: var(--text_default_primary);
+}
+
+.webui-plan-review-skip:hover:not(:disabled) {
+  background-color: var(--bg_grouped_primary);
+  border-color: var(--border_heavy);
+}
+
+.webui-plan-review-feedback-submit:disabled,
+.webui-plan-review-skip:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* ------------------------------------------------------------------ enter */
+
+.webui-plan-enter-confirmation {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: var(--spacing_8);
+  border: 1px solid var(--border_default);
+  border-radius: var(--radius_16);
+  background-color: var(--bg_grouped_secondary_elevated);
+  padding: var(--spacing_8);
+  box-shadow: 0 0 20px rgba(10, 10, 10, 0.08);
+}
+
+.webui-plan-enter-body {
+  padding: var(--spacing_4);
+}
+
+.webui-plan-enter-title {
+  color: var(--text_default_primary);
+  font-size: 17px;
+  font-weight: var(--weight_regular);
+  line-height: 24px;
+}
+
+.webui-plan-enter-description {
+  margin-top: var(--spacing_4);
+  color: var(--text_default_secondary);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.webui-plan-enter-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing_8);
+  margin-top: var(--spacing_12);
+}
+
+.webui-plan-enter-button,
+.webui-plan-enter-confirm {
+  display: inline-flex;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius_8);
+  padding: 0 var(--spacing_16);
+  font-size: 14px;
+  line-height: var(--line_height_20);
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.webui-plan-enter-button {
+  border: 1px solid var(--border_default);
+  background-color: var(--bg_default_primary);
+  color: var(--text_default_primary);
+}
+
+.webui-plan-enter-button:hover:not(:disabled) {
+  background-color: var(--bg_grouped_primary);
+  border-color: var(--border_heavy);
+}
+
+.webui-plan-enter-confirm {
+  border: 1px solid transparent;
+  background-color: var(--bg_interaction_primary_default);
+  color: var(--text_default_inverted);
+}
+
+.webui-plan-enter-confirm:hover:not(:disabled) {
+  background-color: var(--bg_interaction_primary_hover);
+}
+
+.webui-plan-enter-button:disabled,
+.webui-plan-enter-confirm:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.webui-plan-card-error {
+  padding: 0 var(--spacing_16) var(--spacing_12);
+  color: var(--text_status_error);
+  font-size: 12px;
+  line-height: var(--line_height_16);
+}
+
+/* ------------------------------------------------- interaction panel placement */
+
+/* The composer section resolves to `display: contents`, so this panel is laid
+   out by `.webui-session-layout` (its nearest positioned ancestor) rather than
+   by the composer. Left in normal flow it sorted to the top of the scrolling
+   message column, far above the viewport. `--webui-composer-bottom-padding` is
+   the composer inset the composer already measures and writes onto the layout,
+   so anchoring to it needs no second measurement and no JSX change. */
+.webui-session-layout [data-webui-interactions] {
+  position: absolute;
+  z-index: 21;
+  right: 0;
+  bottom: var(--webui-composer-bottom-padding, 184px);
+  left: 0;
+  margin-top: 0;
+  padding: 0 24px;
+  /* A plan card plus a decision card is taller than the space above the
+     composer on a short window; scroll the stack rather than letting it run
+     off the top of the layout. */
+  max-height: calc(100% - var(--webui-composer-bottom-padding, 184px) - 16px);
+  overflow-y: auto;
+  pointer-events: none;
+}
+
+/* The overlay above uses the same trick for its own children, so the panel
+   content stays clickable while the strip between cards stays inert. */
+.webui-session-layout [data-webui-interactions] > * {
+  pointer-events: auto;
+  width: 100%;
+  max-width: 768px;
+  margin-right: auto;
+  margin-left: auto;
+  flex-shrink: 0;
+}

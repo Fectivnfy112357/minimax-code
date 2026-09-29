@@ -17,6 +17,7 @@
 @import "./tokens.css";
 @import "./shell.css";
 @import "./transcript-widgets.css";
+@import "./plan-mode.css";
 @import "katex/dist/katex.min.css";
 
 @tailwind base;
