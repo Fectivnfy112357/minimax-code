@@ -880,7 +880,7 @@ export function WebuiClientFoundationApp(
                 data-webui-home-content={homeMode ? "true" : "false"}
                 data-webui-session-layout={!homeMode ? "true" : undefined}
               >
-                {homeMode ? <div aria-hidden="true" className="h-[240px] w-full shrink" /> : null}
+                {homeMode ? <div aria-hidden="true" className="h-[clamp(96px,24vh,240px)] w-full shrink" /> : null}
                 <div
                   className={homeMode
                     ? "flex w-full max-w-[743px] shrink-0 flex-col items-center gap-2 px-4"

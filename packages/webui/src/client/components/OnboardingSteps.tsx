@@ -67,7 +67,7 @@ export function OnboardingSteps({
   if (!step) return null;
   const isLast = currentStep === resolvedSteps.length - 1;
   return (
-    <section className="relative flex min-h-screen w-full bg-bg_default_primary">
+    <section className="webui-onboarding-layout relative flex min-h-screen w-full bg-bg_default_primary">
       {currentStep > 0 ? (
         <button
           type="button"
@@ -78,7 +78,7 @@ export function OnboardingSteps({
           ←
         </button>
       ) : null}
-      <div className="flex w-1/2 flex-col justify-between p-spacing_64">
+      <div className="webui-onboarding-copy flex flex-col justify-between">
         <div>
           <p className="text-size_16 text-text_status_warning">{step.subtitle}</p>
           <h1 className="mt-spacing_12 text-[32px] font-medium leading-line_height_40 text-text_default_primary">
@@ -110,7 +110,7 @@ export function OnboardingSteps({
           </button>
         </div>
       </div>
-      <div className="flex w-1/2 items-center justify-center bg-bg_grouped_secondary">
+      <div className="webui-onboarding-visual flex items-center justify-center bg-bg_grouped_secondary">
         {step.image ? (
           <img src={step.image} alt={step.title} className="h-full w-full object-contain" />
         ) : null}
