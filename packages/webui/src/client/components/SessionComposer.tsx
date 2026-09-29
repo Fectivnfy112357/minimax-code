@@ -36,6 +36,7 @@ import {
   type WebuiClientSession,
 } from "../contracts.js";
 import { projectWebuiMessageToStreamMessage, readUsageNumber } from "../projection/message-projection.js";
+import { webuiAnswersEndTurn } from "../projection/questionnaire-state.js";
 import { reduceWebuiStreamFrame, webuiSessionStatusType } from "../stream.js";
 
 /** Capability subset the session composer consumes. Single source of truth
@@ -975,7 +976,14 @@ export function WebuiComposer({
       if (result.ok !== true)
         throw new Error("The questionnaire was not accepted");
       setQuestionnaire(undefined);
-      setStream((current) => ({ ...current, phase: "streaming" }));
+      // Answering resumes the turn; a skipped answer ends it (see
+      // `webuiAnswersEndTurn`). Leaving `streaming` after a skip strands the
+      // transcript's thinking pulse, because a finished turn never sends the
+      // `[DONE]` frame that would otherwise clear it.
+      setStream((current) => ({
+        ...current,
+        phase: webuiAnswersEndTurn(answers) ? "idle" : "streaming",
+      }));
     } catch (error) {
       setInteractionError(
         error instanceof Error ? error.message : String(error),
@@ -994,7 +1002,10 @@ export function WebuiComposer({
       if (result.ok !== true)
         throw new Error("The questionnaire could not be dismissed");
       setQuestionnaire(undefined);
-      setStream((current) => ({ ...current, phase: "streaming" }));
+      // A dismissal never resumes the turn — the runtime only marks the
+      // request dismissed — so this is the same "nothing happens now" state
+      // a skip produces, and `streaming` was simply wrong here.
+      setStream((current) => ({ ...current, phase: "idle" }));
     } catch (error) {
       setInteractionError(
         error instanceof Error ? error.message : String(error),

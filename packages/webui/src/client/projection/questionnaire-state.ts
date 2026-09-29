@@ -66,6 +66,26 @@ export function toggleWebuiQuestionnaireOption(
 }
 
 /**
+ * Does this reply END the turn, or continue it?
+ *
+ * A questionnaire reply normally resumes the agent: the runtime consumes the
+ * answers and dispatches the next turn, so the stream belongs in `streaming`.
+ * A skipped answer is the exception — the runtime's plan handler routes it to
+ * `{ kind: 'handled' }` and starts nothing — so the turn is over and the
+ * stream must leave `streaming` or the transcript keeps its thinking pulse on
+ * for a turn that will never produce a `[DONE]` frame.
+ *
+ * `skipped` is the only signal the reply carries: the runtime returns the same
+ * `{ ok: true }` for skip, approve and feedback alike, so the distinction has
+ * to be read off the answers.
+ */
+export function webuiAnswersEndTurn(
+  answers: readonly WebuiQuestionnaireAnswer[],
+): boolean {
+  return answers.some((answer) => answer.skipped === true);
+}
+
+/**
  * Convert the interaction panel's controlled fields into the harness answer
  * shape. Keeping this projection outside the JSX makes the `allowOther`
  * path effect-testable without pretending a server-side render exercised

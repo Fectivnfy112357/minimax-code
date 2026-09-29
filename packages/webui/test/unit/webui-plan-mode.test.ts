@@ -17,6 +17,7 @@
 import { describe, it, expect } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { webuiAnswersEndTurn } from "../../src/client/projection/questionnaire-state.js";
 import {
   buildWebuiPlanApproveAnswers,
   buildWebuiPlanEnterAnswers,
@@ -161,6 +162,21 @@ describe("plan-mode projection", () => {
     expect(buildWebuiPlanSkipAnswers()).toEqual([
       { stepId: "plan-review", selectedOptionIds: [], selectedOther: false, skipped: true },
     ]);
+  });
+
+  it("reads a skipped answer as the turn ending, not resuming", () => {
+    // The runtime returns `{ ok: true }` for skip, approve and feedback
+    // alike, so `skipped` is the only signal the reply carries.
+    expect(webuiAnswersEndTurn(buildWebuiPlanSkipAnswers())).toBe(true);
+    expect(webuiAnswersEndTurn(buildWebuiPlanApproveAnswers())).toBe(false);
+    expect(webuiAnswersEndTurn(buildWebuiPlanFeedbackAnswers("换个画风"))).toBe(false);
+    expect(webuiAnswersEndTurn([])).toBe(false);
+    expect(
+      webuiAnswersEndTurn([
+        { stepId: "plan-review", selectedOptionIds: [], selectedOther: false },
+        { stepId: "plan-review", selectedOptionIds: [], selectedOther: false, skipped: true },
+      ]),
+    ).toBe(true);
   });
 
   it("builds the entry-confirmation payload against the plan-enter step", () => {
