@@ -4091,20 +4091,20 @@
     margin: 0 auto;
   }
   .webui-plugin-management.is-marketplace .webui-plugin-header {
-    padding: 16px 0 24px;
+    padding: 12px 0 0;
   }
   .webui-plugin-management.is-marketplace .webui-plugin-header-inner {
     max-width: none;
-    min-height: 32px;
+    min-height: 34px;
     /* Inset from the rail. The marketplace row has no horizontal padding on
      * its container, so without this the segmented control sits flush against
      * the rail. Left only: the close button is positioned against this row's
      * padding box, so padding on the right would not move it anyway. */
-    padding-left: var(--spacing_24);
+    padding-left: var(--spacing_16);
   }
   /* The base segment sizing is tuned for the 960px management view; at the top
-   * of the marketplace it reads oversized. An explicit button height keeps the
-   * track at 38px whatever the inherited line-height does. */
+   * of the marketplace it reads oversized. Explicit button sizing keeps the
+   * track compact regardless of the inherited line-height. */
   .webui-plugin-management.is-marketplace .webui-plugin-header-tabs {
     gap: 2px;
     padding: 3px;
@@ -4113,9 +4113,9 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 64px;
-    height: 32px;
-    padding: 0 14px;
+    min-width: 52px;
+    height: 28px;
+    padding: 0 10px;
     font-size: 14px;
   }
   .webui-plugin-management.is-marketplace .webui-plugin-create-anchor {
@@ -4263,29 +4263,73 @@
     gap: 3px;
   }
   .webui-plugin-management.is-marketplace .webui-plugin-market-discovery {
-    max-width: 960px;
-    margin: 18px auto 0;
+    box-sizing: border-box;
+    max-width: 832px;
+    margin: 14px auto 0;
+    padding: 40px 32px 4px;
   }
   .webui-plugin-management.is-marketplace .webui-plugin-category-filter {
     max-width: none;
-    justify-content: space-between;
-    margin-bottom: 12px;
+    justify-content: flex-start;
+    gap: 4px;
+    margin-bottom: 10px;
   }
   .webui-plugin-management.is-marketplace .webui-plugin-category-filter button {
-    padding-top: 5px;
-    padding-bottom: 5px;
+    min-height: 32px;
+    padding: 0 10px;
+    font-size: 14px;
+    transition: background-color 120ms ease, color 120ms ease;
   }
-  .webui-plugin-market-discovery > input {
+  .webui-plugin-management.is-marketplace .webui-plugin-category-filter button:hover {
+    background: var(--bg_interaction_tertiary_hover);
+    color: var(--text_default_primary);
+  }
+  .webui-plugin-management.is-marketplace .webui-plugin-category-filter button[aria-pressed="true"] {
+    background: var(--bg_grouped_tertiary);
+    color: var(--text_default_primary);
+  }
+  .webui-plugin-management.is-marketplace .webui-plugin-category-filter button[aria-pressed="true"]:hover {
+    background: var(--bg_interaction_tertiary_selected);
+  }
+  .webui-plugin-market-search {
     box-sizing: border-box;
+    display: flex;
     width: 100%;
     height: 40px;
-    margin-bottom: 0;
+    align-items: center;
+    gap: 8px;
     border: 1px solid var(--border_default);
     border-radius: 10px;
     background: var(--bg_default_primary);
-    padding: 0 14px;
+    padding: 0 12px;
+    color: var(--text_default_tertiary);
+  }
+  .webui-plugin-market-search:focus-within {
+    border-color: var(--border_accent);
+  }
+  .webui-plugin-market-search > svg {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-width: 1.6;
+  }
+  .webui-plugin-market-search > input {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    height: 100%;
+    border: 0;
+    background: transparent;
+    padding: 0;
     color: var(--text_default_primary);
-    outline-color: var(--border_accent);
+    font-size: 14px;
+    outline: 0;
+  }
+  .webui-plugin-market-search > input::placeholder {
+    color: var(--text_default_tertiary);
   }
   .webui-plugin-management.is-marketplace .webui-plugin-grid {
     max-width: 768px;
@@ -4293,9 +4337,10 @@
   }
   .webui-plugin-market-heading {
     max-width: 768px;
-    margin: -4px auto 14px;
-    font-size: 14px;
+    margin: 40px auto 12px;
+    font-size: 16px;
     font-weight: 600;
+    line-height: 26px;
   }
   .webui-plugin-show-all {
     display: block;

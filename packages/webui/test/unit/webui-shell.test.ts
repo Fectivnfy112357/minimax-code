@@ -728,7 +728,7 @@ describe("WebUI shell", () => {
     })).toEqual({ left: 10, top: 420 });
   });
 
-  it("leaves a visible gap before the first session under an expanded project", () => {
+  it("keeps the first project session aligned after its leading marker", () => {
     const styles = readFileSync(
       new URL("../../src/client/styles/shell.css", import.meta.url),
       "utf8",
@@ -738,8 +738,14 @@ describe("WebUI shell", () => {
     );
     expect(projectSessionsRule, "project session list rule is missing").not.toBeNull();
     expect(projectSessionsRule![1]).toMatch(
-      /padding:\s*1px\s+0\s+var\(--spacing_4\)\s+var\(--spacing_20\)/u,
+      /padding:\s*1px\s+0\s+var\(--spacing_4\)\s+2px/u,
     );
+    const leadingMarkerRule = styles.match(
+      /\.webui-session-leading-marker\s*\{([^}]*)\}/u,
+    );
+    expect(leadingMarkerRule, "session leading marker rule is missing").not.toBeNull();
+    expect(leadingMarkerRule![1]).toMatch(/width:\s*18px/u);
+    expect(leadingMarkerRule![1]).toMatch(/flex:\s*0\s+0\s+18px/u);
   });
 
   it("keeps subagent sessions visibly nested under their parent session", () => {
@@ -1041,9 +1047,9 @@ describe("WebUI shell — desktop anatomy", () => {
 
     expect(html).toMatch(/data-webui-home-content="true"/u);
     expect(html).toContain("MiniMax Code，让工作更简单。");
-    // The hero column is the desktop's 743px measure under its 240px top pad.
+    // The hero column keeps the desktop's 743px width below a 240px spacer.
     expect(html).toMatch(/max-w-\[743px\]/u);
-    expect(html).toMatch(/pt-\[240px\]/u);
+    expect(html).toMatch(/aria-hidden="true" class="h-\[240px\] w-full shrink"/u);
     expect(html).not.toMatch(/data-webui-recommendations="true"/u);
     expect(html).not.toMatch(/data-webui-conversation-source="true"/u);
     // New Task is the desktop's clean home state, not the WebUI-only create-session

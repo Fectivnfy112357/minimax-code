@@ -894,12 +894,18 @@ export function PluginManagement({
                 ))}
               </nav>
             ) : null}
-            <input
-              aria-label={area === "skills" ? "搜索技能" : "搜索插件"}
-              placeholder={area === "skills" ? "搜索技能..." : "搜索插件..."}
-              value={query}
-              onChange={(event) => setQuery(event.currentTarget.value)}
-            />
+            <label className="webui-plugin-market-search">
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <circle cx="8.8" cy="8.8" r="5.8" />
+                <path d="m13.2 13.2 4 4" />
+              </svg>
+              <input
+                aria-label={area === "skills" ? "搜索技能" : "搜索插件"}
+                placeholder={area === "skills" ? "搜索技能..." : "搜索插件..."}
+                value={query}
+                onChange={(event) => setQuery(event.currentTarget.value)}
+              />
+            </label>
           </div>
         ) : null}
         {managementOpen ? (

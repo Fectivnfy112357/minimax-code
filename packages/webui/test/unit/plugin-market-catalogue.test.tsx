@@ -143,9 +143,9 @@ describe("marketplace page layout parity", () => {
     expect(component).toContain("const visibleMarketTotal = marketTotal ?? filtered.length;");
   });
 
-  it("resets the expansion when the catalogue changes", () => {
-    // Carrying an expanded 插件 list into the 技能 tab would render skills past
-    // the preview on a page the user never expanded.
+  it("restores the full catalogue when the selected catalogue changes", () => {
+    // The marketplace now starts expanded. Switching between 插件 and 技能
+    // restores that default even when the current page was explicitly collapsed.
     //
     // The class is `[^}]`, not `[\s\S]`: an unbounded lazy match runs straight
     // past this function's closing brace and finds the same setter in the
@@ -153,7 +153,7 @@ describe("marketplace page layout parity", () => {
     // pass with the reset deleted. `[^}]` cannot cross a brace, so the setter
     // has to be inside the body.
     expect(component).toMatch(
-      /const selectMarketCatalog = \(catalog: "plugins" \| "skills"\) => \{[^}]*setShowAllCatalogue\(false\);/,
+      /const selectMarketCatalog = \(catalog: "plugins" \| "skills"\) => \{[^}]*setShowAllCatalogue\(true\);/,
     );
   });
 });
@@ -189,12 +189,21 @@ describe("plugin marketplace data paths", () => {
     // than being deleted — but the control is an entry button, not a pressed
     // tab, so it has no `aria-pressed`.
     //
-    // Bounded by the create-menu trigger, which is the last control in this
-    // button group. The old `webui-plugin-create-anchor` boundary sat at the
-    // *opening* of the group and so cut the 管理 button off entirely.
+    // Bound the header at marketplace discovery, after both the 管理 branch
+    // and catalogue branch. The create-menu trigger belongs to the management
+    // branch now, so it cannot serve as the boundary for this source assertion.
+    const headerStart = component.indexOf(
+      '<div className="webui-plugin-header-inner">',
+    );
+    const marketplaceContentStart = component.indexOf(
+      'className="webui-plugin-market-discovery"',
+      headerStart,
+    );
+    expect(headerStart).toBeGreaterThanOrEqual(0);
+    expect(marketplaceContentStart).toBeGreaterThan(headerStart);
     const managingHeader = component.slice(
-      component.indexOf("{managementOpen ? ("),
-      component.indexOf("webui-plugin-create-trigger"),
+      headerStart,
+      marketplaceContentStart,
     );
     // The marketplace branch in the same span is the catalogue pair.
     expect(managingHeader).toContain('onClick={() => selectMarketCatalog("plugins")}');
