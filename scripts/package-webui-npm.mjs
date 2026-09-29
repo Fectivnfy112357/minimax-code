@@ -69,6 +69,13 @@ const server = await build({
   outdir: path.join(outdir, "server"),
   metafile: true,
   external: ["better-sqlite3", "node-pty"],
+  // CommonJS dependencies bundled into ESM output (for example ws) call
+  // require() at runtime, which esbuild's ESM shim cannot satisfy. Provide a
+  // real require so those calls resolve instead of throwing
+  // "Dynamic require of X is not supported".
+  banner: {
+    js: 'import { createRequire as __webuiCreateRequire } from "node:module";\nconst require = __webuiCreateRequire(import.meta.url);',
+  },
   plugins: [workspacePlugin],
   logLevel: "info",
 });
@@ -116,6 +123,11 @@ cpSync(path.join(webuiDir, "src/client/index.html"), path.join(outdir, "client/i
 cpSync(path.join(webuiDir, "src/client/assets/img"), path.join(outdir, "client/assets/img"), { recursive: true });
 cpSync(path.join(webuiDir, "src/client/assets/fonts/katex"), path.join(outdir, "client/fonts"), { recursive: true });
 copyLocalRuntimeAssets({ repositoryRoot: root, outputDir: outdir, filter: () => true });
+// The bundled server resolves its agent and skill assets relative to its own
+// directory (import.meta.url), so it looks for <outdir>/server/assets. Mirror
+// the asset tree there as well; without it the packaged CLI cannot find
+// assets/agents and aborts at startup.
+cpSync(path.join(outdir, "assets"), path.join(outdir, "server/assets"), { recursive: true });
 await copyMcodeToolsArtifact(root, path.join(outdir, "server"));
 cpSync(path.join(root, "packages/tui/src/cli/mcode-tools-launchers"), path.join(outdir, "server/internal-bin"), { recursive: true });
 cpSync(path.join(root, "LICENSE"), path.join(outdir, "LICENSE"));
@@ -130,4 +142,4 @@ packageJson.version = version;
 writeFileSync(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`);
 
 writeFileSync(path.join(outdir, "server/package-info.json"), `${JSON.stringify({ version }, null, 2)}\n`);
-console.log(`Packed @fectivnfy112357/minimax-code-web@${version} at ${outdir}`);
+console.log(`Packed ${packageJson.name}@${version} at ${outdir}`);

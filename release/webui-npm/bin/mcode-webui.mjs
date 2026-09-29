@@ -26,7 +26,7 @@ const service = new WebuiService({
   port: createHarnessPortFromHost(assembled.host),
   host: "127.0.0.1",
   tcpPort,
-  dev: false,
+  dev: true,
   clientDir: path.join(packageRoot, "client"),
 });
 
@@ -41,7 +41,11 @@ const close = () => {
 
 try {
   const info = await service.start();
-  console.log(`[mcode-webui] WebUI running at ${info.boundUrl}`);
+  // dev mode keeps the per-start credential off, so the shell page and its
+  // assets load without a query token. info.boundUrl is the bare ws://
+  // endpoint; browsers need the http:// origin.
+  const browserUrl = `http://${info.host}:${info.tcpPort}/`;
+  console.log(`[mcode-webui] WebUI running at ${browserUrl}`);
   console.log("Press Ctrl+C to stop the server.");
   process.once("SIGINT", () => void close().finally(() => process.exit(0)));
   process.once("SIGTERM", () => void close().finally(() => process.exit(0)));

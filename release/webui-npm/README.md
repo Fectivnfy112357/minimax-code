@@ -1,20 +1,11 @@
 # MiniMax Code WebUI preview package
 
 This package runs the MiniMax Code WebUI and its local runtime on your machine.
-It is published to GitHub Packages under the `preview` dist-tag.
-
-GitHub Packages npm installs require a GitHub personal access token (classic)
-with `read:packages`. Configure it in `~/.npmrc`:
-
-```ini
-@fectivnfy112357:registry=https://npm.pkg.github.com
-//npm.pkg.github.com/:_authToken=${GITHUB_PACKAGES_TOKEN}
-```
-
-Set `GITHUB_PACKAGES_TOKEN` in your shell, then install the preview:
+It is published to the public npm registry under the `preview` dist-tag. No
+GitHub account or personal access token is required to install it.
 
 ```sh
-npm install --global @fectivnfy112357/minimax-code-web@preview
+npm install --global @fectivnfy112358/minimax-code-web@preview
 mcode-webui
 ```
 

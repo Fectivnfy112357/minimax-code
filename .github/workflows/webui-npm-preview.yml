@@ -1,4 +1,4 @@
-name: WebUI GitHub Packages preview
+name: WebUI npm preview
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
 
 permissions:
   contents: read
-  packages: write
+  id-token: write
 
 concurrency:
   group: webui-npm-preview-${{ github.ref }}
@@ -25,8 +25,8 @@ jobs:
         with:
           node-version: "24"
           cache: pnpm
-          registry-url: "https://npm.pkg.github.com"
-          scope: "@fectivnfy112357"
+          registry-url: "https://registry.npmjs.org"
+          scope: "@fectivnfy112358"
       - run: pnpm install --frozen-lockfile
       - name: Validate preview tag
         id: release
@@ -42,7 +42,5 @@ jobs:
         run: node scripts/package-webui-npm.mjs --version "${{ steps.release.outputs.version }}" --outdir "$RUNNER_TEMP/webui-package"
       - name: Inspect package contents
         run: npm pack --dry-run --json "$RUNNER_TEMP/webui-package"
-      - name: Publish preview to GitHub Packages
-        run: npm publish "$RUNNER_TEMP/webui-package" --registry=https://npm.pkg.github.com --tag preview
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish preview to the npm registry
+        run: npm publish "$RUNNER_TEMP/webui-package" --tag preview
