@@ -24,6 +24,7 @@
     "test:sandbox": "node scripts/run-vitest-suite.mjs sandbox",
     "test:status-contract": "node scripts/run-vitest-suite.mjs status-contract",
     "build:webui": "node scripts/build-webui.mjs",
+    "package:webui-npm": "node scripts/package-webui-npm.mjs",
     "dev:webui": "pnpm --filter @mavis/webui dev",
     "check:webui-boundary": "node scripts/check-webui-boundary.mjs",
     "test:webui": "node scripts/run-vitest-suite.mjs webui",

@@ -1,0 +1,48 @@
+name: WebUI GitHub Packages preview
+
+on:
+  push:
+    tags: ["webui-v*"]
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: webui-npm-preview-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: pnpm
+          registry-url: "https://npm.pkg.github.com"
+          scope: "@fectivnfy112357"
+      - run: pnpm install --frozen-lockfile
+      - name: Validate preview tag
+        id: release
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#webui-v}"
+          if [[ ! "$GITHUB_REF_NAME" =~ ^webui-v[0-9]+\.[0-9]+\.[0-9]+-preview\.[0-9]+$ ]]; then
+            echo "Expected tag webui-v<major>.<minor>.<patch>-preview.<number>." >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Build npm package
+        run: node scripts/package-webui-npm.mjs --version "${{ steps.release.outputs.version }}" --outdir "$RUNNER_TEMP/webui-package"
+      - name: Inspect package contents
+        run: npm pack --dry-run --json "$RUNNER_TEMP/webui-package"
+      - name: Publish preview to GitHub Packages
+        run: npm publish "$RUNNER_TEMP/webui-package" --registry=https://npm.pkg.github.com --tag preview
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
