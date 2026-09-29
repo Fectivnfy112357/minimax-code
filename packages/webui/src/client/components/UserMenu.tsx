@@ -810,7 +810,15 @@ export function UserMenu({
 
   const nickname = accountString(account, "nickname") ?? accountString(account, "name") ?? "MiniMax Code";
   const plan = accountString(account, "plan") ?? accountString(account, "planName") ?? (hostLabel ? `本地 · ${hostLabel}` : "本地");
-  const uid = accountString(account, "uid") ?? accountString(account, "userId") ?? accountString(account, "id");
+  const identity = objectValue(account?.identity);
+  const auth = objectValue(account?.auth);
+  const uid =
+    accountString(account, "uid") ??
+    accountString(account, "userId") ??
+    accountString(account, "id") ??
+    accountString(identity, "uid") ??
+    accountString(identity, "realUserID") ??
+    accountString(auth, "realUserID");
 
   return <>
     <div ref={anchorRef} className={`webui-user-menu-anchor ${collapsed ? "webui-user-menu-anchor-collapsed" : ""}`} data-webui-rail-identity="true">

@@ -719,8 +719,11 @@ function createPeripheralApplication(
         ),
     },
     account: {
-      getStatus: ({ sessionId, model } = {}) =>
-        host.apiHost.getProcessLocalAccountStatus(sessionId, model),
+      getStatus: async ({ sessionId, model } = {}) => {
+        const status = await host.apiHost.getProcessLocalAccountStatus(sessionId, model);
+        const uid = host.apiHost.authContextGetter?.()?.realUserID?.trim();
+        return uid ? { ...status, identity: { uid } } : status;
+      },
     },
     diagnostics: {
       getRuntimeSnapshot: async () =>
