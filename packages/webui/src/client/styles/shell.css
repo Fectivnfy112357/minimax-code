@@ -227,6 +227,7 @@
   .webui-settings-back, .webui-settings-nav-item { display: flex; width: 100%; align-items: center; gap: var(--spacing_8); border: 0; background: transparent; color: var(--text_default_secondary); text-align: left; }
   .webui-settings-back { font-size: var(--size_14); }
   .webui-settings-back:hover, .webui-settings-nav-item:hover { color: var(--text_default_primary); }
+  .webui-settings-nav-item:disabled { cursor: default; color: var(--text_default_tertiary); opacity: .68; }
   .webui-settings-search { display: flex; height: 36px; align-items: center; gap: var(--spacing_8); padding: 0 var(--spacing_8); border: 1px solid var(--border_default); border-radius: var(--radius_8); color: var(--text_default_tertiary); }
   .webui-settings-search input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: inherit; }
   .webui-settings-search button { border: 0; background: transparent; color: inherit; }
