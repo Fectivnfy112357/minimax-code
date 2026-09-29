@@ -13,6 +13,7 @@ export function installFixtureTransport() {
   };
   const pending = [];
   const delayed = [];
+  const held = [];
   const requests = [];
   const sockets = new Set();
 
@@ -29,6 +30,8 @@ export function installFixtureTransport() {
     if (operation === "version") return { version: "browser-fixture" };
     if (operation === "listSkills") return { skills: [] };
     if (operation === "listPendingPermissions") return { requests: [] };
+    if (operation === "dismissQuestionnaire") return { ok: true };
+    if (operation === "replyQuestionnaire") return { ok: true };
     if (operation === "listQueueMessages") return { items: [] };
     if (operation === "listModels" || operation === "loadProjects") return [];
     if (operation === "getUsageQuota") return {};
@@ -74,11 +77,11 @@ export function installFixtureTransport() {
         queueMicrotask(() => this.respond(frame, created));
         return;
       }
+      const isHeld = held.some((entry) => entry.operation === frame.operation && matches(frame.body, entry.condition));
       const waitIndex = delayed.findIndex((entry) => entry.operation === frame.operation && matches(frame.body, entry.condition));
-      if (waitIndex >= 0) {
-        const [entry] = delayed.splice(waitIndex, 1);
+      if (isHeld || waitIndex >= 0) {
+        if (!isHeld) delayed.splice(waitIndex, 1);
         pending.push({ operation: frame.operation, body: clone(frame.body ?? {}), resolve: (result) => this.respond(frame, result) });
-        entry.hit?.();
         return;
       }
       queueMicrotask(() => this.respond(frame, responseFor(frame.operation, frame.body)));
@@ -103,11 +106,27 @@ export function installFixtureTransport() {
     requests,
     pending,
     delayNext(operation, condition) { delayed.push({ operation, condition }); },
+    // Holds EVERY matching request, not just the next one. A session switch
+    // fans out into several concurrent `getMessages` for the same session
+    // (transcript first page, context usage, workspace history progress), so
+    // `delayNext` alone does not decide which one the test is actually
+    // blocking — the transcript's own request is the second of the three.
+    delayEvery(operation, condition) { held.push({ operation, condition }); },
     setPage(sessionId, page) { pages[sessionId] = clone(page); },
     resolve(operation, condition, result) {
       const index = pending.findIndex((entry) => entry.operation === operation && matches(entry.body, condition));
       if (index < 0) throw new Error(`No pending fixture request: ${operation} ${JSON.stringify(condition)}`);
       pending.splice(index, 1)[0].resolve(clone(result));
+    },
+    resolveAllPending(operation, condition, result) {
+      let released = 0;
+      for (let index = pending.length - 1; index >= 0; index -= 1) {
+        const entry = pending[index];
+        if (entry.operation !== operation || !matches(entry.body, condition)) continue;
+        pending.splice(index, 1)[0].resolve(clone(result));
+        released += 1;
+      }
+      return released;
     },
     emitEvent(event) {
       for (const socket of sockets) if (socket.isWatcher && !socket.closed)
@@ -115,6 +134,12 @@ export function installFixtureTransport() {
     },
     emitStream(sessionId, streamFrame) {
       for (const socket of sockets) if (socket.isStream && socket.request?.body?.id === sessionId && !socket.closed) socket.streamFrame(streamFrame);
+    },
+    // Simulate a mid-turn socket drop. The transport rejects the stream
+    // promise, which is what drives `runWebuiStreamLoop` into its
+    // `resumeSession({ afterCursor })` path.
+    dropStream(sessionId) {
+      for (const socket of sockets) if (socket.isStream && socket.request?.body?.id === sessionId && !socket.closed) socket.emit("close", {});
     },
     activeStreamSessionIds() {
       return [...sockets]

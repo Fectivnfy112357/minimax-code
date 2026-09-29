@@ -253,8 +253,8 @@ describe("W2 · trace 4 · permission.ask with malformed payload → only progre
   });
 });
 
-describe("W2 · trace 5 · permission.resolved with non-string requestId STILL emits setStream", () => {
-  it("non-string requestId leaves permissions untouched but flips stream to streaming", () => {
+describe("W2 · trace 5 · permission.resolved with non-string requestId emits setStream but keeps the phase", () => {
+  it("non-string requestId leaves permissions untouched and does not resume the turn", () => {
     const before = makeState({
       permissions: [PERMISSION],
       stream: { ...initialWebuiStreamState, phase: "waiting" },
@@ -268,13 +268,48 @@ describe("W2 · trace 5 · permission.resolved with non-string requestId STILL e
       SESSION,
     );
     expect(result.state.permissions).toEqual([PERMISSION]);
-    // progress write + phase:streaming.
+    // progress write + the guarded phase write.
     expect(commandTypes(result.commands)).toEqual([
       "set-stream",
       "set-stream",
     ]);
+    // A malformed id names no pending permission, so the panel must stay
+    // blocked rather than flip to a streaming pulse that nothing will end.
     const finalStream = result.state.stream;
-    expect(finalStream.phase).toBe("streaming");
+    expect(finalStream.phase).toBe("waiting");
+  });
+
+  it("still resumes when the id matches a permission this client was showing", () => {
+    const before = makeState({
+      permissions: [PERMISSION],
+      stream: { ...initialWebuiStreamState, phase: "waiting" },
+    });
+    const result = reduceWebuiEffect(
+      before,
+      event({
+        type: "permission.resolved",
+        payload: { sessionId: SESSION, requestId: PERMISSION.requestId },
+      }),
+      SESSION,
+    );
+    expect(result.state.permissions).toEqual([]);
+    expect(result.state.stream.phase).toBe("streaming");
+  });
+
+  it("does not resume once the row is already gone (local decision made first)", () => {
+    const before = makeState({
+      permissions: [],
+      stream: { ...initialWebuiStreamState, phase: "done" },
+    });
+    const result = reduceWebuiEffect(
+      before,
+      event({
+        type: "permission.resolved",
+        payload: { sessionId: SESSION, requestId: PERMISSION.requestId },
+      }),
+      SESSION,
+    );
+    expect(result.state.stream.phase).toBe("done");
   });
 });
 
@@ -361,8 +396,8 @@ describe("W2 · trace 7 · thread_goal.* without payload.goal → only progress;
   });
 });
 
-describe("W2 · trace 8 · questionnaire.dismiss/superseded with mismatched id STILL emits setStream", () => {
-  it("mismatched id: progress + set-questionnaire(no-op patch) + set-stream flips to streaming", () => {
+describe("W2 · trace 8 · questionnaire.dismiss/superseded only resumes the shown request", () => {
+  it("mismatched id: progress + set-questionnaire(no-op patch) + set-stream that keeps waiting", () => {
     const before = makeState({
       questionnaire: QUESTIONNAIRE,
       stream: { ...initialWebuiStreamState, phase: "waiting" },
@@ -381,7 +416,8 @@ describe("W2 · trace 8 · questionnaire.dismiss/superseded with mismatched id S
       "set-questionnaire",
       "set-stream",
     ]);
-    expect(result.state.stream.phase).toBe("streaming");
+    // A dismiss naming another request is a late echo, not a resume.
+    expect(result.state.stream.phase).toBe("waiting");
   });
 
   it("matching id clears the questionnaire AND flips stream to streaming", () => {
@@ -403,6 +439,45 @@ describe("W2 · trace 8 · questionnaire.dismiss/superseded with mismatched id S
       "set-questionnaire",
       "set-stream",
     ]);
+    expect(result.state.stream.phase).toBe("streaming");
+  });
+
+  it("late dismiss after a local skip does not revive the streaming pulse", () => {
+    // handleQuestionnaire already set phase:"idle" and cleared the card.
+    const before = makeState({
+      questionnaire: undefined,
+      stream: { ...initialWebuiStreamState, phase: "idle" },
+    });
+    const result = reduceWebuiEffect(
+      before,
+      event({
+        type: "questionnaire.dismiss",
+        payload: {
+          sessionId: SESSION,
+          requestId: QUESTIONNAIRE.id,
+          // The runtime reports a skip as answered; the payload cannot
+          // distinguish it from a normal answer.
+          status: "answered",
+        },
+      }),
+      SESSION,
+    );
+    expect(result.state.stream.phase).toBe("idle");
+  });
+
+  it("late dismiss after a local answer does not disturb the streaming phase", () => {
+    const before = makeState({
+      questionnaire: undefined,
+      stream: { ...initialWebuiStreamState, phase: "streaming" },
+    });
+    const result = reduceWebuiEffect(
+      before,
+      event({
+        type: "questionnaire.dismiss",
+        payload: { sessionId: SESSION, requestId: QUESTIONNAIRE.id },
+      }),
+      SESSION,
+    );
     expect(result.state.stream.phase).toBe("streaming");
   });
 });

@@ -30,18 +30,18 @@
 //      The original closure built a fresh object on every event and
 //      always called `setStream`; the reducer mirrors that. Skipping here
 //      would also break the "command list = host setter trace" contract.
-//   3. Three present-day behaviours that look like bugs are intentionally
-//      preserved because the runtime relies on them:
+//   3. Behaviours that read like bugs but are deliberate:
 //
-//        a. `permission.resolved` with a non-string `requestId` STILL
-//           emits `set-stream{phase:"streaming"}`. The permissions filter
-//           is skipped, but the stream write is unconditional.
-//        b. `questionnaire.dismiss`/`superseded` with a non-matching id
-//           keeps the current questionnaire AND STILL emits
-//           `set-stream{phase:"streaming"}`. The `set-questionnaire`
-//           command is still pushed with a no-op patch, so the trace
-//           matches what the original closure did.
-//        c. `session.finish`/`abort`/`error` write `refusal` only when
+//        a. `permission.resolved` and `questionnaire.dismiss`/`superseded`
+//           always emit the `set-stream` command, but the phase write is
+//           now guarded: it resumes the turn only when the event names the
+//           request this client is still showing. The composer settles the
+//           phase itself when the user answers locally, and the runtime
+//           reports a questionnaire skip as `status:"answered"`, so an
+//           unconditional flip turned a settled turn back into a live
+//           "推理中" pulse. The command is still pushed either way, so the
+//           "command list = host setter trace" contract is unchanged.
+//        b. `session.finish`/`abort`/`error` write `refusal` only when
 //           `payload.error` is a string; other shapes leave `refusal`
 //           alone.
 
@@ -227,14 +227,20 @@ export function reduceWebuiEffect(
             current.filter((permission) => permission.requestId !== requestId),
         });
       }
-      // Unconditional setStream{phase:"streaming"} — preserved verbatim
-      // from the original closure. This is the load-bearing "filter is
-      // no-op, but stream still flips" behaviour: a non-string
-      // `requestId` reaches this point and the panel must come back to
-      // streaming regardless.
+      // Resuming the turn is only meaningful for a request this client was
+      // actually showing. `handlePermission` (SessionComposer) already drops
+      // the row and sets phase:"streaming" itself, so a late event for a
+      // permission that is no longer pending must not resurrect the pulse.
+      const resumesShownRequest =
+        typeof requestId === "string" &&
+        state.permissions.some(
+          (permission) => permission.requestId === requestId,
+        );
       commands.push({
         type: "set-stream",
-        patch: (current) => ({ ...current, phase: "streaming" }),
+        patch: resumesShownRequest
+          ? (current) => ({ ...current, phase: "streaming" })
+          : (current) => current,
       });
       break;
     }
@@ -299,13 +305,22 @@ export function reduceWebuiEffect(
             current?.id === requestId ? undefined : current,
         });
       }
-      // Unconditional setStream{phase:"streaming"} — preserved verbatim.
-      // A non-matching id keeps the current questionnaire AND the
-      // stream still flips to streaming; this is the second load-bearing
-      // quirk.
+      // A dismiss for the questionnaire this client is still showing means
+      // something else resolved it and the turn carries on. A dismiss for
+      // anything else is a late echo: `handleQuestionnaire` / `handleDismiss`
+      // have already cleared the card and settled the phase (idle after a
+      // skip, streaming after a normal answer), and the runtime reports a
+      // skip as `status:"answered"` (local-runtime questionnaire service), so
+      // the payload cannot be used to tell the two apart. Flipping here
+      // unconditionally is what stranded a live "推理中" pulse above the
+      // answered questionnaire.
+      const resumesShownRequest =
+        typeof requestId === "string" && state.questionnaire?.id === requestId;
       commands.push({
         type: "set-stream",
-        patch: (current) => ({ ...current, phase: "streaming" }),
+        patch: resumesShownRequest
+          ? (current) => ({ ...current, phase: "streaming" })
+          : (current) => current,
       });
       break;
     }
