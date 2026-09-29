@@ -1636,6 +1636,15 @@ export function WebuiComposer({
     setGoal(undefined);
     setGoalMode(false);
   };
+  // A request that sets `replaceComposer` owns the composer's slot: the
+  // runtime sets it on every ordinary questionnaire and on the plan review
+  // (only feature-enable requests leave it false), and the desktop draws the
+  // interaction card exactly where the input would be. The input therefore
+  // yields its place rather than sitting under the card, and comes back the
+  // moment the request is answered — which is the whole point of the flag.
+  const composerReplaced =
+    questionnaire !== undefined &&
+    (questionnaire.presentation?.replaceComposer ?? true);
   return (
     <section
       aria-label="Compose message"
@@ -1750,6 +1759,7 @@ export function WebuiComposer({
           onChange={(event) => { void addFiles(event.currentTarget.files); event.currentTarget.value = ""; }}
         />
         {sessionId && goalEnabled && goal ? <WebuiGoalBanner goal={goal} patchGoal={patchGoal} clearGoal={clearGoal} onCleared={clearLocalGoal} interactionBlocked={Boolean(questionnaire || permissions.length > 0)} /> : null}
+        {!composerReplaced ? (
         <form
           onSubmit={submit}
           onDragOver={(event) => { if (event.dataTransfer.files.length) event.preventDefault(); }}
@@ -2263,7 +2273,8 @@ export function WebuiComposer({
         ) : null}
           </div>
         </form>
-        {credentialMessage ? (
+        ) : null}
+          {credentialMessage ? (
           <p
             role="alert"
             data-webui-credential-warning="true"

@@ -76,10 +76,12 @@ function planReviewRequest(
   return {
     schemaVersion: 2,
     id: "ask_plan_1",
+    // Mirrors the real wire shape: the runtime defaults every ordinary
+    // questionnaire — the plan review included — to replacing the composer.
     presentation: {
-      replaceComposer: false,
-      showProgress: false,
-      allowBackNavigation: false,
+      replaceComposer: true,
+      showProgress: true,
+      allowBackNavigation: true,
     },
     steps: [step(WEBUI_PLAN_REVIEW_STEP_ID, { description: "已写好计划，确认后实施" })],
     mode: "plan",
@@ -197,7 +199,6 @@ describe("plan cards — SSR", () => {
     expect(html).toContain(">预览<");
     // The summary previews the Summary section, not the whole file.
     expect(html).toContain('data-testid="plan-delivery-summary"');
-    expect(html).toContain('data-plan-preview-open="false"');
     expect(html).toContain("交付一个自包含的静态 SVG 文件");
     expect(html).not.toContain("画布与调色板");
     // The warning description rides under the title.
@@ -231,15 +232,35 @@ describe("plan cards — SSR", () => {
       createElement(WebuiPlanDeliveryCard, {
         request: planReviewRequest(),
         onBuild: noop,
+        onViewPlan: noop,
         chrome: { busy: true, error: "提交失败" },
       }),
     );
     expect(html).toMatch(/data-testid="plan-build"[^>]*disabled/);
-    // 预览 only opens a local preview of the plan, so — as on the desktop,
-    // where the button is gated on having a preview target rather than on the
-    // pending submission — it stays usable while the decision is in flight.
+    // 预览 opens the workspace panel, not a pending submission, so it stays
+    // usable while the decision is in flight.
     expect(html).not.toMatch(/data-testid="plan-view"[^>]*disabled/);
     expect(html).toContain("提交失败");
+  });
+
+  it("disables 预览 when there is no panel to open", () => {
+    const html = renderToStaticMarkup(
+      createElement(WebuiPlanDeliveryCard, { request: planReviewRequest(), onBuild: noop }),
+    );
+    expect(html).toMatch(/data-testid="plan-view"[^>]*disabled/);
+  });
+
+  it("renders the summary in full — no height cap to scroll past", () => {
+    const html = renderToStaticMarkup(
+      createElement(WebuiPlanDeliveryCard, {
+        request: planReviewRequest(),
+        onBuild: noop,
+        onViewPlan: noop,
+      }),
+    );
+    // The whole Summary section, not just its opening lines.
+    expect(html).toContain("交付一个自包含的静态 SVG 文件");
+    expect(html).not.toContain("data-plan-preview-open");
   });
 
   it("renders the decision card with approve, feedback row and skip", () => {
@@ -313,16 +334,60 @@ describe("interaction panel — plan routing", () => {
     onDismiss: () => Promise.resolve(),
   };
 
-  it("routes a plan request to the plan surfaces, not the generic questionnaire", () => {
+  it("routes a plan request to the decision card, not the generic questionnaire", () => {
     const html = renderToStaticMarkup(
       createElement(WebuiInteractionPanel, { ...panelProps, questionnaire: planReviewRequest() }),
     );
     expect(html).toContain('data-testid="plan-surface"');
-    expect(html).toContain('data-testid="plan-delivery-card"');
     expect(html).toContain('data-testid="plan-review-decision"');
+    // The plan FILE is a message in the transcript, not part of this panel —
+    // the desktop anchors it to the turn that wrote the plan.
+    expect(html).not.toContain('data-testid="plan-delivery-card"');
     // The generic step picker must not render for a plan request.
     expect(html).not.toContain('data-testid="questionnaire-composer"');
     expect(html).not.toContain('data-testid="questionnaire-step-plan-review"');
+  });
+
+  it("claims the composer slot when the request sets replaceComposer", () => {
+    const html = renderToStaticMarkup(
+      createElement(WebuiInteractionPanel, { ...panelProps, questionnaire: planReviewRequest() }),
+    );
+    expect(html).toContain('data-webui-composer-replaced="true"');
+  });
+
+  it("stacks above the composer when the request keeps the composer", () => {
+    const request = {
+      ...planReviewRequest(),
+      presentation: {
+        replaceComposer: false,
+        showProgress: false,
+        allowBackNavigation: false,
+      },
+    } as WebuiQuestionnaireRequest;
+    const html = renderToStaticMarkup(
+      createElement(WebuiInteractionPanel, { ...panelProps, questionnaire: request }),
+    );
+    expect(html).toContain('data-webui-composer-replaced="false"');
+  });
+
+  it("does not claim the composer slot when only a permission is pending", () => {
+    const html = renderToStaticMarkup(
+      createElement(WebuiInteractionPanel, {
+        ...panelProps,
+        permissions: [
+          {
+            requestId: "perm-1",
+            sessionId: "s1",
+            toolName: "bash",
+            reason: "why",
+            allowAlwaysSupported: false,
+            createdAt: 0,
+          },
+        ],
+      }),
+    );
+    expect(html).toContain('data-webui-composer-replaced="false"');
+    expect(html).not.toContain('data-testid="plan-surface"');
   });
 
   it("still renders the generic questionnaire for a non-plan request", () => {

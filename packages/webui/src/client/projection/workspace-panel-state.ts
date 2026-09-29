@@ -2,7 +2,7 @@ import type { WebuiTurnDiffView } from "../../server/port.js";
 
 export type WorkspacePanelTab =
   { readonly id: string; readonly kind: "files"; readonly sessionId?: string; readonly workspaceDir?: string }
-  | { readonly id: string; readonly kind: "file-preview"; readonly sessionId: string; readonly workspaceDir: string; readonly path: string; readonly lineStart?: number; readonly lineEnd?: number }
+  | { readonly id: string; readonly kind: "file-preview"; readonly sessionId: string; readonly workspaceDir: string; readonly path: string; readonly lineStart?: number; readonly lineEnd?: number; readonly content?: string }
   | { readonly id: string; readonly kind: "review"; readonly sessionId: string; readonly workspaceDir: string; readonly source: "workspace"; readonly selectedPath?: string; readonly reviewSnapshotId?: string }
   | { readonly id: string; readonly kind: "review"; readonly sessionId: string; readonly workspaceDir: string; readonly source: "turn"; readonly messageId: string; readonly assistantMessageId?: string; readonly turnId?: string; readonly changeSetId?: string; readonly files: WebuiTurnDiffView["fileChanges"]; readonly selectedPath?: string }
   | { readonly id: string; readonly kind: "canvas"; readonly sessionId?: string }
@@ -66,6 +66,13 @@ export function setWorkspaceSessionProgressPanelOpen(
 
 export type WorkspacePanelCommand =
   | { readonly type: "open-file"; readonly sessionId: string; readonly workspaceDir: string; readonly path: string; readonly lineStart?: number; readonly lineEnd?: number }
+  /**
+   * Open the session's plan file. It sits in the session's artifacts
+   * directory rather than the workspace, so the content rides along instead of
+   * being read through `readWorkspaceFile`, which refuses to leave the
+   * workspace root.
+   */
+  | { readonly type: "open-plan-file"; readonly sessionId: string; readonly workspaceDir: string; readonly path: string; readonly content: string }
   | { readonly type: "open-workspace-review"; readonly sessionId: string; readonly workspaceDir: string; readonly selectedPath?: string }
   | { readonly type: "open-turn-review"; readonly sessionId: string; readonly workspaceDir: string; readonly messageId: string; readonly assistantMessageId?: string; readonly turnId?: string; readonly changeSetId?: string; readonly files: WebuiTurnDiffView["fileChanges"]; readonly selectedPath?: string }
   | { readonly type: "open-primary-view"; readonly kind: "files"; readonly sessionId?: string; readonly workspaceDir?: string }
@@ -111,6 +118,11 @@ export function reduceWorkspacePanelState(state: WorkspacePanelState, command: W
       const path = command.path.replace(/\\/gu, "/").replace(/^\.\//u, "");
       if (!path || path.startsWith("/") || path.split("/").some((part) => part === ".." || part === "")) return state;
       return activate(state, { id: tabId("file", command.sessionId, command.workspaceDir, path), kind: "file-preview", sessionId: command.sessionId, workspaceDir: command.workspaceDir, path, ...(command.lineStart !== undefined ? { lineStart: command.lineStart } : {}), ...(command.lineEnd !== undefined ? { lineEnd: command.lineEnd } : {}) });
+    }
+    case "open-plan-file": {
+      const path = command.path.replace(/\\/gu, "/").replace(/^\.\//u, "");
+      const id = tabId("file", command.sessionId, command.workspaceDir, path);
+      return activate(state, { id, kind: "file-preview", sessionId: command.sessionId, workspaceDir: command.workspaceDir, path, content: command.content });
     }
     case "open-workspace-review": {
       const id = tabId("review", command.sessionId, command.workspaceDir);

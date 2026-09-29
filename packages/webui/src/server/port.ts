@@ -608,6 +608,15 @@ export interface WebuiQuestionnaireRequest {
   readonly mode?: string;
   readonly purpose?: number;
   /**
+   * The message that raised this request. The plan card is rendered as a
+   * message in the transcript, so it needs the id of the turn message to
+   * anchor itself to — the desktop attaches it as that message's footer.
+   */
+  readonly tool?: {
+    readonly messageId: string;
+    readonly callId: string;
+  };
+  /**
    * Mode-specific request body. The runtime attaches the plan file to a plan
    * request so the plan card can render its own preview and decision UI
    * instead of the generic questionnaire. `cli-service.ts` copies

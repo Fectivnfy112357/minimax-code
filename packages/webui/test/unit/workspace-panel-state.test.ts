@@ -105,6 +105,22 @@ describe("right workspace panel navigation", () => {
     expect(mergeWorkspaceFileChildren(roots, "missing", children)).toEqual(roots);
   });
 
+  it("opens the session plan file with its content attached", () => {
+    // The plan lives in the session artifacts directory, outside the
+    // workspace root, so the content rides along instead of being read back
+    // through readWorkspaceFile — which would reject the path.
+    const state = reduceWorkspacePanelState(initialWorkspacePanelState, {
+      type: "open-plan-file",
+      sessionId: "s1",
+      workspaceDir: "/a",
+      path: "/artifacts/plan.md",
+      content: "# Plan\n\nbody",
+    });
+    expect(state.open).toBe(true);
+    const tab = state.tabs.find((candidate) => candidate.id === state.activeTabId);
+    expect(tab).toMatchObject({ kind: "file-preview", path: "/artifacts/plan.md", content: "# Plan\n\nbody" });
+  });
+
   it("keeps one active view while opening, switching and closing tabs", () => {
     let state = initialWorkspacePanelState;
     state = reduceWorkspacePanelState(state, { type: "open-tab", kind: "files", sessionId: "s1", workspaceDir: "/a" });

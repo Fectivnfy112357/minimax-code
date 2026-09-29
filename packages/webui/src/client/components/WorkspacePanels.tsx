@@ -507,6 +507,24 @@ export function WebuiWorkspacePanel({ state, dispatch, sessionId, workspaceDir, 
   useEffect(() => {
     if (activeTab?.kind !== "file-preview" || !readWorkspaceFile) return undefined;
     if (fileResultsRef.current[activeTab.id]?.content) return undefined;
+    // A tab opened with inline content (the session's plan file) has nothing
+    // to read: `readWorkspaceFile` would reject the path anyway, since the
+    // artifacts directory is outside the workspace root.
+    if (activeTab.content !== undefined) {
+      // Captured before the updater: narrowing does not survive into a
+      // callback, so reading it inline widens `content` back to `string |
+      // undefined` and the state type stops matching.
+      const inlineContent = activeTab.content;
+      const inlinePath = activeTab.path;
+      setFileResults((current) => ({
+        ...current,
+        [activeTab.id]: {
+          loading: false,
+          content: { type: "text", content: inlineContent, resolvedPath: inlinePath },
+        },
+      }));
+      return undefined;
+    }
     let cancelled = false;
     setFileResults((current) => ({ ...current, [activeTab.id]: { loading: true } }));
     void readWorkspaceFile({ workspaceDir: activeTab.workspaceDir, path: activeTab.path }).then((content) => {

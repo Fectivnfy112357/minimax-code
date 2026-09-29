@@ -1009,6 +1009,9 @@ export function WebuiClientFoundationApp(
                         getSessionRewindPreview={transport?.getSessionRewindPreview}
                         rewindSession={transport?.rewindSession}
                         editSessionMessage={transport?.editSessionMessage}
+                        getPendingQuestionnaire={transport?.getPendingQuestionnaire}
+                        replyQuestionnaire={transport?.replyQuestionnaire}
+                        onOpenPlanFile={({ sessionId: planSessionId, path, content }) => dispatchWorkspacePanel({ type: "open-plan-file", sessionId: planSessionId, workspaceDir: selectedSession?.workspaceDir ?? "", path, content })}
                       />
                       </Transcript>
                     ) : null}

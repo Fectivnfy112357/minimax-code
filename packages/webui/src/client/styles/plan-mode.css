@@ -176,14 +176,12 @@
   position: relative;
   box-sizing: border-box;
   min-height: 104px;
-  /* The desktop's 336px cap, relaxed on a short window. The desktop draws
-     this card inside the scrolling transcript, where a tall card is simply
-     scrolled to; here it stacks with the decision card above an overlaid
-     composer, so a fixed 336px cap pushed the approve row off the bottom of
-     the viewport. 30vh keeps both cards and the composer on screen together
-     while leaving the full 336px on a window tall enough to want it. */
-  max-height: min(336px, 30vh);
-  overflow: hidden;
+  /* No cap. The card is a message in the scrolling column now, so a fixed
+     height only hides plan content the reader can simply scroll to — the
+     desktop renders the section in full. The button that used to cap it,
+     预览, opens the whole file in the workspace panel. */
+  max-height: none;
+  overflow: visible;
   border-top: 0.5px solid var(--border_default);
   padding: var(--spacing_12);
   color: var(--text_default_primary);
@@ -199,17 +197,6 @@
     black calc(100% - 48px),
     transparent 100%
   );
-}
-
-.webui-plan-delivery-summary[data-plan-preview-open="true"] {
-  max-height: 104px;
-  overflow-x: hidden;
-  overflow-y: auto;
-  scrollbar-width: none;
-}
-
-.webui-plan-delivery-summary[data-plan-preview-open="true"]::-webkit-scrollbar {
-  display: none;
 }
 
 .webui-plan-delivery-summary-content > *:first-child {
@@ -510,30 +497,41 @@
 
 /* ------------------------------------------------- interaction panel placement */
 
-/* The composer section resolves to `display: contents`, so this panel is laid
-   out by `.webui-session-layout` (its nearest positioned ancestor) rather than
-   by the composer. Left in normal flow it sorted to the top of the scrolling
-   message column, far above the viewport. `--webui-composer-bottom-padding` is
-   the composer inset the composer already measures and writes onto the layout,
-   so anchoring to it needs no second measurement and no JSX change. */
+/* The plan file is a MESSAGE in the transcript, anchored to the turn that wrote
+   it, so it scrolls with the conversation and never covers the reasoning above
+   it. The wrapper only supplies the message-column measure; the card keeps its
+   own width. */
+.webui-plan-inline {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  margin-top: var(--spacing_8);
+  margin-bottom: var(--spacing_8);
+}
+
+/* ------------------------------------------------- interaction panel placement */
+
+/* Two cases, split by `data-webui-composer-replaced`.
+
+   Default (`false`, e.g. a feature-enable request): the panel stacks directly
+   above the composer, anchored to the inset the composer already measures and
+   writes onto the layout as `--webui-composer-bottom-padding`.
+
+   `true` — the runtime's default for every ordinary questionnaire and for the
+   plan review — means the interaction card OWNS the composer's slot. The input
+   is not rendered while the request is open, so the panel takes the overlay's
+   exact box, gradient and padding, and the composer returns when the request
+   is answered. This is what the desktop does, and it is why the card no longer
+   floats over the message column. */
 .webui-session-layout [data-webui-interactions] {
   position: absolute;
   z-index: 21;
   right: 0;
-  bottom: var(--webui-composer-bottom-padding, 184px);
   left: 0;
   margin-top: 0;
-  padding: 0 24px;
-  /* A plan card plus a decision card is taller than the space above the
-     composer on a short window; scroll the stack rather than letting it run
-     off the top of the layout. */
-  max-height: calc(100% - var(--webui-composer-bottom-padding, 184px) - 16px);
-  overflow-y: auto;
   pointer-events: none;
 }
 
-/* The overlay above uses the same trick for its own children, so the panel
-   content stays clickable while the strip between cards stays inert. */
 .webui-session-layout [data-webui-interactions] > * {
   pointer-events: auto;
   width: 100%;
@@ -541,4 +539,24 @@
   margin-right: auto;
   margin-left: auto;
   flex-shrink: 0;
+}
+
+.webui-session-layout [data-webui-interactions][data-webui-composer-replaced="false"] {
+  bottom: var(--webui-composer-bottom-padding, 184px);
+  padding: 0 24px;
+  max-height: calc(100% - var(--webui-composer-bottom-padding, 184px) - 16px);
+  overflow-y: auto;
+}
+
+.webui-session-layout [data-webui-interactions][data-webui-composer-replaced="true"] {
+  bottom: 0;
+  padding: 0 24px 16px;
+  background: linear-gradient(
+    to top,
+    var(--bg_default_primary) 0%,
+    var(--bg_default_primary) 60%,
+    rgb(0 0 0 / 0%) 100%
+  );
+  max-height: calc(100% - 48px);
+  overflow-y: auto;
 }

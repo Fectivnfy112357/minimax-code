@@ -14,14 +14,7 @@ import {
   sortWebuiQuestionnaireOptions,
   toggleWebuiQuestionnaireOption,
 } from "../projection/questionnaire-state.js";
-import {
-  buildWebuiPlanApproveAnswers,
-  isWebuiPlanReviewRequest,
-} from "../projection/plan-mode.js";
-import {
-  WebuiPlanDeliveryCard,
-  WebuiPlanSurface,
-} from "./PlanModeCards.js";
+import { WebuiPlanSurface } from "./PlanModeCards.js";
 import type {
   WebuiPendingPermission,
   WebuiQuestionnaireAnswer,
@@ -99,6 +92,15 @@ export function WebuiInteractionPanel({
     <div
       className="mt-3 flex w-full flex-col gap-3"
       data-webui-interactions={sessionId}
+      data-webui-composer-replaced={
+        // `presentation` is optional on the wire: the runtime's own event
+        // normaliser defaults `replaceComposer` to true when it is absent, so
+        // an absent block means "replace", not "unknown".
+        questionnaire &&
+        (questionnaire.presentation?.replaceComposer ?? true)
+          ? "true"
+          : "false"
+      }
     >
       {visiblePermissions.map((permission) => (
         <article
@@ -143,27 +145,18 @@ export function WebuiInteractionPanel({
           </div>
         </article>
       ))}
-      {/* Plan mode arrives on the same questionnaire channel but renders its
-          own surfaces: the plan file card above the decision card, never the
-          generic step picker. */}
+      {/* Plan mode arrives on the same questionnaire channel. Only the DECISION
+          belongs here — the plan file card is a message in the transcript,
+          anchored to the turn that wrote it, exactly as the desktop renders it.
+          This surface takes the composer's place while the request is open
+          (`presentation.replaceComposer`, the runtime's default for every
+          questionnaire), which is what the attribute below switches the CSS to. */}
       {questionnaire?.mode === "plan" ? (
         <div
           className="webui-plan-surface"
           data-testid="plan-surface"
           data-webui-plan-request={questionnaire.id}
         >
-          {isWebuiPlanReviewRequest(questionnaire) ? (
-            <WebuiPlanDeliveryCard
-              request={questionnaire}
-              chrome={{ busy: submitting, error: interactionError }}
-              onBuild={() => {
-                setSubmitting(true);
-                void onQuestionnaire(questionnaire, buildWebuiPlanApproveAnswers()).finally(() =>
-                  setSubmitting(false),
-                );
-              }}
-            />
-          ) : null}
           <WebuiPlanSurface
             request={questionnaire}
             chrome={{ busy: submitting, error: interactionError }}

@@ -8,7 +8,7 @@
 // existing consumers (`webui-shell.test.ts`, importers via `app.tsx`)
 // keep their current import path during the W3 wave.
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { ChatSkeleton } from "./TranscriptSkeletons.js";
 import { ActivityIndicator, MessageAfterQueryStreamingPlaceholder, MessagePassiveLoadingPlaceholder } from "./ActivityIndicator.js";
 import { TurnNavigator, type TurnSummary } from "./TurnNavigator.js";
@@ -16,12 +16,20 @@ import { MessageItem } from "./MessageItem.js";
 import { formatWebuiMessageTimestamp, type WebuiMessageActionCapabilities } from "./MessageActions.js";
 import { useSessionRuntimeState } from "../session-runtime-store.js";
 import { isTurnLive } from "../projection/composer-state.js";
+import {
+  buildWebuiPlanApproveAnswers,
+  isWebuiPlanReviewRequest,
+  webuiPlanMarkdown,
+  webuiPlanPath,
+} from "../projection/plan-mode.js";
+import { WebuiPlanDeliveryCard } from "./PlanModeCards.js";
 import type {
   WebuiClientMessageLoader,
   WebuiClientMessagePage,
   WebuiTransport,
   WebuiTranscriptItem,
 } from "../contracts.js";
+import type { WebuiQuestionnaireRequest } from "../../server/port.js";
 
 /** Capability subset the transcript passes through to each message item.
  *  Single source of truth lives in `WebuiTransport`; this alias keeps the
@@ -36,6 +44,8 @@ type WebuiSessionTranscriptCapabilities = Pick<
   | "getSessionRewindPreview"
   | "rewindSession"
   | "editSessionMessage"
+  | "getPendingQuestionnaire"
+  | "replyQuestionnaire"
 >;
 import type { WebuiTurnDiffView } from "../../server/port.js";
 import type { WebuiQuestionnaireResponseSummary } from "../projection/message-parts.js";
@@ -189,9 +199,12 @@ export function WebuiSessionTranscript({
   getSessionRewindPreview,
   rewindSession,
   editSessionMessage,
+  getPendingQuestionnaire,
+  replyQuestionnaire,
   workspaceDir,
   onOpenFile,
   onOpenTurnReview,
+  onOpenPlanFile,
 }: {
   readonly sessionId: string;
   readonly loadMessages: WebuiClientMessageLoader;
@@ -199,6 +212,7 @@ export function WebuiSessionTranscript({
   readonly workspaceDir?: string;
   readonly onOpenFile?: (input: { readonly sessionId: string; readonly workspaceDir: string; readonly reference: WebuiMessageFileReference }) => void;
   readonly onOpenTurnReview?: (command: Extract<WorkspacePanelCommand, { type: "open-turn-review" }>) => void;
+  readonly onOpenPlanFile?: (input: { readonly sessionId: string; readonly path: string; readonly content: string }) => void;
 } & WebuiSessionTranscriptCapabilities): ReactElement {
   const coordinatorRef = useRef(createWebuiTranscriptRequestCoordinator(sessionId));
   const coordinator = coordinatorRef.current;
@@ -251,6 +265,72 @@ export function WebuiSessionTranscript({
   const streamPhase = stream.phase;
   const autoFollowRef = useRef(true);
   const manualScrollIntentRef = useRef(false);
+  // The plan file is a MESSAGE in the transcript, not a floating card: the
+  // desktop renders it as the footer of the turn that wrote the plan. It lives
+  // on the pending questionnaire, so the transcript reads the same channel the
+  // composer does and anchors the card to `request.tool.messageId`.
+  //
+  // The composer keeps its own copy for the decision; this read only decides
+  // whether a plan card belongs in the message column.
+  const [planReview, setPlanReview] = useState<WebuiQuestionnaireRequest | undefined>(undefined);
+  useEffect(() => {
+    if (!getPendingQuestionnaire) return undefined;
+    let cancelled = false;
+    void getPendingQuestionnaire({ name: "main", sessionId })
+      .then((result) => {
+        if (cancelled) return;
+        const request = result.request;
+        setPlanReview(isWebuiPlanReviewRequest(request) ? request : undefined);
+      })
+      .catch(() => {
+        if (!cancelled) setPlanReview(undefined);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Re-read on every phase change, not just on mount: a plan request is
+    // raised mid-turn and only becomes visible as the turn settles into
+    // `waiting`. Phases change a few times per turn, so the extra reads are
+    // cheaper than tracking the transition precisely.
+  }, [getPendingQuestionnaire, sessionId, streamPhase]);
+  // The plan card's 执行 button answers the same `plan-review` step the
+  // decision card does, so both paths post through the ordinary questionnaire
+  // reply. `requester.agentName` is the agent the runtime registered the
+  // request under; falling back to the default name keeps the server-side
+  // resolution in play.
+  const [planSubmitting, setPlanSubmitting] = useState(false);
+  const [planError, setPlanError] = useState<string | undefined>(undefined);
+  const planAnchorMessageId = planReview?.tool?.messageId;
+  const submitPlanBuild = useCallback(() => {
+    if (!planReview || !replyQuestionnaire) return;
+    setPlanError(undefined);
+    setPlanSubmitting(true);
+    void replyQuestionnaire({
+      name: planReview.requester?.agentName ?? "main",
+      requestId: planReview.id,
+      schemaVersion: planReview.schemaVersion,
+      answers: buildWebuiPlanApproveAnswers(),
+    })
+      .then((result) => {
+        if (result.ok !== true) throw new Error("The plan decision was not accepted");
+        setPlanReview(undefined);
+      })
+      .catch((error: unknown) => {
+        setPlanError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => setPlanSubmitting(false));
+  }, [planReview, replyQuestionnaire]);
+  // 预览 opens the whole plan file in the workspace panel, the way the desktop
+  // hands the markdown to its file viewer. The file lives outside the workspace
+  // root, so the content travels with the command instead of being read back.
+  const openPlanFile = useCallback(
+    (request: WebuiQuestionnaireRequest) => {
+      const path = webuiPlanPath(request);
+      if (!path || !onOpenPlanFile) return;
+      onOpenPlanFile({ sessionId, path, content: webuiPlanMarkdown(request) });
+    },
+    [onOpenPlanFile, sessionId],
+  );
   // History and stream frames feed one transcript projection. The live
   // records update the same message identities in this list while history
   // supplies the persisted fields and older messages.
@@ -715,22 +795,41 @@ export function WebuiSessionTranscript({
                 processSegments: projectWebuiProcessSegments(group.items),
               };
           return (
-            <MessageItem
-              key={group.messageId}
-              view={assistantView}
-              wallClockDurationMs={group.wallClockDurationMs}
-              getTurnDiff={getTurnDiff}
-              revertTurnDiff={revertTurnDiff}
-              reapplyTurnDiff={reapplyTurnDiff}
-              getSessionForkOptions={getSessionForkOptions}
-              forkSession={forkSession}
-              getSessionRewindPreview={getSessionRewindPreview}
-              rewindSession={rewindSession}
+            <>
+              <MessageItem
+                key={group.messageId}
+                view={assistantView}
+                wallClockDurationMs={group.wallClockDurationMs}
+                getTurnDiff={getTurnDiff}
+                revertTurnDiff={revertTurnDiff}
+                reapplyTurnDiff={reapplyTurnDiff}
+                getSessionForkOptions={getSessionForkOptions}
+                forkSession={forkSession}
+                getSessionRewindPreview={getSessionRewindPreview}
+                rewindSession={rewindSession}
               editSessionMessage={editSessionMessage}
               workspaceDir={workspaceDir}
               onOpenFile={onOpenFile}
               onOpenTurnReview={onOpenTurnReview}
             />
+              {planAnchorMessageId !== undefined &&
+              group.items.some((item) => item.messageId === planAnchorMessageId) ? (
+                <div
+                  key={`${group.messageId}-plan`}
+                  className="webui-plan-inline"
+                  data-testid="plan-inline-anchor"
+                >
+                  {planReview ? (
+                    <WebuiPlanDeliveryCard
+                      request={planReview}
+                      onBuild={submitPlanBuild}
+                      onViewPlan={() => openPlanFile(planReview)}
+                      chrome={{ busy: planSubmitting, error: planError }}
+                    />
+                  ) : null}
+                </div>
+              ) : null}
+            </>
           );
         })}
         {streamPhase === "reconnecting" ? (

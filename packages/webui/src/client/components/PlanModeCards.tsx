@@ -83,10 +83,13 @@ function PlanCardError({ error }: { readonly error?: string }): ReactElement | n
 export function WebuiPlanDeliveryCard({
   request,
   onBuild,
+  onViewPlan,
   chrome,
 }: {
   readonly request: WebuiQuestionnaireRequest;
   readonly onBuild: () => void;
+  /** Open the whole plan file in the workspace panel. */
+  readonly onViewPlan?: () => void;
   readonly chrome?: WebuiPlanCardChrome;
 }): ReactElement {
   const markdown = webuiPlanMarkdown(request);
@@ -94,21 +97,19 @@ export function WebuiPlanDeliveryCard({
   const title = webuiPlanTitle(markdown) || WEBUI_PLAN_COPY.deliveryTitle;
   const description = webuiPlanReviewDescription(request);
   const busy = chrome?.busy === true;
-  const [previewOpen, setPreviewOpen] = useState(false);
   const [truncated, setTruncated] = useState(false);
   const contentRef = useRef<HTMLDivElement | null>(null);
-
-  // The summary scrolls only when it actually overflows its cap. The cap is
-  // responsive (`min(336px, 30vh)` collapsed, a fixed 104px while the preview
-  // is open), so read it off the element rather than repeating the number here
-  // — a copy that drifts from the stylesheet reports the wrong flag.
   const summaryRef = useRef<HTMLDivElement | null>(null);
+
+  // The summary is scrollable only when it actually overflows its cap, which
+  // the stylesheet owns — read it off the element rather than repeating the
+  // number here, since a copy that drifts reports the wrong flag.
   useLayoutEffect(() => {
     const element = contentRef.current;
     const box = summaryRef.current;
     if (!element) return undefined;
     const measure = () => {
-      const cap = box ? Number.parseFloat(getComputedStyle(box).maxHeight) : 336;
+      const cap = box ? Number.parseFloat(getComputedStyle(box).maxHeight) : Number.POSITIVE_INFINITY;
       if (!Number.isFinite(cap)) return;
       setTruncated(element.scrollHeight + 24 > cap);
     };
@@ -118,7 +119,7 @@ export function WebuiPlanDeliveryCard({
     observer.observe(element);
     if (summaryRef.current) observer.observe(summaryRef.current);
     return () => observer.disconnect();
-  }, [previewOpen, summary]);
+  }, [summary]);
 
   return (
     <section
@@ -156,8 +157,8 @@ export function WebuiPlanDeliveryCard({
             type="button"
             className="webui-plan-view-button"
             data-testid="plan-view"
-            aria-expanded={previewOpen}
-            onClick={() => setPreviewOpen((open) => !open)}
+            disabled={!onViewPlan}
+            onClick={() => onViewPlan?.()}
           >
             <span className="webui-plan-view-icon" data-testid="plan-view-icon" aria-hidden="true">
               <PlanEyeIcon />
@@ -175,16 +176,11 @@ export function WebuiPlanDeliveryCard({
         <div
           className="webui-plan-delivery-summary"
           data-testid="plan-delivery-summary"
-          data-plan-preview-open={previewOpen ? "true" : "false"}
           data-summary-truncated={truncated ? "true" : "false"}
           ref={summaryRef}
         >
           <div className="webui-plan-delivery-summary-content" data-testid="plan-delivery-summary-content" ref={contentRef}>
-            {previewOpen ? (
-              <WebuiMarkdown source={markdown} />
-            ) : (
-              <WebuiMarkdown source={summary} />
-            )}
+            <WebuiMarkdown source={summary} />
           </div>
         </div>
       ) : null}
