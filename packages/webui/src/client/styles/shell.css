@@ -1005,7 +1005,7 @@
     align-items: center;
     gap: var(--spacing_4);
     border-radius: var(--radius_8);
-    padding: 0 64px 0 var(--spacing_8);
+    padding: 0 94px 0 var(--spacing_8);
     transition: background-color 120ms ease;
   }
   .webui-project-session-card:hover,

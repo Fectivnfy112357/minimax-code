@@ -528,11 +528,11 @@ export function WebuiProjectList({
                               </span>
                             </a>
                             <div className="webui-session-row-actions">
-                              {pinnedSessions?.[session.sessionId] && onToggleSessionPin ? (
+                              {onToggleSessionPin ? (
                                 <button
                                   type="button"
-                                  aria-label={`取消置顶：${sessionLabel(session)}`}
-                                  title="取消置顶"
+                                  aria-label={`${pinnedSessions?.[session.sessionId] ? "取消置顶" : "置顶"}：${sessionLabel(session)}`}
+                                  title={pinnedSessions?.[session.sessionId] ? "取消置顶" : "置顶"}
                                   className="webui-rail-action"
                                   onClick={(event) => {
                                     event.preventDefault();
@@ -541,6 +541,21 @@ export function WebuiProjectList({
                                   }}
                                 >
                                   <WebuiIconContextPin />
+                                </button>
+                              ) : null}
+                              {onArchiveSession ? (
+                                <button
+                                  type="button"
+                                  aria-label={`${session.archived ? "取消归档" : "归档"}：${sessionLabel(session)}`}
+                                  title={session.archived ? "取消归档" : "归档"}
+                                  className="webui-rail-action"
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    onArchiveSession(session);
+                                  }}
+                                >
+                                  <WebuiIconContextArchive />
                                 </button>
                               ) : null}
                               <button
