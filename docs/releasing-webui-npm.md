@@ -1,66 +1,68 @@
 # WebUI package on the npm registry
 
 The WebUI is packaged as `@fectivnfy112358/minimax-code-web` and published to
-`https://registry.npmjs.org` with the `preview` dist-tag. The repository's
-`.github/workflows/webui-npm-preview.yml` workflow publishes through npm trusted
-publishing (OIDC) and holds no npm token. A trusted publisher can only be
-configured once the package exists on npmjs.com, so the first version is
-published from a machine that holds a token.
+`https://registry.npmjs.org` under the `preview` dist-tag. Publishing is fully
+automatic: every push to the `webui` branch builds the standalone package and
+publishes a new preview version. No tag, no version edit, no manual step.
 
-## First publication
+## How a release happens
 
-1. Build the package and inspect the tarball:
+`.github/workflows/webui-npm-preview.yml` runs on `push` to `webui` and on
+`workflow_dispatch`. It:
 
-   ```sh
-   pnpm install --frozen-lockfile
-   pnpm run package:webui-npm -- --version 0.1.0-preview.0 --outdir /tmp/minimax-code-web
-   npm pack --dry-run /tmp/minimax-code-web
-   ```
+1. installs the workspace with a frozen lockfile;
+2. resolves the next version by reading the highest `<core>-preview.<n>`
+   already on the registry and incrementing `n`;
+3. builds the package with `scripts/package-webui-npm.mjs`;
+4. inspects the tarball with `npm pack --dry-run`;
+5. publishes, unless that version is already on the registry, in which case it
+   exits successfully without publishing.
 
-2. Create a granular access token on npmjs.com with **Read and write (publish
-   and stage)** access. Put it in the user-level `~/.npmrc`; never in the
-   repository's `.npmrc`, which is tracked by Git:
+Because the version is derived from the registry rather than from a git tag or a
+field in the repository, the `version` in `release/webui-npm/package.json` is
+only the default for local builds. Editing it does not trigger or choose a
+release.
 
-   ```ini
-   //registry.npmjs.org/:_authToken=<token>
-   ```
+The already-published check in step 5 is what makes reruns safe. A rerun of a
+successful run recomputes the same version, sees it published, and no-ops.
 
-3. Publish the first version:
+## Credentials
 
-   ```sh
-   npm publish /tmp/minimax-code-web --tag preview
-   ```
+The workflow authenticates with the repository secret `NPM_TOKEN`, which must be
+a granular access token with **Read and write (publish and stage)** access to
+`@fectivnfy112358`. It is read as `NODE_AUTH_TOKEN`, which `actions/setup-node`
+turns into the `//registry.npmjs.org/:_authToken` entry the publish step needs.
 
-   `publishConfig.access` in `release/webui-npm/package.json` already makes the
-   scoped package public.
+Set it once:
 
-## Enable trusted publishing
+```sh
+gh secret set NPM_TOKEN --repo <owner>/<repo>
+```
 
-On npmjs.com, open the package settings, add a trusted publisher for GitHub
-Actions, and use:
+The workflow holds no npm token in the repository, and no token belongs in the
+tracked `.npmrc`.
 
-- **Organization or user**: `fectivnfy112358`
-- **Repository**: `minimax-code`
-- **Workflow filename**: `webui-npm-preview.yml` (filename only, including the
-  extension)
-- **Environment name**: leave empty
-- **Allowed actions**: `npm publish`
+## Publishing attestations
 
-The workflow declares no GitHub environment and no `NODE_AUTH_TOKEN`, so these
-values must stay in sync with it. Once a tag-triggered release has been verified,
-revoke the token from step 2.
+The workflow does **not** pass `--provenance`, so published versions carry no
+npm provenance attestation. Provenance requires npm trusted publishing (OIDC),
+which in turn requires the package's trusted publisher to be configured on
+npmjs.com. If that configuration is ever added, give the workflow
+`permissions: id-token: write` and pass `--provenance` to the publish step;
+`repository.url` in `release/webui-npm/package.json` must keep matching the
+GitHub repository or attestation generation fails.
 
-## Publish a preview
+## Local builds
 
-1. Merge the intended changes into `webui` and confirm the package build is
-   ready.
-2. Create a tag on that commit using the package version, for example
-   `webui-v0.1.0-preview.1`.
-3. Push that tag. The workflow checks the preview version format, builds the
-   standalone package, inspects the npm tarball contents, then publishes to
-   `https://registry.npmjs.org` with the `preview` dist-tag.
+`release/webui-npm/package.json` carries the version a local build falls back to
+when `--version` is omitted. npm never accepts a republished version, so a local
+build that is meant to be published needs an explicit, unused version:
 
-Provenance attestations are generated automatically by the trusted publish; the
-`--provenance` flag is not needed. `repository.url` in
-`release/webui-npm/package.json` must keep matching the GitHub repository or
-provenance validation fails.
+```sh
+pnpm install --frozen-lockfile
+pnpm run package:webui-npm -- --version 0.1.0-preview.4 --outdir /tmp/minimax-code-web
+npm pack --dry-run /tmp/minimax-code-web
+```
+
+`publishConfig.access` in `release/webui-npm/package.json` already makes the
+scoped package public.

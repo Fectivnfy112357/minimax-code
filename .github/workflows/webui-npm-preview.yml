@@ -2,14 +2,14 @@ name: WebUI npm preview
 
 on:
   push:
-    tags: ["webui-v*"]
+    branches: ["webui"]
+  workflow_dispatch:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
-  group: webui-npm-preview-${{ github.ref }}
+  group: webui-npm-preview
   cancel-in-progress: false
 
 jobs:
@@ -28,19 +28,61 @@ jobs:
           registry-url: "https://registry.npmjs.org"
           scope: "@fectivnfy112358"
       - run: pnpm install --frozen-lockfile
-      - name: Validate preview tag
+      - name: Resolve next preview version
         id: release
         shell: bash
         run: |
-          version="${GITHUB_REF_NAME#webui-v}"
-          if [[ ! "$GITHUB_REF_NAME" =~ ^webui-v[0-9]+\.[0-9]+\.[0-9]+-preview\.[0-9]+$ ]]; then
-            echo "Expected tag webui-v<major>.<minor>.<patch>-preview.<number>." >&2
-            exit 1
-          fi
+          # The published version is the next counter after the highest
+          # `<core>-preview.<n>` already on the registry, so a plain push never
+          # needs a version bump in the repository. Resolving it from the
+          # registry rather than from a git tag is what makes reruns safe: a
+          # rerun recomputes the same number only if nothing was published in
+          # between, and the publish step below treats an existing version as a
+          # no-op instead of a failure.
+          package="$(node -p 'require("./release/webui-npm/package.json").name')"
+          versions="$(npm view "$package" versions --json)"
+          version="$(printf '%s' "$versions" | node -e '
+            let raw = "";
+            process.stdin.on("data", (c) => (raw += c)).on("end", () => {
+              const parsed = JSON.parse(raw || "[]");
+              const list = Array.isArray(parsed) ? parsed : [parsed];
+              const seen = [];
+              for (const value of list) {
+                const match = /^(\d+)\.(\d+)\.(\d+)-preview\.(\d+)$/.exec(String(value));
+                if (!match) continue;
+                seen.push({ core: [Number(match[1]), Number(match[2]), Number(match[3])], n: Number(match[4]) });
+              }
+              if (seen.length === 0) {
+                console.log("0.1.0-preview.1");
+                return;
+              }
+              // Numeric tuple compare, not a string compare, so 0.10.0 outranks 0.9.0.
+              const top = seen.reduce((a, b) => {
+                for (let i = 0; i < 3; i++) {
+                  if (a.core[i] !== b.core[i]) return a.core[i] > b.core[i] ? a : b;
+                }
+                return a.n >= b.n ? a : b;
+              });
+              console.log(`${top.core.join(".")}-preview.${top.n + 1}`);
+            });
+          ')"
+          echo "package=$package" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Publishing $package@$version"
       - name: Build npm package
         run: node scripts/package-webui-npm.mjs --version "${{ steps.release.outputs.version }}" --outdir "$RUNNER_TEMP/webui-package"
       - name: Inspect package contents
         run: npm pack --dry-run --json "$RUNNER_TEMP/webui-package"
       - name: Publish preview to the npm registry
-        run: npm publish "$RUNNER_TEMP/webui-package" --tag preview
+        shell: bash
+        run: |
+          set -euo pipefail
+          package="${{ steps.release.outputs.package }}"
+          version="${{ steps.release.outputs.version }}"
+          if npm view "$package@$version" version >/dev/null 2>&1; then
+            echo "$package@$version is already published; nothing to do."
+            exit 0
+          fi
+          npm publish "$RUNNER_TEMP/webui-package" --tag preview
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
